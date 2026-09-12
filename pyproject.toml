@@ -1,0 +1,20 @@
+[project]
+name = "space-robotics-agent-harness"
+version = "0.0.0"
+description = "Trustworthy space-native agentic mission runtime for long-horizon lunar robotic operations"
+readme = "README.md"
+# 3.10 to match ROS 2 Humble's rclpy ABI. See docs/upstream_pins.md — this is a
+# hard constraint from the real-robot stack, not a preference.
+requires-python = ">=3.10,<3.11"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["space_runtime", "space_context"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100

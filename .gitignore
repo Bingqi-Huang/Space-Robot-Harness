@@ -1,0 +1,29 @@
+# Upstream simulation base — externally managed, NOT tracked by this repo.
+# Pinned revision is recorded in docs/upstream_pins.md instead.
+/space_robotics_bench/
+
+# Experiment outputs
+/artifacts/*
+!/artifacts/.gitkeep
+*.rosbag
+*.mcap
+rosbag2_*/
+
+# Isaac Sim / Omniverse
+*.usd.log
+kit_*.log
+/logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.uv/
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store

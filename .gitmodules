@@ -1,0 +1,3 @@
+[submodule "openral"]
+	path = openral
+	url = git@github.com:DsslRobot/openral.git
