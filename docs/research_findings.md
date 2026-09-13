@@ -132,7 +132,7 @@ against the real `ExecuteRskill` action server dispatched
 candidate_action → kernel → safe_action → HAL → SRB path and moved the robot.
 Source: `docs/phase_b_procedural_kind.md`.
 
-### F12 — CONFIRMED: `max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` are not enforced by anything, today
+### F12 — RESOLVED: `max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` are now enforced for BODY_TWIST (2026-09-13)
 
 Root-caused, then verified live. `cpp/openral_safety_kernel/src/validator.cpp`'s
 `validate()` has an explicit case for `kBodyTwist` (and `kJointTrajectory`/
@@ -161,18 +161,46 @@ commanded distance. **This is not a config mistake on our side; it is the
 current, real behavior of upstream OpenRAL's shipped safety kernel for every
 per-mode chunk kind in that list, on any robot, not just `lunar_bot`.**
 
+**Resolved 2026-09-13**, per the user's explicit decision to treat the fix
+itself as part of this project's scientific contribution, following
+OpenRAL's own engineering standards (CLAUDE.md §3) rather than patching
+around it. `kBodyTwist` is now split out of the shared "delegate to Python"
+case in `validator.cpp` into its own real check: linear speed
+(`sqrt(vx²+vy²+vz²)`) against `max_base_linear_speed_m_s` and angular speed
+(`sqrt(wx²+wy²+wz²)`) against `max_base_angular_speed_rad_s`, mirroring the
+existing `kCartesianTwist` case exactly. The two fields were added to
+`EnvelopeIntersection` (both sides — C++ struct and the Python dataclass),
+declared as kernel ROS parameters (default `kPosInfinity`, i.e. "no bound
+declared" — an unrelated fixed-base robot's behavior is unchanged), and
+`envelope_loader.kernel_params_from_envelope()` now actually forwards them
+(previously it silently dropped them — half of why nothing could enforce
+them even if it tried). `kJointTrajectory`/`kCartesianDelta`/
+`kGripperBinary`/`kGripperPosition`/`kCompositeMode` still delegate to the
+Python supervisor stub as before — **only BODY_TWIST was in scope for this
+fix**; the same gap for those other modes is unchanged and still open.
+
+Re-verified live against a real running kernel node (parameters generated
+via the real `compute_intersection`/`kernel_params_from_envelope` path, not
+hand-constructed): the exact 6.0 m/s vs. 0.3 m/s scenario that previously
+passed with zero rejection is now rejected —
+`safety_status.latched=True, drop_reason=KIND_FORCE, detail="base_linear_speed"`,
+nothing forwarded to `/openral/safe_action`. Same for a 1.0 rad/s vs. 0.5
+rad/s angular-only violation. A within-bound command (0.2 m/s / 0.2 rad/s)
+still passes through unchanged. New gtest coverage
+(`BodyTwistLinearSpeedCapEnforced`, `BodyTwistAngularSpeedCapEnforced`,
+`BodyTwistDimMismatchRejected`) plus the full existing suite (`ctest`, all 4
+binaries) pass, including the pre-existing
+`BodyTwistPassesWithSixDofWidthAndJointEnvelope` regression test, unmodified.
+Full record: `docs/f12_body_twist_envelope_fix.md`.
+
 **Design implication:** any experiment or paper claim about "safety-checked"
-mobile-base (or Cartesian-delta/gripper) motion must not assume magnitude
-bounds are enforced — only shape/NaN/dimension checks and geometric
-collision checks are real for these control modes today. Per CLAUDE.md §3
-("touching `packages/openral_safety/` or
-`cpp/openral_safety_kernel/` requires a safety-WG reviewer + hazard-log
-entry"), this project should not silently patch the gap — it is a decision
-for the user: report it as a known upstream limitation and scope the
-paper's trustworthiness claims around it, or treat implementing the missing
-per-mode bound check as in-scope future work (a real, reviewable
-contribution back to OpenRAL, not a quick local patch).
-Source: `docs/phase_b_lunar_bot_hal.md`, verified 2026-09-13.
+mobile-base motion can now cite real magnitude-bound enforcement for
+BODY_TWIST specifically — still not for `kJointTrajectory`/`kCartesianDelta`/
+`kGripperBinary`/`kGripperPosition`/`kCompositeMode`, where the same
+Python/C++ responsibility-mismatch gap this finding originally documented
+remains exactly as described below.
+Source: `docs/phase_b_lunar_bot_hal.md` (original finding),
+`docs/f12_body_twist_envelope_fix.md` (fix), verified 2026-09-13.
 
 ### F13 — The safety kernel takes its envelope as flat ROS parameters, not a manifest path
 

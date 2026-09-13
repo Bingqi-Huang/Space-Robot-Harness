@@ -42,32 +42,31 @@ occasional safety-stale abort as expected, and note it's exactly the class
 of event execution_plan.md §5.4.4/§13.6 already want to study, not a
 nuisance. Full record: `docs/research_findings.md` F15.
 
-**F12 — investigated 2026-09-13, CONFIRMED as a real upstream gap (needs a
-user decision, not a silent patch).** `max_base_linear_speed_m_s`/
-`max_base_angular_speed_rad_s` (and the equivalent bounds for
+**F12 — investigated 2026-09-13, then FIXED 2026-09-13 per user decision
+("按照他们的规范来把这个补上，这就是我们科学贡献的一部分了").**
+`max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` were enforced by
+nothing (root cause: kernel and Python supervisor each named the other as
+responsible; `kernel_params_from_envelope()` didn't even forward the value).
+Verified live pre-fix: `lunar_bot` at 6.0 m/s (20× the declared 0.3 m/s
+bound) moved the full distance, zero rejection. **Fixed for BODY_TWIST**:
+new envelope fields (Python dataclass + C++ struct + ROS params), `validator.cpp`'s
+`kBodyTwist` split out of the shared Python-delegation case into a real
+linear/angular magnitude check mirroring `kCartesianTwist`. New gtest
+coverage + full ctest suite pass; re-verified live against a real running
+kernel node — the same 6.0 m/s scenario is now rejected
+(`drop_reason=KIND_FORCE, detail="base_linear_speed"`), same for angular,
+in-bound commands still pass. Full record: `docs/f12_body_twist_envelope_fix.md`,
+`docs/research_findings.md` F12. **Scope: BODY_TWIST only** —
 `kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`/`kGripperPosition`/
-`kCompositeMode`) are enforced by **nothing** today. Root-caused in the C++
-source: the kernel's `validate()` explicitly delegates these bounds to the
-Python `openral_safety/supervisor_node.py` — whose own docstring says it's a
-Day-1 stub waiting for the C++ kernel to implement them. Each side names the
-other as responsible; neither does it. Also confirmed
-`kernel_params_from_envelope()` doesn't even forward
-`max_base_linear_speed_m_s` into the kernel's ROS parameters — there's
-nowhere for it to land. **Verified live**: commanded `lunar_bot` at 6.0 m/s
-(20× the declared 0.3 m/s bound) for 3s through the real safety-checked
-path — zero rejection, no warning, robot moved the full distance. This is
-upstream OpenRAL's actual current behavior for every robot using these
-control modes, not a mistake in our config. Per CLAUDE.md §3 (touching the
-safety kernel/supervisor needs a safety-WG reviewer + hazard-log entry),
-**we should not silently patch this** — it's the user's call whether to (a)
-report it as a known upstream limitation and scope trustworthiness claims
-around it, or (b) treat implementing the missing check as real, reviewable
-future work. Full record: `docs/research_findings.md` F12.
+`kCompositeMode` still delegate to the Python stub, same gap, untouched.
 
 **What remains open:**
 
 - [ ] Arm (CARTESIAN_TWIST) / gripper (GRIPPER_BINARY) wiring on the HAL —
       same pattern as BODY_TWIST.
+- [ ] Same missing-magnitude-check gap for `kJointTrajectory`/
+      `kCartesianDelta`/`kGripperBinary`/`kGripperPosition`/`kCompositeMode` —
+      not part of this fix, still open per `docs/f12_body_twist_envelope_fix.md`.
 
 ### Then, per plan §21 items 5–6 (not started)
 
