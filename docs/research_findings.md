@@ -132,20 +132,47 @@ against the real `ExecuteRskill` action server dispatched
 candidate_action → kernel → safe_action → HAL → SRB path and moved the robot.
 Source: `docs/phase_b_procedural_kind.md`.
 
-### F12 — The shipped C++ kernel's BODY_TWIST bound is uncharacterized
+### F12 — CONFIRMED: `max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` are not enforced by anything, today
 
-`robots/<id>/robot.yaml`'s `SafetyEnvelope.max_base_linear_speed_m_s` /
-`max_base_angular_speed_rad_s` exist at the Pydantic/manifest level, but a
-repo-wide grep of the kernel's C++ source finds no code consuming them —
-only comments mentioning BODY_TWIST. The kernel did not reject a live 6-wide
-BODY_TWIST chunk against lunar_bot's 21-dof-declared envelope in the F11
-test, so *something* passed it through, but what (if anything) actually
-bounds a BODY_TWIST chunk's magnitude today is unconfirmed. **Design
-implication:** do not treat a robot.yaml's base-speed bounds as enforced
-until this is characterized directly (deliberately exceed the declared bound
-and confirm a rejection) — an unverified safety bound is a false-confidence
-risk, not a minor gap.
-Source: `docs/phase_b_lunar_bot_hal.md`.
+Root-caused, then verified live. `cpp/openral_safety_kernel/src/validator.cpp`'s
+`validate()` has an explicit case for `kBodyTwist` (and `kJointTrajectory`/
+`kCartesianDelta`/`kGripperBinary`/`kGripperPosition`/`kCompositeMode`) whose
+own comment states the design: *"The C++ kernel intentionally delegates
+per-axis bound enforcement to the Python `openral_safety/supervisor_node.py`,
+which knows the per-mode bounds on the robot manifest
+(`max_cartesian_step_m`, `max_base_linear_speed_m_s`,
+`max_base_angular_speed_rad_s`, gripper_min/max, ...)."* But that Python
+node's own docstring says the opposite: *"envelope checks are deliberately
+minimal so the C++ kernel that lands later can replace internals... Day-1
+envelope checks (stubbed but real): `n_dof` mismatch... and first-row joint
+targets vs configured per-joint position limits"* — no velocity/force/
+workspace checks. **Each side documents the other as the one that's
+supposed to do it. Neither does.** Confirmed further:
+`openral_safety.envelope_loader.kernel_params_from_envelope()` does not even
+emit `max_base_linear_speed_m_s` into the kernel's ROS parameters — there is
+nowhere for the value to land at runtime even if the kernel wanted to read it.
+
+Verified live: commanded `lunar_bot`'s base at 6.0 m/s (20× the manifest's
+declared 0.3 m/s bound) through the real `candidate_action` → kernel →
+`safe_action` → HAL → SRB path for 3s. Zero rejection —
+`/openral/safety_status` stayed `latched=False` throughout, no
+`FailureTrigger`, no kernel log warning — and the robot moved the full
+commanded distance. **This is not a config mistake on our side; it is the
+current, real behavior of upstream OpenRAL's shipped safety kernel for every
+per-mode chunk kind in that list, on any robot, not just `lunar_bot`.**
+
+**Design implication:** any experiment or paper claim about "safety-checked"
+mobile-base (or Cartesian-delta/gripper) motion must not assume magnitude
+bounds are enforced — only shape/NaN/dimension checks and geometric
+collision checks are real for these control modes today. Per CLAUDE.md §3
+("touching `packages/openral_safety/` or
+`cpp/openral_safety_kernel/` requires a safety-WG reviewer + hazard-log
+entry"), this project should not silently patch the gap — it is a decision
+for the user: report it as a known upstream limitation and scope the
+paper's trustworthiness claims around it, or treat implementing the missing
+per-mode bound check as in-scope future work (a real, reviewable
+contribution back to OpenRAL, not a quick local patch).
+Source: `docs/phase_b_lunar_bot_hal.md`, verified 2026-09-13.
 
 ### F13 — The safety kernel takes its envelope as flat ROS parameters, not a manifest path
 
