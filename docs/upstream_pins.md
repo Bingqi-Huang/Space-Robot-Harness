@@ -5,10 +5,16 @@ and every experimental campaign to name the exact commits it ran against.
 
 ## Pinned revisions
 
-| Project | Fork | Commit | Upstream | Tracking |
-|---|---|---|---|---|
-| OpenRAL | `DsslRobot/openral` | `4700c7a` | `OpenRAL/openral` | git submodule at `openral/` |
-| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `7528ff8` (v0.0.6) | `AndrejOrsula/space_robotics_bench` | **not a submodule** — externally managed, see below |
+| Project | Fork | Branch | Commit | Upstream | Tracking |
+|---|---|---|---|---|---|
+| OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-hal` | `af61568` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
+| Space Robotics Bench | `DsslRobot/space_robotics_bench` | — | `7528ff8` (v0.0.6) | `AndrejOrsula/space_robotics_bench` | **not a submodule** — externally managed, see below |
+
+OpenRAL's pin has moved twice since the initial `4700c7a`: `fa7f445`/`4c1867c`
+(Python 3.10/Humble downgrade, `docs/openral_py310_patch.md`) then `af61568`
+(the `lunar_bot` HAL, `docs/phase_b_lunar_bot_hal.md`) — the current commit is
+on branch `feat/lunar-bot-hal`, built on top of `feat/py310-humble`, not yet
+merged (Phase B work continues on it).
 
 Space Robotics Bench is developed independently of this repository and is
 excluded via `.gitignore`. Record its commit in each run manifest (§19) rather

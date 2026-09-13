@@ -2,63 +2,70 @@
 
 ## Phase A: Upstream Verification — ✅ COMPLETE (2026-09-13)
 
-Scope was `execution_plan.md` §18 Phase A + §5.1/§5.2 + §6.1 + §21.1–21.3.
-Exit condition met: the actual upstream execution path of both OpenRAL and
-SRB runs on this machine, and the real APIs/topics of the pinned revisions
-are written down.
-
-| Task | State | Record |
-|---|---|---|
-| A0 — research repo skeleton | ✅ | commit `baa2799` |
-| A1 — OpenRAL fork → Python 3.10/Humble | ✅ | openral `4c1867c` (pushed); `docs/upstream_pins.md`, `docs/openral_py310_patch.md` |
-| A2 — map OpenRAL execution path | ✅ | `docs/openral_integration_notes.md` |
-| A3 — map SRB execution path (LunarBot) | ✅ | `docs/srb_integration_notes.md` |
-| A4 — OpenRAL + SRB alive together, cross-read | ✅ | OpenRAL's own 3.10 venv/rclpy read live `/srb/env0/robot/joint_states` + `/tf` off the shared DDS bus |
-| Findings seeded | ✅ | `docs/research_findings.md` (F1–F10) |
-
-Embodiment for Phase B: **LunarBot** (user directive). Already integrated
-into SRB; teleop/self-collision continue as separate, non-blocking work by
-another agent.
-
-**Read `docs/research_findings.md` before designing any Phase B mechanism** —
-several things plan §4 asks for already exist upstream in some form (F1, F2,
-F7) and should be extended, not rebuilt from scratch.
+A0–A4 all done. OpenRAL fork on Python 3.10/Humble, execution paths of both
+OpenRAL and SRB mapped, both alive together and cross-readable. See
+`docs/research_findings.md` F1–F10 before designing any mechanism — several
+things plan §4 asks for already exist upstream in partial form.
 
 ---
 
-## Phase B: Generic OpenRAL on SRB — not started
+## Phase B: Generic OpenRAL on SRB — in progress
 
-Per execution_plan.md §18 Phase B: connect OpenRAL to the SRB
-`_ground_manipulation`/`lunar_bot` environment, execute simple capability
-calls through the full reasoner/rSkill/safety/ROS path, collect traces.
-Exit condition: a minimal multi-step robot mission executed and observed
-end-to-end using upstream mechanisms alone — no `space_runtime`/`space_context`
-code yet (plan §21.5–7: mechanisms follow observed failures).
+Per execution_plan.md §18 Phase B. Embodiment: **LunarBot** (user directive).
 
-Not yet planned in detail. First concrete steps once started:
+### Slice 1 — LunarBot BODY_TWIST through the real safety chain ✅ (2026-09-13)
 
-- [ ] Inventory which rSkill(s) can actually drive `lunar_bot` through the
-      F7 topics (`cmd_vel`/`differential_inverse_kinematics`/
-      `binary_joint_position`/`four_wheel_steer`) — likely a `kind: ros_action`
-      or `ros_service` wrapper per `openral_integration_notes.md` §1.3, not a
-      new rSkill from scratch.
-- [ ] Define Mission A (plain instruction, no space constraints yet) per
-      plan §21.5.
-- [ ] Run unmodified/generic OpenRAL against it; save traces; document actual
-      failure modes — this is what should motivate `space_runtime`'s first
-      schemas, not intuition.
+openral branch `feat/lunar-bot-hal` (`af61568`, pushed, **not yet merged** —
+Phase B continues on it). Full record: `docs/phase_b_lunar_bot_hal.md`.
+
+Built (all new, nothing upstream modified): `robots/lunar_bot/robot.yaml`
+(real joint/actuator data sourced from SRB's asset definition, cited
+in-file — not invented); `LunarBotSRBHAL` (mirrors `RosControlHAL`'s
+transport-attach shape); `packages/openral_hal_lunar_bot/` (subclasses
+`ManifestHALLifecycleNode`, overrides only `on_configure_post_hal`).
+
+**Verified live against a running SRB instance**: a scripted BODY_TWIST
+published via the existing `ROSPublishingHAL` (the same wire path a real
+rSkill uses) went through `candidate_action` → C++ safety kernel →
+`safe_action` → the new HAL → SRB's `cmd_vel`, and the robot moved a
+measured distance with zero rejections. This is the actual mechanism the
+user asked for (full safety chain, not a bypass).
+
+**What remains open, not silently skipped** (see `docs/research_findings.md`
+F11–F14 for the reasoning behind each):
+
+- [ ] Decide how a scripted (non-learned) test rSkill gets registered so this
+      path can be driven by `rskill_runner_node` and the reasoner, not just
+      `ROSPublishingHAL` directly. No existing `RSkillKind` cleanly fits —
+      this needs its own decision (F11).
+- [ ] Characterize whether the C++ kernel actually enforces
+      `max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` (deliberately
+      exceed it and confirm rejection) before relying on that bound for
+      anything (F12).
+- [ ] Arm (CARTESIAN_TWIST, SRB's `differential_inverse_kinematics`) and
+      gripper (GRIPPER_BINARY, SRB's `binary_joint_position`) — deferred
+      until slice 1 was proven; same HAL, same pattern.
+
+### Then, per plan §21 items 5–6 (not started)
+
+- [ ] Define Mission A as a plain instruction (no space constraints).
+- [ ] Run generic OpenRAL against it once the rSkill-registration question
+      above is settled; save traces; document real failure modes — this is
+      what should motivate `space_runtime`'s first schemas, not intuition.
 
 ---
 
 ## Rules
 
-- Branch or worktree per task; delete after merge (AGENT.md §1).
+- Branch or worktree per task; delete after **merge** (AGENT.md §1) —
+  `feat/lunar-bot-hal` stays open; Phase B is still landing on it.
 - Overwrite-update this file and `handoff.md`; ≤150 lines each (AGENT.md §2).
 - No pytest beyond upstream's own suites (AGENT.md §3).
 - No defensive coding, no hash checks, no corner-case guards (AGENT.md §4).
 - **No `space_runtime` / `space_context` code until Phase B observes real
   failures calling for it** (plan §21.6–7).
-- Upstream OpenRAL modifications confined to `docs/openral_py310_patch.md`.
 - `space_robotics_bench/` stays untouched — another agent owns it. On this
   shared host, kill only exact PIDs you launched yourself, never a pattern
-  (see `docs/research_findings.md` F10).
+  (`docs/research_findings.md` F10).
+- `ros2 lifecycle`/`node list` don't work on this host — use direct
+  `lifecycle_msgs/srv/ChangeState`/`GetState` service calls (F14).

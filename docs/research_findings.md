@@ -110,3 +110,65 @@ this project builds that manages simulator/agent processes (experiment
 runner, §12) must address processes by exact PID it recorded at launch time,
 never by command-line pattern matching.
 Source: `docs/srb_integration_notes.md` §4.
+
+## Phase B findings (2026-09-13)
+
+### F11 — No existing rSkill kind fits a scripted, non-learned test motion
+
+`rskill_runner_node.make_default_skill_resolver` only handles
+`kind: "vla"` / `"ros_action"` / `"ros_service"` today (`"wam"` raises
+"not implemented"). `kind: "playbook"` exists (`rskills/preflight-reach`) but
+is an S2 *decision procedure* the reasoner composes — it never emits an
+`Action` chunk itself. **Design implication:** proving the reasoner/
+rskill_runner dispatch path against `lunar_bot` (plan §21 item 6, "run
+generic OpenRAL, save traces, document failure modes") needs its own
+decision about how a simple scripted motion gets registered — do not force
+one into `kind: "vla"` just because it is the only kind with a generic
+Python-class loading path. Verified instead, isolating the new mechanism from
+this open question: `ROSPublishingHAL` (the same wire-level path every real
+rSkill uses) can drive a scripted BODY_TWIST straight through
+candidate_action → the C++ safety kernel → safe_action → a new
+per-robot HAL → SRB, with the robot moving and no rejection.
+Source: `docs/phase_b_lunar_bot_hal.md`.
+
+### F12 — The shipped C++ kernel's BODY_TWIST bound is uncharacterized
+
+`robots/<id>/robot.yaml`'s `SafetyEnvelope.max_base_linear_speed_m_s` /
+`max_base_angular_speed_rad_s` exist at the Pydantic/manifest level, but a
+repo-wide grep of the kernel's C++ source finds no code consuming them —
+only comments mentioning BODY_TWIST. The kernel did not reject a live 6-wide
+BODY_TWIST chunk against lunar_bot's 21-dof-declared envelope in the F11
+test, so *something* passed it through, but what (if anything) actually
+bounds a BODY_TWIST chunk's magnitude today is unconfirmed. **Design
+implication:** do not treat a robot.yaml's base-speed bounds as enforced
+until this is characterized directly (deliberately exceed the declared bound
+and confirm a rejection) — an unverified safety bound is a false-confidence
+risk, not a minor gap.
+Source: `docs/phase_b_lunar_bot_hal.md`.
+
+### F13 — The safety kernel takes its envelope as flat ROS parameters, not a manifest path
+
+Unlike the HAL lifecycle nodes (`robot_yaml` + `hal_mode` params, resolved
+via `build_hal`), the C++ safety kernel reads flattened scalar/array ROS
+parameters (`n_dof`, `joint_position_min/max`, `joint_velocity_max`,
+`joint_torque_max`, `max_ee_speed_m_s`, ...) — it does not parse
+`robots/<id>/robot.yaml` itself. The sanctioned way to produce these is
+`openral_safety.envelope_loader.compute_intersection(robot, skill)` +
+`kernel_params_from_envelope(...)`, normally invoked by
+`deploy_e2e.launch.py`. **Design implication:** any bring-up/experiment
+tooling that starts the kernel standalone (outside that launch file) must
+call this loader itself rather than hand-constructing parameters — guessing
+them wastes time and produces misleading "envelope load failed" errors that
+name the wrong missing field.
+Source: `docs/phase_b_lunar_bot_hal.md`.
+
+### F14 — `ros2 lifecycle`/`node list` don't enumerate nodes by name on this host
+
+Same symptom seen with SRB's own ROS bridge in A3/A4: a node is alive, its
+services and topics work, but `ros2 node list` / `ros2 lifecycle set/get`
+report "Node not found" or nothing at all. Calling the
+`lifecycle_msgs/srv/ChangeState` / `GetState` services directly by their
+fully-qualified service name works every time. **Design implication:** any
+bring-up script this project writes should drive lifecycle nodes via direct
+service calls, not the `ros2 lifecycle` CLI, on this host.
+Source: `docs/phase_b_lunar_bot_hal.md`.

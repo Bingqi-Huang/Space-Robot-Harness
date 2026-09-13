@@ -1,66 +1,76 @@
 # Handoff
 
-State as of 2026-09-13. **Phase A is complete.** Next up is Phase B, not yet
-started. Task list: `todo.md`. Findings to read before Phase B design work:
-`docs/research_findings.md`.
+State as of 2026-09-13. Phase A complete. Phase B slice 1 (LunarBot BODY_TWIST
+through the real safety chain) just verified live. Task list: `todo.md`.
+Full record: `docs/phase_b_lunar_bot_hal.md`. Findings: `docs/research_findings.md`.
 
-## Phase A summary
+## What just happened
 
-- Research repo on `main` (`3f284fa` latest), OpenRAL fork downgraded to
-  Python 3.10/Humble and submodule-pinned (`4c1867c`, 5236 tests passing).
-- Full OpenRAL reasoner→dispatch→rSkill→safety path mapped
-  (`docs/openral_integration_notes.md`). Insertion point for Phase E's
-  mission-level admissibility layer decided: subclass `ReasonerNode`,
-  override `_dispatch_execute_rskill` only — zero upstream source changes.
-- SRB mapped with the **LunarBot** embodiment (user's explicit choice; already
-  integrated, teleop/self-collision continue separately, not blocking)
-  (`docs/srb_integration_notes.md`). Real control surface identified:
-  per-action-term topics (`cmd_vel`/`differential_inverse_kinematics`/
-  `binary_joint_position`/`four_wheel_steer`), not the combined echo vector.
-- **A4 done**: OpenRAL's own 3.10 venv/rclpy stack read live SRB topics
-  (`/srb/env0/robot/joint_states`, `/tf`) off the shared DDS bus with both
-  systems running simultaneously.
-- Ten findings seeded in `docs/research_findings.md` (F1–F10) — several
-  things plan §4 calls for already exist upstream in partial form (mission-
-  invalidity gates, reward-gated verification, a ready FDIR-relevant signal);
-  extend those, don't rebuild.
+Built and live-verified a new HAL bridging OpenRAL's safety-checked chunk
+path to SRB for `lunar_bot`'s mobile base, per the user's explicit choice to
+go through the real chain rather than bypass it (like the pre-existing Nav2
+rskill does for real hardware):
 
-## Next: Phase B — Generic OpenRAL on SRB (not started)
-
-Per execution_plan.md §18: connect OpenRAL to `_ground_manipulation`/
-`lunar_bot`, execute simple capability calls through the full reasoner/
-rSkill/safety/ROS path, collect traces. **No `space_runtime`/`space_context`
-code yet** — mechanisms follow observed failures (§21.6–7), not the reverse.
-
-First concrete steps (see `todo.md`):
-1. Find or wrap an rSkill that can actually drive `lunar_bot` through the
-   topics found in A3 (likely a `ros_action`/`ros_service` wrapper, not a new
-   rSkill).
-2. Define Mission A as a plain instruction.
-3. Run generic OpenRAL against it, save traces, document real failure modes.
-
-## Environment reference (needed for every future SRB launch on this host)
-
-```bash
-env -u CONDA_PREFIX -u CONDA_EXE -u CONDA_PYTHON_EXE -u CONDA_DEFAULT_ENV \
-    -u CONDA_SHLVL -u CONDA_PROMPT_MODIFIER -u PYTHONPATH \
-    ISAAC_SIM_PATH="$HOME/Programs/isaac-sim" \
-    PATH="$(echo "$PATH" | tr ':' '\n' | grep -v miniconda3 | paste -sd:)" \
-    srb agent <zero|rand|ros> --env _ground_manipulation env.robot=lunar_bot \
-    --headless --interface ros
+```
+ROSPublishingHAL (existing) -> /openral/candidate_action
+  -> C++ safety kernel (existing) -> /openral/safe_action
+    -> openral_hal_lunar_bot (NEW) -> LunarBotSRBHAL (NEW)
+      -> /srb/env0/action/cmd_vel -> SRB moves the robot
+        -> /srb/env0/robot/joint_states -> read_state() round-trips
 ```
 
-OpenRAL side needs the opposite: Humble sourced (`PYTHONPATH` populated), conda
-stripped for any C++ build. Full reasoning in `docs/openral_py310_patch.md`
-and `docs/srb_integration_notes.md` §2.
+Measured: 4s of `linear.x=0.2, angular.z=0.1` moved the base from
+`(0.428, -0.536)` to `(-0.356, -0.003)` in `/tf`. No rejection anywhere.
+
+openral branch `feat/lunar-bot-hal` (`af61568`, pushed to the fork, **not
+merged** — Phase B keeps landing on it). Submodule bumped in this repo.
+
+## Four things deliberately left open (not silently skipped)
+
+1. **No rSkill kind fits a scripted test motion.** `make_default_skill_resolver`
+   only handles `vla`/`ros_action`/`ros_service` (`wam` unimplemented);
+   `playbook` is a reasoner-side decision procedure, not an actuator. The
+   live test used `ROSPublishingHAL` directly to isolate the new mechanism
+   from this open question — it still needs its own decision before the
+   reasoner/`rskill_runner_node` can drive this path.
+2. **The kernel's BODY_TWIST bound is unconfirmed.** `max_base_linear_speed_m_s`
+   exists in the manifest schema; grep found zero C++ consumption of it.
+   The chunk wasn't rejected, but *why* is uncharacterized — don't trust the
+   0.3 m/s bound is enforced until tested by deliberately exceeding it.
+3. Arm (CARTESIAN_TWIST) and gripper (GRIPPER_BINARY) — same HAL, same
+   pattern, deferred until base-only was proven.
+4. Mission A / generic-OpenRAL trace-collection (plan §21 items 5–6) —
+   blocked on (1) above.
+
+## Next
+
+Pick up `todo.md`'s Phase B checklist — item 1 (rSkill registration
+decision) unblocks everything else. Read `docs/research_findings.md`
+F11–F14 first; they're the reasoning behind each open item above.
+
+## Environment reference (reusable, don't rediscover)
+
+- SRB launch: same as before (`docs/srb_integration_notes.md` §2 —
+  `PYTHONPATH` unset, `ISAAC_SIM_PATH` set, conda stripped).
+- Safety kernel needs its envelope as **flat ROS parameters**, not a
+  `robot_yaml` path — generate them with
+  `openral_safety.envelope_loader.compute_intersection(desc, None)` +
+  `kernel_params_from_envelope(...)`, dump to YAML, launch with
+  `--ros-args --params-file <path>`. Guessing them wastes time.
+- `ros2 run <pkg> lifecycle_node` fails ("No executable found" — the real
+  name has a `.py` suffix; `ros2 pkg executables <pkg>` shows it) and even
+  then hits `ModuleNotFoundError` (shebang picks system Python). Launch
+  directly: `.venv/bin/python install/lib/<pkg>/lifecycle_node.py --ros-args ...`.
+- `ros2 lifecycle`/`node list` don't enumerate nodes here even when alive —
+  call `lifecycle_msgs/srv/ChangeState`/`GetState` on the service name
+  directly (`ros2 service call /openral_safety_kernel/change_state ...`).
 
 ## Watch out
 
-- **Never `pkill -f` on this host** — it killed another agent's unrelated
-  processes once this session (see `docs/research_findings.md` F10). Always
-  resolve exact PIDs via `ps`/`pgrep -a -f` first, including the reparented
-  kit-python child (killing the wrapper alone does not reliably take it
+- **Never `pkill -f` on this host** — killed another agent's processes once
+  already this project. Exact PIDs only, every time, including the
+  reparented kit-python child (killing the wrapper alone doesn't take it
   down).
 - `space_robotics_bench/` stays untouched — read/run only, ever.
-- `OPENRAL_REASONER_MODEL` is unset; curated ids are `claude-opus-4-8`,
-  `cosmos3-edge`, `gpt-5.5`, `gpt-5.6`. Configure when Phase B needs it.
+- No `space_runtime`/`space_context` code until Phase B observes real
+  failures calling for it (plan §21.6–7).
