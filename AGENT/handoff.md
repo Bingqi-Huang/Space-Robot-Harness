@@ -40,41 +40,31 @@ While wiring the arm, found F16: `max_ee_angular_speed_rad_s` (CARTESIAN_
 TWIST's angular bound) had the exact same "declared, not enforced" gap F12
 found for BODY_TWIST — fixed the same way, verified live end-to-end.
 
-## Next — Mission A needs a new SRB task; none exist for LunarBot today
+## Next — `panel_remount` SRB task done; Mission A's instruction text is next
 
-Investigated (2026-09-13) what SRB task could serve as Mission A (plan §6.4:
-infrastructure inspection/maintenance, plain instruction not action
-sequence). **Finding: nothing usable exists yet.**
+No existing SRB task fit Mission A (plan §6.4): `_ground_manipulation` is a
+bare scaffold; every task with real objects (`solar_panel_assembly`,
+`screwdriving`, `peg_in_hole_assembly`, etc.) is `ManipulationEnv`-only
+(fixed-base arm, type-incompatible with LunarBot's `WheeledManipulator`);
+the one mobile-manipulator task (`mobile_debris_capture`) is
+`OrbitalManipulationEnv` (orbital, not ground). None of SRB's tasks have a
+real binary success condition either — this project's own verification
+layer (plan §4.4) was always going to have to supply that.
 
-- `_ground_manipulation` (what Phase B's HAL tests reused) is a bare
-  scaffold — no objects, no fault, no success condition.
-- Every task with real objects/rewards (`solar_panel_assembly`,
-  `screwdriving`, `peg_in_hole_assembly`, `sample_collection`, `excavation`)
-  is built on `ManipulationEnv` (`robot: Manipulator`) — fixed-base arms
-  only, type-incompatible with LunarBot's `WheeledManipulator`.
-- The one mobile-manipulator task, `mobile_debris_capture`, is built on
-  `OrbitalManipulationEnv` — a free-flying orbital arm, not a ground rover.
-- None of SRB's existing tasks have a real binary success/termination
-  condition anyway (`termination = torch.zeros(...)`, always) — this
-  project's own verification layer (plan §4.4) was always going to have to
-  supply that regardless of which scene gets picked.
+**Built and verified live (2026-09-13)**: `space_robotics_bench/srb/tasks/
+mobile_manipulation/panel_remount/` — a solar panel knocked off its
+pedestal mount; robot must locate, pick up, and remount it within
+tolerance. Mirrors `solar_panel_assembly`'s structure on
+`GroundManipulationEnv`. Has a genuine binary success termination (position
++ orientation tolerance) — the first in any SRB task. Full record:
+`docs/mission_a_panel_remount.md`. Found + fixed F18 along the way (see
+reference section below). Single pedestal+panel pair for v1 — §6.4's
+"multiple candidate components" is a deliberate, documented simplification.
 
-Decided: write Mission A's task directly inside `space_robotics_bench/`
-(`srb/tasks/mobile_manipulation/`), following the `solar_panel_assembly`
-pattern but rebased onto `GroundManipulationEnv` for `lunar_bot`. Reuse
-existing assets — `solar_panel.usdz`, `industrial_pedestal_*.usdz`,
-`bolt_hex_m8`/`nut_hex_m8` (has a "tight" variant — a loosened-bolt fault is
-right there), `screwdriver_hex_m3/m5.usdz` — all already in
-`assets/srb_assets/object/`. Task registration (`register_srb_tasks` →
-`gymnasium.register`) isn't restricted to files inside SRB's own tree, but
-since we now own this fork, there's no reason to register externally —
-put it where `solar_panel_assembly` etc. already are.
-
-**Not yet started**: the actual task/scene file, and defining the plain-
-English mission instruction text itself (plan §21 item 5) once the scene
-exists. Then run generic/unmodified OpenRAL against it and save traces
-(item 6) — that's what should motivate `space_runtime`'s first schemas
-(item 7), not intuition.
+**Not yet started**: Mission A's plain-language instruction text itself
+(plan §21 item 5), then run generic/unmodified OpenRAL against this scene
+and save traces (item 6) — that's what should motivate `space_runtime`'s
+first schemas (item 7), not intuition.
 
 Still open, not blocking: the same missing-magnitude-check gap for
 `kJointTrajectory`/`kCartesianDelta`/`kGripperBinary` (per-joint)/
@@ -97,6 +87,13 @@ Still open, not blocking: the same missing-magnitude-check gap for
   silently drops commands until `/openral/estop_cleared` (`std_msgs/Empty`)
   is also published — normally the operator dashboard's job. Any test
   script driving the kernel directly must publish it too after every reset.
+- **F18 — SRB's procedural moon terrain is only flat within ~4 m of the env
+  origin** (`flat_area_size` in `srb/core/env/common/base/env_cfg.py`).
+  A rigid object spawned outside that pad can end up embedded in uneven
+  terrain; PhysX's depenetration solver then ejects it and it falls/flies
+  indefinitely in the Moon's weak gravity instead of settling. Keep any new
+  scene object within ~1.5–2 m of the env origin unless you've confirmed
+  the terrain is flat further out.
 - `RskillRunnerNode` is constructed directly in Python — mirror `compose.py`:
   construct with `skill_resolver=None`, then swap `node._skill_resolver =
   make_default_skill_resolver(node, search_paths=["rskills"])` before

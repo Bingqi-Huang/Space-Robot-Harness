@@ -8,7 +8,7 @@ and every experimental campaign to name the exact commits it ran against.
 | Project | Fork | Branch | Commit | Upstream | Tracking |
 |---|---|---|---|---|---|
 | OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-arm-gripper` | `af8fba2` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
-| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `main` | `9caeb46` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
+| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `feat/panel-remount-mission-a` | `b3e8d92` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
 
 OpenRAL's pin has moved six times since the initial `4700c7a`:
 `fa7f445`/`4c1867c` (Python 3.10/Humble downgrade,
@@ -31,7 +31,10 @@ OpenRAL: a git submodule at `space_robotics_bench/`, tracking
 `DsslRobot/space_robotics_bench` (itself a fork of the real upstream,
 `AndrejOrsula/space_robotics_bench`, same relationship OpenRAL's fork has to
 `OpenRAL/openral`), bumped and committed explicitly whenever this project
-changes something in it (e.g. adding a Mission A task). Every experimental
+changes something in it. First such change: `b3e8d92` adds the
+`panel_remount` Mission A task (`docs/mission_a_panel_remount.md`) directly
+under `srb/tasks/mobile_manipulation/`, on branch
+`feat/panel-remount-mission-a`, pushed, not yet merged. Every experimental
 run manifest (§19) should still record the exact commit it ran against —
 the submodule pin makes that commit reconstructible from this repo alone,
 it doesn't replace per-run provenance.

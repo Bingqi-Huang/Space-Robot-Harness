@@ -27,20 +27,12 @@ verified live through the **real** `ExecuteRskill` action server (not
 `ROSPublishingHAL` called directly): `ros2 action send_goal` → resolver →
 skill → candidate_action → kernel → safe_action → HAL → SRB → robot moved.
 
-**F15 — investigated 2026-09-13, RESOLVED as a false alarm.** The 3s
-dispatch aborted at ~2.7s on a safety-status staleness watchdog. First read
-concluded the kernel never heartbeats `/openral/safety_status` — wrong. It
-does, at a clean 1.000 Hz (`publish_diagnostics`'s wall timer ends with an
-unconditional `publish_safety_status_now()`, verified live with
-`ros2 topic hz`). The earlier "zero messages" reading was a shell-piping
-artifact (`timeout ... | tail` loses output when SIGTERM lands mid-print).
-The one abort was very likely a single missed/delayed heartbeat under a
-busier multi-participant DDS graph — the mechanism is deliberately
-conservative by design, so an occasional trip under load is it working as
-intended, not a bug. **Do not spend more effort on this** — treat an
-occasional safety-stale abort as expected, and note it's exactly the class
-of event execution_plan.md §5.4.4/§13.6 already want to study, not a
-nuisance. Full record: `docs/research_findings.md` F15.
+**F15 — RESOLVED as a false alarm.** A 3s dispatch aborted at ~2.7s on a
+safety-status staleness watchdog; first read wrongly concluded the kernel
+never heartbeats `/openral/safety_status`. It does, at a clean 1.000 Hz —
+the "zero messages" reading was a shell-piping artifact
+(`timeout ... | tail` loses output when SIGTERM lands mid-print). **Do not
+spend more effort on this.** Full record: `docs/research_findings.md` F15.
 
 **F12 — FIXED 2026-09-13** per user decision ("按照他们的规范来把这个补上").
 `max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` were declared but
@@ -93,16 +85,30 @@ Investigated 2026-09-13: no existing SRB task fits Mission A + LunarBot.
 `ManipulationEnv`-only (fixed-base arm, type-incompatible with LunarBot's
 `WheeledManipulator`); the one mobile-manipulator task
 (`mobile_debris_capture`) is `OrbitalManipulationEnv` (orbital, not ground).
-Decided: write a new task inside `space_robotics_bench/srb/tasks/
-mobile_manipulation/`, mirroring `solar_panel_assembly`'s structure but on
-`GroundManipulationEnv`, reusing existing assets (`solar_panel.usdz`,
-`industrial_pedestal_*.usdz`, `bolt_hex_m8`/`nut_hex_m8` — has a "tight"
-variant, a ready-made loosened-bolt fault — `screwdriver_hex_m3/m5.usdz`).
-`space_robotics_bench/` is now a proper submodule (see Rules), so this is
-a normal in-repo change, not an external-registration workaround.
 
-- [ ] Write the new task/scene (task.py + asset.py, following
-      `solar_panel_assembly`'s pattern) inside `space_robotics_bench/`.
+**`panel_remount` task written and verified live ✅ (2026-09-13)**, in
+`space_robotics_bench/srb/tasks/mobile_manipulation/panel_remount/`
+(submodule commit — see `docs/upstream_pins.md`). A solar panel knocked off
+its pedestal mount; robot must locate it, pick it up, place it back within
+tolerance — mirrors `solar_panel_assembly`'s structure on
+`GroundManipulationEnv` instead of the fixed-base `ManipulationEnv`. Has a
+genuine binary success termination (position + orientation tolerance, a
+real `torch.jit.script` bool check) — no existing SRB task has one at all.
+Full record: `docs/mission_a_panel_remount.md`.
+
+**F18 — found + fixed**: SRB's procedural moon terrain is only reliably
+flat within ~4 m of the env origin (`flat_area_size` in `env_cfg.py`); the
+first placement (2.4–3.0 m out) spawned the panel embedded in uneven
+terrain, and PhysX's depenetration ejection sent it falling forever
+(`z=-2637` and counting). Fixed by keeping pedestal/panel within ~1.5 m of
+origin; panel now settles to a stable rest pose, confirmed live. Documented
+in the task file and `docs/research_findings.md` so it's not rediscovered.
+
+**Deliberate v1 simplification**: one pedestal+panel pair, not §6.4's
+"multiple candidate components" (would need genuine fault-identification
+across several instances) — a natural, cheap follow-up once this is proven.
+
+- [x] Write the new task/scene inside `space_robotics_bench/`.
 - [ ] Define Mission A's plain-language instruction text (no space
       constraints yet — that's Phase D).
 - [ ] Run generic OpenRAL against it; save traces; document real failure

@@ -325,3 +325,40 @@ kernel directly (no dashboard running, as every script in this project's
 `/openral/estop` stays silently inert. Added to the reusable environment
 notes in `AGENT/handoff.md` so this isn't rediscovered per session.
 Source: `docs/phase_b_lunar_bot_arm_gripper.md`.
+
+### F18 — SRB's procedural moon terrain is only reliably flat within ~4 m of the env origin
+
+Found while building Mission A's `panel_remount` task (`space_robotics_bench/`,
+now a submodule — see `docs/upstream_pins.md`). A pedestal + panel placed
+2.4–3.0 m from the env origin: the panel (a `RigidObject`) fell to
+`z = -40` within a second and `z = -2637` a few seconds later — still
+falling, never hitting anything.
+
+Root cause, read from SRB's own source (`srb/core/env/common/base/env_cfg.py`):
+procedural scenery generation computes
+`flat_area_size = 0.8 * (_dyn_res ** 1.2)`, a genuinely flat, reliable
+landing pad centred on the env origin — for this task's `env_spacing=32.0`,
+`_dyn_res=4` and `flat_area_size≈4.2` (a ~4 m-wide pad). Outside it, the
+terrain is deliberately uneven (the same procedural variation that makes
+the rest of the map interesting for navigation/traversal tasks). An object
+spawned outside the pad can end up embedded in a terrain bump; PhysX's
+depenetration solver then ejects it with a large velocity spike, which —
+combined with the Moon's weak gravity — sends it falling/flying
+indefinitely rather than settling. This is not specific to LunarBot or to
+this task; it would happen to any rigid object spawned far from origin on
+this scenery.
+
+**Fixed** by keeping the new pedestal/panel within ~1.5 m of the env
+origin, comfortably inside the pad. Re-verified live: the panel now settles
+to a stable resting pose, unchanged across 8+ seconds, instead of falling.
+
+**Design implication:** any future SRB scene authored for this project
+(Mission B, a multi-pedestal identify-the-fault variant of Mission A, etc.)
+that places objects away from the env origin must either keep them within
+the procedural terrain's flat pad (~half of `flat_area_size`, itself a
+function of `env_spacing`) or use a scenery/terrain variant that doesn't
+have this restriction — do not assume z=0 is a safe, collision-free spawn
+height anywhere in the environment. Documented in `panel_remount/task.py`'s
+own header comment so the next person doesn't rediscover it by watching an
+object fall through the world.
+Source: `docs/mission_a_panel_remount.md`.
