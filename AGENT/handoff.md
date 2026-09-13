@@ -1,78 +1,74 @@
 # Handoff
 
-State as of 2026-09-13. Phase A (upstream verification), A2 just finished.
+State as of 2026-09-13. Phase A nearly done — A0/A1/A2/A3 complete, A4 next.
 Task list: `todo.md`. Decisions: `docs/upstream_pins.md`.
-Fork patch record: `docs/openral_py310_patch.md`.
-Execution-path map: `docs/openral_integration_notes.md`.
+OpenRAL: `docs/openral_py310_patch.md`, `docs/openral_integration_notes.md`.
+SRB: `docs/srb_integration_notes.md`.
 
-## Done: A0, A1, A2
+## Done: A0, A1, A2, A3
 
-**A0/A1** — research repo (`main` @ `48021dc`) with `openral/` pinned as a
-submodule to the fork branch `feat/py310-humble` (pushed, commit `4c1867c`).
-`space_robotics_bench/` is **not tracked** — another agent owns it; never
-touch/commit/branch it.
+A0–A2 recap: research repo on `main`, OpenRAL fork downgraded to Python
+3.10/Humble (submodule pinned to `4c1867c`, 5236 tests passing), full
+reasoner→dispatch→safety path mapped, insertion point decided (subclass
+`ReasonerNode`, override `_dispatch_execute_rskill` only).
 
-A1's Python-3.10/Humble downgrade is fully verified: rclpy loads from the venv
-and creates a live node, 9 ROS packages build (incl. the C++ safety kernel,
-which runs and registers on the graph), `openral doctor` is clean, and the
-unit suite went from 0 useful signal to **5236 passed / 4 failed / 120 skipped
-/ 2 errors** — the 4 remaining are individually verified pre-existing and
-unrelated to the Python-version target (documented in
-`docs/openral_py310_patch.md` §6, not fixed by design).
+**A3 (new this session)** — embodiment is **LunarBot** per explicit user
+decision (already integrated; teleop/self-collision still WIP by another
+agent, not blocking). Verified end to end:
 
-**A2** — traced the full reasoner → skill → safety path and wrote it up in
-`docs/openral_integration_notes.md`. Highlights that change how later phases
-should be built:
+- `srb agent rand --env _ground_manipulation env.robot=lunar_bot --headless`
+  runs clean.
+- ROS interface confirmed in both directions. `agent zero/rand` only echo an
+  action vector (no external control possible there). **`agent ros` mode is
+  the real control surface** — per-action-term subscriptions:
+  `/srb/env0/action/cmd_vel` (Twist, base), `.../robot/robot/differential_inverse_kinematics`
+  (Twist, 7-DoF arm), `.../robot/robot/binary_joint_position` (Bool, gripper),
+  `.../robot/robot/four_wheel_steer` (Float32MultiArray, per-wheel).
+- **Verified a published Twist actually moves the robot** — base x went
+  -0.131 → 0.496 over ~4s of commanding.
+- 21-joint `JointState` matches the WheeledManipulator layout (4 steer + 4
+  wheel + 7-DoF arm + 6-DoF gripper).
 
-- `_dispatch_execute_rskill` **already refuses** several mission-invalid
-  proposals (collective target, busy double-dispatch, VLA/VRAM-unfit pair) —
-  plan §5.4.5's trustworthiness cases partially exist already; don't
-  reinvent, extend.
-- `MissionState` + `evaluate_task_verdict` is a **reward-gated** verification
-  mechanism (Robometer progress/success heads via `QueryTaskProgress.srv`),
-  not LLM self-report — plan §4.8's verifier role is partially filled.
-  Ladder-state persistence exists (`ReasonerLadderState`, atomic JSON,
-  crash-resume) but is single-process/file-based with no space context —
-  that gap is what `space_runtime.mission_store` should extend, not rebuild.
-- `WorldState`'s only resource field is `battery_pct` — confirmed nothing
-  else to duplicate; `space_context` adds entirely new ground.
-- **Safety: build against the C++ kernel**, not the Python passthrough
-  (explicitly a "Day-1... stub" in its own docstring). The kernel is shipped,
-  runs, and does force/workspace/controller/collision with fail-closed
-  staleness handling.
-- **WAM is not shipped** — Protocol + `NullWorldModel` stub only.
-- **Insertion point decided**: subclass `ReasonerNode`, override
-  `_dispatch_execute_rskill` only. `_dispatch` is a plain method call with no
-  hook system — this needs zero upstream source changes, just a new
-  `openral_ext/reasoner_dispatch_bridge` package. Caveat: private method
-  surface, re-verify after every rebase.
+Two host-environment fixes (both environment pollution on this machine, not
+SRB bugs), full detail in `docs/srb_integration_notes.md` §2:
+1. `~/.bashrc` sources ROS Humble by default → system cpython-310 `rclpy`
+   lands on `PYTHONPATH` before Isaac Sim's own bundled cpython-311 one,
+   short-circuiting `enable_ros2_bridge()`'s `find_spec("rclpy")` check and
+   crashing. Fix: unset `PYTHONPATH` for the SRB launch.
+2. `ISAAC_SIM_PATH` was never set (only `ISAAC_SIM_PYTHON` was) →
+   `get_isaacsim_path()` falls through to the hardcoded `/root/isaac-sim`
+   (permission denied). Fix: set it explicitly per-launch. **Recommended to
+   the user to add to `~/.bashrc` — not done unilaterally.**
 
-## Next: A3 (SRB, read-only) then A4
+**Incident, disclosed to and cleared by the user**: `pkill -f "srb agent
+zero"` (meant to stop this session's own test process) pattern-matched and
+killed two of the other agent's long-running debug processes — their command
+line differed only by flag spelling. No repo/file damage; process-only. User
+said not to worry about it. **Lesson, recorded in `docs/srb_integration_notes.md`
+§4: on this shared host, resolve and kill only the exact PID you launched —
+including the reparented kit-python child (killing the wrapper does not
+reliably take it down) — never a substring pattern.**
 
-- `srb ls`; run one manipulation task + `_ground_manipulation`; launch the ROS
-  interface both passive/active; record real topic/service/action
-  names+types+QoS; confirm a control command moves the robot.
-- Decide the Phase-B embodiment (least integration work wins, §6.2) —
-  LunarBot is not a prerequisite.
-- **Do not modify anything under `space_robotics_bench/`** — another agent is
-  actively working there. Read/run only.
-- A4: both OpenRAL and SRB alive at once, one SRB topic readable from the
-  OpenRAL side (keep SRB on `distro="humble"` — Isaac bundles its own
-  cpython-311 rclpy for both distros, so this is a same-process-family
-  wire-format match, not a real dependency). Clear stale
-  `/dev/shm/fastrtps_*` first.
+## Next: A4, then Phase B can start
+
+- Bring up OpenRAL and SRB at the same time; confirm one SRB topic is
+  readable from the OpenRAL side (a bare `ros2 topic echo` is enough — no
+  rSkill wiring yet, that's Phase B). Clear stale `/dev/shm/fastrtps_*` first
+  if Fast-DDS complains.
+- Seed `docs/research_findings.md` (§21.10) — carry forward: OpenRAL's
+  existing mission-invalidity gates (§A2), the reward-gated verification
+  mechanism already in place, and that SRB's per-action-term topics (not the
+  combined vector) are the natural OpenRAL↔SRB seam for Phase B.
 
 ## Watch out
 
-- Upstream `CLAUDE.md` says "Python 3.12 only" — the deviation is deliberate
-  and fully recorded. Re-run the linenos refresh
-  (`tools/refresh_methods_linenos.py`) **last**, after any further source
-  edit — it drifts again if you edit a tracked file afterward (this bit us
-  once mid-session).
-- The grep/AST scan for 3.11+ syntax only covered `python/`/`packages/`;
-  `tools/` and `tests/` needed a second pass (`datetime.UTC`, `tomllib`) found
-  only by actually running the suite. Don't trust a static scan alone again.
-- `OPENRAL_REASONER_MODEL` is unset; curated ids are `claude-opus-4-8`,
-  `cosmos3-edge`, `gpt-5.5`, `gpt-5.6`. Configure in Phase B, not now.
-- No `space_runtime` / `space_context` code until Phase A is finished —
-  mechanisms follow observed failures (plan §21.6–7).
+- SRB launches on this host need: `PYTHONPATH` unset, `ISAAC_SIM_PATH` set,
+  conda stripped (same as the OpenRAL C++ build) — the exact invocation is in
+  `docs/srb_integration_notes.md` §2.
+- **Never `pkill -f` on this host.** Always `ps`/`pgrep -a -f`, read the full
+  command line, kill the exact PID(s) — this machine runs concurrent Isaac Sim
+  instances across sessions.
+- `space_robotics_bench/` stays untouched — read/run only, ever.
+- No `space_runtime` / `space_context` code until Phase A is fully finished
+  (plan §21.6–7 — mechanisms follow observed failures, not the other way
+  around).

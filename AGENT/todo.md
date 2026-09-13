@@ -3,105 +3,76 @@
 Scope: `execution_plan.md` §18 Phase A + §5.1/§5.2 + §6.1 + §21.1–21.3.
 Exit condition: the actual upstream execution path of OpenRAL and SRB runs on
 this machine, and the real APIs/topics of the pinned revisions are written down.
-No performance threshold required.
 
 **Do not start Phase B (OpenRAL↔SRB control loop) until A4 passes.**
 
 ## Decision D1 — Humble + Python 3.10, fully native ✅ verified
 
-Every machine and every real-robot repo in this lab is Ubuntu 22.04 + Humble.
-Rather than split the reasoner (3.12) from the ROS nodes (3.10) across
-processes — which would mean rewriting `reasoner_node.py`, 5115 lines, against
-plan §0.2/§0.3 — the fork is downgraded to 3.10. Evidence:
-`docs/upstream_pins.md`. Every source deviation: `docs/openral_py310_patch.md`.
+Evidence: `docs/upstream_pins.md`. Fork deviations: `docs/openral_py310_patch.md`.
+
+## Embodiment decision — LunarBot ✅ (user directive, overrides §6.2 heuristic)
+
+Already substantially integrated into SRB (category `mobile_manipulator`,
+type `WheeledManipulator`); teleop/self-collision still WIP by another agent,
+not blocking. Confirmed working end to end in A3.
 
 ---
 
 ## A0 — Research repo skeleton ✅ (commit `baa2799`)
 
-`git init`; §2 skeleton; `openral/` submodule; `space_robotics_bench/`
-deliberately untracked (another agent owns it — **do not touch, do not
-commit, do not branch**).
-
 ## A1 — OpenRAL fork → Python 3.10 on Humble ✅ (openral `4c1867c`, pushed)
 
-Branch `feat/py310-humble`, two commits pushed to the fork, submodule pinned.
-
-- `uv lock`/`uv sync` resolve at 3.10; rclpy loads from the 3.10 venv and
-  creates a live node; 9 ROS packages build (incl. the C++ safety kernel,
-  which runs and registers as `/openral_safety_kernel`); `openral doctor`
-  reports Python 3.10.12 and ROS 2 distro humble as ok.
-- Two host-environment traps found and documented with fixes: Humble's
-  `rosidl` needs `PYTHON_EXECUTABLE` (not just `Python3_EXECUTABLE`); active
-  miniconda `base` shadows system libcurl and breaks the kernel's link — strip
-  `CONDA_*`/miniconda from `PATH` when building C++ packages.
-- **Test suite: 5236 passed, 4 failed, 120 skipped, 2 errors** (from 0 useful
-  signal on the first run). Fixed: `datetime.UTC`/`tomllib` (3.11+, 2
-  genuine production-code gaps + several test files), 7 lerobot-import test
-  files missing the `importorskip` guard, 2 doctest targets that can't import
-  without lerobot, `docs/methods/` line-marker refresh. The 4 remaining
-  failures are verified pre-existing/orthogonal to the Python-version target
-  (see `docs/openral_py310_patch.md` §6) — not fixed, by design.
+5236 passed / 4 failed (verified pre-existing) / 2 errors. Details:
+`docs/openral_py310_patch.md`.
 
 ## A2 — Map the pinned OpenRAL revision ✅ (`docs/openral_integration_notes.md`)
 
-Traced `ReasonerCore.tick` → `ReasonerToolCall` (13-variant union) →
-`_dispatch` → `_dispatch_execute_rskill` (which already refuses collective
-targets, busy-goal double-dispatch, and VLA/VRAM-unfit pairs — pre-existing
-mission-invalidity gates, relevant to plan §5.4.5) → `/openral/execute_rskill`
-→ rSkill step loop → `/openral/candidate_action` → safety → `/openral/safe_action`
-→ HAL. Mapped `MissionState`/`evaluate_task_verdict` (reward-gated
-verification, already substantial — not to be rebuilt), the existing
-crash-resume ladder-state persistence (file-based, single-process, no space
-context — what `space_runtime` extends), `WorldState`'s one resource field
-(`battery_pct` — confirming space-context is genuinely absent, nothing to
-duplicate), the `ReasonerModel`/`REASONER_MODELS` distributed-endpoint
-registry, and the OTel span surface.
+Reasoner → dispatch → rSkill → safety path traced; insertion point decided
+(subclass `ReasonerNode`, override `_dispatch_execute_rskill` only, zero
+upstream changes needed).
 
-**Shipped vs planned, verified in code:**
-- Safety: **C++ kernel is shipped** (force/workspace/controller/collision,
-  fail-closed on stale/unknown state) and more capable than the Python
-  passthrough (n_dof + joint-limit only, explicitly a "Day-1... stub").
-  Build against the C++ kernel.
-- Replanning ladder: retry-cap, attempts-cap→abandon, and subdivide-depth→
-  handoff are code-enforced; "param-tweak"/"substitute-skill" are prompt-only
-  LLM guidance, not separate coded rungs.
-- WAM: Protocol + `NullWorldModel` stub only — no concrete adapter exists.
-  Planned, not shipped.
-- `ReloadGstPipelineTool`: dispatch is a log-and-acknowledge stub (GH-126).
+## A3 — Map the pinned SRB revision ✅ (`docs/srb_integration_notes.md`)
 
-**Insertion point decided (plan §3.2): tool-dispatch wrapper (option 2).**
-`_dispatch` is a plain method call with no ROS indirection and no existing
-hook; a subclass of `ReasonerNode` overriding only `_dispatch_execute_rskill`
-(and optionally `_dispatch_lifecycle_transition`) inserts mission-level
-admissibility with **zero upstream source modification** — `reasoner_node.main()`
-is trivially reimplemented to spin our subclass instead. Caveat: this is a
-private method surface, not a public contract; re-verify after every rebase.
+**Read-only throughout — no edits/commits/branches under `space_robotics_bench/`.**
 
-## A3 — Map the pinned SRB revision  (§6.1, §21.3) — not started
+- `lunar_bot` + `_ground_manipulation` (`env.robot=lunar_bot` Hydra override)
+  runs headless: 729 steps / 20s, ~36 steps/s.
+- ROS interface verified in both directions: `agent zero/rand` publish
+  observation topics + one combined action *echo* (no external control);
+  `agent ros` mode instead subscribes per action-term (`cmd_vel` Twist, IK
+  Twist, gripper Bool, four-wheel-steer array) — this is the real control
+  surface, not the combined vector.
+- **Verified a ROS command actually moves the robot**: publishing
+  `geometry_msgs/Twist` on `/srb/env0/action/cmd_vel` moved `srb/env0/robot`'s
+  base from x=-0.131 to x=0.496 over ~4s.
+- Two host-environment traps found and fixed (both pre-existing conditions of
+  this machine, not SRB bugs): (1) `~/.bashrc`'s default ROS-Humble sourcing
+  puts the system cpython-310 `rclpy` on `PYTHONPATH` ahead of Isaac Sim's own
+  bundled cpython-311 one, breaking `enable_ros2_bridge()`'s early-return
+  check — unset `PYTHONPATH` for the SRB launch. (2) `ISAAC_SIM_PATH` was never
+  set (only `ISAAC_SIM_PYTHON` was), so `get_isaacsim_path()` fell through to
+  the hardcoded `/root/isaac-sim` (permission denied) — set it explicitly per
+  launch; recommended (not done) to add to `~/.bashrc`.
+- 21-joint `JointState` confirms the WheeledManipulator layout (4 steer + 4
+  wheel + 7-DoF arm + 6-DoF gripper).
+- **Process-hygiene incident**: a `pkill -f "srb agent zero"` pattern-matched
+  and killed two of the other agent's long-running debug processes by
+  accident (their command line only differed from this session's test by
+  flag spelling). No repo damage — process-only, user said not to worry about
+  it. Lesson recorded in `docs/srb_integration_notes.md` §4: resolve and kill
+  the exact PID only, never a substring pattern, on this shared host.
 
-Produce `docs/srb_integration_notes.md`. **Read-only — another agent is
-working in that repo. Do not edit, commit, or branch anything under it.**
+## A4 — Phase A exit demonstration — next
 
-- [ ] `srb ls`; run one existing manipulation task headless; run
-      `_ground_manipulation` with a supported mobile manipulator.
-- [ ] Launch the ROS interface passive and active; record **actual**
-      topic/service/action names, types, QoS.
-- [ ] Confirm RGB/depth + robot state + tf publish, and that a control command
-      moves the robot.
-- [ ] Note the first-run shader-compile cost (minutes, `enable_cameras=True`).
-- [ ] Decide the Phase-B embodiment; least integration work wins (§6.2).
-      LunarBot is not a prerequisite.
-
-## A4 — Phase A exit demonstration — not started
-
-- [ ] SRB `_ground_manipulation` running with its ROS interface live, while
-      the OpenRAL graph is up.
-- [ ] One SRB topic readable from the OpenRAL side. Isaac bundles its own
-      cpython-311 rclpy for both distros, so keep SRB on `distro="humble"`.
-      Clear stale `/dev/shm/fastrtps_*` first.
-- [ ] `docs/srb_integration_notes.md` committed.
-- [ ] Seed `docs/research_findings.md` (§21.10).
+- [ ] OpenRAL and SRB alive at the same time; one SRB topic readable from the
+      OpenRAL side (a plain `ros2 topic echo` from an OpenRAL-side shell is
+      sufficient evidence — no rSkill dispatch wiring required yet, that is
+      Phase B). Clear stale `/dev/shm/fastrtps_*` first if Fast-DDS complains.
+- [ ] Commit `docs/srb_integration_notes.md` (done) is already staged;
+      finalize this file's own "done" state once the joint demo runs once.
+- [ ] Seed `docs/research_findings.md` (§21.10) with the mission-relevant
+      findings from A2/A3 (existing mission-invalidity gates, reward-gated
+      verification, per-term action topics as the likely OpenRAL↔SRB seam).
 
 ---
 
@@ -111,7 +82,7 @@ working in that repo. Do not edit, commit, or branch anything under it.**
 - Overwrite-update this file and `handoff.md`; ≤150 lines each (AGENT.md §2).
 - No pytest beyond upstream's own suites (AGENT.md §3).
 - No defensive coding, no hash checks, no corner-case guards (AGENT.md §4).
-- **No `space_runtime` / `space_context` code in Phase A** — only read, run,
-  document. Mechanisms follow observed failures (§21.6–7).
-- Upstream modifications are confined to what `docs/openral_py310_patch.md`
-  records. `space_robotics_bench/` stays untouched.
+- **No `space_runtime` / `space_context` code until Phase A is finished.**
+- Upstream modifications confined to `docs/openral_py310_patch.md`.
+  `space_robotics_bench/` stays untouched — another agent owns it; on this
+  shared host, kill only exact PIDs you launched yourself, never a pattern.
