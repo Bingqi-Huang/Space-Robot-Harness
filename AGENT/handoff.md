@@ -1,83 +1,77 @@
 # Handoff
 
-State as of 2026-09-12. Phase A (upstream verification).
-Task list: `todo.md`. Decision record: `docs/upstream_pins.md`.
+State as of 2026-09-13. Phase A (upstream verification), A2 just finished.
+Task list: `todo.md`. Decisions: `docs/upstream_pins.md`.
 Fork patch record: `docs/openral_py310_patch.md`.
+Execution-path map: `docs/openral_integration_notes.md`.
 
-## Done
+## Done: A0, A1, A2
 
-### A0 — research repo ✅ commit `baa2799`
+**A0/A1** — research repo (`main` @ `48021dc`) with `openral/` pinned as a
+submodule to the fork branch `feat/py310-humble` (pushed, commit `4c1867c`).
+`space_robotics_bench/` is **not tracked** — another agent owns it; never
+touch/commit/branch it.
 
-`git init` at `/mnt/SharedData/Research/Space_Robot_Harness`, branch `main`.
-Execution-plan §2 skeleton, `README.md`, `pyproject.toml` (py3.10),
-`docs/upstream_pins.md`. `openral/` is a submodule pinned at `4700c7a`.
+A1's Python-3.10/Humble downgrade is fully verified: rclpy loads from the venv
+and creates a live node, 9 ROS packages build (incl. the C++ safety kernel,
+which runs and registers on the graph), `openral doctor` is clean, and the
+unit suite went from 0 useful signal to **5236 passed / 4 failed / 120 skipped
+/ 2 errors** — the 4 remaining are individually verified pre-existing and
+unrelated to the Python-version target (documented in
+`docs/openral_py310_patch.md` §6, not fixed by design).
 
-**`space_robotics_bench/` is not tracked** — another agent owns that repo. It is
-in `.gitignore`. Do not edit, commit, branch, or record anything under it. Its
-revision goes in each run manifest instead.
+**A2** — traced the full reasoner → skill → safety path and wrote it up in
+`docs/openral_integration_notes.md`. Highlights that change how later phases
+should be built:
 
-### A1 — OpenRAL fork → Python 3.10 ✅ openral commit `fa7f445`
+- `_dispatch_execute_rskill` **already refuses** several mission-invalid
+  proposals (collective target, busy double-dispatch, VLA/VRAM-unfit pair) —
+  plan §5.4.5's trustworthiness cases partially exist already; don't
+  reinvent, extend.
+- `MissionState` + `evaluate_task_verdict` is a **reward-gated** verification
+  mechanism (Robometer progress/success heads via `QueryTaskProgress.srv`),
+  not LLM self-report — plan §4.8's verifier role is partially filled.
+  Ladder-state persistence exists (`ReasonerLadderState`, atomic JSON,
+  crash-resume) but is single-process/file-based with no space context —
+  that gap is what `space_runtime.mission_store` should extend, not rebuild.
+- `WorldState`'s only resource field is `battery_pct` — confirmed nothing
+  else to duplicate; `space_context` adds entirely new ground.
+- **Safety: build against the C++ kernel**, not the Python passthrough
+  (explicitly a "Day-1... stub" in its own docstring). The kernel is shipped,
+  runs, and does force/workspace/controller/collision with fail-closed
+  staleness handling.
+- **WAM is not shipped** — Protocol + `NullWorldModel` stub only.
+- **Insertion point decided**: subclass `ReasonerNode`, override
+  `_dispatch_execute_rskill` only. `_dispatch` is a plain method call with no
+  hook system — this needs zero upstream source changes, just a new
+  `openral_ext/reasoner_dispatch_bridge` package. Caveat: private method
+  surface, re-verify after every rebase.
 
-Branch `feat/py310-humble` off `4700c7a`, committed, **not yet pushed**.
+## Next: A3 (SRB, read-only) then A4
 
-Verified end to end:
-
-| Check | Result |
-|---|---|
-| `uv lock` | resolves at `==3.10.*`, 236 packages |
-| `uv sync --all-packages` | ok, venv is Python 3.10.12 |
-| **rclpy from the 3.10 venv** | **loads Humble's `cpython-310` binary and creates a live node** |
-| pure-python imports | `openral_core` / `reasoner` / `world_state` / `hal` ok |
-| rclpy chain | `rskill_ros → runner → hal` ok; `reasoner_node` (5115 lines) imports |
-| colcon | 9 packages built (msgs, foxglove_bringup, world_state, reasoner_ros, rskill_ros, safety, perception_ros, otel_cpp_vendor, safety_kernel) |
-| `openral doctor` | Python 3.10.12 ok · ROS 2 distro **humble** ok · colcon ok · 2× RTX 5090 · cuMotion ok |
-| C++ safety kernel | runs, registers as `/openral_safety_kernel` lifecycle node |
-
-Source changes: `requires-python` → `>=3.10,<3.11` (15 files); every `lerobot`
-requirement removed (base deps, two extras, nine dependency groups, the
-libero↔robocasa conflicts pair); `so100_sim` behind a PEP 562 `__getattr__`;
-`StrEnum` → `(str, Enum)`; `typing.Self` → `typing_extensions.Self`.
-Only `numpy` moves versus upstream (2.2.6).
-
-## Two host traps — read before any colcon build
-
-1. **Humble's `rosidl` reads `PYTHON_EXECUTABLE`, not `Python3_EXECUTABLE`.**
-   Upstream's `just ros2-build` sets only the latter, so CMake picks its own
-   interpreter. The failure surfaces as
-   `ImportError: cannot import name 'generate_py' from 'rosidl_generator_py'`,
-   because `rosidl_generator_py/__init__.py` swallows the real cause in a bare
-   `except ImportError`. Pass **both** variables.
-2. **miniconda `base` is active in every login shell here.** It shadows system
-   libraries. Its `libcurl.so.4.8.0` has zero `CURL_OPENSSL_4` symbols while
-   Ubuntu's `4.7.0` has 88, so `openral_safety_kernel` fails to link against
-   `libopentelemetry_http_client_curl.so` with a wall of
-   `undefined reference to 'curl_*@CURL_OPENSSL_4'`. Strip `CONDA_*` and
-   miniconda from `PATH` when building C++ packages — the exact `env -u ...`
-   invocation is in `docs/openral_py310_patch.md`. Isaac Sim's `python.sh` warns
-   about the same condition.
-
-Both discoveries came from the Humble path being CI-unverified upstream
-(`test-ros2.yml` runs Jazzy only; `tests/README.md`'s humble+jazzy claim is
-stale).
-
-## Next
-
-1. Two apt installs — needs the user (`!` prefix):
-   `ros-humble-foxglove-bridge ros-humble-octomap-server ros-humble-nav2-bringup
-   ros-humble-nav2-msgs ros-humble-slam-toolbox`, and `just`.
-   The first two are `exec_depend`s of `openral_rskill_ros`; Nav2/SLAM are what
-   navigation will need (§8.1). `just` is warned about by `openral doctor`.
-2. Run OpenRAL's own test suite once on 3.10; record pass/fail.
-3. Push `feat/py310-humble`; bump the submodule pointer in the research repo.
-4. A2 — trace the OpenRAL execution path into `docs/openral_integration_notes.md`.
-5. A3 — map SRB **read-only**.
+- `srb ls`; run one manipulation task + `_ground_manipulation`; launch the ROS
+  interface both passive/active; record real topic/service/action
+  names+types+QoS; confirm a control command moves the robot.
+- Decide the Phase-B embodiment (least integration work wins, §6.2) —
+  LunarBot is not a prerequisite.
+- **Do not modify anything under `space_robotics_bench/`** — another agent is
+  actively working there. Read/run only.
+- A4: both OpenRAL and SRB alive at once, one SRB topic readable from the
+  OpenRAL side (keep SRB on `distro="humble"` — Isaac bundles its own
+  cpython-311 rclpy for both distros, so this is a same-process-family
+  wire-format match, not a real dependency). Clear stale
+  `/dev/shm/fastrtps_*` first.
 
 ## Watch out
 
-- Upstream `CLAUDE.md` says "Python 3.12 only". The deviation is deliberate and
-  fully recorded so rebases stay mechanical. Re-run the AST scan for 3.11+
-  `typing` names after any rebase — a line-oriented grep misses the multi-line
-  `from typing import (...)` form, which is how `Self` was missed the first time.
+- Upstream `CLAUDE.md` says "Python 3.12 only" — the deviation is deliberate
+  and fully recorded. Re-run the linenos refresh
+  (`tools/refresh_methods_linenos.py`) **last**, after any further source
+  edit — it drifts again if you edit a tracked file afterward (this bit us
+  once mid-session).
+- The grep/AST scan for 3.11+ syntax only covered `python/`/`packages/`;
+  `tools/` and `tests/` needed a second pass (`datetime.UTC`, `tomllib`) found
+  only by actually running the suite. Don't trust a static scan alone again.
 - `OPENRAL_REASONER_MODEL` is unset; curated ids are `claude-opus-4-8`,
   `cosmos3-edge`, `gpt-5.5`, `gpt-5.6`. Configure in Phase B, not now.
 - No `space_runtime` / `space_context` code until Phase A is finished —

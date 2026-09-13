@@ -175,6 +175,76 @@ Isaac Sim's `python.sh` warns about the same condition
 None of these are on this project's path, and the first is equally unavailable
 on the real LunarBot, which is also Humble/3.10.
 
+## 6. Test suite — `just test` on this fork (commit `4c1867c`)
+
+`5236 passed, 4 failed, 120 skipped, 2 errors` (up from 0 useful signal on the
+first run — a mass collection failure). Every fix that follows was a genuine
+Python 3.10 gap found by actually running the suite, not predicted in advance;
+the earlier grep/AST scans (§5) only covered `python/` and `packages/`, missing
+`tools/` and `tests/` entirely.
+
+### Two production-code gaps (not test-only)
+
+- **`datetime.UTC` (3.11+)**, 7 sites / 5 files: `openral_cli/check.py`,
+  `openral_detect/detect.py` + `compatibility.py` (×2),
+  `openral_reasoner_ros/reasoner_node.py`'s `_memory_now` (on our critical
+  path — reasoner memory-archive timestamps), and `tools/validation_matrix.py`
+  (×2). All replaced with `datetime.timezone.utc` (identical value, present
+  since 3.2).
+- **`tools/select_tests.py`**: bare `import tomllib`. Given the same
+  stdlib-first fallback as the test files below; `tomli` is now an explicit
+  `dev`-group dependency (`pyproject.toml`) rather than riding in
+  transitively via mypy's `toml` extra.
+
+### Test-only fixes (mirror a convention this suite already uses elsewhere)
+
+- `import tomllib` → stdlib-first `tomli` fallback in 5 files:
+  `test_install_command.py`, `test_lockstep_versions.py`,
+  `test_omdet_turbo_detector.py`, `test_locateanything_detector.py`,
+  `test_qwen_scene_vlm.py`.
+- `pytest.importorskip("lerobot", ...)` added to 5 files that import
+  `openral_hal.so100_sim`/`so100_follower` without the guard every other
+  lerobot-dependent test already carries: `test_so100_follower_hal.py`,
+  `test_thumbnail_throttle.py`, `test_deploy_runner.py`,
+  `test_deploy_runner_dataset_recording.py`,
+  `test_deploy_runner_observability.py`. Two more converted to a
+  whole-module skip (every test in the file needs lerobot):
+  `test_vla_core_rtc.py`, `test_chunked_executor_rtc.py`.
+- `test_doctest_runner.py`'s curated `DOCTEST_TARGETS`: `so100_sim.py`
+  (imports lerobot at module scope — unimportable by path even with the
+  `openral_hal.__getattr__` lazy shim, which only helps attribute access
+  *through* the package) and `so100_follower.py` (its own docstring example
+  imports `so100_sim`) commented out in place, not deleted, so a rebase onto
+  a 3.12 target restores both trivially.
+- `docs/methods/*.md` `(LNN)` markers refreshed via
+  `tools/refresh_methods_linenos.py` (CLAUDE.md's documented remedy) after
+  the line-shifting edits above. **Re-run this after any further edit** —
+  editing `tools/validation_matrix.py` and `tools/select_tests.py` a second
+  time re-drifted `docs/methods/10-tools.md` before I caught it.
+
+### Left deliberately unfixed — verified orthogonal to the 3.10/Humble target
+
+Each of these would fail identically on Jazzy in the same environment; fixing
+them would mean editing a further subsystem this patch has no reason to touch.
+
+- `test_install_command.py::test_groups_mirror_workspace_root_pyproject` —
+  checks that `openral_cli.install._GROUPS` (the standalone curl-bash Tier-0
+  installer's own copy of the dependency-groups table) mirrors the workspace
+  root `pyproject.toml`. It now legitimately doesn't, since the lerobot-only
+  groups were removed from the latter and `openral install <group>` is not
+  part of this project's workflow.
+- `test_runtime.py::test_load_safetensors_*` (2) and
+  `test_quantize_rskill_auto_map.py` / `test_quantize_rskill_remote_code_gate.py`
+  (2, collection errors) — `safetensors` resolves in `uv.lock` (a transitive
+  dependency of several optional VLA/HF groups) but is not installed by a bare
+  `uv sync --all-packages`, on any Python version. `test_runtime.py`'s own
+  module docstring promises "marked with `pytest.importorskip` inside each
+  test method"; these two specific tests never got it — a pre-existing gap in
+  the test file itself.
+- `test_sensor_ros_publisher.py::test_camera_info_intrinsics_scale_with_a_downscaled_image`
+  — passes `stamp=None` into a real `std_msgs/Header.stamp` setter, which
+  asserts the value is a `builtin_interfaces/Time`. A pre-existing test bug.
+
 ## Rebasing onto upstream
 
 Re-apply in this order; nothing here depends on upstream internals beyond the
@@ -186,3 +256,6 @@ lines it touches:
 3. Re-apply the lazy import and the `StrEnum` replacements if upstream reverted them.
 4. `uv lock` — treat a failure as a new 3.12-only dependency and find it in the
    solver output, which names the package and the group that pulled it.
+5. Re-run `just test`; re-apply §6's `datetime.UTC`/`tomllib`/`importorskip`/
+   `DOCTEST_TARGETS` fixes against whatever grep/AST missed this time, then
+   `tools/refresh_methods_linenos.py` last, after every other edit.
