@@ -1,73 +1,45 @@
 # Handoff
 
 State as of 2026-09-13. Phase A complete. Phase B slices 1–3 done and
-verified live: LunarBot is now a genuine mobile manipulator — base
-(BODY_TWIST), arm (CARTESIAN_TWIST), and gripper (GRIPPER_BINARY) all drive
-through the real safety chain from one unified HAL. F12, F16 (a second
-instance of F12's bug class, for CARTESIAN_TWIST's angular bound) both
-fixed; F15 closed as a false alarm; F17 (multi-node estop reset) documented.
-Task list: `todo.md`. Records: `docs/phase_b_lunar_bot_hal.md`,
-`docs/phase_b_procedural_kind.md`, `docs/f12_body_twist_envelope_fix.md`,
-`docs/phase_b_lunar_bot_arm_gripper.md`. Findings: `docs/research_findings.md`.
+verified live: LunarBot is a genuine mobile manipulator — base
+(BODY_TWIST), arm (CARTESIAN_TWIST **and now JOINT_POSITION**), and
+gripper (GRIPPER_BINARY) all drive through the real safety chain from one
+unified HAL. Mission A's SRB task (`panel_remount`) is built and verified.
+F12/F16 fixed, F15 closed as a false alarm, F17–F20 found (see below).
+Task list: `todo.md`. Findings: `docs/research_findings.md`. Key docs:
+`docs/phase_b_lunar_bot_arm_gripper.md`, `docs/mission_a_panel_remount.md`,
+`docs/lunar_bot_joint_position_control.md`.
 
 ## Where things stand
 
-Branch chain: `feat/py310-humble` → `feat/lunar-bot-hal` (`f47e966`) →
-`fix/body-twist-speed-envelope` (`fabe588`, pushed) →
-`feat/lunar-bot-arm-gripper` (`af8fba2`, pushed). All still open; none
-merged yet.
+Branch chains — openral: `feat/py310-humble` → `feat/lunar-bot-hal`
+(`f47e966`) → `fix/body-twist-speed-envelope` (`fabe588`) →
+`feat/lunar-bot-arm-gripper` (`af8fba2`) → `feat/arm-joint-position-control`
+(current). SRB: `main` (`9caeb46`) → `feat/panel-remount-mission-a`
+(`b3e8d92`) → `feat/switchable-arm-control` (`90f9d5e`). All pushed, all
+still open, none merged.
 
-**`space_robotics_bench/` is now a real git submodule** (`docs/upstream_pins.md`),
-pinned at `9caeb46`, same discipline as `openral/` — the agent that
-developed it independently no longer manages it, so this project now
-edits/commits there directly.
+**`space_robotics_bench/` is a real git submodule** (`docs/upstream_pins.md`)
+— the agent that developed it independently no longer manages it, so this
+project edits/commits there directly now, same discipline as `openral/`.
 
-`LunarBotSRBHAL.send_action` now dispatches BODY_TWIST / CARTESIAN_TWIST /
-GRIPPER_BINARY. The arm's SRB action (`differential_inverse_kinematics`) is
-NOT a native velocity controller — it's a scaled per-step position delta
-recomputed from the current measured pose every step (confirmed by reading
-Isaac Lab's own source, not guessed from the `Twist` message type); holding
-a constant raw value produces continuous motion proportional to its
-magnitude (functionally a velocity from outside), so the HAL converts using
-empirically-measured (pose-dependent, deliberately conservative)
-constants — see `docs/phase_b_lunar_bot_arm_gripper.md` for the full table.
-The gripper's `binary_joint_position` Bool is **inverted**: `True` = close,
-`False` = open (confirmed live). Both facts came from reading
-`space_robotics_bench/` read-only (never modified) plus the vendored Isaac
-Lab source at `~/isaaclab/`.
+## Next — infrastructure ready; Mission A's instruction text is next
 
-While wiring the arm, found F16: `max_ee_angular_speed_rad_s` (CARTESIAN_
-TWIST's angular bound) had the exact same "declared, not enforced" gap F12
-found for BODY_TWIST — fixed the same way, verified live end-to-end.
-
-## Next — `panel_remount` SRB task done; Mission A's instruction text is next
-
-No existing SRB task fit Mission A (plan §6.4): `_ground_manipulation` is a
-bare scaffold; every task with real objects (`solar_panel_assembly`,
-`screwdriving`, `peg_in_hole_assembly`, etc.) is `ManipulationEnv`-only
-(fixed-base arm, type-incompatible with LunarBot's `WheeledManipulator`);
-the one mobile-manipulator task (`mobile_debris_capture`) is
-`OrbitalManipulationEnv` (orbital, not ground). None of SRB's tasks have a
-real binary success condition either — this project's own verification
-layer (plan §4.4) was always going to have to supply that.
-
-**Built and verified live (2026-09-13)**: `space_robotics_bench/srb/tasks/
-mobile_manipulation/panel_remount/` — a solar panel knocked off its
-pedestal mount; robot must locate, pick up, and remount it within
-tolerance. Mirrors `solar_panel_assembly`'s structure on
-`GroundManipulationEnv`. Has a genuine binary success termination (position
-+ orientation tolerance) — the first in any SRB task. Full record:
-`docs/mission_a_panel_remount.md`. Found + fixed F18 along the way (see
-reference section below). Single pedestal+panel pair for v1 — §6.4's
-"multiple candidate components" is a deliberate, documented simplification.
+Per the user's explicit call ("先把基础设施准备好" — get the infrastructure
+ready first, no rush): before writing Mission A's plain-language
+instruction, a scripted pick-and-place feasibility check was run against
+`panel_remount`, which surfaced that CARTESIAN_TWIST-only arm control
+wasn't going to cut it — leading to JOINT_POSITION control (F19, F20; full
+story in `docs/lunar_bot_joint_position_control.md`).
 
 **Not yet started**: Mission A's plain-language instruction text itself
 (plan §21 item 5), then run generic/unmodified OpenRAL against this scene
 and save traces (item 6) — that's what should motivate `space_runtime`'s
-first schemas (item 7), not intuition.
-
-Still open, not blocking: the same missing-magnitude-check gap for
-`kJointTrajectory`/`kCartesianDelta`/`kGripperBinary` (per-joint)/
+first schemas (item 7), not intuition. Also open: F19 (base `cmd_vel`
+in-place-rotation instability — probably don't rely on it for precise
+heading control yet), no arm joint position limits declared (a real,
+flagged gap), and the same missing-magnitude-check gap for
+`kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`(per-joint)/
 `kGripperPosition`/`kCompositeMode` (F12/F16's sibling gap, untouched).
 
 ## Environment reference (reusable, don't rediscover)
@@ -94,6 +66,18 @@ Still open, not blocking: the same missing-magnitude-check gap for
   indefinitely in the Moon's weak gravity instead of settling. Keep any new
   scene object within ~1.5–2 m of the env origin unless you've confirmed
   the terrain is flat further out.
+- **F19 — LunarBot's base drifts/rotates incoherently on a large in-place
+  `cmd_vel` turn** (likely the 4WIS/4WID `max_steering_angle: 120°` limit
+  saturating for a real pivot). Also don't forget `scale_linear=-1.0`/
+  `scale_angular=-1.0` (already in `lunarbot.py`) — a naive P-controller
+  drives the wrong way unless negated. Not resolved; avoid relying on
+  `cmd_vel` for precise heading control until this is understood.
+- **F20 — a JOINT_* chunk's wire row is ALWAYS the full robot-wide vector**,
+  even when `action.joint_names` names a subset (ADR-0102) — the C++
+  kernel's structural check forces `chunk.n_dof == envelope.n_dof`
+  regardless. `joint_names` only marks which slots are the real ones; it
+  never shrinks the row. Caught this the hard way (silently dropped every
+  JOINT_POSITION dispatch) — see `docs/lunar_bot_joint_position_control.md`.
 - `RskillRunnerNode` is constructed directly in Python — mirror `compose.py`:
   construct with `skill_resolver=None`, then swap `node._skill_resolver =
   make_default_skill_resolver(node, search_paths=["rskills"])` before

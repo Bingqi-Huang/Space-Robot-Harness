@@ -362,3 +362,49 @@ height anywhere in the environment. Documented in `panel_remount/task.py`'s
 own header comment so the next person doesn't rediscover it by watching an
 object fall through the world.
 Source: `docs/mission_a_panel_remount.md`.
+
+### F19 — LunarBot's base drifts/rotates incoherently on a large in-place turn command
+
+Found while scripting a closed-loop base-approach controller for the
+feasibility check above. Commanding a large `angular.z` on `cmd_vel` to
+turn the base to face a target barely rotated it (a few degrees over
+several seconds of a saturated command) while the base **translated**
+substantially in an unintended direction instead. Root cause not fully
+pinned down, but the leading hypothesis is `FourWheelSteerActionCfg`'s
+`max_steering_angle: 120°` limit: a genuine in-place spin needs some
+wheels steered near/at that limit, and saturation there could produce an
+inconsistent resultant motion (part rotation, part unwanted translation)
+rather than a clean pivot. Also confirmed separately:
+`scale_linear=-1.0`/`scale_angular=-1.0` (already documented in
+`lunarbot.py`) means a naive "positive error → positive command" P
+controller drives the wrong way unless negated.
+
+**Design implication:** a real base-approach controller for this rover
+probably needs to avoid commanding large in-place rotations at all — curve
+while driving forward (car-like), rather than stop-turn-then-drive — or
+this needs further investigation into the steering saturation hypothesis
+before relying on `cmd_vel` for precise heading control. Not yet resolved;
+not blocking Mission A's other infrastructure work, but will need
+addressing before a real navigation-to-target skill is built.
+Source: this session's feasibility-check scratch work (not separately
+documented as its own doc — the fix that mattered this session was adding
+JOINT_POSITION control for the arm, per the user's direction; see
+`docs/lunar_bot_joint_position_control.md`).
+
+### F20 — JOINT_POSITION's wire row is always full-width, even when `joint_names` is set
+
+Found during first live E2E test of the new JOINT_POSITION control mode
+(`docs/lunar_bot_joint_position_control.md`): the HAL wrongly assumed that
+when `action.joint_names` names a subset of joints (ADR-0102), the wire
+row is *also* only that many elements wide. It is not — the C++ safety
+kernel's structural check (`validator.cpp`'s `is_joint_mode` branch) forces
+every JOINT_* chunk's `n_dof` to equal the envelope's *full* joint count
+regardless of `joint_names`, so the row is always full-width (zero-padded
+in the slots the emitter doesn't care about) and `joint_names` only marks
+*which* of those full-width slots are the real ones. The bug was caught
+immediately by live testing (the arm didn't move at all — the HAL was
+silently throwing and dropping every JOINT_POSITION chunk); a pure
+code-review pass without a live test would likely have missed it, since
+the unit tests (written before the live test) encoded the same wrong
+assumption and passed against it.
+Source: `docs/lunar_bot_joint_position_control.md`.

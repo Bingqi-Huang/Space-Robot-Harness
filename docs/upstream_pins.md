@@ -7,20 +7,22 @@ and every experimental campaign to name the exact commits it ran against.
 
 | Project | Fork | Branch | Commit | Upstream | Tracking |
 |---|---|---|---|---|---|
-| OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-arm-gripper` | `af8fba2` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
-| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `feat/panel-remount-mission-a` | `b3e8d92` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
+| OpenRAL | `DsslRobot/openral` | `feat/arm-joint-position-control` | `a785b88` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
+| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `feat/switchable-arm-control` | `90f9d5e` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
 
-OpenRAL's pin has moved six times since the initial `4700c7a`:
+OpenRAL's pin has moved seven times since the initial `4700c7a`:
 `fa7f445`/`4c1867c` (Python 3.10/Humble downgrade,
 `docs/openral_py310_patch.md`), `af61568` (the `lunar_bot` HAL,
 `docs/phase_b_lunar_bot_hal.md`), `f47e966` (the `procedural` rSkill kind,
 `docs/phase_b_procedural_kind.md`), `fabe588` (BODY_TWIST base-speed envelope
 enforcement, `docs/f12_body_twist_envelope_fix.md`), `1a6139f` (CARTESIAN_TWIST
 angular-speed enforcement, F16), `af8fba2` (arm + gripper unified into the
-LunarBot HAL, `docs/phase_b_lunar_bot_arm_gripper.md`) — the current commit is
-on branch `feat/lunar-bot-arm-gripper`, built on top of
-`fix/body-twist-speed-envelope` → `feat/lunar-bot-hal` → `feat/py310-humble`,
-not yet merged (Phase B work continues on it).
+LunarBot HAL, `docs/phase_b_lunar_bot_arm_gripper.md`), `a785b88`
+(JOINT_POSITION arm control, `docs/lunar_bot_joint_position_control.md`) —
+the current commit is on branch `feat/arm-joint-position-control`, built on
+top of `feat/lunar-bot-arm-gripper` → `fix/body-twist-speed-envelope` →
+`feat/lunar-bot-hal` → `feat/py310-humble`, not yet merged (Phase B work
+continues on it).
 
 Space Robotics Bench was tracked loosely at first (excluded via `.gitignore`,
 commit recorded only in run manifests per §19) while another agent was
@@ -31,10 +33,12 @@ OpenRAL: a git submodule at `space_robotics_bench/`, tracking
 `DsslRobot/space_robotics_bench` (itself a fork of the real upstream,
 `AndrejOrsula/space_robotics_bench`, same relationship OpenRAL's fork has to
 `OpenRAL/openral`), bumped and committed explicitly whenever this project
-changes something in it. First such change: `b3e8d92` adds the
-`panel_remount` Mission A task (`docs/mission_a_panel_remount.md`) directly
-under `srb/tasks/mobile_manipulation/`, on branch
-`feat/panel-remount-mission-a`, pushed, not yet merged. Every experimental
+changes something in it. Pin has moved twice so far: `b3e8d92` adds the
+`panel_remount` Mission A task (`docs/mission_a_panel_remount.md`);
+`90f9d5e` adds `SwitchableArmAction` (IK-twist + joint-position control in
+one slot, `docs/lunar_bot_joint_position_control.md`) — the current commit
+is on branch `feat/switchable-arm-control`, built on top of
+`feat/panel-remount-mission-a` → `main`, not yet merged. Every experimental
 run manifest (§19) should still record the exact commit it ran against —
 the submodule pin makes that commit reconstructible from this repo alone,
 it doesn't replace per-run provenance.
