@@ -14,8 +14,13 @@ Task list: `todo.md`. Records: `docs/phase_b_lunar_bot_hal.md`,
 
 Branch chain: `feat/py310-humble` → `feat/lunar-bot-hal` (`f47e966`) →
 `fix/body-twist-speed-envelope` (`fabe588`, pushed) →
-`feat/lunar-bot-arm-gripper` (current, **not yet committed** as of this
-handoff — see Next). All still open; none merged yet.
+`feat/lunar-bot-arm-gripper` (`af8fba2`, pushed). All still open; none
+merged yet.
+
+**`space_robotics_bench/` is now a real git submodule** (`docs/upstream_pins.md`),
+pinned at `9caeb46`, same discipline as `openral/` — the agent that
+developed it independently no longer manages it, so this project now
+edits/commits there directly.
 
 `LunarBotSRBHAL.send_action` now dispatches BODY_TWIST / CARTESIAN_TWIST /
 GRIPPER_BINARY. The arm's SRB action (`differential_inverse_kinematics`) is
@@ -35,19 +40,45 @@ While wiring the arm, found F16: `max_ee_angular_speed_rad_s` (CARTESIAN_
 TWIST's angular bound) had the exact same "declared, not enforced" gap F12
 found for BODY_TWIST — fixed the same way, verified live end-to-end.
 
-## Next
+## Next — Mission A needs a new SRB task; none exist for LunarBot today
 
-1. Commit + push the current uncommitted work on `feat/lunar-bot-arm-gripper`
-   (C++ angular-speed fix, `LunarBotSRBHAL` arm/gripper dispatch, lifecycle
-   node transport, `robot.yaml` updates, new unit tests, the two new docs).
-   Bump the research repo's submodule pointer + commit there too.
-2. Then proceed to **Mission A** (plan §21 items 5–6): define a plain
-   mission instruction (needs manipulation now that it's wired, per
-   `execution_plan.md` §6.4), run generic OpenRAL against it, save traces,
-   document real failure modes.
-3. Still open, not blocking Mission A: the same missing-magnitude-check gap
-   for `kJointTrajectory`/`kCartesianDelta`/`kGripperBinary` (per-joint)/
-   `kGripperPosition`/`kCompositeMode` (F12/F16's sibling gap, untouched).
+Investigated (2026-09-13) what SRB task could serve as Mission A (plan §6.4:
+infrastructure inspection/maintenance, plain instruction not action
+sequence). **Finding: nothing usable exists yet.**
+
+- `_ground_manipulation` (what Phase B's HAL tests reused) is a bare
+  scaffold — no objects, no fault, no success condition.
+- Every task with real objects/rewards (`solar_panel_assembly`,
+  `screwdriving`, `peg_in_hole_assembly`, `sample_collection`, `excavation`)
+  is built on `ManipulationEnv` (`robot: Manipulator`) — fixed-base arms
+  only, type-incompatible with LunarBot's `WheeledManipulator`.
+- The one mobile-manipulator task, `mobile_debris_capture`, is built on
+  `OrbitalManipulationEnv` — a free-flying orbital arm, not a ground rover.
+- None of SRB's existing tasks have a real binary success/termination
+  condition anyway (`termination = torch.zeros(...)`, always) — this
+  project's own verification layer (plan §4.4) was always going to have to
+  supply that regardless of which scene gets picked.
+
+Decided: write Mission A's task directly inside `space_robotics_bench/`
+(`srb/tasks/mobile_manipulation/`), following the `solar_panel_assembly`
+pattern but rebased onto `GroundManipulationEnv` for `lunar_bot`. Reuse
+existing assets — `solar_panel.usdz`, `industrial_pedestal_*.usdz`,
+`bolt_hex_m8`/`nut_hex_m8` (has a "tight" variant — a loosened-bolt fault is
+right there), `screwdriver_hex_m3/m5.usdz` — all already in
+`assets/srb_assets/object/`. Task registration (`register_srb_tasks` →
+`gymnasium.register`) isn't restricted to files inside SRB's own tree, but
+since we now own this fork, there's no reason to register externally —
+put it where `solar_panel_assembly` etc. already are.
+
+**Not yet started**: the actual task/scene file, and defining the plain-
+English mission instruction text itself (plan §21 item 5) once the scene
+exists. Then run generic/unmodified OpenRAL against it and save traces
+(item 6) — that's what should motivate `space_runtime`'s first schemas
+(item 7), not intuition.
+
+Still open, not blocking: the same missing-magnitude-check gap for
+`kJointTrajectory`/`kCartesianDelta`/`kGripperBinary` (per-joint)/
+`kGripperPosition`/`kCompositeMode` (F12/F16's sibling gap, untouched).
 
 ## Environment reference (reusable, don't rediscover)
 
@@ -90,8 +121,11 @@ found for BODY_TWIST — fixed the same way, verified live end-to-end.
   is a race — spin through the wait (`rclpy.spin_once` in a loop), don't
   sleep through it, or a stale TRANSIENT_LOCAL message gets misread as a
   fresh response.
-- `space_robotics_bench/` stays untouched — read/run only, ever (reading it
-  to understand SRB's real action mechanics, as done for this slice, is
-  fine and expected; editing/committing is not).
+- `space_robotics_bench/` is now a real git submodule, formally pinned like
+  `openral/` (2026-09-13) — the agent that developed it independently no
+  longer manages it, so editing/committing there is fine now, same branch +
+  commit discipline as `openral/`. (This reverses the earlier "read/run
+  only" rule from Phase B slices 1–3 — that was about not colliding with
+  concurrent work, not a permanent restriction.)
 - No `space_runtime`/`space_context` code until Phase B observes real
   failures calling for it (plan §21.6–7).

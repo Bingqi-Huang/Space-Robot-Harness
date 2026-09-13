@@ -42,28 +42,15 @@ occasional safety-stale abort as expected, and note it's exactly the class
 of event execution_plan.md §5.4.4/§13.6 already want to study, not a
 nuisance. Full record: `docs/research_findings.md` F15.
 
-**F12 — investigated 2026-09-13, then FIXED 2026-09-13 per user decision
-("按照他们的规范来把这个补上，这就是我们科学贡献的一部分了").**
-`max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` were enforced by
-nothing (root cause: kernel and Python supervisor each named the other as
-responsible; `kernel_params_from_envelope()` didn't even forward the value).
-Verified live pre-fix: `lunar_bot` at 6.0 m/s (20× the declared 0.3 m/s
-bound) moved the full distance, zero rejection. **Fixed for BODY_TWIST**:
-new envelope fields (Python dataclass + C++ struct + ROS params), `validator.cpp`'s
-`kBodyTwist` split out of the shared Python-delegation case into a real
-linear/angular magnitude check mirroring `kCartesianTwist`. New gtest
-coverage + full ctest suite pass; re-verified live against a real running
-kernel node — the same 6.0 m/s scenario is now rejected
-(`drop_reason=KIND_FORCE, detail="base_linear_speed"`), same for angular,
-in-bound commands still pass. Full record: `docs/f12_body_twist_envelope_fix.md`,
-`docs/research_findings.md` F12. **Scope: BODY_TWIST only** —
-`kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`/`kGripperPosition`/
-`kCompositeMode` still delegate to the Python stub, same gap, untouched.
-
-**Same missing-magnitude-check gap for** `kJointTrajectory`/
-`kCartesianDelta`/`kGripperBinary`(the shared per-joint bound)/
-`kGripperPosition`/`kCompositeMode` — not part of the F12/F16 fixes, still
-open.
+**F12 — FIXED 2026-09-13** per user decision ("按照他们的规范来把这个补上").
+`max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` were declared but
+enforced by nothing. Fixed in `validator.cpp`'s `kBodyTwist` case (real
+magnitude check, mirroring `kCartesianTwist`); re-verified live — 6.0 m/s
+(20× the declared bound) now rejected. Full record:
+`docs/f12_body_twist_envelope_fix.md`, `docs/research_findings.md` F12.
+**Scope: BODY_TWIST only** — `kJointTrajectory`/`kCartesianDelta`/
+`kGripperBinary`/`kGripperPosition`/`kCompositeMode` still delegate to the
+unlaunched Python stub, same gap, untouched.
 
 ### Slice 3 — Arm + gripper unified into one mobile-manipulator HAL ✅ (2026-09-13)
 
@@ -98,9 +85,26 @@ clear other nodes latched on `/openral/estop` — needs a separate
 `/openral/estop_cleared` broadcast too (normally the dashboard's job, a
 deliberate human-in-the-loop step). See "Watch out" below.
 
-### Then, per plan §21 items 5–6 (not started)
+### Then, per plan §21 items 5–6 — blocked on a new SRB task (in progress)
 
-- [ ] Define Mission A as a plain instruction (no space constraints).
+Investigated 2026-09-13: no existing SRB task fits Mission A + LunarBot.
+`_ground_manipulation` is a bare scaffold; every task with real objects
+(`solar_panel_assembly`, `screwdriving`, `peg_in_hole_assembly`, etc.) is
+`ManipulationEnv`-only (fixed-base arm, type-incompatible with LunarBot's
+`WheeledManipulator`); the one mobile-manipulator task
+(`mobile_debris_capture`) is `OrbitalManipulationEnv` (orbital, not ground).
+Decided: write a new task inside `space_robotics_bench/srb/tasks/
+mobile_manipulation/`, mirroring `solar_panel_assembly`'s structure but on
+`GroundManipulationEnv`, reusing existing assets (`solar_panel.usdz`,
+`industrial_pedestal_*.usdz`, `bolt_hex_m8`/`nut_hex_m8` — has a "tight"
+variant, a ready-made loosened-bolt fault — `screwdriver_hex_m3/m5.usdz`).
+`space_robotics_bench/` is now a proper submodule (see Rules), so this is
+a normal in-repo change, not an external-registration workaround.
+
+- [ ] Write the new task/scene (task.py + asset.py, following
+      `solar_panel_assembly`'s pattern) inside `space_robotics_bench/`.
+- [ ] Define Mission A's plain-language instruction text (no space
+      constraints yet — that's Phase D).
 - [ ] Run generic OpenRAL against it; save traces; document real failure
       modes — this is what should motivate `space_runtime`'s first schemas,
       not intuition.
@@ -117,9 +121,11 @@ deliberate human-in-the-loop step). See "Watch out" below.
 - No defensive coding, no hash checks, no corner-case guards (AGENT.md §4).
 - **No `space_runtime` / `space_context` code until Phase B observes real
   failures calling for it** (plan §21.6–7).
-- `space_robotics_bench/` stays untouched — another agent owns it. On this
-  shared host, kill only exact PIDs you launched yourself, never a pattern
-  (`docs/research_findings.md` F10).
+- `space_robotics_bench/` is now a real git submodule (`docs/upstream_pins.md`,
+  2026-09-13) — the agent that developed it independently no longer manages
+  it, so it is fair game to edit/commit like `openral/`, same branch-per-task
+  + commit discipline. On this shared host, kill only exact PIDs you launched
+  yourself, never a pattern (`docs/research_findings.md` F10).
 - `ros2 lifecycle`/`node list` don't work on this host — use direct
   `lifecycle_msgs/srv/ChangeState`/`GetState` service calls (F14).
 - Any shell running `ros2 action send_goal`/`topic echo` on an

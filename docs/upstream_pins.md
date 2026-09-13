@@ -8,7 +8,7 @@ and every experimental campaign to name the exact commits it ran against.
 | Project | Fork | Branch | Commit | Upstream | Tracking |
 |---|---|---|---|---|---|
 | OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-arm-gripper` | `af8fba2` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
-| Space Robotics Bench | `DsslRobot/space_robotics_bench` | — | `7528ff8` (v0.0.6) | `AndrejOrsula/space_robotics_bench` | **not a submodule** — externally managed, see below |
+| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `main` | `9caeb46` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
 
 OpenRAL's pin has moved six times since the initial `4700c7a`:
 `fa7f445`/`4c1867c` (Python 3.10/Humble downgrade,
@@ -22,9 +22,19 @@ on branch `feat/lunar-bot-arm-gripper`, built on top of
 `fix/body-twist-speed-envelope` → `feat/lunar-bot-hal` → `feat/py310-humble`,
 not yet merged (Phase B work continues on it).
 
-Space Robotics Bench is developed independently of this repository and is
-excluded via `.gitignore`. Record its commit in each run manifest (§19) rather
-than tracking it here.
+Space Robotics Bench was tracked loosely at first (excluded via `.gitignore`,
+commit recorded only in run manifests per §19) while another agent was
+actively developing the `DsslRobot/space_robotics_bench` fork independently —
+a real git submodule would have fought that work. That agent no longer
+maintains it, so as of 2026-09-13 it is formally pinned the same way as
+OpenRAL: a git submodule at `space_robotics_bench/`, tracking
+`DsslRobot/space_robotics_bench` (itself a fork of the real upstream,
+`AndrejOrsula/space_robotics_bench`, same relationship OpenRAL's fork has to
+`OpenRAL/openral`), bumped and committed explicitly whenever this project
+changes something in it (e.g. adding a Mission A task). Every experimental
+run manifest (§19) should still record the exact commit it ran against —
+the submodule pin makes that commit reconstructible from this repo alone,
+it doesn't replace per-run provenance.
 
 ## Decision D1 — Humble + Python 3.10, fully native
 

@@ -1,7 +1,3 @@
-# Upstream simulation base — externally managed, NOT tracked by this repo.
-# Pinned revision is recorded in docs/upstream_pins.md instead.
-/space_robotics_bench/
-
 # Experiment outputs
 /artifacts/*
 !/artifacts/.gitkeep
