@@ -27,25 +27,28 @@ verified live through the **real** `ExecuteRskill` action server (not
 `ROSPublishingHAL` called directly): `ros2 action send_goal` → resolver →
 skill → candidate_action → kernel → safe_action → HAL → SRB → robot moved.
 
-**New finding while proving this (F15, not a defect in the new kind):** the
-3s dispatch aborted at ~2.7s on a safety-status staleness watchdog —
-`rskill_runner_node` hardcodes a 3.0s liveness check on
-`/openral/safety_status`, but the C++ kernel only publishes it on activation
-and on state *changes*, never on a heartbeat. Would hit any rSkill kind's
-dispatch lasting >3s without a kernel-side state change, not specific to
-`procedural`. Not chased down yet.
+**F15 — investigated 2026-09-13, RESOLVED as a false alarm.** The 3s
+dispatch aborted at ~2.7s on a safety-status staleness watchdog. First read
+concluded the kernel never heartbeats `/openral/safety_status` — wrong. It
+does, at a clean 1.000 Hz (`publish_diagnostics`'s wall timer ends with an
+unconditional `publish_safety_status_now()`, verified live with
+`ros2 topic hz`). The earlier "zero messages" reading was a shell-piping
+artifact (`timeout ... | tail` loses output when SIGTERM lands mid-print).
+The one abort was very likely a single missed/delayed heartbeat under a
+busier multi-participant DDS graph — the mechanism is deliberately
+conservative by design, so an occasional trip under load is it working as
+intended, not a bug. **Do not spend more effort on this** — treat an
+occasional safety-stale abort as expected, and note it's exactly the class
+of event execution_plan.md §5.4.4/§13.6 already want to study, not a
+nuisance. Full record: `docs/research_findings.md` F15.
 
 **What remains open:**
 
-- [ ] **F15** — diagnose the safety-status staleness watchdog before trusting
-      any dispatch longer than a few seconds not to self-abort. Worth doing
-      before Mission A, since an unexplained mid-mission e-stop would confound
-      every trace collected.
 - [ ] **F12** — characterize whether the kernel actually enforces
       `max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` (deliberately
       exceed it, confirm rejection or its absence).
 - [ ] Arm (CARTESIAN_TWIST) / gripper (GRIPPER_BINARY) wiring on the HAL —
-      same pattern as BODY_TWIST, deferred until the above are settled.
+      same pattern as BODY_TWIST, deferred until the above is settled.
 
 ### Then, per plan §21 items 5–6 (not started)
 

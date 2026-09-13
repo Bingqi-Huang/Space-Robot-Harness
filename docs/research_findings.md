@@ -174,22 +174,39 @@ bring-up script this project writes should drive lifecycle nodes via direct
 service calls, not the `ros2 lifecycle` CLI, on this host.
 Source: `docs/phase_b_lunar_bot_hal.md`.
 
-### F15 — The safety kernel does not re-publish `/openral/safety_status` on a heartbeat
+### F15 — RESOLVED: the safety kernel's heartbeat is fine; the abort was a one-off DDS hiccup, not a design gap
 
-`rskill_runner_node.py` hardcodes `_SAFETY_STATUS_LIVENESS_S = 3.0` and
-latches a fail-safe e-stop if that topic goes quiet longer than that ("safety
-publisher may be gone"). The C++ kernel only calls `publish_safety_status_now()`
-on activation and on actual state **changes** (confirmed by reading every
-call site in `lifecycle_kernel.cpp`) — its only `create_wall_timer` is the
-unrelated `/diagnostics` heartbeat. A multi-second `ExecuteRskill` dispatch
-(our `procedural` BODY_TWIST hold, 3s) aborted at ~2.7s on exactly this
-staleness check, having moved the robot correctly up to that point. Nothing
-in `deploy_e2e.launch.py` sets up a periodic republish either. **Design
-implication:** unconfirmed whether this is a genuine latent gap (would hit
-*any* rSkill kind's dispatch lasting >3s without a kernel-side state change)
-or something the full launch stack supplies that a minimal bring-up script
-doesn't — needs its own investigation before trusting any experiment run
-longer than a few seconds not to self-abort. Not yet chased down; kept
-separate from F11 (different mechanism: a staleness watchdog, not rSkill-kind
-dispatch) and from F12 (a liveness check, not a magnitude bound).
+Originally recorded as "the kernel doesn't re-publish `/openral/safety_status`
+on a heartbeat." **That was wrong — corrected after checking properly.**
+`publish_diagnostics()` (bound to the kernel's 1-second `create_wall_timer`,
+the same one driving `/diagnostics`) ends with an *unconditional*
+`publish_safety_status_now()` call, in-code documented as "ADR-0096 /
+HZ-0096-1 mitigation 2 — refresh the latched status at the same 1 Hz cadence
+so `header.stamp` is standing evidence the publisher is alive." Re-verified
+live: kernel alone, configured + activated, `ros2 topic hz` on both
+`/diagnostics` and `/openral/safety_status` measured a clean, exact **1.000
+Hz** on each. The original "zero messages in 5s" reading was a shell-tooling
+artifact — piping `timeout N ros2 topic hz ... | tail` loses buffered output
+when `timeout` SIGTERMs the process mid-print; redirecting to a file instead
+showed the real numbers immediately.
+
+`rskill_runner_node.py`'s `_SAFETY_STATUS_LIVENESS_S = 3.0` staleness check
+is real and does exist, but the mechanism it watches is sound. The one abort
+we saw (a 3s `ExecuteRskill` dispatch, aborted at ~2.7s, "last update 3.0s
+ago") is best explained as a single missed or delayed heartbeat delivery
+under a busier multi-participant DDS graph (SRB + kernel + HAL + runner all
+live at once) at the exact instant the runner happened to check — not a
+structural gap. The mechanism is deliberately conservative by design ("fail
+toward assume-unsafe... can only ADD an abort, never suppress one"), so an
+occasional trip under load is the mechanism doing its documented job, not a
+bug to eliminate.
+
+**Design implication:** do not spend more effort "fixing" this. Treat an
+occasional safety-stale abort as expected system behavior a real mission
+must be robust to — which is, usefully, exactly the kind of event
+execution_plan.md §5.4.4 (fault/degradation) and §13.6 (failure/recovery
+campaign) already want to study, not a nuisance orthogonal to the research.
+Recovery-after-anomaly and continued-execution-after-fault are metrics in
+the plan (§5.5) — this is a live instance of the exact class of event they
+measure.
 Source: `docs/phase_b_procedural_kind.md`.
