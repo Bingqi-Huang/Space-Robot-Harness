@@ -265,3 +265,63 @@ Recovery-after-anomaly and continued-execution-after-fault are metrics in
 the plan (§5.5) — this is a live instance of the exact class of event they
 measure.
 Source: `docs/phase_b_procedural_kind.md`.
+
+### F16 — RESOLVED: CARTESIAN_TWIST's angular-speed bound was the same unenforced-gap shape as F12
+
+While wiring LunarBot's arm through CARTESIAN_TWIST for the first time,
+found `SafetyEnvelope.max_ee_angular_speed_rad_s` (already declared on
+`panda_mobile`'s manifest at `1.0`) was enforced by nothing, for the exact
+same reason F12 documented for BODY_TWIST: the C++ kernel's
+`kCartesianTwist` case checked only linear speed against `max_ee_speed_m_s`;
+the Python `openral_safety/supervisor_node.py` genuinely does implement the
+angular check (unlike BODY_TWIST, where the Python side was a real stub) —
+but `deploy_e2e.launch.py` never launches that node, so it is dead code in
+every real deployment regardless. `envelope_loader.py` also never forwarded
+the field into the kernel's ROS parameters at all.
+
+**Fixed the same way as F12, before relying on it**: new field on both
+`EnvelopeIntersection`s (Python dataclass + C++ struct, default
+`math.inf`/`kPosInfinity`), forwarded by `kernel_params_from_envelope()`,
+checked in `validator.cpp`'s existing `kCartesianTwist` case (angular
+`sqrt(wx²+wy²+wz²)` alongside the pre-existing linear check). 2 new gtest
+cases; full `ctest` suite passes. **Verified live through the full
+candidate_action → kernel → safe_action → HAL → SRB path** (not just the
+isolated kernel, unlike this pattern's first fix): commanding 1.0 rad/s
+against LunarBot's declared 0.3 rad/s bound was rejected
+(`drop_reason=KIND_FORCE, detail="ee_angular_speed"`), the arm did not move.
+
+**Design implication:** any manifest declaring `max_ee_angular_speed_rad_s`
+(so far: `panda_mobile`, `lunar_bot`) can now trust it is real for
+CARTESIAN_TWIST specifically. The broader pattern this and F12 both surface
+— a Python "supervisor" layer that exists in source but is never launched by
+the production launch file, silently turning several declared per-mode
+bounds into dead documentation — likely still applies to
+`max_cartesian_step_m`/`max_cartesian_step_rad` (CARTESIAN_DELTA) and any
+gripper-width bound; **not yet checked for those modes** — worth a pass
+before this project's trustworthiness claims lean on any of them.
+Source: `docs/phase_b_lunar_bot_arm_gripper.md`.
+
+### F17 — Multi-node estop reset needs `/openral/estop_cleared`, not just the kernel's `/openral/estop_reset` service
+
+Discovered live while testing the unified LunarBot HAL: after an
+intentional safety violation, the kernel's own `/openral/estop_reset`
+service call succeeded and cleared *its own* latch, but the separately
+running `openral_hal_lunar_bot` lifecycle node stayed latched and silently
+dropped every subsequent command — no error surfaced to the caller, chunks
+just had no effect. Not a bug: `openral_hal/lifecycle.py` already documents
+this exact behavior in a comment ("reset was a kernel-only service, so the
+HAL stayed latched after `/openral/estop_reset` — the robot never resumed
+until a restart") and provides the fix — every `ManifestHALLifecycleNode`
+also subscribes to `/openral/estop_cleared` (`std_msgs/Empty`). In
+production that topic is published by the operator dashboard
+(`openral_observability.dashboard.estop_publisher.EstopPublisher`) as a
+deliberate human-in-the-loop confirmation step, not automatically by the
+kernel — a design choice, not an oversight.
+
+**Design implication:** any bring-up/test tooling that drives the safety
+kernel directly (no dashboard running, as every script in this project's
+`docs/` does) must publish `/openral/estop_cleared` itself after calling
+`/openral/estop_reset`, or every downstream node that latched on
+`/openral/estop` stays silently inert. Added to the reusable environment
+notes in `AGENT/handoff.md` so this isn't rediscovered per session.
+Source: `docs/phase_b_lunar_bot_arm_gripper.md`.

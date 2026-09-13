@@ -1,69 +1,71 @@
 # Handoff
 
-State as of 2026-09-13. Phase A complete. Phase B slices 1–2 verified live;
-F15 closed as a false alarm; **F12 investigated, then FIXED** per the user's
-explicit decision to implement it as part of this project's scientific
-contribution. Task list: `todo.md`. Records: `docs/phase_b_lunar_bot_hal.md`,
-`docs/phase_b_procedural_kind.md`, `docs/f12_body_twist_envelope_fix.md`.
-Findings: `docs/research_findings.md`.
+State as of 2026-09-13. Phase A complete. Phase B slices 1–3 done and
+verified live: LunarBot is now a genuine mobile manipulator — base
+(BODY_TWIST), arm (CARTESIAN_TWIST), and gripper (GRIPPER_BINARY) all drive
+through the real safety chain from one unified HAL. F12, F16 (a second
+instance of F12's bug class, for CARTESIAN_TWIST's angular bound) both
+fixed; F15 closed as a false alarm; F17 (multi-node estop reset) documented.
+Task list: `todo.md`. Records: `docs/phase_b_lunar_bot_hal.md`,
+`docs/phase_b_procedural_kind.md`, `docs/f12_body_twist_envelope_fix.md`,
+`docs/phase_b_lunar_bot_arm_gripper.md`. Findings: `docs/research_findings.md`.
 
-## F12: fixed, not just confirmed
+## Where things stand
 
-`max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s` were enforced by
-**nothing** — each side of the kernel/supervisor split named the other as
-responsible, and `kernel_params_from_envelope()` didn't even forward the
-value. Live-confirmed pre-fix: `lunar_bot` at 6.0 m/s (20× the declared 0.3
-m/s bound) moved the full distance, zero rejection.
+Branch chain: `feat/py310-humble` → `feat/lunar-bot-hal` (`f47e966`) →
+`fix/body-twist-speed-envelope` (`fabe588`, pushed) →
+`feat/lunar-bot-arm-gripper` (current, **not yet committed** as of this
+handoff — see Next). All still open; none merged yet.
 
-**Fixed on branch `fix/body-twist-speed-envelope`** (off `f47e966`), scope
-**BODY_TWIST only**:
+`LunarBotSRBHAL.send_action` now dispatches BODY_TWIST / CARTESIAN_TWIST /
+GRIPPER_BINARY. The arm's SRB action (`differential_inverse_kinematics`) is
+NOT a native velocity controller — it's a scaled per-step position delta
+recomputed from the current measured pose every step (confirmed by reading
+Isaac Lab's own source, not guessed from the `Twist` message type); holding
+a constant raw value produces continuous motion proportional to its
+magnitude (functionally a velocity from outside), so the HAL converts using
+empirically-measured (pose-dependent, deliberately conservative)
+constants — see `docs/phase_b_lunar_bot_arm_gripper.md` for the full table.
+The gripper's `binary_joint_position` Bool is **inverted**: `True` = close,
+`False` = open (confirmed live). Both facts came from reading
+`space_robotics_bench/` read-only (never modified) plus the vendored Isaac
+Lab source at `~/isaaclab/`.
 
-- Python (`envelope_loader.py`): two new `EnvelopeIntersection` fields,
-  `None`→`inf` resolution, tighten-only validation, and — the actual bug —
-  `kernel_params_from_envelope()` now forwards both into the ROS params dict.
-- C++ (`envelope.hpp`/`envelope.cpp`/`lifecycle_kernel.cpp`): mirrored struct
-  fields, parameter declaration, parameter loading.
-- C++ (`validator.cpp`): `kBodyTwist` split out of the shared
-  "delegate to Python" case into its own real linear+angular magnitude
-  check, mirroring `kCartesianTwist`'s existing structure exactly.
-- Tests: 3 new gtest cases in `test_validator.cpp`
-  (`BodyTwistLinearSpeedCapEnforced`, `BodyTwistAngularSpeedCapEnforced`,
-  `BodyTwistDimMismatchRejected`); full `ctest` suite (4 binaries) passes,
-  including the pre-existing `BodyTwistPassesWithSixDofWidthAndJointEnvelope`
-  unmodified.
-- **Re-verified live** against a real running `safety_kernel_node` (envelope
-  params generated the sanctioned way, node driven through lifecycle
-  services): the exact 6.0 m/s scenario is now rejected
-  (`safety_status.latched=True, drop_reason=KIND_FORCE,
-  detail="base_linear_speed"`, nothing on `/openral/safe_action`); 1.0 rad/s
-  angular-only violation also rejected; 0.2 m/s / 0.2 rad/s in-bound command
-  still passes through unchanged.
-
-**Not in scope, still open**: `kJointTrajectory`/`kCartesianDelta`/
-`kGripperBinary`/`kGripperPosition`/`kCompositeMode` still delegate to the
-Python supervisor stub — same original gap, untouched, deliberately, to keep
-this a single-purpose reviewable change. Full record:
-`docs/f12_body_twist_envelope_fix.md`.
+While wiring the arm, found F16: `max_ee_angular_speed_rad_s` (CARTESIAN_
+TWIST's angular bound) had the exact same "declared, not enforced" gap F12
+found for BODY_TWIST — fixed the same way, verified live end-to-end.
 
 ## Next
 
-Commit + push this fix (branch `fix/body-twist-speed-envelope`), bump the
-research repo's submodule pointer. Then, per the user's earlier instruction,
-proceed to **Mission A** (plan §21 items 5–6): define a plain mission
-instruction, run generic OpenRAL against it, save traces, document real
-failure modes. Arm/gripper HAL wiring (CARTESIAN_TWIST/GRIPPER_BINARY) is
-still open too, whenever it's next needed.
+1. Commit + push the current uncommitted work on `feat/lunar-bot-arm-gripper`
+   (C++ angular-speed fix, `LunarBotSRBHAL` arm/gripper dispatch, lifecycle
+   node transport, `robot.yaml` updates, new unit tests, the two new docs).
+   Bump the research repo's submodule pointer + commit there too.
+2. Then proceed to **Mission A** (plan §21 items 5–6): define a plain
+   mission instruction (needs manipulation now that it's wired, per
+   `execution_plan.md` §6.4), run generic OpenRAL against it, save traces,
+   document real failure modes.
+3. Still open, not blocking Mission A: the same missing-magnitude-check gap
+   for `kJointTrajectory`/`kCartesianDelta`/`kGripperBinary` (per-joint)/
+   `kGripperPosition`/`kCompositeMode` (F12/F16's sibling gap, untouched).
 
 ## Environment reference (reusable, don't rediscover)
 
 - SRB / kernel / HAL / runner launch: `docs/srb_integration_notes.md` §2,
-  `docs/phase_b_lunar_bot_hal.md`, `docs/phase_b_procedural_kind.md`.
+  `docs/phase_b_lunar_bot_hal.md`, `docs/phase_b_lunar_bot_arm_gripper.md`.
 - Standalone kernel bring-up (no SRB/HAL needed to test the kernel itself):
-  `docs/f12_body_twist_envelope_fix.md`'s "Live" section — generate params
-  via `compute_intersection()`+`kernel_params_from_envelope()`, launch
-  `install/lib/openral_safety_kernel/safety_kernel_node --ros-args
-  --params-file <path>`, drive lifecycle via direct `ChangeState`/`GetState`
-  service calls, publish `ActionChunk` directly on `candidate_action`.
+  `docs/f12_body_twist_envelope_fix.md`'s "Live" section.
+- To read SRB's actual action-term mechanics (not just the topic/message
+  type, which can mislead — see the arm/gripper facts above), the vendored
+  Isaac Lab source lives at `~/isaaclab/source/isaaclab/isaaclab/envs/mdp/
+  actions/` and `~/isaaclab/source/isaaclab/isaaclab/controllers/` on this
+  host — read it, don't guess from `srb/core/action/`'s thin wrapper alone.
+- **F17 — multi-node estop reset**: the kernel's `/openral/estop_reset`
+  service only clears the kernel's own latch. Every other node that latched
+  on `/openral/estop` (e.g. a HAL lifecycle node) stays latched and
+  silently drops commands until `/openral/estop_cleared` (`std_msgs/Empty`)
+  is also published — normally the operator dashboard's job. Any test
+  script driving the kernel directly must publish it too after every reset.
 - `RskillRunnerNode` is constructed directly in Python — mirror `compose.py`:
   construct with `skill_resolver=None`, then swap `node._skill_resolver =
   make_default_skill_resolver(node, search_paths=["rskills"])` before
@@ -85,11 +87,11 @@ still open too, whenever it's next needed.
 - **Never `pkill -f` on this host** — exact PIDs only, every time, including
   the reparented kit-python child.
 - A bare `time.sleep()` before reading a ROS subscription callback's result
-  is a race — the callback never fires without `rclpy.spin_once`/
-  `spin_until_future_complete`, so a stale TRANSIENT_LOCAL message (e.g. the
-  kernel's own activation-time `safety_status`) can be misread as the
-  response to whatever you just did. Spin through the wait, don't sleep
-  through it.
-- `space_robotics_bench/` stays untouched — read/run only, ever.
+  is a race — spin through the wait (`rclpy.spin_once` in a loop), don't
+  sleep through it, or a stale TRANSIENT_LOCAL message gets misread as a
+  fresh response.
+- `space_robotics_bench/` stays untouched — read/run only, ever (reading it
+  to understand SRB's real action mechanics, as done for this slice, is
+  fine and expected; editing/committing is not).
 - No `space_runtime`/`space_context` code until Phase B observes real
   failures calling for it (plan §21.6–7).

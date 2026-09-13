@@ -7,17 +7,20 @@ and every experimental campaign to name the exact commits it ran against.
 
 | Project | Fork | Branch | Commit | Upstream | Tracking |
 |---|---|---|---|---|---|
-| OpenRAL | `DsslRobot/openral` | `fix/body-twist-speed-envelope` | `fabe588` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
+| OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-arm-gripper` | `af8fba2` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
 | Space Robotics Bench | `DsslRobot/space_robotics_bench` | — | `7528ff8` (v0.0.6) | `AndrejOrsula/space_robotics_bench` | **not a submodule** — externally managed, see below |
 
-OpenRAL's pin has moved four times since the initial `4700c7a`:
+OpenRAL's pin has moved six times since the initial `4700c7a`:
 `fa7f445`/`4c1867c` (Python 3.10/Humble downgrade,
 `docs/openral_py310_patch.md`), `af61568` (the `lunar_bot` HAL,
 `docs/phase_b_lunar_bot_hal.md`), `f47e966` (the `procedural` rSkill kind,
 `docs/phase_b_procedural_kind.md`), `fabe588` (BODY_TWIST base-speed envelope
-enforcement, `docs/f12_body_twist_envelope_fix.md`) — the current commit is
-on branch `fix/body-twist-speed-envelope`, built on top of `feat/lunar-bot-hal`
-→ `feat/py310-humble`, not yet merged (Phase B work continues on it).
+enforcement, `docs/f12_body_twist_envelope_fix.md`), `1a6139f` (CARTESIAN_TWIST
+angular-speed enforcement, F16), `af8fba2` (arm + gripper unified into the
+LunarBot HAL, `docs/phase_b_lunar_bot_arm_gripper.md`) — the current commit is
+on branch `feat/lunar-bot-arm-gripper`, built on top of
+`fix/body-twist-speed-envelope` → `feat/lunar-bot-hal` → `feat/py310-humble`,
+not yet merged (Phase B work continues on it).
 
 Space Robotics Bench is developed independently of this repository and is
 excluded via `.gitignore`. Record its commit in each run manifest (§19) rather

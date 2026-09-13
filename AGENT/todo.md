@@ -60,13 +60,43 @@ in-bound commands still pass. Full record: `docs/f12_body_twist_envelope_fix.md`
 `kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`/`kGripperPosition`/
 `kCompositeMode` still delegate to the Python stub, same gap, untouched.
 
-**What remains open:**
+**Same missing-magnitude-check gap for** `kJointTrajectory`/
+`kCartesianDelta`/`kGripperBinary`(the shared per-joint bound)/
+`kGripperPosition`/`kCompositeMode` — not part of the F12/F16 fixes, still
+open.
 
-- [ ] Arm (CARTESIAN_TWIST) / gripper (GRIPPER_BINARY) wiring on the HAL —
-      same pattern as BODY_TWIST.
-- [ ] Same missing-magnitude-check gap for `kJointTrajectory`/
-      `kCartesianDelta`/`kGripperBinary`/`kGripperPosition`/`kCompositeMode` —
-      not part of this fix, still open per `docs/f12_body_twist_envelope_fix.md`.
+### Slice 3 — Arm + gripper unified into one mobile-manipulator HAL ✅ (2026-09-13)
+
+openral branch `feat/lunar-bot-arm-gripper` (off `fix/body-twist-speed-
+envelope`). Full record: `docs/phase_b_lunar_bot_arm_gripper.md`.
+
+SRB side (arm/gripper action wiring) is done, per the user — read-only
+confirmed the actual mechanism (Isaac Lab source, not just the topic type):
+the arm's `differential_inverse_kinematics` is a scaled per-step position
+delta, NOT a native rate, and the gripper's `binary_joint_position` Bool is
+**inverted** (`True` = close). Both confirmed live before writing HAL code.
+
+**F16 — found + fixed before trusting the new arm wiring**: CARTESIAN_TWIST's
+angular-speed bound (`max_ee_angular_speed_rad_s`, already declared on
+`panda_mobile`) had the exact same "declared, not enforced" shape as F12 —
+fixed the same way (kernel now checks it in `kCartesianTwist`), verified
+live through the **full** candidate_action→kernel→safe_action→HAL→SRB path
+(not just the isolated kernel).
+
+Built: `LunarBotSRBHAL.send_action` now dispatches BODY_TWIST /
+CARTESIAN_TWIST / GRIPPER_BINARY; `openral_hal_lunar_bot`'s transport gained
+arm_ik + hand publishers; `robot.yaml` declares `max_ee_speed_m_s: 0.2` /
+`max_ee_angular_speed_rad_s: 0.3` (conservative, empirically-calibrated —
+see the doc for the measured raw↔physical-unit table, which is genuinely
+pose-dependent for a 7-DoF arm, unlike the base). 9 new unit tests (real
+manifest + injected publish_fn) + full live E2E: in-bound arm motion, both
+linear and angular over-limit rejection, gripper open/close (full chain,
+correct direction), BODY_TWIST regression — all confirmed.
+
+**F17 — found**: resetting the kernel's `/openral/estop_reset` does NOT
+clear other nodes latched on `/openral/estop` — needs a separate
+`/openral/estop_cleared` broadcast too (normally the dashboard's job, a
+deliberate human-in-the-loop step). See "Watch out" below.
 
 ### Then, per plan §21 items 5–6 (not started)
 
@@ -80,7 +110,8 @@ in-bound commands still pass. Full record: `docs/f12_body_twist_envelope_fix.md`
 ## Rules
 
 - Branch or worktree per task; delete after **merge** (AGENT.md §1) —
-  `feat/lunar-bot-hal` stays open; Phase B is still landing on it.
+  `feat/lunar-bot-hal` → `fix/body-twist-speed-envelope` →
+  `feat/lunar-bot-arm-gripper` all stay open; Phase B is still landing on them.
 - Overwrite-update this file and `handoff.md`; ≤150 lines each (AGENT.md §2).
 - No pytest beyond upstream's own suites (AGENT.md §3).
 - No defensive coding, no hash checks, no corner-case guards (AGENT.md §4).
@@ -95,3 +126,7 @@ in-bound commands still pass. Full record: `docs/f12_body_twist_envelope_fix.md`
   `openral_msgs`-typed interface needs **both**
   `/opt/ros/humble/setup.bash` **and** `install/setup.bash` sourced, every
   time — a fresh Bash call starts with neither.
+- Resetting the kernel's `/openral/estop_reset` does NOT clear other nodes
+  latched on `/openral/estop` — also publish `std_msgs/Empty` on
+  `/openral/estop_cleared` (F17), or every HAL downstream of the first
+  violation stays silently inert for the rest of the session.
