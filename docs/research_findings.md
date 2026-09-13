@@ -113,23 +113,24 @@ Source: `docs/srb_integration_notes.md` §4.
 
 ## Phase B findings (2026-09-13)
 
-### F11 — No existing rSkill kind fits a scripted, non-learned test motion
+### F11 — No existing rSkill kind fit a scripted, non-learned test motion ✅ resolved
 
-`rskill_runner_node.make_default_skill_resolver` only handles
-`kind: "vla"` / `"ros_action"` / `"ros_service"` today (`"wam"` raises
+`rskill_runner_node.make_default_skill_resolver` only handled
+`kind: "vla"` / `"ros_action"` / `"ros_service"` (`"wam"` raises
 "not implemented"). `kind: "playbook"` exists (`rskills/preflight-reach`) but
 is an S2 *decision procedure* the reasoner composes — it never emits an
-`Action` chunk itself. **Design implication:** proving the reasoner/
-rskill_runner dispatch path against `lunar_bot` (plan §21 item 6, "run
-generic OpenRAL, save traces, document failure modes") needs its own
-decision about how a simple scripted motion gets registered — do not force
-one into `kind: "vla"` just because it is the only kind with a generic
-Python-class loading path. Verified instead, isolating the new mechanism from
-this open question: `ROSPublishingHAL` (the same wire-level path every real
-rSkill uses) can drive a scripted BODY_TWIST straight through
-candidate_action → the C++ safety kernel → safe_action → a new
-per-robot HAL → SRB, with the robot moving and no rejection.
-Source: `docs/phase_b_lunar_bot_hal.md`.
+`Action` chunk itself; confirmed `"vla"` requires `model_family` +
+`weights_uri` and routes through `openral_sim.factory.make_policy` (a real
+policy-adapter factory, not a lightweight generic loader). **Resolved**:
+added `kind: "procedural"` to `RSkillManifest`/`RSkillKind`, a
+`ProceduralIntegration` manifest block, and a resolver branch — a
+deterministic, non-learned actuating skill with no weights and no external
+ROS server, needed anyway for execution_plan.md §5.2's Baseline A
+(procedure-driven mission execution). Verified live: `ros2 action send_goal`
+against the real `ExecuteRskill` action server dispatched
+`ProceduralBodyTwistRskill`, which drove `lunar_bot`'s base through the full
+candidate_action → kernel → safe_action → HAL → SRB path and moved the robot.
+Source: `docs/phase_b_procedural_kind.md`.
 
 ### F12 — The shipped C++ kernel's BODY_TWIST bound is uncharacterized
 
@@ -172,3 +173,23 @@ fully-qualified service name works every time. **Design implication:** any
 bring-up script this project writes should drive lifecycle nodes via direct
 service calls, not the `ros2 lifecycle` CLI, on this host.
 Source: `docs/phase_b_lunar_bot_hal.md`.
+
+### F15 — The safety kernel does not re-publish `/openral/safety_status` on a heartbeat
+
+`rskill_runner_node.py` hardcodes `_SAFETY_STATUS_LIVENESS_S = 3.0` and
+latches a fail-safe e-stop if that topic goes quiet longer than that ("safety
+publisher may be gone"). The C++ kernel only calls `publish_safety_status_now()`
+on activation and on actual state **changes** (confirmed by reading every
+call site in `lifecycle_kernel.cpp`) — its only `create_wall_timer` is the
+unrelated `/diagnostics` heartbeat. A multi-second `ExecuteRskill` dispatch
+(our `procedural` BODY_TWIST hold, 3s) aborted at ~2.7s on exactly this
+staleness check, having moved the robot correctly up to that point. Nothing
+in `deploy_e2e.launch.py` sets up a periodic republish either. **Design
+implication:** unconfirmed whether this is a genuine latent gap (would hit
+*any* rSkill kind's dispatch lasting >3s without a kernel-side state change)
+or something the full launch stack supplies that a minimal bring-up script
+doesn't — needs its own investigation before trusting any experiment run
+longer than a few seconds not to self-abort. Not yet chased down; kept
+separate from F11 (different mechanism: a staleness watchdog, not rSkill-kind
+dispatch) and from F12 (a liveness check, not a magnitude bound).
+Source: `docs/phase_b_procedural_kind.md`.

@@ -1,76 +1,71 @@
 # Handoff
 
-State as of 2026-09-13. Phase A complete. Phase B slice 1 (LunarBot BODY_TWIST
-through the real safety chain) just verified live. Task list: `todo.md`.
-Full record: `docs/phase_b_lunar_bot_hal.md`. Findings: `docs/research_findings.md`.
+State as of 2026-09-13. Phase A complete. Phase B slices 1 (LunarBot HAL) and
+2 (`procedural` rSkill kind) both verified live. Task list: `todo.md`.
+Records: `docs/phase_b_lunar_bot_hal.md`, `docs/phase_b_procedural_kind.md`.
+Findings: `docs/research_findings.md`.
 
 ## What just happened
 
-Built and live-verified a new HAL bridging OpenRAL's safety-checked chunk
-path to SRB for `lunar_bot`'s mobile base, per the user's explicit choice to
-go through the real chain rather than bypass it (like the pre-existing Nav2
-rskill does for real hardware):
+Resolved F11: added a genuine, permanent `RSkillKind` — `"procedural"`, for
+deterministic/non-learned actuators. No existing kind fit this (`vla` needs
+real weights + routes through a policy-adapter factory; `ros_action`/
+`ros_service` need a running server we don't own; `playbook` is
+schema-forbidden from ever emitting an `Action`). This isn't a test
+convenience — it's exactly what execution_plan.md §5.2's Baseline A
+(procedure-driven mission execution) needs, so every baseline in the planned
+comparison now has a way to dispatch through the real path.
 
-```
-ROSPublishingHAL (existing) -> /openral/candidate_action
-  -> C++ safety kernel (existing) -> /openral/safe_action
-    -> openral_hal_lunar_bot (NEW) -> LunarBotSRBHAL (NEW)
-      -> /srb/env0/action/cmd_vel -> SRB moves the robot
-        -> /srb/env0/robot/joint_states -> read_state() round-trips
-```
+Built: `RSkillKind`/`ProceduralIntegration` schema addition + full
+`_check_kind_consistency` branch; a resolver branch in
+`make_default_skill_resolver`; `ProceduralBodyTwistRskill` (the first
+concrete skill); `rskills/rskill-procedural-body_twist/rskill.yaml`.
 
-Measured: 4s of `linear.x=0.2, angular.z=0.1` moved the base from
-`(0.428, -0.536)` to `(-0.356, -0.003)` in `/tf`. No rejection anywhere.
+**Verified live through the real path**: `ros2 action send_goal` against the
+actual `ExecuteRskill` action server → resolver → skill → `ROSPublishingHAL`
+→ candidate_action → C++ safety kernel → safe_action → the lunar_bot HAL
+(slice 1) → SRB's `cmd_vel` → the robot moved. Not a shortcut — the same path
+a real dispatch would use.
 
-openral branch `feat/lunar-bot-hal` (`af61568`, pushed to the fork, **not
-merged** — Phase B keeps landing on it). Submodule bumped in this repo.
+openral branch `feat/lunar-bot-hal` (`f47e966`, pushed, **not merged** —
+Phase B continues on it).
 
-## Four things deliberately left open (not silently skipped)
+## New finding while proving this: F15
 
-1. **No rSkill kind fits a scripted test motion.** `make_default_skill_resolver`
-   only handles `vla`/`ros_action`/`ros_service` (`wam` unimplemented);
-   `playbook` is a reasoner-side decision procedure, not an actuator. The
-   live test used `ROSPublishingHAL` directly to isolate the new mechanism
-   from this open question — it still needs its own decision before the
-   reasoner/`rskill_runner_node` can drive this path.
-2. **The kernel's BODY_TWIST bound is unconfirmed.** `max_base_linear_speed_m_s`
-   exists in the manifest schema; grep found zero C++ consumption of it.
-   The chunk wasn't rejected, but *why* is uncharacterized — don't trust the
-   0.3 m/s bound is enforced until tested by deliberately exceeding it.
-3. Arm (CARTESIAN_TWIST) and gripper (GRIPPER_BINARY) — same HAL, same
-   pattern, deferred until base-only was proven.
-4. Mission A / generic-OpenRAL trace-collection (plan §21 items 5–6) —
-   blocked on (1) above.
+The 3-second dispatch aborted at ~2.7s: `rskill_runner_node` hardcodes a
+3.0s liveness check on `/openral/safety_status` and latches a fail-safe
+e-stop if it goes stale; the C++ kernel only publishes that topic on
+activation and on state *changes*, never on a heartbeat (confirmed by
+reading every call site — its only wall timer is the unrelated
+`/diagnostics` one). **Not a defect in the new kind** — it would hit any
+rSkill's dispatch lasting >3s without a kernel-side state change. Not chased
+down yet; recommended next per `todo.md` since an unexplained mid-mission
+e-stop would confound any Mission A trace collected before it's understood.
 
 ## Next
 
-Pick up `todo.md`'s Phase B checklist — item 1 (rSkill registration
-decision) unblocks everything else. Read `docs/research_findings.md`
-F11–F14 first; they're the reasoning behind each open item above.
+`todo.md`'s Phase B checklist: F15 (safety-status staleness) is the
+recommended next step, then F12 (kernel's actual BODY_TWIST bound), then
+arm/gripper wiring, then Mission A (plan §21 items 5–6).
 
 ## Environment reference (reusable, don't rediscover)
 
-- SRB launch: same as before (`docs/srb_integration_notes.md` §2 —
-  `PYTHONPATH` unset, `ISAAC_SIM_PATH` set, conda stripped).
-- Safety kernel needs its envelope as **flat ROS parameters**, not a
-  `robot_yaml` path — generate them with
-  `openral_safety.envelope_loader.compute_intersection(desc, None)` +
-  `kernel_params_from_envelope(...)`, dump to YAML, launch with
-  `--ros-args --params-file <path>`. Guessing them wastes time.
-- `ros2 run <pkg> lifecycle_node` fails ("No executable found" — the real
-  name has a `.py` suffix; `ros2 pkg executables <pkg>` shows it) and even
-  then hits `ModuleNotFoundError` (shebang picks system Python). Launch
-  directly: `.venv/bin/python install/lib/<pkg>/lifecycle_node.py --ros-args ...`.
-- `ros2 lifecycle`/`node list` don't enumerate nodes here even when alive —
-  call `lifecycle_msgs/srv/ChangeState`/`GetState` on the service name
-  directly (`ros2 service call /openral_safety_kernel/change_state ...`).
+- SRB / kernel / HAL launch: `docs/srb_integration_notes.md` §2 +
+  `docs/phase_b_lunar_bot_hal.md`'s "Environment notes."
+- `RskillRunnerNode` is constructed directly in Python (not manifest-driven
+  via ROS params like the HAL nodes) — mirror `compose.py`'s pattern:
+  construct with `skill_resolver=None`, then swap `node._skill_resolver =
+  make_default_skill_resolver(node, search_paths=["rskills"])` before
+  `configure()`.
+- **Any shell calling `ros2 action send_goal`/`topic echo` on an
+  `openral_msgs` interface needs both `/opt/ros/humble/setup.bash` and
+  `install/setup.bash` sourced** — missing either fails with a misleading
+  "Unknown package"/"invalid action type", not an obvious "not sourced" error.
 
 ## Watch out
 
-- **Never `pkill -f` on this host** — killed another agent's processes once
-  already this project. Exact PIDs only, every time, including the
-  reparented kit-python child (killing the wrapper alone doesn't take it
-  down).
+- **Never `pkill -f` on this host** — exact PIDs only, every time, including
+  the reparented kit-python child.
 - `space_robotics_bench/` stays untouched — read/run only, ever.
 - No `space_runtime`/`space_context` code until Phase B observes real
   failures calling for it (plan §21.6–7).
