@@ -46,13 +46,9 @@ genuine binary success termination (position + orientation tolerance, a
 real `torch.jit.script` bool check) — no existing SRB task has one at all.
 Full record: `docs/mission_a_panel_remount.md`.
 
-**F18 — found + fixed**: SRB's procedural moon terrain is only reliably flat
-within ~4 m of the env origin (`flat_area_size`); outside it PhysX's
-depenetration ejection flings a spawned object forever. Fixed by keeping
-pedestal/panel within ~1.5 m of origin; confirmed live.
-
-**v1 simplification**: one pedestal+panel pair, not §6.4's "multiple
-candidate components" — a cheap follow-up once this is proven.
+**F18 — found + fixed**: moon terrain only flat within ~4 m of the origin;
+pedestal/panel kept within ~1.5 m. **v1 simplification**: one
+pedestal+panel pair, not §6.4's "multiple candidate components".
 
 - [x] Write the new task/scene inside `space_robotics_bench/`.
 - [x] Define Mission A's plain-language instruction text — written in
@@ -82,21 +78,22 @@ Design + reuse survey: `docs/lunar_bot_capability_set_plan.md`. Branch
       (`--wait-for-topic`), `_ROBOT_HAL_REGISTRY["lunar_bot"]`
       (`bare_twin_sim=True`), `scenes/deploy/srb_panel_remount.yaml`,
       `tools/process_group_wrapper.py` (F27 — fixes a real orphaned-Kit-
-      process bug, tested). Graph composes, SRB spawns, HAL reaches ACTIVE
-      — a live body_twist move not yet reached: SRB's `/clock` tick is
-      genuinely ~0.36 Hz (independently re-confirmed, F27), root cause
-      still open (ruled out: GPU render cost, the orphaned-process theory,
-      sustained disk I/O — one CPU thread is pegged, not yet profiled;
-      blocked on `sudo` for `py-spy`). Do not raise `staleness_limit_s`
-      without finding the cause first (user direction).
-- [x] 2c. RTX Lidar for the Mid-360 — attempted, **blocked on a confirmed
-      upstream Isaac Sim bug** (F24: RTX Lidar's SDG render pipeline never
-      dispatches a frame, headless and GUI alike; not an SRB defect).
-      **Parked 2026-09-14 by user decision** — paper doesn't need lidar
-      realism (`research_content.md` never requires it), a 6.1.0 upgrade is
-      unproven and carries its own Blackwell-GPU risk. RayCaster (item 2)
-      is the permanent `lidar_robot` implementation. Do not re-open without
-      new upstream evidence.
+      process bug, tested). Graph composes, SRB spawns, HAL reaches ACTIVE.
+      **Slow tick solved (F28, SRB `04c308a`)**: 0.36 → ~12 Hz, five
+      SRB-side causes fixed (rosidl per-byte `bytes` validation; CPU
+      pointcloud unprojection + unsubscribed publishing; Mid-360 RayCaster
+      on warp-CPU; unused RL image observations; eager trace f-string),
+      HAL clean, `staleness_limit_s` untouched. Residual ~82 ms/tick is
+      GPU render (~30 ms, 3 cams) + CPU PhysX (~21 ms): RTF ≈ 0.24. Also
+      fixed: scripted `deploy sim` teardown never reached SRB
+      (`openral/845483c`). **Open (F28)**: camera topics reach OpenRAL at
+      ~2 Hz — Fast-DDS large-message loss, fix = XML profile both sides +
+      `sysctl net.core.rmem_max`. Still not reached: a reasoner-dispatched
+      body_twist observed moving the base — nothing blocks it now.
+- [x] 2c. RTX Lidar for the Mid-360 — **blocked on a confirmed upstream
+      Isaac Sim bug** (F24: the SDG render pipeline never dispatches a
+      frame). **Parked 2026-09-14 by user decision**; RayCaster (item 2) is
+      the permanent `lidar_robot`. Do not re-open without new upstream evidence.
 - [ ] 3. Procedural rSkills `move_joints` / `move_ee_to_pose` / `grasp` /
       `release` / `stow` (tag `lunar_bot`); scripted remount closes the loop.
 - [ ] 4. F19 fix in SRB `FourWheelSteer` (drive ∝ cos(steer error)).

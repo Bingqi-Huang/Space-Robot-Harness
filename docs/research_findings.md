@@ -937,3 +937,85 @@ tick rate being roughly the same magnitude whether or not SRB is
 thread-starved by contention — pointing back toward the `carb.profiler`
 global trace-hook candidate as relatively more likely, but still not
 confirmed.
+
+### F28 — The SRB slow tick, solved: 0.36 Hz → ~12 Hz, every millisecond attributed (item 2b unblocked)
+
+**Method** (user direction: think first, one decisive test, no
+trial-and-error). Static reading of the exact code paths — the rosidl
+`.data` setter, `RosInterface._publish_sensor_data`, Isaac Lab's
+`create_pointcloud_from_rgbd`, `SensorBase.data` (lazy), `RayCaster`,
+`DirectRLEnv.step`, SRB's `_ensure_cuda_sim_device_for_deformable_objects`
+— produced ranked hypotheses; each was confirmed or refuted by **one
+instrumented run** using a new `SRB_ROS_PROFILE=1` per-tick bucket
+breakdown (`sim.step` / `sim.render` / `scene.update` / each DirectRLEnv
+phase / each sensor's lazy refresh / TF / joint states / sensor publish),
+so the next fix was always the biggest remaining bucket, not a guess.
+Four runs total, each through the full `openral deploy sim` graph.
+
+**The causes, in the order they dominated** (all in SRB, none in OpenRAL):
+
+| # | cause | per tick | fix (SRB `fix/ros-bridge-array-fast-path`) |
+|---|---|---|---|
+| 1 | rosidl-py `uint8[]` setter validates a `bytes` value **per element in pure Python** (`__debug__` branch of `sensor_msgs/msg/_image.py`, `_point_cloud2.py`); ~28 MB/tick of images+pointclouds → tens of millions of Python iterations | ~2.5 s | hand it `array.array('B')` (stored as-is) — `54bab5b`, 0.36 → 4.7 Hz |
+| 2 | camera pointcloud unprojection ran on **CPU torch** (24-thread OpenMP, 1740 % CPU): SRB pins `sim.device="cpu"` unless the scene has deformables (`env_cfg.py:857`), and the ROS bridge passed `device=self._env.device`; two of the three pointclouds had **no subscriber** | ~60 ms | lazy publish (`get_subscription_count()==0` → skip) + unproject on CUDA |
+| 3 | Mid-360 `RayCaster` (40 × 360 = 14,400 rays) ray-cast through **warp's single-threaded CPU backend**, same `sim.device` reason | 59 ms | `srb.core.sensor.RayCaster` builds the warp BVH on `raycast_device` (CUDA) — 4–7 ms |
+| 4 | `VisualExt._get_observations` — RL-facing image observations (TorchScript on CPU images) that **nothing in `srb agent ros` reads** (`RosInterface.update()` takes `observation` and never touches it) | 24 ms CPU | `VisualExtCfg.skip_observations`, set by `srb agent ros` |
+| 5 | `logging.trace(f"…{observation}…")` built its f-string every step regardless of level | small | guarded |
+
+Result (`04c308a`), full deploy graph, `/clock` measured by `ros2 topic hz`
+in domain 77: **11.9 Hz with nothing subscribed, 12.0 Hz with the sensor
+bridge subscribed** to front rgb/depth/pointcloud + wrist rgb + lidar; HAL
+reaches ACTIVE with no `read_state failed` after startup. Not a valid
+lever: `PYTHONOPTIMIZE=1` (kills `__debug__` but breaks Isaac Sim's
+TorchScript at extension load); `OMP_NUM_THREADS` (F27 — it was tested when
+cause 1 still dominated, so its null result said nothing about cause 2).
+
+**What the remaining ~82 ms is** (run 4, steady state): CPU PhysX 3
+substeps ≈ 21 ms; render submit ≈ 12 ms; **≈ 30 ms GPU render wait** for
+three 640 × 480 RTX cameras — invisible before because it overlapped the
+CPU work above, now it lands in whichever sensor syncs with the GPU first
+(the lidar's CUDA copy, so `lazy:lidar_robot` reads 30 ms although the
+raycast itself is ~4 ms); camera annotator readback ≈ 4.5 ms (host-side
+annotators, again the CPU sim device). This is the floor without touching
+render settings or physics: at `agent_rate` 50 Hz that is a real-time
+factor of ≈ 0.24. Levers if that ever matters, in order of cheapness: drop
+`cam_scene` for deploy (a third of the render, nobody subscribes), a lower
+RTX preset / DLSS off, PhysX contact investigation (30 `PxShape::
+getMaterialFromInternalFaceIndex` warnings per substep — ~27 k log lines
+per minute through `ros2 launch` — point at terrain-contact reporting).
+`sim.device=cuda` is **not** an option: PhysX GPU has no CCD and SRB
+enables it.
+
+**Two more real bugs found on the way** (both fixed, both tested):
+
+* **`openral deploy sim` teardown never reached SRB when driven from a
+  script** (`openral/845483c`). A CLI started with `&` from a
+  non-interactive shell inherits `SIGINT=SIG_IGN` (POSIX); CPython keeps
+  it; so `ros2 launch` never saw the SIGINT `_run_launch` forwards — no
+  "user interrupted", no escalation — while every node exited on its own
+  rclcpp/rclpy handler and the external simulator (own session behind
+  `process_group_wrapper.py`, unreachable by `killpg`) kept ticking until
+  killed by hand. Seen twice. Fix: exec the launch through a trampoline
+  that resets SIGINT/SIGTERM/SIGHUP to `SIG_DFL`; the orphan sweep now
+  SIGTERMs the wrapper (group leader) instead of SIGKILLing it, which
+  would have orphaned the very kit process it guards. Verified: scripted
+  `kill -TERM <deploy>` now shows launch's own SIGINT → SIGTERM (5 s) →
+  SIGKILL (10 s) escalation for the simulator, host clean (17 MiB GPU),
+  runs 3 and 4. This matters beyond dev hygiene: the experiment runner
+  (§19) will drive `deploy sim` exactly this way.
+* **Camera data reaches OpenRAL at ~2 Hz although SRB publishes at 12 Hz**
+  — *not* a tick problem, a DDS one, now isolated: `ros2 topic hz` on
+  SRB's **raw** `/srb/env0/cam_front/image_rgb` gets 2.1–2.2 Hz, the
+  bridge's relay 1.4–1.7 Hz, lidar 5.6 Hz, while `/clock` (tiny message)
+  gets 12 Hz and SRB's publish bucket is 6 ms. Both sides run Fast-DDS
+  (Isaac's bundled rclpy and the OpenRAL graph, `rmw=default`), publisher
+  QoS RELIABLE/depth 1, messages 0.9–7 MB, host `net.core.rmem_max` =
+  212992 (208 KB). Textbook large-message fragment loss (Humble's Fast-DDS
+  2.6 has no `LARGE_DATA` builtin; SHM segment default 512 KB < one image).
+  Fix belongs to item 2's sensor path: a Fast-DDS XML profile (SHM
+  `segment_size` ≥ 16 MB + UDP socket buffers) for **both** processes and
+  `sysctl net.core.rmem_max`, then re-measure raw vs relayed. Open.
+
+Method note for next time: a bucket that suddenly grows after an
+unrelated fix is a **sync point moving**, not a regression — check where
+the first GPU synchronisation after `sim.render()` happens before chasing it.

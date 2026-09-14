@@ -21,6 +21,11 @@
 11. **Prerequisites are verified empirically before a dependent step starts.** A step whose preconditions are unmet (e.g. a mission run with no dispatchable manipulation capability, or no perception wired) is not started and its failure is not recorded as a "finding" — the precondition is built first. (User directive, 2026-09-14.)
 12. **Scope of coding obligations is total, not "as much as convenient".** Every piece of infrastructure the paper needs — embodiment rSkills, sensor bridges, navigation, manipulation, joint limits, verifiers, run artifacts, launch orchestration — is built, regardless of size. The only excluded work is imitation-learning data collection and VLA model training. (User directive, 2026-09-14.)
 
+13. **The paper has only two main scientific experiments.** Do not create separate communication, resource, failure, trustworthiness, prompt-engineering, or ablation campaigns unless a later result establishes a genuinely independent scientific question. Those factors are conditions inside Experiment I or supporting analyses.
+14. **External baselines are PLEXIL and EUROPA→PLEXIL.** A handcrafted behavior tree, generic OpenRAL, and prompt-only variants are development diagnostics or at most one targeted ablation; they are not main paper baselines.
+15. **Do not weaken classical autonomy.** PLEXIL may use its documented conditions, loops, concurrency, libraries, and resources. EUROPA may plan/replan within its encoded domain. A held-out case is valid only when the required primitive capabilities exist but the mission-level decomposition/semantic relation is absent from frozen baseline artifacts.
+16. **Autonomy metrics are grounded in ALFUS.** Do not invent a scalar autonomy score. Store the raw quantities needed for Human Intervention, Human Planning/Preplanning, Level of Human Interaction, and mission-variation coverage.
+17. **Engineering-cost claims require timed, auditable extension work.** Do not infer "lower engineering cost" from code size alone. Experiment II uses a freeze→extension specification→timed authoring→validation→held-out test protocol.
 ---
 
 # 1. Upstream systems that must be used, not reimplemented
@@ -107,6 +112,81 @@ Prefer established libraries and public mission data:
 - ROS 2 / rosbag2 for robot/system-level capture.
 
 ---
+
+## 1.5 PLEXIL Release 6 — external procedural/reactive autonomy baseline
+
+Repository: `plexil-group/plexil`  
+Documentation: `https://plexil-group.github.io/plexil_docs/`
+
+Use the official Release 6 branch/revision and record the exact commit. Do **not** reimplement a PLEXIL-like state machine.
+
+Capabilities relevant to the baseline, confirmed in official documentation:
+
+- PLEXIL Executive / `plexilexec` for plan execution;
+- `Command` for asynchronous effects on external systems;
+- `Lookup` for reading external state;
+- start/end/repeat/skip/pre/post/invariant/exit conditions;
+- sequences, concurrence, `Try`, `If`, loops, and library calls;
+- command resource arbitration;
+- interface adapters that connect the Executive to external systems.
+
+Integration strategy for this project:
+
+- keep PLEXIL outside the proposed OpenRAL reasoner path;
+- expose the **same LunarBot capability server** used by Ours through a thin PLEXIL adapter/proxy;
+- map PLEXIL Commands to shared capability calls that still pass through the common low-level safety path;
+- map world state, capability availability, and verifier outputs to PLEXIL Lookups;
+- write competent mission plans for the declared model-covered situations;
+- log plan/node transitions and all external command/lookup traffic into the common run artifact format.
+
+The first implementation should evaluate two adapter options after building the upstream examples:
+
+1. a native/custom PLEXIL `InterfaceAdapter` that calls the ROS 2/shared capability bridge; or
+2. the stock IPC adapter connected to a separate ROS 2 proxy, if this preserves typed return values and failure semantics cleanly.
+
+Choose the smaller, less invasive option after a live proof. The adapter itself must contain no mission logic.
+
+## 1.6 NASA EUROPA — external model-based planning baseline
+
+Repository: `nasa/europa`
+
+Use the official open-source EUROPA framework and record the exact commit/container/toolchain used. EUROPA is a planning, scheduling, and constraint-programming framework with a Plan Database, solver, and declarative modeling language. It is typically embedded in a host application.
+
+For the paper, the baseline is explicitly named **EUROPA→PLEXIL**:
+
+```text
+mission goal + current state
+        ↓
+EUROPA host / NDDL domain
+Plan Database + Solver
+        ↓ executable activity tokens
+EUROPA→PLEXIL bridge
+        ↓
+PLEXIL Executive
+        ↓
+shared LunarBot capability server + safety
+        ↓
+state / verifier feedback
+        ↺ EUROPA host for replanning inside the frozen domain
+```
+
+Important wording: this is a research integration of two NASA open-source components. Do not call it an official NASA "EUROPA+PLEXIL product" unless an exact public distribution proving that claim is later identified.
+
+The baseline must support replanning within its encoded model. The bridge should not reduce EUROPA to a one-shot schedule.
+
+Initial domain model should include, where used by the final missions:
+
+- robot location/region state;
+- infrastructure/component states;
+- possession/tool state;
+- navigation/manipulation activities;
+- capability availability;
+- activity duration bounds where required;
+- relevant unary/replenishable resource or mission-state constraints;
+- precedence/temporal/state constraints;
+- verifier/FDIR updates that alter current state.
+
+Do not encode held-out scenario-specific task decompositions in the final frozen domain.
 
 # 2. Repository strategy
 
@@ -613,75 +693,65 @@ srb_ext/
 
 Follow SRB's task-extension pattern: duplicate the appropriate template, then modify scene, observation space, task-specific state/reward/termination only as required.
 
-## 6.4 Mission scenario A: infrastructure inspection and maintenance
+## 6.4 Mission A — infrastructure inspection and maintenance
 
-Build one service area containing:
+Mission A is the primary semantic/generalization mission.
 
-- navigable approach region;
-- multiple visually distinguishable candidate components/subsystems;
-- at least one inspectable fault state;
-- one or more physical operations required for restoration;
-- a verifiable final condition.
+Required scene properties:
 
-The operator instruction should specify the mission objective, not the action sequence.
+- navigable approach region rather than spawn-next-to-target;
+- multiple visually distinguishable infrastructure components;
+- at least one component/state that must be inspected to determine what is wrong;
+- one or more general-purpose physical operations that can restore the final condition;
+- deterministic simulator truth for scoring/verifying every required transition;
+- perturbation switches that can create both model-covered and model-held-out situations.
 
-Capabilities should include a mix of:
+The operator instruction gives a mission objective, not an action sequence.
 
-- navigation;
-- observation/scene query;
-- object localization;
-- manipulation planning or a VLA/learned policy;
-- verification;
-- fault handling.
+### Covered examples
 
-**Status (2026-09-14):** `panel_remount` v1 exists
-(`docs/mission_a_panel_remount.md`) and satisfies "one physical
-restoration operation" and "a verifiable final condition" (a genuine
-binary success termination — the first in SRB). It does **not** yet satisfy
-the other three bullets: one pedestal+panel pair (no candidate
-discrimination), the panel is 1.5 m from the spawn (no real approach
-region), and the fault is "panel on the ground" (no inspection needed to
-identify it). **v2 is required before any Mission A campaign** — Phase C
-item, after the capability set (§8.3) works:
+These are visible during baseline authoring and may be explicitly modeled:
 
-- ≥3 visually distinguishable infrastructure components (SRB library has
-  solar panels, pedestals, sample containers, tools, bolts/nuts), one of
-  which is in a fault state that must be *observed* to be identified
-  (e.g. panel displaced vs. panels correctly mounted);
-- service site placed so the robot must navigate a non-trivial approach
-  (beyond the ~4 m flat pad, F18 — which means the terrain within the
-  approach must be verified traversable, not assumed);
-- restoration = remount; a fastening step (`bolt_hex_m8`, `screwdriver_hex_m5`)
-  is a v3 candidate once JOINT_POSITION-precision manipulation is proven;
-- simulator truth for every mission transition exposed on ROS (object
-  poses already come via `/tf` as `srb/env0/<asset>`; the success
-  termination via `/srb/env0/terminated`; add per-component fault-state
-  truth as a topic the verifier — not the reasoner — reads).
+- one known panel/component displaced from its nominal mount;
+- nominal approach and remount sequence;
+- a predefined manipulation retry/failure branch;
+- a known route obstruction with an encoded alternate route if included.
 
-## 6.5 Mission scenario B: logistics and servicing under contingency
+### Held-out examples
 
-Build a mission requiring:
+These are hidden until artifact freeze. They must satisfy the closed-capability rule: the needed primitive skills already exist.
 
-- locate/retrieve a required item or tool;
-- transport/navigation;
-- service/manipulation at another location;
-- final verification.
+Candidate patterns:
 
-The scenario framework must support controlled variations such as:
+- access to the failed component is blocked by a movable object and the valid solution requires inspect → diagnose obstruction → relocate → re-access → restore → verify;
+- observed state is semantically inconsistent with the expected failure template, requiring an additional close inspection before choosing an operation;
+- a preferred capability is unavailable, but an alternative composition of existing generic capabilities can still satisfy the objective.
 
-- changed item location;
-- blocked/changed route;
-- unavailable capability;
-- communication interruption;
-- perception degradation;
-- manipulation failure;
-- changed service/fault state.
+Do not create arbitrary puzzle-like cases. Each held-out case must correspond to a plausible lunar servicing situation and be solvable with existing capabilities.
 
-Perturbations must be independently switchable for controlled experiments.
+**Current scene status:** `panel_remount` v1 is only an infrastructure seed scene. v2 must add candidate discrimination, real approach/navigation, semantic inspection, and the hidden-condition switches above before Experiment I.
 
----
+## 6.5 Mission B — logistics and servicing
+
+Mission B is the second composition pattern, used to show that the result is not unique to one maintenance graph.
+
+Required elements:
+
+- locate/retrieve a tool or component;
+- transport/navigation to another location;
+- service/place/manipulate at the destination;
+- final independent verification;
+- at least one covered and one held-out condition with the same closed-capability rule.
+
+The final paper should not add a third mission family unless Mission A/B fail to exercise a distinct mechanism. Mission B can remain simpler than Mission A; its purpose is replication across a different task composition, not task-count inflation.
 
 # 7. Space-context generation work package
+
+## 7.0 Scope guard — implement only context exercised by the two main experiments
+
+Space context is an enabling part of the proposed runtime, not a third scientific axis. Do **not** build a comprehensive lunar digital-twin stack by default. Before implementing any SPICE, relay, link, thermal, energy, or compute model, identify the exact Experiment-I/II scenario and decision whose outcome depends on that variable. If no final scenario uses it, leave it out of the first paper.
+
+For the initial campaign, prefer one or two well-justified operational constraints that materially change mission decisions (for example, remote-service availability across a documented contact interruption and one resource/health constraint). The same context must be exposed fairly to all methods in whatever representation their architecture requires.
 
 ## 7.1 Define scenario metadata
 
@@ -783,57 +853,34 @@ Ordered by dependency. Each item is verified live through the real
 safety-checked path before the next starts, and each gets a `docs/` record.
 Per-item design decisions, the upstream pieces to reuse, and the open
 questions are in `docs/lunar_bot_capability_set_plan.md` (2026-09-14).
-Item 1 is done (`openral` `f7b5ccd`); item 2 is done (F25); items 2b–9 are
-not started.
+Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
 
 1. **RM-75 limits** into `robot.yaml` (`position_limits`, `can_lift_kg`),
    kernel envelope regenerated; a JOINT_POSITION target outside the range
    must be rejected live.
-2. **Sensor bridge — done (2026-09-14), F25.** Front RGB-D + wrist RGB +
-   IMU + Mid-360 lidar + truth pose from SRB into OpenRAL conventions:
-   `sensors:` block + `has_lidar: true` in `robot.yaml`;
-   `LunarBotSensorBridgeNode` (`openral_hal_lunar_bot.sensor_bridge_node`)
-   relays SRB's own `Image`/`CameraInfo`/`PointCloud2`/`Imu` onto
+2. **Sensor bridge** — front RGB-D + wrist RGB + IMU + Mid-360 lidar +
+   joint states + truth pose from SRB into OpenRAL conventions: `sensors:`
+   block in `robot.yaml`; a relay in `openral_hal_lunar_bot` publishing
    `/openral/cameras/<name>/{image,camera_info}`,
-   `/openral/cameras/front_depth/points`, `/openral/lidar/points`, `/imu`,
-   and re-roots TF as `chassis_base_link → <manifest frame>` +
-   `map → odom → chassis_base_link` (in sim, `map→odom` is identity and
-   `odom→chassis_base_link` is SRB's `srb/env0/robot` truth — stated as
-   such, not dressed up as SLAM; confirmed live that this frame really is
-   `chassis_base_link`'s pose). Verified live against a running
-   `panel_remount_visual env.robot=lunar_bot` instance: every output topic
-   checked, `CameraInfo` cross-matches this manifest's computed intrinsics.
-   World-state/detector integration (a lifted 3-D object from a real
-   detection of the panel) not yet exercised — needs those nodes running,
-   deferred to whichever later item first needs them.
-2b. **SRB backend for `openral deploy sim` — built (2026-09-14), F26.**
-   `DeployScene.simulator` (`ExternalSimulatorSpec`) schema, `srb` scene
-   backend with a `provision_srb` check, the launch spawns/gates/owns the
-   SRB process (`deploy_e2e.launch.py` + `tools/lifecycle_autostart.py`
-   `--wait-for-topic`), `lunar_bot` registered `bare_twin_sim=True` in the
-   deploy HAL table (`robot.yaml`'s `hal.sim` now the same `LunarBotSRBHAL`
-   as `hal.real`), `scenes/deploy/srb_panel_remount.yaml`. Data plane stays
-   SRB's native ROS interface, as designed — no ZMQ step protocol. Found +
-   fixed one real bug along the way: `deploy_config:=` never reached the
-   launch on the sim path (F26). Live-verified: the whole graph composes,
-   SRB spawns for real, the HAL's readiness gate correctly blocks then
-   passes, the HAL reaches ACTIVE. Shutdown is clean by construction now
-   (F27): SRB's own interpreter (`python.sh`) forks its real process
-   without `exec`, and `launch`'s `ExecuteLocal` has no process-group
-   handling at all — a bare `ExecuteProcess` orphaned the Kit/PhysX process
-   for over an hour after shutdown before this was caught. Fixed with
-   `tools/process_group_wrapper.py` (new process-group leader, kills the
-   whole group on SIGTERM/SIGINT), tested against the real failure mode
-   (`tests/unit/test_process_group_wrapper.py`) and re-verified live.
-   **Not yet reached**: the full exit condition (a reasoner-dispatched
-   `body_twist` observed moving the base) — SRB's `/clock` genuinely ticks
-   at ~0.36 Hz, independently re-confirmed on a clean host (F27); ruled out
-   as the cause: GPU render cost (0-4% GPU util measured), sustained disk
-   I/O, the orphaned-process bug above. One CPU thread is pegged near
-   100%, unprofiled (blocked on `sudo` for `py-spy`) — the next concrete
-   step, not a hypothesis. Per user direction, `staleness_limit_s` is not
-   being raised as a workaround before the cause is found. Every later item
-   is verified through this path.
+   `/openral/cameras/front_depth/points`, `/joint_states`, `/odom`, and the
+   `map → odom → base_link` TF chain (in sim, `map→odom` is identity and
+   `odom→base_link` is SRB's `srb/env0/robot` truth — stated as such, not
+   dressed up as SLAM). Verify: world state shows joints + a lifted 3-D
+   object from a real detection of the panel.
+2b. **SRB backend for `openral deploy sim`** (`docs/srb_deploy_backend_plan.md`,
+   user decision 2026-09-14): `DeployScene.simulator` schema, `srb` scene
+   backend with a provision check, the launch spawns/gates/owns the SRB
+   process, `lunar_bot` registered in the deploy HAL table, a
+   `scenes/deploy/srb_panel_remount.yaml`. Migrates the isaacsim backend's
+   process-lifecycle/provision discipline; the data plane stays SRB's
+   native ROS interface. Verify: one `openral deploy sim … --initial-task`
+   command brings the whole graph up and a reasoner-dispatched
+   `body_twist` moves the base. Every later item is verified through this
+   path. Status 2026-09-14: built + live-verified (F26/F27); the SRB tick
+   rate that stalled the exit condition is root-caused and fixed (F28,
+   0.36 → ~12 Hz, `staleness_limit_s` untouched); the body_twist
+   observation itself is the next step. Open from F28: Fast-DDS
+   large-message loss caps camera topics at ~2 Hz into OpenRAL.
 2c. **RTX Lidar support for the Mid-360** (user decision 2026-09-14,
    scheduled immediately after 2's RayCaster-based Mid-360 lands — do not
    start early; treated as permanent, repeatedly-reused infra, not a demo).
@@ -980,70 +1027,78 @@ If OpenRAL has a clean extensible field mechanism in the pinned revision, use it
 
 ---
 
-# 9. Reasoner/context work package
+# 9. Foundation-model reasoning and semantic-observation work package
 
-## 9.1 Start with an unmodified generic harness baseline
+This work package implements the functions that distinguish the proposed method. Generic OpenRAL runs remain development diagnostics, not a main paper baseline.
 
-Before adding space-runtime mechanisms, run the chosen mission with:
+## 9.1 Development diagnostic: unmodified OpenRAL
 
-- OpenRAL's normal mission decomposition;
-- normal world state;
-- normal typed tools;
-- no special mission-level space enforcement.
+Before enabling the new mission runtime, run Mission A through stock OpenRAL reasoner + world state + typed tools + shared LunarBot capabilities. Save the trace to identify integration failures and to ensure the proposed changes are actually necessary.
 
-Capture exactly how it fails or succeeds under nominal conditions.
+This diagnostic is **not** one of the three paper methods unless later evidence shows that a specific comparison is scientifically indispensable.
 
-This becomes both a baseline and a diagnostic for what the new runtime actually needs.
+## 9.2 LLM mission-reasoning contract
 
-**What "unmodified/generic" means here, precisely (2026-09-14):** the
-reasoner (`ReasonerCore`, `reasoner_node`), `MissionState` +
-`decompose_mission`, the tool palette, world state, the rSkill runner and
-the safety kernel are stock. What is *not* stock, and is shared identically
-by every baseline, is the LunarBot capability set (§8.3) and the SRB
-deploy backend (§8.3 item 2b — `openral deploy sim` had no SRB scene
-backend; it gains one, so the process graph and the mission text
-(`--initial-task` → `initial_task_prompt` → `MissionState.from_prompt`)
-go through the standard CLI). Baseline B in the paper is described exactly
-this way. Nothing in the
-capability set may encode mission logic (no "remount panel" skill — only
-`grasp`, `move_ee_to_pose`, `navigate`, …), or the baseline comparison is
-contaminated.
+The reasoner may:
 
-## 9.2 Add space information as prompt-only baseline
+- interpret the mission instruction;
+- propose/decompose subgoals;
+- request scene/state information;
+- select registered capabilities;
+- diagnose unexpected observations;
+- recompose the remaining mission;
+- request escalation/clarification;
+- generate a report from structured state/evidence.
 
-Create a context provider that renders the same space-operational data into the reasoner situation report without independent enforcement.
+The reasoner may not:
 
-This baseline is essential. It answers whether the entire contribution could be replaced by prompt engineering.
+- issue raw joint/base commands;
+- create an unregistered physical capability;
+- directly mutate authoritative mission state;
+- override mission authority, FDIR, or low-level safety;
+- mark a transition verified without a verifier event.
 
-Keep the underlying data identical to the proposed system.
+Encode these boundaries in the tool schema and dispatcher, not only in prompt prose.
 
-## 9.3 Proposed context builder
+## 9.3 VLM / semantic observation path
 
-The proposed system should construct a compact reasoner context containing only mission-relevant information:
+Reuse OpenRAL's scene-VLM path where possible. Add only the minimum interface needed to support Mission A semantic cases.
 
-- mission goal/current objective;
+The VLM query API should support questions such as:
+
+- identify which infrastructure component appears abnormal;
+- determine whether access is visually obstructed;
+- compare the observed configuration with a named expected configuration;
+- suggest what region/component requires closer inspection.
+
+VLM output is logged with image/evidence reference, timestamp, model identity, and confidence/quality metadata if provided. It enters reasoner context as an observation; deterministic simulator truth remains confined to the verifier/evaluator unless the same state would be available on the real robot.
+
+## 9.4 Context builder
+
+Construct compact context from:
+
+- mission objective/current objective;
 - verified progress;
-- unresolved issues;
-- relevant world-state summary;
-- current communication/compute availability;
-- relevant resource/health state;
-- current authority/policy cues;
-- available capabilities;
-- relevant recent evidence/events.
+- unresolved anomalies;
+- relevant world state;
+- current semantic observations;
+- available/degraded capabilities;
+- active FDIR state;
+- current mission authority;
+- mission-relevant communication/compute/resource context;
+- recent evidence and failed attempts.
 
-Avoid dumping raw telemetry or entire mission history.
+Do not dump the full mission history or raw telemetry.
 
-Context selection rules should be explicit and testable, not hidden prompt text.
+## 9.5 Natural-language status/report generation
 
-## 9.4 Multi-endpoint reasoning
+At mission end or operator request, generate a concise report from authoritative state and evidence references. The report must distinguish verified facts from unresolved hypotheses and escalations.
 
-Configure multiple reasoner endpoints/models only after the single-endpoint runtime works.
+Do not score prose quality as a main experiment metric. The report is a system capability and qualitative trace artifact.
 
-Use OpenRAL's provider/model abstraction where possible. The network/link emulator controls which endpoint is reachable.
+## 9.6 Optional prompt-only ablation
 
-Log all model changes and reconstruct context from authoritative state on every switch.
-
----
+Do not implement this as a main baseline. Only after the full method works, a single targeted ablation may bypass authoritative mission-level enforcement/verification while leaving the LLM informed of the same state. Run it only on the small trustworthiness subset needed to establish H3.
 
 # 10. Trustworthiness/FDIR integration work package
 
@@ -1094,299 +1149,519 @@ The verifier implementation should be deterministic where direct simulator/robot
 
 ---
 
-# 11. Baseline implementation
+# 11. External baseline implementation
 
-All baselines must share the same capabilities and environment where possible.
+The main paper compares exactly three methods: **PLEXIL**, **EUROPA→PLEXIL**, and **Ours**.
 
-## 11.1 Procedure-driven baseline
+All three use the same environment, robot embodiment, navigation, perception/VLM service, manipulation skills, verifier, FDIR signals, and low-level safety path.
 
-Implement the mission as a behavior tree, state machine, or explicit procedure using the same low-level capabilities.
+## 11.1 PLEXIL baseline
 
-Design principle:
+### Build/pin
 
-- encode nominal task flow and reasonable predefined recovery branches;
-- do not deliberately make it weak;
-- when an unencoded condition occurs, use the system's defined fallback/human intervention path.
+- clone/pin `plexil-group/plexil` Release 6;
+- build and run upstream examples with `plexilc`, `plexiltest`, and `plexilexec`;
+- save exact revision and build toolchain in `docs/baselines/plexil.md`.
 
-Document what is pre-engineered so human engineering effort is transparent.
+### LunarBot adapter
 
-## 11.2 Generic OpenRAL baseline
+Expose common capabilities as Commands. The initial set should include only capabilities available to Ours, for example:
 
-Use the upstream reasoner, world state, mission task ledger, typed tools, and safety with minimal space-specific additions required only to run the simulator.
+- `NavigateToPose`;
+- `SceneQuery` / `InspectRegion`;
+- `LocateObject` where needed;
+- `MoveEEToPose` / `MoveJoints`;
+- `Grasp`, `Release`, `Stow`;
+- other general-purpose capabilities introduced later.
 
-Do not provide independent mission-runtime use of space context.
+Expose state as Lookups, e.g. robot region/pose summary, capability availability, relevant object/component state, action status, FDIR state, authority state, and verifier result.
 
-## 11.3 Prompt-only space-aware baseline
+Commands must call the shared capability execution path. The PLEXIL adapter may not directly bypass the common safety layer.
 
-Provide the same space-context variables to the reasoner in textual/structured context, but bypass the proposed independent mission-state decision semantics.
+### Plan authoring
 
-This baseline must still retain low-level OpenRAL safety.
+Create a plan library for Mission A/B model-covered cases using native PLEXIL constructs. Include reasonable predefined recovery logic. Use library nodes for reusable general procedures rather than duplicating plans.
 
-## 11.4 Proposed system
+Every plan/library file used in a campaign is hashed into the freeze manifest.
+
+## 11.2 EUROPA→PLEXIL baseline
+
+### Build/pin
+
+- clone/pin `nasa/europa`;
+- build its documented examples in a reproducible container/toolchain;
+- write `docs/baselines/europa.md` recording the exact APIs used by the host application.
+
+### Domain model
+
+Create an NDDL/domain model only from knowledge declared available before the freeze. Model the actions/states/resources/constraints needed to solve covered Mission A/B situations.
+
+Do not hand-code held-out task decompositions after seeing final held-out cases.
+
+### Online host and replanning loop
+
+Implement a small host application that:
+
+1. loads the domain and mission/problem instance;
+2. injects current shared world/mission state;
+3. invokes the EUROPA solver;
+4. extracts executable activity tokens;
+5. dispatches the next valid activities through the PLEXIL bridge;
+6. receives action/verifier/FDIR updates;
+7. updates the plan database and allows solver repair/replanning within the frozen domain.
+
+This loop is required for a fair baseline. Do not generate one static sequence and call that EUROPA planning.
+
+### PLEXIL execution bridge
+
+Prefer a generic activity-dispatch PLEXIL library so the mission logic stays in EUROPA rather than duplicated into PLEXIL. Each EUROPA activity maps to a shared capability invocation and returns status/evidence to the host.
+
+## 11.3 Proposed system
 
 Enable:
 
+- LLM/VLM mission reasoning;
 - authoritative mission state;
 - dynamic context builder;
-- space context service;
-- mission-level proposal disposition;
-- FDIR/authority integration;
-- independent outcome verification;
-- distributed reasoner reconciliation where tested;
+- typed capability orchestration;
+- mission-level admissibility/authority;
+- mission-relevant space context;
+- FDIR/capability degradation integration;
+- independent verification;
+- distributed-reasoner reconciliation where exercised;
 - trace/evidence linkage.
 
----
+## 11.4 Development-only diagnostics
+
+The following are not paper baselines unless promoted later for a specific reason:
+
+- unmodified generic OpenRAL;
+- prompt-only space context;
+- handcrafted behavior tree/state machine.
+
+Do not spend implementation time polishing these once the external baselines work.
 
 # 12. Experiment runner architecture
 
-Create one experiment runner that can instantiate all baselines through configuration rather than separate scripts.
+Create one experiment runner that instantiates all three methods through configuration and writes a common artifact schema.
 
 Suggested layout:
 
 ```text
 experiments/
 ├── runner.py
-├── configs/
-│   ├── baseline_procedure.yaml
-│   ├── baseline_openral.yaml
-│   ├── baseline_prompt_space.yaml
-│   └── proposed.yaml
+├── methods/
+│   ├── plexil.yaml
+│   ├── europa_plexil.yaml
+│   └── ours.yaml
 ├── scenarios/
-├── perturbations/
+│   ├── mission_a/
+│   │   ├── covered/
+│   │   └── held_out/
+│   └── mission_b/
+│       ├── covered/
+│       └── held_out/
+├── extension_cases/       # Experiment II
+├── freeze_manifests/
+├── operator_events/
 ├── launch/
 └── manifests/
 ```
 
-A run manifest must include:
+Every scenario manifest must declare:
 
-- baseline/method;
-- mission ID;
-- scenario/perturbation configuration;
-- random seeds;
-- model/provider identifiers;
-- OpenRAL/SRB git revisions;
-- space-context profile IDs;
-- capability registry snapshot;
-- network profile;
-- log/trace locations.
+- mission family and instance ID;
+- simulator seed/initial state;
+- whether it is covered or held-out;
+- evaluator-only success conditions;
+- required primitive capabilities (for closed-capability validation);
+- mission deadline/constraints where applicable;
+- relevant space-context profile;
+- perturbations/semantic conditions;
+- evidence/verifier mapping.
 
-Do not make experiment scripts contain method-specific hidden constants.
+The method must not receive evaluator-only solution annotations.
 
----
+Every run manifest must include:
+
+- method;
+- mission/scenario ID;
+- random seed;
+- foundation-model/provider configuration where used;
+- PLEXIL/EUROPA/OpenRAL/SRB revisions;
+- hashes of frozen mission/domain/prompt/capability artifacts;
+- space/network profile IDs;
+- capability-registry snapshot;
+- operator event log;
+- trace/log locations;
+- final metrics.
+
+The runner must reject a run if artifact hashes differ from the declared campaign freeze manifest.
 
 # 13. Experimental campaign design
 
-Do not begin with massive sweeps. First establish that every condition produces interpretable traces, then scale the repetitions needed for statistical analysis.
+There are two main experiments and one later hardware demonstration.
 
-## 13.1 Nominal mission campaign
+## 13.1 Pre-campaign validation and artifact freeze
 
-Purpose:
+Before collecting paper results:
 
-- verify the entire mission loop;
-- characterize each baseline under normal conditions;
-- identify accidental infrastructure failures before adding research perturbations.
+1. finish the common LunarBot capability stack;
+2. validate Mission A/B success conditions independently from all methods;
+3. run PLEXIL and EUROPA→PLEXIL on model-covered development cases until infrastructure/baseline bugs are resolved;
+4. run Ours on the same development cases;
+5. finalize generic capability metadata, prompts/policies, PLEXIL plan libraries, EUROPA domain/solver configuration, mission policies, and verifier mappings;
+6. create a cryptographic freeze manifest for all method-specific artifacts;
+7. only then reveal/instantiate final held-out cases.
 
-Required outputs:
+Infrastructure defects discovered after freeze may be fixed only if the same correction is applied fairly and the affected campaign is rerun from the start. A method-specific change that adds missing task knowledge invalidates the freeze and is counted as re-authoring.
 
-- mission completion trace;
-- capability calls;
-- verifier events;
-- human/escalation events;
-- communication/model calls;
-- state-transition log.
+## 13.2 Experiment I — Autonomous Mission Generalization
 
-## 13.2 Mission-openness campaign
+### Objective
 
-Vary mission conditions that require non-predefined reasoning:
+Test H1: whether Ours expands the autonomous mission envelope beyond fully pre-engineered task models.
 
-- changed object/target arrangement;
-- unexpected state requiring additional inspection;
-- alternate action ordering;
-- unavailable preferred capability;
-- recoverable manipulation/navigation failure.
+### Factor structure
 
-Goal: compare procedure-driven versus agentic coordination.
+Primary factor: **mission-model coverage**.
 
-## 13.3 Space-communication / distributed-intelligence campaign
+- `covered`: solution task/decomposition is representable in frozen baseline artifacts;
+- `held_out`: required primitive capabilities exist, but scenario-specific semantic diagnosis/decomposition/composition is absent from frozen PLEXIL/EUROPA artifacts.
 
-Use mission-derived communication/contact profiles to vary:
+Run both Mission A and Mission B. Do not multiply factors unnecessarily. Space communication/resource/FDIR conditions are included only when they materially affect the mission logic of selected instances.
 
-- remote model availability;
-- link interruptions and reconnection;
-- relay/DTE availability;
-- link delay/bandwidth conditions;
-- availability of surface versus onboard reasoners.
+### Closed-capability validator
 
-Compare:
+Before a held-out instance is admitted to the campaign, an evaluator script/manual review must confirm:
 
-- generic harness behavior;
-- prompt-only awareness;
-- proposed authoritative state/context reconstruction.
+- a valid solution exists using only capabilities present before freeze;
+- every required observation is available through the shared perception stack;
+- the proposed method has no scenario-specific hard-coded solution;
+- the baseline's missing knowledge is mission-level structure, not a missing controller/sensor.
 
-Explicitly record stale-context, duplicate-action, skipped-action, and conflicting-action events.
+Store this certificate with the scenario manifest but do not expose the solution sequence to the methods.
 
-## 13.4 Environmental/resource-context campaign
+### Operator protocol
 
-Vary lunar operational context represented by the mission scenario:
+Use one standardized ground-operator interface for all methods.
 
-- illumination/shadow condition;
-- resource margin;
-- terrain/mobility difficulty;
-- compute/data availability.
+Allowed during a run:
 
-The purpose is to test whether these variables change runtime decisions appropriately, not to optimize them globally.
+- provide the initial mission/goal in the method's required representation;
+- answer an explicit clarification/escalation request if the mission authority permits;
+- issue an operational abort/safe-stop if required.
 
-## 13.5 Trustworthiness campaign
+Not allowed during an autonomous run:
 
-Create controlled cases where the reasoner produces or is induced toward a proposal that is semantically plausible but inconsistent with mission state/authority/FDIR/resource context.
+- edit PLEXIL plans/libraries;
+- edit EUROPA NDDL/domain/solver rules;
+- edit Ours prompt/runtime/capability metadata;
+- add a new capability;
+- reveal evaluator-only state.
 
-Examples:
+If continuation requires such edits, set `ground_reauthoring_required=true`. The autonomous run terminates for the main success metric. A separate assisted completion may be performed for trace analysis but is not counted as autonomous success.
 
-- repeat an already completed transition;
-- act on a stale target state;
-- use an unavailable service;
-- continue after a fault that changes allowed capability;
-- claim success without evidence;
-- choose an operation requiring higher authority.
+### Human-interaction event logging
 
-Do not force hidden adversarial prompts into only one baseline. Perturbations must be applied consistently.
+The operator UI emits:
 
-## 13.6 Failure/recovery campaign
+```text
+interaction_start(type, authority_level)
+interaction_message(...)
+interaction_end()
+clarification_request(...)
+escalation_request(...)
+human_command(...)
+```
 
-Inject explicit simulator or service failures:
+`authority_level` uses the ALFUS ordering:
 
-- manipulation failure;
-- navigation blockage/failure;
-- perception degradation;
-- remote service unavailable;
-- model endpoint failure;
-- subsystem health event.
+`mission > strategic_goal > tactical_goal > mission_task > route > autopilot > servo`
 
-Measure how mission state and human intervention evolve after the failure.
+Do not infer interaction time from chat timestamps after the fact.
 
-## 13.7 Ablation campaign
+### Repetitions
 
-Only after the full method is stable, disable one mechanism at a time:
+Use paired scenario seeds across methods. Foundation-model runs should be repeated under a fixed provider/model/version and decoding configuration to measure stochastic variance. Determine final repetition count after pilot variance is known; do not hard-code a significance-driven number now.
 
-- authoritative mission state;
-- independent verification;
-- independent use of space context;
-- FDIR/authority integration;
-- reconciliation/context rebuild;
-- dynamic context selection.
+### Required output
 
-Ablations should use the same scenario/config seeds as the full method.
+One normalized result row per run plus complete trace. The main result table is generated directly from these rows.
 
----
+## 13.3 Experiment-II setup — extension cases
+
+Experiment II begins only after Experiment I artifacts are frozen.
+
+An extension case contains:
+
+```yaml
+extension_id: ...
+new_shared_capability: optional
+new_mission_requirement: ...
+validation_cases: ...          # visible during engineering
+held_out_cases: ...            # hidden until re-freeze
+allowed_shared_changes: ...    # identical for all methods
+```
+
+Two useful extension types are enough:
+
+1. **new capability registration/use** — low-level implementation is provided identically; each method must make it usable at mission level;
+2. **new task relationship/mission situation** — no new controller, but mission-level knowledge must be extended.
+
+Do not create many trivial extension cases.
+
+## 13.4 Experiment II — Autonomy Extensibility / Knowledge-Engineering Cost
+
+### Objective
+
+Test H2: how much method-specific engineering is needed to deliberately expand the supported autonomous mission envelope.
+
+### Timed authoring protocol
+
+For each method/extension case:
+
+1. start from the frozen Experiment-I repository state;
+2. reveal the extension specification and visible validation cases;
+3. start a dedicated engineering timer;
+4. allow the engineer to use normal documentation/tooling (and the same coding assistant policy, if coding agents are used);
+5. stop the timer only when the common validation suite passes;
+6. commit the method-specific changes and record the diff;
+7. create a new freeze manifest;
+8. reveal and run the held-out extension cases.
+
+Timer policy:
+
+- use elapsed active work-session time including edit/build/test/debug cycles;
+- pause only for unrelated interruptions or unavailable shared infrastructure;
+- record session start/stop explicitly in `engineering_worklog.jsonl`;
+- do not reconstruct timing from git commit timestamps.
+
+### Learning/carryover control
+
+Preferred design: multiple qualified developers with counterbalanced method order across extension cases.
+
+If resources only permit one developer, report engineering time as controlled case-study evidence, not a population-level human-factors statistic. In that case artifact deltas and post-extension held-out performance become especially important.
+
+### Validation suite
+
+The visible suite checks syntax/build, capability wiring, one nominal extension case, safety/verifier integration, and trace completeness. It must not contain the final held-out extension scenarios.
+
+## 13.5 Targeted trustworthiness analysis
+
+Do not run a broad third experiment.
+
+If required to support H3, select a small subset of Experiment-I cases that can expose stale/duplicate/unsupported mission transitions and compare:
+
+- Full Ours;
+- Ours with mission-level enforcement/independent verification bypassed while retaining the same model context.
+
+Only the relevant trust metrics are reported. This belongs in failure analysis/supplement unless it becomes essential to the main result.
+
+## 13.6 LunarBot demonstration
+
+After the simulation result is stable, execute one representative multi-step mission segment on the real LunarBot using the same capability/runtimes interfaces.
+
+Minimum desired evidence:
+
+- mission-level natural-language instruction;
+- reasoner-selected sequence of at least navigation/inspection/manipulation or an equivalent multi-stage subset;
+- real ROS/sensor feedback entering mission state;
+- one independently verified physical outcome;
+- final trace-linked natural-language report.
+
+Detailed real-robot experiment design is intentionally deferred.
 
 # 14. Metrics and post-processing
 
-Implement metrics from logs/traces rather than manual annotation wherever possible.
+Metrics must be computed from normalized logs wherever possible. Do not create a composite autonomy score.
 
-## 14.1 Mission metrics
+## 14.1 Mission accomplishment
 
-- mission success/failure;
-- objective/subobjective completion;
-- execution duration / idle time;
-- recovery episodes;
-- unfinished/aborted mission state.
+### Autonomous Mission Success
 
-## 14.2 Human-autonomy metrics
+Binary per run:
 
-- human intervention count;
-- manually supplied subtask count;
-- escalation/clarification count;
-- autonomous mission-transition fraction;
-- command granularity representation;
-- human decision time if measurable.
+```text
+1  if all required final mission conditions are verified
+   AND no post-reveal method-specific artifact modification was required
+0  otherwise
+```
 
-## 14.3 Trustworthiness metrics
+Also store failure reason and completed subobjectives for diagnosis.
 
-Create explicit event classifiers for:
+### Assisted Mission Success
 
-- mission-invalid action;
-- authority violation;
-- low-level safety violation/rejection;
-- stale-state action;
-- duplicate action;
-- skipped required mission transition;
-- unsupported mission-state advancement;
-- continued execution after unresolved critical failure.
+Optional descriptive field for runs completed after operator help. It must never replace the primary autonomous-success metric.
 
-Do not infer these from LLM text alone; derive them from mission/event state where possible.
+## 14.2 ALFUS-grounded Human Independence measures
 
-## 14.4 Communication/compute metrics
+The experiment adapts NIST ALFUS metrics directly and reports raw quantities.
 
-- local/surface/remote reasoning calls;
-- service/model availability intervals;
-- data transferred where measurable;
-- waiting attributable to communication or remote inference;
-- endpoint switching;
-- operations completed while remote intelligence is unavailable.
+### Human Intervention Ratio
 
-## 14.5 Traceability metrics
+```text
+HIR = total active operator-system interaction time / mission elapsed time
+```
 
-For each consequential mission transition, check whether the trace includes:
+Mission elapsed time starts when the mission is accepted for execution and ends at terminal success/failure/abort. Simulator startup is excluded. Interaction time comes from explicit `interaction_start/end` events.
+
+### Human Planning / preplanning burden
+
+ALFUS lists the ratio of human planning time to mission time and describes the portion of a mission plan pre-generated by humans. For this study record both raw values rather than force them into one ambiguous statistic:
+
+```text
+human_mission_specific_planning_time_s
+preplanned_transition_fraction
+```
+
+`preplanned_transition_fraction` is the fraction of required mission transitions whose scenario-specific decomposition/order is explicitly represented in a frozen human-authored plan/task artifact rather than generated online. The annotation rule must be fixed before the final campaign.
+
+Experiment II separately measures the larger offline domain/plan engineering burden.
+
+### Level of Human Interaction
+
+Store every operator input with the ALFUS authority category:
+
+1. assign mission
+2. assign strategic goal
+3. assign tactical goal
+4. assign mission task
+5. route
+6. autopilot
+7. servo
+
+Report the distribution and the lowest-level intervention required by each run. Do not collapse this ordinal measure into an arbitrary numeric average without justification.
+
+### Mission-variation coverage / dynamic planning
+
+ALFUS suggests the degree of mission variation handled and the percentage of a mission performed without preplan. Operationalize this with:
+
+- success by held-out situation category;
+- number/fraction of required transitions generated online rather than scenario-specifically pre-authored;
+- `ground_reauthoring_required` rate.
+
+## 14.3 Trustworthiness measures
+
+Derived from the authoritative event log/evaluator:
+
+- mission-invalid proposed action count;
+- mission-invalid executed action count;
+- authority violation count;
+- low-level safety rejection/violation count;
+- stale-state action count;
+- duplicate action count;
+- unsupported mission-state advancement count;
+- false completion declaration count;
+- continued execution after unresolved critical fault count.
+
+The main paper should report only the subset needed to establish that higher autonomy did not come from relaxing mission discipline. Keep the rest for failure analysis/supplement.
+
+## 14.4 Experiment-II engineering measures
+
+### Engineering Time-to-Valid-Support (ETVS)
+
+```text
+ETVS = sum(active timed engineering-session durations)
+```
+
+from extension-spec release until the common visible validation suite first passes.
+
+### Mission-specific artifact delta
+
+For every method record:
+
+- files added/modified;
+- artifact types changed;
+- semantic constructs added where countable;
+- line delta as supplemental descriptive data only;
+- validation/build/test iterations;
+- modeling/logic errors identified during validation.
+
+Do not compare raw line counts across PLEXIL/NDDL/Python as a universal complexity metric.
+
+### Post-extension held-out success
+
+Same Autonomous Mission Success definition as Experiment I, applied after the extension re-freeze.
+
+## 14.5 Supporting system metrics
+
+Collect but do not necessarily headline:
+
+- mission duration and idle time;
+- capability call counts;
+- local/remote model calls and inference latency;
+- communication waiting time where exercised;
+- endpoint switches;
+- trace completeness;
+- tokens/API usage if relevant for reproducibility/cost.
+
+## 14.6 Trace completeness
+
+For each consequential mission transition, automatically verify presence of:
 
 - mission-state version;
-- relevant space-context version;
+- relevant context/evidence reference;
 - proposal/tool call;
-- mission-level disposition;
+- mission-level disposition for Ours;
 - execution result;
-- verifier/evidence reference;
+- verifier result;
 - resulting mission-state transition.
 
-Build an automated completeness checker.
-
----
+For PLEXIL/EUROPA baselines, store the analogous plan node/token/activity identifiers so failure analysis remains comparable.
 
 # 15. Statistical analysis plan
 
-Do not choose statistical tests or sample counts before seeing the metric distributions and experimental dependence structure.
+The final statistical test set is frozen after pilot runs expose the dependence structure and variance. The implementation must support the following without forcing all of them into the paper.
 
-The analysis pipeline should nevertheless support:
+## Experiment I
 
-- per-scenario repeated trials;
-- paired comparisons when the same scenario seed is used across baselines;
-- confidence intervals via appropriate bootstrap or parametric methods after inspecting distributions;
-- categorical failure-mode comparison;
-- stratification by perturbation type and mission class;
-- reporting both central tendency and variance;
-- raw per-run trace retention for qualitative failure analysis.
+- paired comparisons because the same scenario instance/seed is used across methods;
+- confidence intervals for autonomous success rates;
+- paired categorical comparison for success/failure where appropriate;
+- bootstrap or otherwise appropriate confidence intervals for HIR and continuous timing measures;
+- stratification by `covered` versus `held_out` and by mission family;
+- report the ordinal Human Interaction Level directly rather than treating it as interval data;
+- foundation-model run variance shown explicitly.
 
-Pre-register the final comparison procedure in the experiment configuration before the large final campaign to avoid selectively changing metrics after results appear.
+The primary interaction of interest is **method × model-coverage condition**: a strong result is not merely higher nominal success but smaller degradation from covered to held-out cases.
 
----
+## Experiment II
 
-# 16. LunarBot extension — after the simulation mechanism is stable
+- if multiple engineers/repetitions exist, report engineer/case variation and use paired/counterbalanced analysis;
+- if only one engineer is available, treat ETVS as descriptive case-study evidence and avoid population-level significance claims;
+- always pair engineering effort with post-extension held-out mission success.
 
-Do not make LunarBot a prerequisite for the scientific core.
+## Failure analysis
 
-Target purpose:
+Every failed run is assigned one primary category from a frozen taxonomy such as:
 
-- demonstrate the same runtime on a real mobile manipulator;
-- validate real ROS2 capability interfaces;
-- reproduce the distributed compute hierarchy using onboard/local, LAN, and remote model endpoints;
-- measure actual model/VLA/controller latency and selected failure modes;
-- execute a representative segment of the long-horizon mission.
+- perception/semantic interpretation;
+- mission-model coverage/decomposition;
+- planner/executive failure;
+- capability/controller failure;
+- runtime admissibility/authority;
+- verification failure;
+- infrastructure failure.
 
-Integration strategy:
+Infrastructure failures are fixed and affected runs repeated before final analysis; they are not counted as scientific failures.
 
-- preserve the same mission-runtime and reasoner interfaces;
-- replace SRB capability endpoints with LunarBot ROS2 services/actions;
-- reuse existing LunarBot navigation/manipulation/VLA infrastructure;
-- apply the same external space-context and link-emulation service;
-- do not build a lunar-analogue field environment solely for this paper.
+Pre-register final metric definitions, freeze hashes, exclusion rules, and analysis scripts before the final campaign.
 
-Because the simulated embodiment *is* LunarBot (§6.2) with identical joint
-names, the RM-75 datasheet limits (`docs/lunar_bot_rm75_spec.md`) and the
-Humble/3.10 runtime, the transfer surface is the HAL (`LunarBotSRBHAL` →
-a real-driver HAL) and the sensor bridge; rSkills, manifests, Nav2/MoveIt
-configs and the mission runtime carry over unchanged.
+# 16. LunarBot hardware demonstration — after the simulation result is stable
 
-Only include this in the final manuscript if it strengthens the claim without obscuring the main controlled experiments.
+The real-robot component is intentionally a **demonstration of runtime transfer**, not a third baseline experiment.
 
----
+Purpose:
+
+- show that the same authoritative mission runtime and typed capability interfaces drive the real LunarBot;
+- show that real ROS/sensor feedback replaces simulator observations without changing the mission-level architecture;
+- exercise one representative multi-step segment;
+- produce a trace-linked natural-language mission report.
+
+Keep the simulation/real joint names, HAL, rSkills, Nav2/MoveIt configuration, verifier interface, and Humble runtime aligned so transfer is primarily an endpoint/sensor-backend change.
+
+Do not attempt to reproduce lunar environmental fidelity on Earth. Detailed hardware protocol will be designed later after the simulation claims are established.
 
 # 17. Test strategy
 
@@ -1475,15 +1750,14 @@ The development order should reduce uncertainty one integration boundary at a ti
 
 **Exit condition:** mission objectives can be evaluated independently of the reasoner's textual claims.
 
-## Phase D — Space-context service
+## Phase D — Mission-relevant space context only
 
-- build SPICE geometry profiles;
-- build relay/contact profile;
-- build link emulator;
-- add resource/compute/health context;
-- validate that these states affect actual service availability or mission state.
+- select the smallest set of lunar operational variables actually exercised by the final Mission A/B scenarios;
+- for any communication/contact variable used, derive it from a documented profile/tool and make it affect real service availability;
+- for any resource/health variable used, implement a transparent typed state and mission consequence;
+- do not build unused SPICE/relay/thermal/resource infrastructure merely for completeness.
 
-**Exit condition:** space conditions are real runtime inputs rather than prompt-only metadata.
+**Exit condition:** every implemented space-context variable changes an actual mission decision or availability condition in Experiment I/II and has documented provenance.
 
 ## Phase E — Authoritative mission runtime
 
@@ -1496,30 +1770,46 @@ The development order should reduce uncertainty one integration boundary at a ti
 
 **Exit condition:** the foundation model can be restarted or changed without losing authoritative mission progress.
 
-## Phase F — Baselines
+## Phase F — External baseline integration
 
-- procedure-driven;
-- generic OpenRAL;
-- prompt-only space-aware;
-- proposed runtime.
+- build/pin PLEXIL Release 6 and verify upstream examples;
+- implement the LunarBot PLEXIL adapter through the shared capability/safety path;
+- author Mission A/B model-covered PLEXIL plans;
+- build/pin EUROPA and verify its examples;
+- implement the EUROPA host/domain and online replanning loop;
+- implement the EUROPA→PLEXIL execution bridge;
+- normalize baseline logs into the common experiment schema.
 
-**Exit condition:** all baselines execute the same mission/capability set and produce normalized logs.
+**Exit condition:** PLEXIL, EUROPA→PLEXIL, and Ours all execute the same model-covered mission instances through the same capability stack and verifier.
 
-## Phase G — Controlled experiments
+## Phase G — Experiment-I freeze and campaign
 
-Run nominal and perturbation campaigns, inspect traces, fix infrastructure bugs, then freeze experiment configurations for the final campaign.
+- finalize covered development cases;
+- generate/validate held-out cases with the closed-capability validator;
+- freeze method artifacts and hashes before revealing final held-out cases;
+- run paired covered/held-out campaigns for Mission A/B;
+- compute ALFUS-grounded autonomy metrics and failure taxonomy.
 
-Do not change the proposed method in response to a single poor result without first determining whether the issue is implementation, experimental assumption, or genuine hypothesis falsification.
+**Exit condition:** the H1 evidence table/figures can be generated entirely from run artifacts.
 
-## Phase H — Ablations and analysis
+## Phase H — Experiment-II extension study
 
-Run only mechanism-relevant ablations. Generate plots/tables directly from experiment artifacts.
+- define one or two nontrivial extension cases;
+- restore Experiment-I frozen states;
+- perform timed, logged method-specific extension work;
+- validate and re-freeze;
+- run hidden post-extension cases;
+- analyze ETVS, artifact deltas, and held-out mission success.
 
-## Phase I — Optional LunarBot transfer
+**Exit condition:** H2 can be evaluated without qualitative hand-waving about "ease of extension."
 
-Add LunarBot only after the simulation study has a coherent scientific result.
+## Phase I — Targeted trustworthiness analysis
 
----
+Only if necessary, run the single enforcement/verification ablation on selected Experiment-I scenarios and produce the mission-invalid-transition analysis.
+
+## Phase J — LunarBot demonstration
+
+Transfer one representative mission segment to hardware after the simulation results are coherent.
 
 # 19. Experiment artifacts and reproducibility
 
@@ -1565,36 +1855,42 @@ Create scripts that aggregate run artifacts into analysis tables without hand-ed
 
 ---
 
-# 21. Immediate concrete tasks (revised 2026-09-14)
+# 21. Immediate concrete tasks (revised after baseline/experiment redesign, 2026-09-14)
 
-Status of the original list: 1–4 done; 5 written
-(`docs/mission_a_panel_remount.md`) but **not usable yet** because 6's
-preconditions are unmet (rule 0.11); 6–10 not started. Revised order:
+Do not interrupt the current LunarBot capability-set work. The scientific redesign changes what comes **after** the common stack is functional.
 
-1. ~~Repository skeleton + pins.~~ Done.
-2. ~~`docs/openral_integration_notes.md`.~~ Done.
-3. ~~`docs/srb_integration_notes.md`.~~ Done.
-4. ~~Minimal ROS integration, one SRB action through the normal path.~~ Done, and extended to the full base/arm/gripper HAL (B1).
-5. **Build the LunarBot capability set, §8.3 items 1–9, in order**, each verified live. This is the current work.
-6. **Phase B3:** reasoner-in-the-loop multi-step run with a full §19 run directory. Phase B exit.
-7. `panel_remount` v2 per §6.4's status note (Phase C start), with simulator-truth topics for every mission transition.
-8. Run unmodified/generic OpenRAL on Mission A v2 (the original item 6); save traces; document concrete failure modes and missing semantics — now meaningful, because failures will be *mission-level*, not "no capability existed".
-9. Only then implement the first `space_runtime` schemas/events required by observed mission-level failures (original 7).
-10. In parallel with 5–8, create the SPICE/contact-profile preprocessing scripts and a typed `space_context` service; do not connect them to mission decisions until validated (original 8).
-11. Prompt-only space-aware baseline before independent enforcement (original 9).
-12. Keep `docs/research_findings.md` current (original 10). Findings that are *infrastructure gaps* (F11, F12, F16, F19, F20, the rSkill/sensor gaps) are fixed, not merely recorded — rule 0.12.
-
----
+1. Finish LunarBot capability set §8.3 through the reasoner-in-loop Phase B exit condition.
+2. Upgrade `panel_remount` to Mission A v2 with multiple components, semantic inspection, real navigation approach, deterministic verifier truth, and controllable covered/held-out condition switches.
+3. Build a minimal Mission B only after Mission A's shared capabilities work; keep it compositionally distinct but smaller.
+4. Create the common `capability_server`/adapter boundary that can be called identically by Ours and PLEXIL; verify that every route still passes through the same safety/verifier path.
+5. Pin/build PLEXIL Release 6 and implement the LunarBot adapter; run one covered Mission A instance end-to-end.
+6. Pin/build EUROPA and implement a minimal NDDL domain + host + EUROPA→PLEXIL activity bridge; verify online feedback and replanning inside the encoded domain on the same covered case.
+7. Implement experiment scenario manifests, evaluator-only success annotations, freeze-manifest hashing, and the closed-capability validator.
+8. Finish the proposed `space_runtime`/LLM/VLM mission path needed for Mission A; implement only the space-context variables actually exercised by final scenarios.
+9. Run all three methods on covered development cases until infrastructure defects are removed; do not tune against final held-out cases.
+10. Construct final held-out cases, freeze all method artifacts, and run Experiment I.
+11. After Experiment I, define extension cases and implement timed engineering worklogs for Experiment II.
+12. Only after both experiments are coherent, design the LunarBot hardware demo in detail.
+13. Keep `docs/research_findings.md`, baseline integration notes, freeze manifests, and citation/source notes current.
 
 # 22. Reference documentation reviewed for this plan
 
-The execution design above is based on the current public documentation/code structure of:
+Baseline and metric implementation decisions in this plan are grounded in the following primary/official sources and must be rechecked against the pinned revisions used in experiments:
 
-- OpenRAL repository README and architecture overview;
-- OpenRAL reasoner reference and ROS reasoner package documentation;
-- OpenRAL repo map, core schemas, roadmap, and `CLAUDE.md` engineering rules;
-- Space Robotics Bench introduction, basic usage, environment configuration, new-task guide, and ROS 2 / Space ROS integration documentation;
-- Inspect Robots repository documentation for task/policy/embodiment/scorer separation and Isaac Lab/ROS evaluation paths.
+- PLEXIL Release 6 official repository (`plexil-group/plexil`) and User's Guide/Reference;
+- PLEXIL Executive and InterfaceAdapter/Command/Lookup documentation;
+- Estlin et al., NASA/TM-2006-213483, *Plan Execution Interchange Language (PLEXIL)*;
+- NASA EUROPA official repository (`nasa/europa`), README, examples, and documentation;
+- Bedrax-Weiss et al., NASA/NTRS 20050157874, *EUROPA2: Plan Database Services for Planning and Scheduling Applications*;
+- JPL CASPER project documentation for continuous iterative-repair replanning;
+- JPL MEXEC project documentation and MEXEC/ASTERIA publications for task-network planning/execution;
+- JPL CADRE planning/scheduling/execution publications for current lunar onboard-autonomy context;
+- JPL TaskNet project documentation for task-network authoring/knowledge-engineering burden;
+- NIST SP 1011-II-1.0 ALFUS Framework for Human Independence and dynamic-planning metrics;
+- Goodrich/Olsen HRI metrics as supporting operator-attention context;
+- planning knowledge-engineering literature including MyPDDL for time-on-task/error measurement precedent;
+- OpenRAL pinned source/documentation;
+- Space Robotics Bench pinned source/documentation;
+- NAIF SPICE and selected lunar communication/context references only for variables actually exercised in final scenarios.
 
-Because all three projects are active, the coding agent must verify the pinned revision before relying on any API/path stated in this plan.
-
+Do not rely on summary prose in this plan when the exact upstream API or metric definition can be checked directly.

@@ -12,8 +12,8 @@ superseded by this document).
 §3's six steps are all implemented and live-verified through the launch
 graph composing, spawning SRB for real, and the HAL reaching ACTIVE; the
 one remaining piece (a reasoner-dispatched body_twist actually observed
-moving the base) is blocked on a host-load-dependent SRB tick rate, not on
-anything in this plan.
+moving the base) was blocked on SRB's tick rate — root-caused and fixed
+2026-09-14 (F28: 0.36 → ~12 Hz, all SRB-side) — so it is simply next.
 
 ## 1. How the existing `isaacsim` backend works (what can migrate)
 
@@ -72,9 +72,10 @@ Two of the design's own anticipated mechanisms turned out to already exist
 see F26); one real bug was found and fixed (`deploy_config:=` never reached
 the launch on the sim path — F26). Not yet reached: the full exit condition
 below (a reasoner-dispatched body_twist actually moving the base) — every
-piece of the wiring it depends on is verified, but the run observed was
-bottlenecked on SRB's own tick rate under this host's load (F26's
-staleness finding), not on anything in this plan's own code.
+piece of the wiring it depends on is verified; the run observed was
+bottlenecked on SRB's own tick rate (F26's staleness finding), which F28
+root-caused (rosidl per-byte validation, CPU pointcloud/lidar/observation
+work under `sim.device=cpu`) and fixed to ~12 Hz.
 
 1. **Schema: `DeployScene.simulator`** (`python/core/src/openral_core/schemas.py`).
    New Pydantic model `ExternalSimulatorSpec`: `argv: list[str]`,
@@ -226,10 +227,13 @@ without SLAM and the paper says so.
   answered, and it's a real problem, not a non-issue**: F26's live run hit
   exactly this. `LunarBotSRBHAL`'s `staleness_limit_s=0.5` (wall-clock,
   hardcoded) repeatedly rejected `read_state()` because SRB's own
-  `joint_states` publish rate under that run's host load was only ~0.35-0.4
-  Hz (a `panel_remount_visual` 3-camera RTX render cost, not a code bug —
-  see F26). Follow-up: widen the HAL's default, or make it
-  manifest-configurable, before relying on a visual SRB task for a live
+  `joint_states` publish rate was only ~0.35-0.4 Hz. **Root-caused and
+  fixed (F28)** — not render cost: rosidl's per-byte Python validation of
+  `bytes` payloads plus CPU-side pointcloud/lidar/observation work forced
+  by `sim.device=cpu`; now ~12 Hz and the HAL no longer rejects
+  `read_state()`. `staleness_limit_s` was left untouched, per user
+  direction. (Original follow-up, now moot: widen the HAL's default, or
+  make it manifest-configurable, before relying on a visual SRB task for a live
   demo/eval run.
 - [x] Whether `openral deploy sim` ever needed changing beyond the six
   steps to actually reach SRB — **yes, one real bug**: `deploy_config:=`

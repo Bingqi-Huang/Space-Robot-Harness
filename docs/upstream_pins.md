@@ -7,8 +7,8 @@ and every experimental campaign to name the exact commits it ran against.
 
 | Project | Fork | Branch | Commit | Upstream | Tracking |
 |---|---|---|---|---|---|
-| OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-capability-set` | `f7b5ccd` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
-| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `feat/switchable-arm-control` | `90f9d5e` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
+| OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-capability-set` | `845483c` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
+| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `fix/ros-bridge-array-fast-path` (on `feat/mid360-lidar`) | `04c308a` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
 
 OpenRAL's pin has moved eight times since the initial `4700c7a`:
 `fa7f445`/`4c1867c` (Python 3.10/Humble downgrade,

@@ -53,24 +53,30 @@ after shutdown, still holding GPU memory — root-caused to NVIDIA's
 process-group handling at all; fixed with `tools/process_group_wrapper.py`
 (new process-group leader, kills the whole group on SIGTERM), tested
 against the real failure mode in `tests/unit/test_process_group_wrapper.py`
-(F27). Live-verified twice: graph composes, SRB spawns for real, the HAL's
-readiness gate blocks then passes, HAL reaches ACTIVE, and (2nd run) full
-process + GPU cleanup confirmed via `ps`/`nvidia-smi`. NOT yet reached: a
-reasoner-dispatched body_twist actually observed moving the base — SRB's
-`/clock` is genuinely ~0.36 Hz, re-confirmed independently on a clean host
-(F27); ruled out as causes: GPU render cost (0-4% GPU util measured),
-sustained disk I/O, the orphaned-process bug above. One CPU thread pegged
-near 100%, unprofiled — blocked on `sudo` for `py-spy` on this host. User
-direction: do not raise `staleness_limit_s` without finding the cause
-first — not done. **Debugging a live `deploy sim` graph**: it runs on
-`ROS_DOMAIN_ID=77` + `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` by design
-(`confine_sim_scope`) — an ordinary shell sees only `/parameter_events`/
-`/rosout` and looks exactly like the graph is missing; export both before
-using `ros2 topic` against it (cost real time this session, F27).
-**2c** RTX Lidar for the Mid-360 attempted, blocked on
-a confirmed upstream Isaac Sim bug (F24), **parked by user decision** —
-RayCaster (item 2) is permanent. Mid-360 itself (the other agent's work)
-landed on SRB `feat/mid360-lidar`, unmerged but usable.
+(F27). **The ~0.36 Hz SRB tick is solved (F28, SRB `04c308a` on
+`fix/ros-bridge-array-fast-path`)**: 0.36 → ~12 Hz through the full graph,
+five SRB-side causes (rosidl per-byte `bytes` validation → `array.array`;
+CPU pointcloud unprojection + publishing to nobody; Mid-360 RayCaster on
+warp-CPU → `srb.core.sensor.RayCaster` on CUDA; unread RL image
+observations → `skip_observations`; eager trace f-string), all because
+SRB pins `sim.device=cpu`. `SRB_ROS_PROFILE=1` prints a per-tick bucket
+breakdown every 100 ticks — use it before guessing. Residual ~82 ms =
+GPU render ~30 ms (3 cams; lands in the first sensor that syncs) + CPU
+PhysX ~21 ms; RTF ≈ 0.24. `staleness_limit_s` untouched. Also fixed:
+scripted `deploy sim` teardown never reached SRB — `&` in a
+non-interactive shell inherits `SIGINT=SIG_IGN` (`openral/845483c`,
+trampoline + SIGTERM-the-wrapper sweep), verified clean twice. **Open**:
+camera topics arrive in OpenRAL at ~2 Hz while SRB publishes at 12 Hz —
+Fast-DDS large-message loss (both sides Fast-DDS, `rmem_max` 208 KB), fix
+= XML profile for both + sysctl (F28). NOT yet reached: a
+reasoner-dispatched body_twist observed moving the base — nothing blocks
+it now. **Debugging a live `deploy sim` graph**: `ROS_DOMAIN_ID=77` +
+`ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (`confine_sim_scope`) — export
+both or `ros2 topic` sees only `/parameter_events`/`/rosout` (F27). The
+sensor bridge must be started with `.venv/bin/python -m
+openral_hal_lunar_bot.sensor_bridge_node` (system `ros2 run` lacks structlog).
+**2c** RTX Lidar for the Mid-360: blocked on a confirmed upstream Isaac
+Sim bug (F24), **parked by user decision** — RayCaster is permanent.
 
 Not started: **3–9** — procedural rSkills, F19 fix, Nav2
 (`pointcloud_to_laserscan` apt install needed), MoveIt (required), verifier
@@ -100,18 +106,13 @@ item 4 fixes it) and the same missing-magnitude-check gap for
   silently drops commands until `/openral/estop_cleared` (`std_msgs/Empty`)
   is also published — normally the operator dashboard's job. Any test
   script driving the kernel directly must publish it too after every reset.
-- **F18 — SRB's procedural moon terrain is only flat within ~4 m of the env
-  origin** (`flat_area_size` in `srb/core/env/common/base/env_cfg.py`).
-  A rigid object spawned outside that pad can end up embedded in uneven
-  terrain; PhysX's depenetration solver then ejects it and it falls/flies
-  indefinitely in the Moon's weak gravity instead of settling. Keep any new
-  scene object within ~1.5–2 m of the env origin unless you've confirmed
-  the terrain is flat further out.
-- **F19 — LunarBot's base drifts/rotates incoherently on a large in-place
-  `cmd_vel` turn** — root cause: no steer-before-drive sequencing (fix in
-  item 4). Also don't forget `scale_linear=-1.0`/`scale_angular=-1.0`
-  (already in `lunarbot.py`) — a naive P-controller drives the wrong way
-  unless negated.
+- **F18 — SRB's moon terrain is only flat within ~4 m of the env origin**
+  (`flat_area_size`); an object spawned outside gets embedded, then flung
+  by PhysX depenetration forever in lunar gravity. Keep scene objects
+  within ~1.5–2 m of the origin.
+- **F19 — base drifts on a large in-place `cmd_vel` turn** — no
+  steer-before-drive sequencing (item 4). `scale_linear`/`scale_angular`
+  are `-1.0` in `lunarbot.py`; a naive P-controller drives the wrong way.
 - **F20 — a JOINT_* chunk's wire row is ALWAYS the full robot-wide vector**,
   even when `action.joint_names` names a subset (ADR-0102) — the C++
   kernel's structural check forces `chunk.n_dof == envelope.n_dof`
@@ -128,10 +129,8 @@ item 4 fixes it) and the same missing-magnitude-check gap for
   instead of piping through `tail`/`grep` — piping after a `timeout` kill
   loses the buffered output and reads as "zero messages" even when the
   topic is publishing fine.
-- Colcon rebuild of the safety kernel: conda stripped from env (`env -u
-  CONDA_PREFIX ...` + miniconda stripped from `PATH`), `--merge-install`
-  (this workspace's `install/` layout), both `PYTHON_EXECUTABLE` and
-  `Python3_EXECUTABLE` pointed at `.venv/bin/python`.
+- Colcon rebuild of the safety kernel: conda stripped from env + `PATH`,
+  `--merge-install`, `PYTHON_EXECUTABLE`/`Python3_EXECUTABLE` → `.venv/bin/python`.
 
 ## Watch out
 

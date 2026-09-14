@@ -9,23 +9,27 @@
 
 ## Working title
 
-**From Procedure-Driven Operations to Mission-Intent Autonomy: A Space Robotics Agent Harness for Long-Horizon Lunar Missions**
+**From Pre-Engineered Task Models to Mission-Intent Autonomy: A Trustworthy Agentic Runtime for Lunar Robots**
 
 Alternative title direction:
 
-**A Space-Native Agent Harness for Trustworthy Mission-Level Autonomy in Lunar Robotics**
+**A Space-Native Agent Harness for Open-Ended, Trustworthy Mission Autonomy in Lunar Robotics**
 
-The final title should be selected only after the experiments establish the strongest supported claim.
+The final title should be selected only after the experiments establish the strongest supported claim. The title must not imply that classical space autonomy lacks onboard planning or replanning; the distinction tested here is the boundary imposed by pre-engineered mission/task models and the engineering effort required to expand that boundary.
 
 ---
 
 # Abstract — intended logic
 
-Future lunar surface operations will combine mobile manipulation, infrastructure inspection and maintenance, logistics, construction, scientific operations, and resource utilization over longer durations and with less continuous Earth supervision. Individual autonomy capabilities already exist for navigation, perception, manipulation, task planning, learned robot policies, fault detection and recovery, resource management, and runtime safety. The emerging bottleneck is therefore not the absence of individual algorithms, but the mission-level operating model used to coordinate them: current planetary robotic operations remain dominated by predefined procedures, engineered activity models, state machines, and human coordination.
+Future lunar robots will increasingly combine autonomous navigation, manipulation, semantic perception, planning, fault management, and heterogeneous local/remote computation. Classical space autonomy has already demonstrated onboard planning, scheduling, execution monitoring, resource reasoning, and replanning. Systems such as CASPER, MEXEC, EUROPA-based planners, and PLEXIL therefore provide a strong starting point rather than a weak strawman. Their strength is explicit operational knowledge and disciplined execution; their practical boundary is that the task vocabulary, procedures, task networks, domain constraints, and recovery structure are predominantly engineered before deployment.
 
-Modern coding agents provide a different systems pattern. Their capability does not come from replacing compilers, shells, file systems, tests, or other specialized tools, but from an agent harness that continuously manages context, tool use, execution, verification, permissions, memory, and recovery around a long-horizon objective. Emerging physical-agent systems show that a similar pattern can coordinate robot policies, perception, motion planning, and classical control. However, terrestrial physical-agent harnesses do not directly address the operating conditions that define lunar missions: delayed and intermittent communications, relay-dependent network availability, heterogeneous distributed computing, time-varying illumination and thermal conditions, limited power and data budgets, mission authority, failure detection and recovery, and aerospace requirements for independent verification and traceability.
+This work investigates a different operating model for long-horizon lunar robotics. A foundation-model reasoner is used where classical mission software is weakest: interpreting mission intent, understanding semantically novel situations, forming task decompositions that were not fully enumerated in advance, selecting among heterogeneous capabilities, diagnosing unexpected outcomes, and communicating with operators in natural language. These open-ended functions are embedded inside a **Space Robotics Agent Harness** that preserves aerospace execution discipline through an authoritative mission state, a closed typed capability set, explicit mission authority, independent safety and FDIR, outcome verification, space-operational context, and structured execution evidence.
 
-This work investigates whether the fragmented autonomy stack of future lunar robots can be reorganized as a **trustworthy, space-native agentic mission runtime**. The proposed Space Robotics Agent Harness uses foundation-model reasoning for open-ended mission interpretation, task decomposition, capability selection, diagnosis, and replanning, while retaining conventional and learned robotics modules as specialized execution capabilities. The runtime maintains authoritative mission state, integrates lunar operational context, coordinates distributed intelligence, enforces mission authority and resource-aware execution, connects to independent safety/FDIR mechanisms, and updates mission progress only from verified physical outcomes. The evaluation compares the same underlying robot capabilities under procedure-driven control, a generic physical-agent harness, a prompt-only space-aware agent, and the proposed space-native runtime across long-horizon lunar missions with controlled variation in communication, computation, environmental, resource, and failure conditions. The intended scientific claim is that mission-level autonomy can be increased by changing the operating model that coordinates existing capabilities, without transferring aerospace trust requirements to the foundation model itself.
+The scientific question is not whether an LLM can call robot tools, nor whether onboard replanning is useful. It is whether foundation-model reasoning can **expand the autonomous mission envelope beyond fully pre-engineered task models, and make that envelope cheaper to extend**, without transferring authoritative state, physical safety, mission constraints, or success verification to the language model.
+
+The primary evaluation therefore contains only two scientific experiments. **Experiment I** compares official PLEXIL, an EUROPA-to-PLEXIL planning/execution baseline, and the proposed runtime on the same LunarBot capability stack under model-covered and model-held-out mission situations. The main outcomes are mission success and autonomy measures grounded in the NIST ALFUS framework, including human intervention ratio, human planning/preplanning burden, interaction authority level, and the degree of mission variation handled without new preplanning. **Experiment II** freezes all three systems, introduces new mission capability or mission knowledge, and measures the engineering effort required to reach validated support and the resulting held-out mission performance. A later LunarBot hardware demonstration validates transfer of the runtime but is not treated as a third scientific experiment.
+
+The intended claim is that foundation-model-driven agentic reasoning can broaden and simplify the expansion of mission-level lunar robotic autonomy while a separate space-native runtime retains the explicit state, verification, FDIR, safety, authority, and traceability expected in aerospace systems.
 
 ---
 
@@ -33,219 +37,238 @@ This work investigates whether the fragmented autonomy stack of future lunar rob
 
 ## 1.1 The problem begins with future lunar operations
 
-The motivating problem is not that future lunar robots lack navigation, manipulation, planning, or AI. Future lunar activity is expected to involve combinations of:
+Future lunar activity is expected to involve infrastructure inspection and maintenance, logistics, payload handling, construction and assembly, scientific observation and sampling, ISRU-related operations, and servicing of power, communication, and mobility infrastructure. These activities increasingly require mobile manipulation over long durations with less continuous Earth supervision.
 
-- infrastructure inspection and maintenance;
-- logistics and payload handling;
-- construction and assembly;
-- scientific observation and sampling;
-- ISRU-related operations;
-- servicing of power, communication, and mobility infrastructure;
-- cooperation between multiple robotic and crewed assets;
-- long-duration unattended or lightly supervised activity.
+The relevant autonomy stack is already rich. Planetary robotics has demonstrated autonomous navigation, science targeting, onboard planning and scheduling, integrated planning and execution, execution monitoring, resource-aware activity management, and fault handling. Modern robotics adds open-vocabulary perception, VLM reasoning, learned manipulation policies, and general-purpose foundation models.
 
-These missions differ from short, tightly scripted sorties because they require a larger number of mission transitions, more unexpected contingencies, more heterogeneous robot capabilities, and less detailed human supervision.
+The emerging problem is therefore not simply a missing primitive algorithm. It is the **operating model used to turn many heterogeneous capabilities into persistent mission autonomy**.
 
-The existing autonomy stack is already powerful. Planetary robotics has demonstrated autonomous navigation, autonomous science targeting, onboard planning and scheduling, execution monitoring, FDIR, teleoperation under delay, resource-aware activity planning, and increasingly learned perception and control. Modern robotics additionally provides VLM reasoning, VLA/VLN policies, task-and-motion planning, learned success monitoring, and open-ended semantic perception.
+## 1.2 Classical space autonomy is strong — but it has a modeling boundary
 
-The central bottleneck is therefore increasingly **mission-level integration**.
+The paper must not frame classical space autonomy as fixed scripting. That would be technically incorrect and would weaken the contribution.
 
-> Future lunar robots will possess many capable but heterogeneous subsystems, yet these capabilities are still largely coordinated through predefined procedures, engineered state machines, fixed activity models, and human operators. This operating model does not scale naturally to long-duration, multi-task, increasingly open lunar operations with reduced Earth supervision.
+CASPER continuously repairs a working plan when goals or state change. MEXEC integrates planning, scheduling, execution monitoring, temporal/resource constraints, and replanning. The Mars 2020 On-Board Planner and CADRE demonstrate increasingly capable onboard autonomy. PLEXIL provides expressive reactive plan execution with explicit conditions, concurrency, loops, external state lookups, command execution, and resource arbitration. EUROPA provides a declarative plan database and solver for actions, states, resources, and constraints.
 
-This work treats that operating-model limitation as the primary research problem.
+These systems establish an important baseline: **goal-based onboard autonomy, flexible execution, and replanning already exist**.
 
-## 1.2 Why existing mission autonomy is not enough
+The remaining boundary is different. Their autonomous behavior is grounded in operational knowledge engineered ahead of time: PLEXIL plans and libraries; task networks and task templates; EUROPA/NDDL domain models; declared actions, state variables, resource models, constraints, and recovery logic. Even when the planner dynamically chooses or schedules activities, it reasons over a designed task/domain representation.
 
-Classical space autonomy systems such as Remote Agent, ASPEN/CASPER, PLEXIL, AEGIS, ERGO, and the Mars 2020 onboard planner demonstrate that planning, execution, resource reasoning, and fault handling can be moved onboard. Their key strength is explicit mission logic and well-defined execution semantics. Their limitation relative to the problem considered here is not lack of sophistication; it is that the activity space, task models, temporal constraints, and recovery logic are predominantly engineered in advance.
+This is not merely a theoretical limitation. JPL's TaskNet work explicitly identifies spacecraft task-network specification as a largely manual, cumbersome, difficult-to-verify, and error-prone process, and motivates automated task-network generation to reduce plan-creation time. The broader automated-planning literature likewise treats domain-model creation and maintenance as a knowledge-engineering bottleneck.
 
-That model is well suited to tightly specified missions. It becomes increasingly expensive when the robot must interpret higher-level mission intent, combine conventional and learned capabilities, respond to semantically novel situations, and determine new task decompositions that were not completely enumerated before deployment.
+The research opportunity is therefore not "replace NASA planning with an LLM." It is:
 
-The objective of this work is not to replace classical mission executives, but to retain their discipline while enabling a more open mission-level reasoning layer.
+> **Use foundation models to extend mission autonomy into situations whose semantic interpretation and task decomposition were not exhaustively encoded before deployment, while retaining model-based and rule-based mechanisms where explicit operational semantics are required.**
 
-## 1.3 Agent harnesses suggest a different operating model
+## 1.3 What foundation models add
 
-Modern coding agents provide an important systems precedent. A coding agent does not replace compilers, shells, version control, file systems, browsers, or tests. Instead, the surrounding harness turns these heterogeneous capabilities into a persistent problem-solving system by repeatedly:
+Foundation models provide capabilities that are qualitatively different from temporal scheduling or constraint propagation:
 
-**interpreting the goal → gathering relevant context → selecting a tool → executing → observing → verifying → updating state → continuing or recovering.**
+- interpretation of natural-language mission intent;
+- semantic understanding of open visual scenes through a VLM;
+- diagnosis of situations that were not represented as a complete symbolic state template;
+- generation of new task decompositions from an existing closed capability repertoire;
+- dynamic capability composition and substitution;
+- retrieval of additional observations when the current state is ambiguous;
+- natural-language explanation, status reporting, and escalation.
 
-The research insight is structural:
+The proposed system uses these abilities only at the mission reasoning layer. The model does not own low-level motor control, authoritative robot state, mission success, safety, FDIR, or unrestricted physical authority.
 
-> A capable foundation model becomes a persistent operational agent only when a runtime organizes specialized capabilities, state, permissions, verification, and recovery around the model.
+## 1.4 Agent harnesses provide the systems pattern
 
-Space robotics already contains the analogue of these specialized tools: navigation, manipulation, VLA/VLN policies, perception, task/activity planners, resource models, FDIR, runtime assurance, communication services, and ground-support interfaces.
+Modern coding agents demonstrate that a foundation model becomes operationally useful when surrounded by a harness that manages context, tool interfaces, state, permissions, execution, verification, recovery, and traceability. The analogy to robotics is structural rather than metaphorical:
 
-This suggests that the relevant question is not whether a foundation model can directly control a lunar robot, but whether the **space-robotics autonomy stack can be reorganized around an agentic mission runtime**.
+**mission intent → context acquisition → capability selection → execution → observation → verification → state update → continuation/recovery.**
 
-## 1.4 Why a generic physical-agent harness is insufficient
+OpenRAL and related physical-agent systems already show that typed tool use and independent robot execution can be combined with foundation-model reasoning. This work extends that pattern into a lunar-mission setting and, more importantly, tests whether it changes the practical autonomous mission envelope relative to established plan-/model-driven approaches.
 
-Recent physical-agent systems already demonstrate LLM/VLM-driven orchestration of robot tools and policies, hierarchical VLA execution, memory, success monitoring, and runtime safety. These systems establish that a physical harness is feasible.
+## 1.5 Why a generic physical-agent harness is insufficient
 
-A lunar mission, however, is not simply a terrestrial robot task performed under lunar gravity. The runtime must operate under conditions that directly change what decisions are possible and where intelligence can reside:
+The space-native architecture is not motivated by adding lunar metadata to a terrestrial robot agent. It is derived from concrete lunar mission-operating conditions that change **where reasoning can occur, when ground support is available, which actions are operationally admissible, and what evidence must be preserved for mission control**.
 
-- Earth–Moon propagation delay;
-- terrain-dependent Direct-to-Earth visibility;
-- relay-dependent communication windows determined by orbital geometry;
-- planned and unplanned periods of disconnection;
-- strongly heterogeneous compute across Earth, surface infrastructure, and onboard processors;
-- limited power, thermal, storage, and data-transfer budgets;
-- time-varying lunar illumination and shadow;
-- low gravity and uncertain terrain interaction;
-- robot and subsystem faults during long unattended operation;
-- bounded autonomous authority;
-- irreversible or expensive physical actions;
-- requirements for independent verification, recoverability, and auditability.
+### 1.5.1 Earth cannot remain synchronously inside every decision loop
 
-These conditions are not secondary stress tests. They are part of the runtime state that determines how autonomy should be exercised.
+Lunar operations retain much shorter delays than Mars, but they are already outside the assumptions of a continuously connected terrestrial robot. NASA's 2025 review of communication-delay research identifies approximately **3–14 s one-way operational communication delays** as relevant to lunar missions and explicitly notes that beyond-LEO delay challenges the traditional paradigm of real-time ground support and increases the need for greater local autonomy (Landon et al., 2025). The problem is not latency alone. LunaNet is being defined as a network-of-networks using both Direct-with-Earth and lunar relay services, while NASA's Delay/Disruption Tolerant Networking (DTN) architecture is designed for links with disconnections, delay, rate mismatch, and time-disjoint availability using store-and-forward delivery (NASA/ESA/JAXA, 2025; NASA SCaN, 2026).
 
-## 1.5 Research question
+The architectural consequence is that **mission execution must not require a synchronous Earth-side model or operator at every deliberative step**. Earth-side reasoning should be treated as valuable but intermittently available support. Mission continuity, critical state, execution authority, and immediate recovery therefore need an onboard/local representation that survives link interruption.
 
-The paper addresses the following question:
+### 1.5.2 The strongest model cannot simply be assumed to run continuously onboard
 
-> **Can the fragmented autonomy stack of future planetary robots be reorganized into a trustworthy, space-native agentic mission runtime, such that a robot can receive mission-level intent and autonomously coordinate existing AI and conventional space-robotics capabilities throughout long-horizon lunar operations while respecting communication, computation, environmental, resource, authority, safety, and FDIR constraints?**
+The opposite extreme — placing the most capable foundation model permanently onboard and ignoring distributed computation — is also unrealistic as a general lunar architecture assumption. NASA's High Performance Spaceflight Computing (HPSC) program is explicitly driven by the combined need for much higher onboard compute, **power management, radiation tolerance/fault tolerance, and connectivity**. NASA notes that communication latency increases the need for real-time onboard autonomy, while the space radiation environment and power budgets make flight computing qualitatively different from terrestrial datacenter computing. HPSC is being developed to provide more than two orders of magnitude improvement over legacy space processors while retaining power-aware and fault-tolerant operation (NASA HPSC, 2024–2026).
 
-## 1.6 Central hypothesis
+This motivates a **heterogeneous intelligence hierarchy** rather than a single assumed model location:
 
-The central hypothesis is:
+- **onboard/local reasoning** is the continuity layer and must remain usable without Earth;
+- **surface or nearby edge compute**, if a specific mission architecture provides it, may host stronger services with lower latency than Earth;
+- **Earth-side compute and human expertise** can provide the highest-capability reasoning and mission support when the link is available.
 
-> **Mission-level autonomy can be increased substantially without replacing specialized space-robotics algorithms, by changing the operating model that coordinates them: from fixed procedures and continuous human orchestration to a persistent agentic runtime that uses foundation-model reasoning for open-ended decisions while retaining trusted conventional mechanisms for physical execution, mission constraints, FDIR, and verification.**
+The architecture does **not** assume that a lunar relay spacecraft automatically provides general-purpose foundation-model compute. Relay/edge reasoning is optional and mission-architecture dependent; LunaNet/LCRNS primarily establishes communication and navigation services, not a universal orbital AI-compute tier.
 
-The expected benefit is not primarily an increase in primitive manipulation success. It is a change in the granularity of commanding:
+### 1.5.3 Energy, thermal state, and health change whether a semantically sensible action is executable
 
-**detailed procedure / frequent intervention → mission intent / exception-level supervision.**
+Lunar operating context is not merely descriptive prompt information. JPL's CADRE autonomy work provides a direct example: its MEXEC-based Strategic Planner monitors actual and predicted **temperature and energy levels** to decide when rovers should survey, sleep, cool, and recharge. NASA studies of uncrewed lunar surface operations likewise identify illumination/shadow, thermal management, battery pre-charging, load shedding, hibernation, and adaptive operation as determinants of what can be performed without crew or ground intervention (Lewis et al., 2022; Rabideau et al., 2025).
 
-## 1.7 Intended contributions
+Therefore an LLM proposal such as "service the component now" is not automatically an executable command. Resource, health, communication, and authority state must be represented outside the model and evaluated by an independent **mission-admissibility layer**.
 
-The final paper should support contributions at the following level, with wording adjusted after experiments:
+### 1.5.4 Greater onboard autonomy increases, rather than removes, the need for state reconstruction and explanation
 
-1. **Problem formulation:** identify mission-level coordination of fragmented autonomy capabilities as an emerging bottleneck for long-duration lunar robotic operations, and formulate the transition from procedure-driven operations to mission-intent-driven autonomy.
+More autonomy does not make ground operations irrelevant. It changes the information ground operators need. JPL's *Operations for Autonomous Spacecraft* work identifies two complementary requirements: on uplink, operators must communicate **intent** to onboard autonomy rather than only detailed command sequences; on downlink, operators must reconstruct spacecraft state and understand **what autonomous decisions were made and why**, especially when autonomy has reacted to information unavailable to ground in real time (Castano et al., 2022).
 
-2. **Space Robotics Agent Harness:** propose a mission runtime that combines foundation-model reasoning with heterogeneous conventional and learned robot capabilities while maintaining authoritative mission state and explicit space-operational context.
+This directly motivates three elements of the proposed system:
 
-3. **Space-native execution semantics:** integrate communication/compute availability, lunar environmental conditions, mission resources, authority, FDIR, independent verification, and distributed intelligence as first-class runtime considerations rather than prompt-only information.
+1. a structured **authoritative mission state** that is independent of model conversation history;
+2. a **trace/evidence record** linking intent, observed state, decision, execution, and verification;
+3. natural-language status and mission reports generated **from that structured record**, not treated as the record itself.
 
-4. **Experimental evidence:** demonstrate, using common underlying robot capabilities, when procedure-driven control, a generic physical-agent harness, and prompt-only space awareness fail to provide the same mission-level autonomy as a space-native runtime under long-horizon lunar mission conditions.
+### 1.5.5 Architectural implication
 
-The paper should not claim novelty for skill libraries, generic tool calling, generic safety filters, VLA architectures, or resource schedulers.
+The resulting design is therefore a consequence of lunar operations rather than a generic agent pattern with additional variables:
 
----
+| Lunar operational reality | Mission-level consequence | Architectural response in this work |
+|---|---|---|
+| seconds-scale Earth delay plus relay/contact interruption | Earth cannot be required inside every decision loop | persistent local mission runtime; asynchronous use of remote intelligence |
+| remote reasoning/service may disappear and later return | chat/session continuity is not a safe source of mission truth | authoritative mission state + context reconstruction after reconnection |
+| flight compute is power-, radiation-, and fault-constrained | the strongest model cannot be assumed continuously onboard | heterogeneous/distributed reasoning with local continuity |
+| illumination, energy, thermal and subsystem state alter activity feasibility | a semantically valid proposal may be operationally inadmissible | typed space context + mission-level admissibility |
+| failures can occur while ground is delayed or disconnected | immediate safety/recovery cannot depend on Earth or an LLM | local independent safety + FDIR + bounded autonomous authority |
+| higher onboard autonomy changes state without continuous ground observation | ground must reconstruct what happened and why | event-sourced state, evidence-linked trace, structured reporting |
+| operations move toward communicating intent rather than complete action sequences | autonomy must interpret goals and unexpected semantic situations | LLM/VLM mission reasoning over a closed capability set |
+
+These conditions should not become seven independent research topics. In this paper they are **design constraints and runtime semantics inside the same autonomy problem**, used to ensure that the increased mission envelope demonstrated in H1/H2 is genuinely compatible with lunar operations rather than obtained by assuming terrestrial connectivity, datacenter compute, unconstrained resources, or continuous human supervision.
+
+## 1.6 Research question
+
+> **Can foundation-model reasoning expand the autonomous mission envelope of a lunar robot beyond the situations completely encoded in pre-engineered procedures and planning-domain models, and reduce the mission-specific engineering effort required to extend that envelope, while preserving authoritative state, explicit mission constraints, FDIR, independent verification, safety, and traceability?**
+
+This wording intentionally acknowledges that classical systems already support goal-based planning and replanning.
+
+## 1.7 Hypotheses
+
+### H1 — Autonomous mission-envelope expansion
+
+With the same robot embodiment and primitive capabilities, the proposed runtime will complete a broader set of **model-held-out mission situations** without ground re-authoring than PLEXIL and EUROPA-to-PLEXIL baselines whose mission/domain artifacts are frozen before those situations are revealed.
+
+### H2 — Lower mission-specific knowledge-engineering burden
+
+When a new capability or mission situation is introduced after system freeze, the proposed runtime will require less mission-specific engineering effort to reach validated support while retaining comparable or better held-out mission performance.
+
+### H3 — Open-ended reasoning does not replace aerospace execution discipline
+
+The autonomy gains in H1/H2 should occur without giving the foundation model ownership of low-level safety, authoritative mission state, mission constraints, or outcome verification. Mission-invalid proposals should therefore be rejected, deferred, reformulated, or escalated by independent runtime mechanisms rather than silently executed.
+
+H3 is primarily an architectural requirement and failure-analysis target, not a third large experiment.
+
+## 1.8 Intended contributions
+
+The final paper should support four contributions, with wording narrowed to measured results:
+
+1. **Problem formulation.** Reframe a key bottleneck in future lunar robotic autonomy as the dependence of existing onboard autonomy on pre-engineered procedures/task/domain models, together with the knowledge-engineering cost of extending those models to increasingly open missions.
+
+2. **Space Robotics Agent Harness.** Introduce a mission-level runtime that uses LLM/VLM reasoning for semantic mission interpretation, open-ended task decomposition, diagnosis, capability composition, and operator communication, while preserving typed capabilities and independent aerospace execution mechanisms.
+
+3. **Trustworthy mission semantics.** Maintain authoritative mission state, mission-level admissibility, explicit space-operational context, FDIR/safety separation, independent verification, distributed-intelligence reconciliation, and structured evidence outside the foundation model.
+
+4. **Experimental evidence for autonomy breadth and extensibility.** Compare against PLEXIL and EUROPA-to-PLEXIL using common robot capabilities, authoritative autonomy metrics, model-covered versus model-held-out situations, and a controlled knowledge-engineering extension study.
+
+The paper should not claim novelty for generic tool calling, a new skill library, generic safety filtering, VLA architecture, temporal scheduling, resource optimization, or natural-language generation by itself.
 
 # 2. Related Work
 
-The related-work section should be organized around the research gap rather than as an exhaustive technology catalog.
+The related-work section should make the historical progression explicit: classical space autonomy already moved operations from command sequences toward onboard goals, planning, execution, and replanning; the new question is whether foundation models can expand the *semantic and task-model boundary* without abandoning that discipline.
 
-## 2.1 Planetary mission autonomy and execution
+## 2.1 Procedure and plan execution: PLEXIL
 
-### Representative literature
+PLEXIL was developed by NASA/USRA as a language and executive for representing and executing automation plans. The current Release 6 documentation describes branches, loops, event- and time-driven activities, concurrency, sequencing, temporal constraints, pre/post/invariant conditions, external `Lookup`s, asynchronous `Command`s, and command-resource arbitration. The PLEXIL Executive is intended to connect to external systems through interface adapters.
 
-- Remote Agent / Deep Space 1;
-- ASPEN and CASPER;
-- EO-1 Autonomous Sciencecraft;
-- PLEXIL / Universal Executive;
-- AEGIS autonomous science targeting;
-- Mars 2020 Onboard Planner / MEXEC;
-- ERGO;
-- ISAAC autonomous caretaking;
-- surface telerobotics and supervised autonomy studies;
-- current lunar autonomous navigation, planning, construction, and servicing studies.
+This makes PLEXIL an appropriate strong procedural/reactive baseline for the present work. A fair comparison must therefore use the official executive, expose the same LunarBot capabilities through an adapter, and author competent recovery branches for all situations declared model-covered. The paper must not reduce PLEXIL to a naive state machine.
 
-### What this literature establishes
+**Boundary relevant to this work:** PLEXIL executes plans and libraries that encode the procedural knowledge available to the system. It does not itself infer a new semantic task model from an unmodeled physical situation.
 
-- autonomous planning and execution are operationally valuable;
-- resource and temporal constraints belong inside the autonomy loop;
-- FDIR cannot be treated as an afterthought;
-- onboard autonomy can reduce command-cycle dependence;
-- trusted execution requires explicit state and execution semantics.
+## 2.2 Model-based planning and scheduling: EUROPA, ASPEN/CASPER, MEXEC
 
-### Gap relative to this work
+EUROPA provides a reusable NASA framework for planning, scheduling, and constraint programming. Its plan database represents actions, states, objects, resources, and constraints; its solver detects and resolves flaws to generate or refine valid plans. ASPEN/CASPER demonstrates iterative-repair planning in which changing goals/state continuously update a working plan. MEXEC integrates task-network planning, scheduling, execution monitoring, temporal/resource reasoning, and replanning, and has been applied to the Mars 2020 On-Board Planner, ASTERIA demonstrations, Europa-related studies, and CADRE.
 
-These systems largely operate over engineered activity models, procedures, timelines, or predefined action representations. They do not address the integration of open-ended foundation-model reasoning, learned robot policies, conventional planners/controllers, and modern perception as one persistent mission-intent-driven runtime.
+These systems invalidate any weak claim that "traditional autonomy cannot replan" or "traditional autonomy cannot accept goals." They can.
 
-## 2.2 Foundation-model robotics and physical-agent harnesses
+**Boundary relevant to this work:** their reasoning is grounded in explicit task/domain knowledge engineered before operation. Europa Lander work, for example, constructs hierarchical task networks from domain knowledge and dependency structure. CADRE's strategic-planning work similarly operates over a task network and resource/state models. The system may choose and schedule tasks dynamically, but the space of task semantics is represented beforehand.
 
-### Representative literature and systems
+## 2.3 The knowledge-engineering bottleneck
 
-- hierarchical VLA systems;
-- RoboOS;
-- RAI / ROSA;
-- RoboClaw;
-- RoboHarness;
-- Physical Agentic AI;
-- Show-Harness;
-- OpenRAL;
-- Inspect Robots;
-- studies of robot-policy orchestration and success monitoring.
+The construction and maintenance of planning-domain knowledge is a recognized research problem. JPL's **Efficient Task Network Generation** project states that specifying spacecraft tasks, dependencies, and ordering remains largely manual, cumbersome, challenging to verify, and error-prone; its stated impact is reducing plan-creation time and increasing confidence in spacecraft commanding. Automated-planning research similarly describes domain-model creation as time-consuming and error-prone and evaluates knowledge-engineering tools using task-completion time and model/debugging errors.
 
-### What this literature establishes
+Recent work on knowledge engineering in the LLM era is especially relevant: LLMs may reduce acquisition/formulation effort, but explicit validators and human domain expertise remain important in safety-related applications. This directly supports the architecture adopted here: foundation models provide semantic flexibility; independent structured mechanisms retain correctness-critical responsibilities.
 
-- LLM/VLM reasoning can organize robot capabilities;
-- typed tool interfaces improve grounding and interoperability;
-- learned and classical robot capabilities can coexist under a higher-level reasoner;
-- success monitoring, memory, and failure attribution improve long-horizon operation;
-- a model should not directly own all physical execution authority.
+This literature motivates **Experiment II**. The paper does not claim a universal cost model for autonomy engineering; it measures concrete time-to-valid-support and artifact changes under a controlled extension protocol.
 
-### Gap relative to this work
+## 2.4 Autonomy measurement: ALFUS and human–robot interaction
 
-Most physical-agent harnesses are designed for terrestrial or generic robotics. They do not jointly treat planetary communication topology, hierarchical distributed intelligence, lunar environmental state, resource constraints, mission authority, FDIR, and aerospace traceability as the operating semantics of the mission runtime.
+The NIST **Autonomy Levels for Unmanned Systems (ALFUS)** framework characterizes autonomous capability along Mission Complexity, Environmental Complexity, and Human Independence rather than equating autonomy with low human contact alone. For the Human Independence axis, ALFUS explicitly includes:
 
-## 2.3 Trustworthy autonomy and runtime assurance
+- ratio of human intervention time to mission time;
+- ratio of human planning time to mission time;
+- level of human interaction/authority, from assigning a mission through strategic/tactical goals, mission tasks, route, autopilot, and servo-level interaction;
+- human workload.
 
-### Representative literature
+For dynamic planning, ALFUS proposes the degree of mission variation handled and the percentage of a mission performed without preplan.
 
-- NASA autonomous-systems taxonomy and autonomy V&V roadmaps;
-- Runtime Assurance / Simplex-derived architectures;
-- STARS;
-- ECSS machine-learning assurance guidance;
-- lunar autonomy certification work;
-- reliability-asymmetric spacecraft autonomy;
-- runtime policy enforcement and formal/logic-based robot safety systems;
-- learned-policy failure detection and progress monitoring.
+These measures are unusually well aligned with this paper. The primary autonomy result should therefore be reported as a **vector of interpretable measures**, not a new scalar "autonomy score."
 
-### What this literature establishes
+Goodrich/Olsen HRI work on neglect tolerance and robot attention demand provides supporting context for operator-attention burden. NASA-TLX is a well-established subjective workload instrument, but it should only be used if the study includes a proper operator experiment; it is not required for the core paper.
 
-- learned intelligence cannot constitute its own complete safety argument;
-- independent monitoring and bounded authority remain necessary;
-- degraded modes and safe recovery must be designed explicitly;
-- traceability and assurance evidence matter separately from task success.
+## 2.5 Foundation-model robotics and physical-agent runtimes
 
-### Position of this work
+Recent systems such as OpenRAL and related agentic-robotics frameworks show that foundation models can interact with typed tools, perception, robot policies, and classical control while keeping low-level execution separate. This establishes feasibility of the physical-agent pattern.
 
-The paper does not introduce a new generic safety filter. It incorporates these principles into the mission-runtime architecture and uses existing monitors/checkers wherever possible.
+The gap is not generic tool use. Existing physical-agent systems generally do not organize their evaluation around aerospace mission-model coverage, ground knowledge-engineering burden, bounded mission authority, FDIR, intermittent distributed intelligence, and evidence-backed mission transitions.
 
-## 2.4 Lunar environment, communication, and computing
+OpenRAL is therefore used as an implementation substrate for the proposed system, not as the paper's principal scientific baseline.
 
-### Representative infrastructure and literature
+## 2.6 Trustworthy autonomy and runtime assurance
 
-- LunaNet / LCRNS;
-- Delay/Disruption Tolerant Networking;
-- lunar relay constellation studies;
-- south-pole illumination and communication-aware planning;
-- lunar surface autonomy and construction studies;
-- NASA High Performance Spaceflight Computing;
-- in-space edge-computing demonstrations;
-- ASTREA and other flight/flight-relevant AI demonstrations;
-- Space Robotics Bench.
+Aerospace autonomy literature consistently separates flexible decision making from independent safety, execution monitoring, and verification. The proposed method follows this tradition rather than asking a language model to certify its own decisions.
 
-### What this literature establishes
+The paper should distinguish:
 
-- temporary disconnection is a normal operational condition;
-- communication availability depends on geometry and infrastructure rather than a stationary terrestrial network model;
-- advanced computation will increasingly exist in space, but capability remains heterogeneous and constrained;
-- lunar illumination, terrain, power, and thermal conditions create time-dependent operational context;
-- AI inference latency and compute placement can interact with physical mission dynamics.
+- **semantic reasoning:** what the mission appears to require;
+- **mission admissibility:** whether a proposed action is allowed and appropriate in current mission state;
+- **physical safety:** whether the robot/controller may execute the action;
+- **outcome verification:** what actually happened.
 
-## 2.5 Synthesis of the research gap
+This separation is central to H3 and to the credibility of the proposed open-ended reasoning layer.
 
-The literature contains strong solutions for each component separately:
+## 2.7 Operations interaction and explanation
 
-**space mission execution + physical-agent orchestration + trustworthy autonomy + lunar communications/environment.**
+JPL's "Operations for Autonomy" work identifies intent capture, prediction of autonomous behavior, reconstruction of onboard decisions, and explanation of generated schedules as operational challenges for future autonomous missions. This supports two secondary design choices in the proposed system:
 
-The research gap is their intersection:
+1. operators may provide mission-level natural-language intent rather than manually enumerating every subtask;
+2. the system produces a natural-language report **from structured mission state and evidence**, rather than treating free-form model narration as the authoritative record.
 
-> **a mission-intent-driven physical-agent runtime that coordinates conventional and learned space-robotics capabilities while treating space communication, distributed compute, environmental/resource state, authority, FDIR, independent verification, and traceability as first-class execution semantics.**
+Natural-language interaction is therefore an operational benefit demonstrated in mission traces and the real-robot demo, not a standalone novelty claim.
 
-A formal priority or “first” claim should only be made after final targeted literature falsification.
+## 2.8 Lunar operating context and distributed intelligence
 
----
+The space-operational assumptions in this work are grounded in current lunar-communications, flight-computing, and autonomous-operations literature rather than arbitrary stress conditions.
+
+**Communication.** The LunaNet Interoperability Specification defines interoperable lunar networking across Direct-with-Earth and relay services, and the current architecture explicitly anticipates an evolving network of government, international, and commercial providers. DTN is a core networking mechanism because space links may be disconnected, delayed, asymmetric, rate-mismatched, or available only at different times; store-and-forward operation is therefore a normal design principle rather than an exceptional fault mode (NASA/ESA/JAXA, 2025; NASA SCaN, 2026). NASA's communication-delay review further identifies 3–14 s one-way delays as a relevant lunar regime and argues that beyond-LEO missions require increasing independence from continuous real-time ground support (Landon et al., 2025).
+
+**Computing.** HPSC demonstrates the direction of future spaceflight compute: much greater onboard performance, but still under explicit power-management, radiation, fault-tolerance, reliability, and connectivity requirements. This supports increased onboard AI/autonomy while arguing against the assumption that flight computing is equivalent to an unconstrained terrestrial GPU server (NASA HPSC, 2024–2026).
+
+**Environment and resources.** CADRE and uncrewed lunar surface-operations studies show that energy, temperature, illumination, and subsystem state directly influence activity scheduling, sleep/recharge, and survivability. These quantities are therefore operational constraints, not merely descriptive context (Lewis et al., 2022; Rabideau et al., 2025).
+
+**Mission operations.** Increasing onboard autonomy shifts the ground role from continuous low-level commanding toward communicating intent, predicting likely autonomous behavior, reconstructing onboard state, and explaining decisions after execution. JPL's *Operations for Autonomous Spacecraft* work treats these as explicit future mission-operations requirements (Castano et al., 2022).
+
+Together, these sources motivate a runtime in which local mission continuity is mandatory, remote reasoning is opportunistic, operational context is structured and authoritative, and every consequential state transition is reconstructable. However, the paper should still avoid becoming a communications, processor, or resource-optimization study. Only the variables exercised by the selected mission scenarios should enter the first-paper experiments.
+
+## 2.9 Synthesis of the gap
+
+The literature already contains:
+
+**strong plan execution + strong onboard planning/replanning + modern physical-agent orchestration + aerospace safety/FDIR + lunar operational models.**
+
+The unresolved intersection investigated here is:
+
+> **Can a trustworthy lunar mission runtime use foundation models to understand and compose solutions for mission situations that were not exhaustively encoded into a task/procedure/domain model, and can it reduce the engineering burden of extending autonomy, while retaining the explicit operational semantics that make classical space autonomy dependable?**
+
+This is the paper's research gap. It is deliberately stronger and more precise than "LLM for space robotics" and avoids the false claim that existing space autonomy is merely scripted.
 
 # 3. Problem Setting and Design Requirements
 
@@ -255,679 +278,724 @@ The target is a long-horizon lunar mobile-manipulation mission in which the oper
 
 Representative instruction:
 
-> Inspect the designated lunar service site, identify the failed subsystem, restore its operation, verify the result, and leave the robot in an operationally safe condition.
+> Inspect the designated lunar service site, identify the condition preventing normal operation, restore the system if the required action is within autonomous authority, verify the result, and leave the robot in an operationally safe condition.
 
-The mission may require combinations of navigation, inspection, semantic perception, manipulation, learned policies, classical motion planning, diagnosis, fault handling, resource reasoning, and communication with higher-level intelligence.
+The exact execution sequence is not supplied by the operator. Some mission instances are deliberately within a pre-engineered task model; others require a decomposition or capability composition that is not encoded as a scenario-specific procedure/task network before the run.
 
-The exact execution sequence is not supplied by the operator.
+## 3.2 Shared capability assumption
 
-## 3.2 Existing capabilities are assumed, not reinvented
-
-The robot is assumed to have a heterogeneous set of callable capabilities such as:
+All compared systems receive the same closed set of primitive capabilities and the same physical/world observations. Candidate capabilities include:
 
 - localization and mapping;
 - navigation/path planning;
-- visual inspection and semantic perception;
-- manipulator planning and control;
-- VLA/VLN policies;
-- task/activity planning services;
-- resource and health services;
-- FDIR functions;
-- runtime safety mechanisms;
-- local and remote foundation-model reasoning;
-- human/mission-control communication.
+- RGB/RGB-D/LiDAR sensing;
+- semantic scene query and object localization;
+- manipulator planning/control;
+- grasp/release and end-effector motion;
+- optional learned policies where already available;
+- task-progress and outcome verifiers;
+- resource/health services;
+- FDIR events;
+- low-level runtime safety;
+- operator communication.
 
-The scientific question is how these are coordinated at mission level.
+No baseline receives an easier robot, better perception, or stronger manipulation stack. The independent variable is the **mission-level operating model**.
 
-## 3.3 Four non-negotiable design requirements
+## 3.3 Model-covered versus model-held-out mission situations
 
-### 3.3.1 Unified capability orchestration
+This distinction is central to the paper and must be defined before experiments.
 
-The system must be capable of deciding which existing capability should be used, in what order, with what supporting observations, and how to continue after an unexpected outcome, without requiring the complete procedure to be specified before the mission.
+### Model-covered
 
-### 3.3.2 Space-native operational context
+A mission situation is model-covered for a baseline when the baseline's frozen artifacts explicitly contain the task/procedure/domain knowledge needed to form a valid solution. Examples include a PLEXIL recovery branch, an EUROPA action/state/constraint model, or a predefined task-network expansion that represents the required response.
 
-The runtime must reason over mission context that changes with place and time, including communication state, compute availability, illumination, robot health, and mission resources. These quantities must influence actual execution decisions rather than merely appear in a system prompt.
+### Model-held-out
 
-### 3.3.3 Distributed intelligence and structured authority
+A mission situation is model-held-out when:
 
-Reasoning may be distributed across Earth, lunar surface infrastructure, and onboard computing. Different intelligence layers possess different capability, latency, information freshness, and authority. Fast physical control and safety must remain local; higher-capability remote reasoning may be used opportunistically.
+1. every primitive capability needed for a valid solution already exists and is available to all methods;
+2. the physical state is observable with the shared sensor/perception stack;
+3. the required **mission-level decomposition, semantic interpretation, or capability composition** is not encoded as a scenario-specific solution in the frozen PLEXIL plan library or EUROPA domain/task artifacts;
+4. the proposed method is not given a hidden hard-coded solution either — it receives only generic mission instructions, typed capability descriptions, current evidence, and mission/runtime policy;
+5. no method-specific artifact is modified after the held-out scenario is revealed during an autonomous run.
 
-### 3.3.4 Trustworthy physical execution
+Examples should involve semantic/task-structure novelty rather than merely numeric variation that a model-based planner already handles well. A suitable example is discovering that access to a failed component is blocked by another movable object, requiring the system to inspect, diagnose the obstruction, relocate it, re-access the target, perform the repair, and verify the result even though that decomposition was not pre-authored.
 
-The foundation model may propose actions and task decompositions, but it does not own authoritative physical state, mission completion, or unrestricted actuation authority. Critical mission progress and safety conditions are established through independent state and verification mechanisms.
+## 3.4 Five non-negotiable design requirements derived from lunar operations
 
----
+The requirements below are not generic software preferences. They follow from the operational constraints summarized in §1.5 and §2.8.
+
+### 3.4.1 Open-ended mission reasoning over a closed action set
+
+The reasoner may form new decompositions and choose new compositions of existing capabilities, but physical action must remain within a closed typed capability set. This is the central compromise of the architecture: broaden **task-level semantic reasoning** without broadening low-level physical authority. It allows H1/H2 to test genuine task-structure generalization while preserving an inspectable actuation boundary.
+
+### 3.4.2 Semantic observation, not only symbolic predicates
+
+The system must be able to ask a VLM/semantic perception service what is present, what appears abnormal, or what additional observation is needed when the situation has not been fully enumerated into a symbolic predicate set. Deterministic geometry/state should still be used wherever available. The VLM therefore expands what can be *interpreted* but does not replace deterministic telemetry or verification where those sources exist.
+
+### 3.4.3 Space-native operational context and distributed intelligence
+
+Communication, compute, resource, health, and relevant lunar environmental conditions must affect actual mission decisions through structured runtime state rather than exist only as prompt text. The system must remain capable of mission continuation with Earth unavailable, while allowing stronger remote reasoning to be used when reachable. A remote model is therefore a **service with availability and authority state**, not an assumed permanent component of the control loop.
+
+The implementation should distinguish at least:
+
+- **onboard/local:** continuity-critical mission state, safety, FDIR, verification interfaces, and whatever bounded reasoning is required to continue safely;
+- **optional surface/nearby edge service:** stronger reasoning if the selected mission architecture explicitly provides such compute;
+- **Earth/ground:** high-capability reasoning and human expertise when communication permits.
+
+No generic orbital-compute tier is assumed merely because a relay exists.
+
+### 3.4.4 Structured authority and trustworthy physical execution
+
+The model may propose, diagnose, and replan. It does not own mission authority, low-level safety, or success verification. This separation is required because communication delay/disruption can prevent immediate ground correction, while resource/health state can make a semantically sensible operation unsafe or inappropriate. Mission policy, safety, and FDIR therefore remain independently enforceable local mechanisms.
+
+### 3.4.5 Reconstructable mission state
+
+Mission progress must survive model restart, context loss, endpoint switching, and communication interruption. A structured state/evidence record, not chat history, is the authoritative source for continuation and reporting. This serves two operational needs simultaneously: **autonomous continuity during disconnection** and **ground reconstruction/explanation after autonomy has changed the physical state**.
 
 # 4. Proposed Method: Space Robotics Agent Harness
 
-The method is a **mission-level runtime**, not a new robot controller or foundation model.
+The method is a **mission-level runtime**. It is not a new foundation model, navigation algorithm, manipulator controller, temporal scheduler, or safety filter.
 
 ## 4.1 Architectural principle
 
-The architecture separates open-ended reasoning from authoritative execution state.
+The architecture deliberately combines two traditions:
 
-At a conceptual level:
+- **foundation-model reasoning** for semantics, open-ended decomposition, diagnosis, and communication;
+- **classical aerospace/robotics mechanisms** for explicit state, authority, constraints, execution, FDIR, safety, and verification.
 
 ```text
-Mission Control / Human Intent
-          |
-          v
-Foundation-Model Reasoning
-          |
-          v
-=================================================
-          SPACE ROBOTICS AGENT HARNESS
--------------------------------------------------
- authoritative mission state
- dynamic mission context
- capability orchestration
+Mission Control / Mission-Level Natural-Language Intent
+                         |
+                         v
+              LLM/VLM Mission Reasoning
+                         |
+                         v
+============================================================
+             SPACE ROBOTICS AGENT HARNESS
+------------------------------------------------------------
+ authoritative mission state + event history
+ dynamic evidence-grounded context construction
+ typed capability registry and orchestration
+ mission-level admissibility / authority
  space-operational context
- distributed intelligence coordination
- mission authority and policy
- FDIR / safety integration
+ FDIR and capability degradation state
+ distributed-intelligence reconciliation
  independent outcome verification
- execution evidence and trace
-=================================================
-          |
-          v
-Navigation / Perception / Planner / VLA /
-Manipulation / Resource Services / FDIR / Safety
-          |
-          v
-Physical Robot and Lunar Mission Environment
+ structured trace + report evidence
+============================================================
+                         |
+                         v
+ Navigation / Perception / VLM / Planner / Manipulation /
+ Learned Skills / Resource Services / FDIR / Safety
+                         |
+                         v
+             Physical Robot + Lunar Environment
 ```
 
-The foundation model provides semantic flexibility; the runtime provides persistent operational structure.
+The foundation model supplies semantic flexibility. The harness supplies persistent operational semantics.
 
-## 4.2 Authoritative mission state
+## 4.2 Explicit role of the LLM
 
-The central runtime object is an **authoritative mission state** maintained independently of the language-model conversation.
+The LLM is used for a bounded set of mission-level functions:
 
-It records the mission information that must survive model changes, communication interruption, context compaction, and replanning, including:
+1. interpret mission-level natural-language intent;
+2. decompose an objective into candidate subgoals when no complete procedure is supplied;
+3. select information-gathering actions when the current state is ambiguous;
+4. interpret semantic observations and diagnose an unexpected mission situation;
+5. select and compose existing typed capabilities;
+6. reformulate the remaining mission after execution failure or changed evidence;
+7. decide when escalation or clarification is semantically appropriate;
+8. generate operator-facing explanations and mission reports from structured evidence.
 
-- mission objective and priorities;
-- current operational objective;
+The LLM is **not** used to directly command joints, bypass the skill runner, assert mission completion, override safety, or invent resource/authority values.
+
+## 4.3 Explicit role of the VLM
+
+The VLM is used where a fixed detector/predicate interface is insufficient for semantic scene understanding. Example queries include:
+
+- which of several infrastructure components appears abnormal;
+- whether a component is accessible or visually obstructed;
+- what feature should be inspected more closely;
+- whether the observed physical configuration is consistent with the expected restored state when no deterministic simulator/telemetry predicate is available.
+
+Where simulator truth, geometry, controller result, or deterministic telemetry can establish a condition, the verifier should prefer those sources. VLM output informs reasoning; it is not automatically accepted as authoritative mission truth.
+
+## 4.4 Authoritative mission state
+
+The mission runtime maintains the minimum structured state required for coherent continuation independently of model conversation history:
+
+- mission objective and priority;
+- current objective/subgoal;
 - completed and pending mission transitions;
 - unresolved anomalies;
-- current physical/world state relevant to the mission;
-- active or pending execution;
-- current authority state;
-- relevant resource/health state;
-- verified outcomes and supporting evidence;
-- information that requires re-observation or higher-level confirmation.
+- active execution reference;
+- current authority mode;
+- resource/health summary relevant to current decisions;
+- capability availability/degradation;
+- evidence references supporting completed transitions;
+- stale/unknown information requiring re-observation;
+- current reasoning endpoint and reconciliation status.
 
-The purpose is not to reproduce a full symbolic world model. It is to maintain the minimum authoritative state required for coherent mission continuation.
+Mission state advances only through typed events and verified outcomes.
 
-A foundation model may hypothesize that a task has succeeded, but mission state advances only when the relevant outcome has been independently verified.
+## 4.5 Dynamic context construction
 
-## 4.3 Dynamic mission context construction
+At each deliberative step, the harness builds a compact context from authoritative state rather than replaying an unbounded chat transcript. It should contain only information relevant to the current decision:
 
-The reasoning model should not receive a fixed global prompt containing every telemetry variable and every historical event. At each deliberative step, the runtime constructs context from:
+- mission intent/current objective;
+- verified progress;
+- current robot/world state;
+- relevant semantic observations;
+- available capabilities;
+- active faults/degraded modes;
+- current communication/compute/resource state;
+- authority/policy constraints;
+- recent execution evidence;
+- unresolved questions.
 
-- current mission objective and progress;
+This context can be reconstructed for a different model endpoint after disconnection or restart.
+
+## 4.6 Capability orchestration
+
+The reasoner sees a **closed, typed capability registry**. Each capability exposes at least:
+
+- identifier and semantic description;
+- typed arguments;
+- preconditions or availability metadata where available;
+- execution endpoint;
+- expected outcome/result schema;
+- verification method;
+- authority/resource/service dependencies relevant to the mission.
+
+The reasoner may dynamically choose ordering, observation steps, alternatives, and recovery composition. It may not synthesize an unregistered motor primitive.
+
+## 4.7 Mission-level admissibility
+
+Before an effectful proposal is dispatched, the runtime evaluates whether it is appropriate in the current mission context. The checks include:
+
+- consistency with the current objective and verified state;
+- autonomous authority for the operation;
+- capability availability and degradation;
+- communication/compute dependencies;
+- resource/health constraints represented by mission policy;
+- active FDIR state;
+- whether additional observation/confirmation is required.
+
+The result is a small typed disposition set such as execute, defer, return-to-reasoner, or escalate.
+
+This is distinct from low-level safety. Mission admissibility asks "should this mission action proceed now?"; robot safety asks "is this physical command admissible?"
+
+## 4.8 Space-operational context
+
+The space-context service represents only variables that can change mission-level admissibility, capability availability, or the location/timing of reasoning. It is intentionally not a complete lunar digital twin.
+
+The runtime architecture can represent:
+
+- current and upcoming Direct-with-Earth / relay communication availability;
+- reachable reasoning or external-service tiers and measured/request latency;
+- energy/resource state relevant to current activities;
+- subsystem health and capability degradation;
+- mission-relevant illumination/thermal/environment state where exercised;
+- mission authority mode and any condition-dependent autonomy limits.
+
+These values are **typed runtime state**, not prose facts remembered by the LLM. A proposal may therefore be rejected or deferred even when the model itself believes it is useful. For example, a remote semantic service may be unavailable across a contact gap, or a servicing activity may be deferred because the configured energy/thermal state does not permit it.
+
+For the first paper, the selected mission should exercise a small, defensible subset rather than all possible lunar variables. Communication/contact profiles should be based on documented LunaNet/LCRNS assumptions or generated with trusted geometry tools such as SPICE; resource/thermal models should be transparent and traceable to stated assumptions. Arbitrary random network loss or invented spacecraft margins should not be presented as lunar realism.
+
+## 4.9 Distributed intelligence and reconciliation
+
+The architecture treats intelligence as **heterogeneous and intermittently reachable** rather than assigning all reasoning permanently to either Earth or the robot.
+
+- **Onboard/local:** owns mission continuity and the state needed for safe continuation; local safety/FDIR and authoritative state never migrate away from the robot-side runtime.
+- **Optional surface/nearby compute:** may host higher-capability reasoning or perception if such infrastructure exists in the selected mission architecture.
+- **Earth/ground:** may host the most capable models and human experts, but is not assumed to be synchronously available.
+
+The system does not assume that a lunar communication relay is automatically a general-purpose compute node. Compute placement is represented explicitly as a service capability and availability property.
+
+When communication or service availability changes, the active reasoning endpoint can change without changing the source of mission truth. A new endpoint receives reconstructed context from:
+
+- authoritative mission state;
 - current verified robot/world state;
-- current space-operational conditions;
-- available capabilities and intelligence nodes;
-- active faults and degraded modes;
-- relevant recent execution evidence;
-- authority/policy information relevant to the proposed decision.
+- current space context;
+- unresolved anomalies and FDIR state;
+- available capabilities;
+- relevant recent evidence.
 
-This mirrors the context-management role of coding-agent harnesses, but the context is built from physical mission state rather than software-workspace state.
+Old model conversation history is never treated as the authoritative resume mechanism. This reconciliation rule prevents a reconnected remote model from acting on a stale narrative after the physical mission has continued locally during an outage.
 
-## 4.4 Space-operational context
+This feature is an architectural response to delay/disruption and constrained flight compute; it remains a supporting mechanism inside Experiment I rather than a separate communications experiment.
 
-The runtime treats the following as first-class mission state.
+## 4.10 Independent execution and verification
 
-### Communication context
+The execution path separates four roles:
 
-- whether Direct-to-Earth communication is currently available;
-- relay availability and contact opportunities;
-- expected communication interruption or restoration;
-- link asymmetry and usable data capacity;
-- latency appropriate to the current link;
-- whether a requested remote service can currently be reached.
+1. **reasoner:** proposes a mission-relevant action/information step;
+2. **mission runtime:** checks mission admissibility and authority;
+3. **capability + low-level safety:** executes under specialized control;
+4. **verifier:** establishes what actually happened.
 
-### Environmental context
+Evidence sources may include deterministic simulator truth, geometric conditions, action results, world-state updates, perception/VLM observations, task-progress monitors, FDIR state, or explicit human confirmation where mission policy requires it.
 
-- lunar location and mission time;
-- illumination and shadow state;
-- terrain/environment state relevant to navigation and observation;
-- thermal exposure indicators where relevant;
-- lunar gravity and terrain-contact conditions provided by the simulator.
+The language model's statement "task succeeded" is never sufficient by itself.
 
-### Resource and system context
+## 4.11 FDIR integration
 
-- battery/energy state and reserve information;
-- thermal condition;
-- storage/data-transfer availability;
-- compute availability;
-- subsystem health;
-- current capability degradation.
+FDIR is an input to mission reasoning and capability availability, not a separate alarm channel. Fault events can cause capabilities to become unavailable, require re-observation, constrain allowed operating modes, or force escalation. The harness does not replace subsystem diagnosis or safety algorithms.
 
-The method does not attempt to solve an optimal resource-scheduling problem. These quantities constrain the runtime decisions made by the mission agent.
+## 4.12 Natural-language commanding and reporting
 
-## 4.5 Capability orchestration
+The operator-facing interface accepts mission-level intent in natural language and returns concise mission status/reporting derived from structured state. This design is motivated by the operations shift identified in JPL's *Operations for Autonomous Spacecraft*: higher onboard autonomy requires ground teams to express **intent** and later reconstruct autonomous decisions and resulting spacecraft state rather than assume that every transition was commanded directly from Earth (Castano et al., 2022).
 
-The foundation-model reasoner interacts with a **closed, typed capability set**, not unrestricted robot APIs.
+The report therefore summarizes:
 
-Capabilities may include both conventional and learned components. The runtime uses capability metadata and current operational state to determine what can be considered for the current mission transition.
+- what objective was assigned;
+- what was observed;
+- what actions were executed;
+- what outcomes were independently verified;
+- what remains unresolved;
+- which decisions required escalation;
+- relevant evidence references.
 
-The key distinction from a static skill sequence is that the reasoner may dynamically:
+Natural language lowers the interaction threshold and supports mission/goal-level commanding, but it is deliberately not the authoritative record. The report must be regenerable from structured mission state and evidence. If a report and the state/evidence disagree, the structured record wins.
 
-- acquire additional observations;
-- select a different execution method;
-- change task ordering where mission policy permits;
-- interpret an unexpected physical result;
-- invoke fault handling;
-- defer a task;
-- request higher-level support;
-- replan the remaining mission.
+## 4.13 Traceability and ground reconstruction
 
-The capability itself remains responsible for its specialized computation; the mission runtime is responsible for how it is used in the larger mission.
+Every consequential transition should be reconstructable as:
 
-## 4.6 Mission-level action admissibility
+**mission intent → verified state → relevant operational context → model proposal → mission disposition → capability call → safety/execution result → verification evidence → updated mission state.**
 
-Before an agent proposal becomes a physical execution request, the runtime evaluates the proposal against current authoritative mission state and space-operational context.
-
-The evaluation asks qualitatively different questions from low-level robot safety:
-
-- Is this action consistent with the current mission objective and priority?
-- Is the robot authorized to perform it autonomously?
-- Are the required capabilities currently available?
-- Does execution rely on communication or computation that is currently unavailable or operationally inappropriate?
-- Is the action compatible with current resource/health conditions?
-- Does an active fault or degraded subsystem require a different operating mode?
-- Is additional observation or external confirmation required before execution?
-
-The outcome of this layer may be execution, deferral, replanning, or escalation. The exact decision policy should be driven by mission rules and experimentally studied behavior rather than arbitrary fixed thresholds.
-
-Low-level physical safety remains an independent mechanism below this mission layer.
-
-## 4.7 Distributed intelligence coordination
-
-The runtime supports multiple possible reasoning locations:
-
-- onboard/local intelligence;
-- lunar-surface or local-edge intelligence;
-- remote/Earth-side intelligence.
-
-The system does not assume that the highest-capability model is continuously reachable.
-
-When communication or service availability changes, the runtime constructs context for whichever reasoning layer is currently usable from the authoritative mission state rather than treating the previous model conversation as the source of truth.
-
-This enables:
-
-- local continuation when remote reasoning is unavailable;
-- bounded use of lower-capability models;
-- opportunistic use of higher-capability remote models;
-- reconstruction of current mission context after reconnection;
-- avoidance of stale-context continuation after the physical world has changed.
-
-This mechanism is a component of the broader mission-runtime architecture, not the thesis of the paper by itself.
-
-## 4.8 Independent execution and verification
-
-The execution path should separate four roles:
-
-1. **reasoning:** proposes the next mission-relevant action or information-gathering step;
-2. **mission runtime:** determines whether the proposal is admissible in the current mission context;
-3. **execution capability and safety system:** performs the physical action under its own controller/policy and low-level constraints;
-4. **verifier/observer:** establishes what actually happened.
-
-Mission progress is updated from the fourth role, not from the reasoning model's assertion.
-
-Possible evidence sources include:
-
-- geometric goal satisfaction;
-- controller execution result;
-- perception-based state recognition;
-- task-progress or success monitors;
-- subsystem telemetry;
-- FDIR state;
-- explicit human or mission-control confirmation for authority-limited cases.
-
-## 4.9 FDIR integration
-
-FDIR is treated as part of the mission runtime rather than a side alarm channel.
-
-Faults may change:
-
-- which capabilities are available;
-- which operating modes are allowed;
-- what information must be reacquired;
-- whether a task should be retried, substituted, deferred, or abandoned;
-- whether local continuation remains appropriate;
-- whether human/mission-control intervention is required.
-
-The Harness does not replace subsystem-level FDIR algorithms; it incorporates their outputs into mission-level decision making.
-
-## 4.10 Trustworthiness and traceability
-
-For each consequential mission transition, the runtime should preserve a structured trace of:
-
-**mission objective → verified state → relevant operational context → reasoner proposal → mission-level disposition → selected capability → safety/execution result → verification evidence → updated mission state.**
-
-This provides an operationally useful form of explainability for review, debugging, V&V, and incident reconstruction without relying on unverified natural-language chain-of-thought.
-
----
+The purpose is broader than software debugging. When onboard autonomy makes decisions during communication delay or disconnection, ground may not have observed the intermediate physical states that motivated those decisions. The trace therefore supports post-contact mission-state reconstruction, anomaly investigation, explanation of autonomous decisions, experiment scoring, and future V&V workflows. It records decisions and evidence without requiring storage or exposure of private model chain-of-thought.
 
 # 5. Experimental Methodology
 
-The experiments should test the paper's central causal claim: **the same underlying capabilities become more useful at mission level when coordinated through a space-native agentic runtime.**
+The experimental section should be intentionally small. The paper asks two scientific questions and runs two main experiments. Communication, resources, FDIR, and semantic anomalies appear *inside* these missions as controlled conditions; they are not expanded into separate campaigns unless later evidence shows a distinct scientific question.
 
-## 5.1 Evaluation philosophy
+## 5.1 Claim-to-evidence map
 
-The experiments should not compare unrelated robot models or train a new end-to-end policy for each baseline. As far as practical, all systems should share the same:
+| Scientific claim | Primary evidence |
+|---|---|
+| The proposed system expands autonomous mission capability beyond fully pre-engineered task models. | Experiment I: model-covered vs. model-held-out missions, compared with PLEXIL and EUROPA-to-PLEXIL. |
+| The increased autonomy reduces dependence on detailed ground planning/commanding. | ALFUS-grounded Human Independence measures in Experiment I. |
+| The system is more extensible and requires less mission-specific knowledge engineering. | Experiment II: controlled post-freeze capability/mission extension. |
+| Open-ended FM reasoning does not replace trusted execution semantics. | Common safety/verifier stack, mission-invalid-action metrics, structured traces, and one targeted runtime ablation/failure analysis if needed. |
+| The architecture transfers beyond simulation. | LunarBot integrated demonstration; not a third scientific experiment. |
 
-- robot embodiment;
-- perception;
-- navigation;
-- manipulation controller;
-- VLA/VLN policies where used;
-- foundation model family;
-- FDIR primitives;
-- safety mechanisms;
-- simulation scenes and mission objectives.
+## 5.2 Compared methods
 
-The independent variable is the **mission-level operating model**.
+The main paper should contain **three methods only**.
 
-## 5.2 Baselines
+### Baseline 1 — PLEXIL
 
-### Baseline A — Procedure-driven mission execution
+Use the official PLEXIL Release 6 executive and language, not a reimplementation. A LunarBot PLEXIL interface adapter exposes the same capabilities used by all methods as PLEXIL `Command`s and exposes relevant state/verifier signals as `Lookup`s.
 
-A conventional pre-engineered procedure or behavior-tree/state-machine representation coordinates the same underlying capabilities. Unexpected conditions outside the encoded procedure require fallback logic or human intervention.
+For model-covered scenarios, the PLEXIL plan must include competent nominal logic and reasonable predefined recovery branches. It may use PLEXIL conditions, sequences, concurrency, loops, library calls, and resource arbitration as appropriate. Engineering effort and plan artifacts are retained for Experiment II analysis.
 
-Purpose: represent the command/procedure-centric operating model that the proposed work seeks to relax.
+### Baseline 2 — EUROPA → PLEXIL
 
-### Baseline B — Generic physical-agent harness
+Use NASA's open-source EUROPA framework as the planner/scheduler and official PLEXIL as the executor. This is **our integration of two NASA open-source components**, not a claim that NASA distributes a single official "EUROPA+PLEXIL" product.
 
-A foundation-model reasoner can access the available robot capabilities and physical observations through a generic agentic runtime, but the runtime does not contain explicit space-native mission semantics beyond the normal robot world state and safety mechanisms.
+EUROPA receives a frozen declarative domain model containing the actions, states, resources, and constraints available to the baseline. Its solver constructs/refines the activity plan. A documented bridge translates the resulting executable activity tokens into PLEXIL-executable activity invocations while state/execution feedback returns through the common adapter.
 
-Purpose: determine whether an existing physical harness can simply be transferred to a lunar mission setting.
-
-### Baseline C — Prompt-only space-aware agent
-
-The generic agent receives communication, environmental, resource, and mission-policy information in its prompt/context, but these variables are not represented as independent authoritative runtime state with mission-level enforcement and verified state transitions.
-
-Purpose: test whether “telling the LLM about the constraints” is sufficient.
+The baseline must be allowed to replan within its encoded model. It must not be artificially restricted to a one-shot schedule.
 
 ### Proposed — Space Robotics Agent Harness
 
-The same reasoner and robot capabilities operate through the proposed authoritative mission state, space-operational context, distributed-intelligence coordination, mission-level admissibility, FDIR integration, independent verification, and traceability mechanisms.
+Use the same LunarBot capabilities, perception, world state, safety, verifier, and mission constraints. The difference is that mission decomposition and capability composition can be formed online by the LLM/VLM reasoner, while authoritative state/admissibility/verification remain outside the model.
 
-## 5.3 Mission families
+### Not main baselines
 
-The paper should use a small number of coherent, long-horizon missions rather than many disconnected manipulation benchmarks.
+Generic OpenRAL and prompt-only variants remain useful during development and possibly as a single targeted ablation, but they should not occupy space in the main comparison unless required to explain a specific mechanism. A separate handcrafted behavior-tree baseline is unnecessary once PLEXIL is present.
 
-### Mission family 1 — Infrastructure inspection and maintenance
+## 5.3 Fairness and freeze protocol
+
+The comparison is only valid if the following rules are enforced:
+
+1. **Same embodiment and primitive capabilities.** Navigation, perception, manipulation, VLM service, verifier, FDIR primitives, and low-level safety are shared.
+2. **Same physical scenario.** Methods run the same simulator state/seed and mission objective.
+3. **Same available evidence.** No method receives privileged simulator truth for reasoning; deterministic truth may be used by the common verifier.
+4. **Strong baseline authoring.** PLEXIL/EUROPA artifacts are authored using their documented strengths and validated on model-covered development cases.
+5. **Artifact freeze.** Before held-out cases are revealed, PLEXIL plans/libraries, EUROPA domain/solver configuration, proposed prompts/policies/capability descriptions, and all shared capabilities are frozen.
+6. **No hidden solution in Ours.** Capability descriptions are generic and cannot encode the held-out task sequence.
+7. **No online code/model editing during autonomous runs.** If continuing a mission would require editing a PLEXIL plan, EUROPA domain/task model, or proposed runtime code, that autonomous run is recorded as requiring ground re-authoring.
+8. **Equivalent mission intent.** Ours may receive natural-language mission intent; baselines receive the semantically equivalent formal mission goal required by their execution model. The difference in operator command abstraction is recorded rather than disguised.
+
+## 5.4 Mission families
+
+Use two coherent mission families inside Experiment I, not as separate papers or independent experiments.
+
+### Mission A — Infrastructure inspection and maintenance
 
 Representative objective:
 
-> Inspect a designated lunar infrastructure site, identify the failed subsystem, restore operation, verify the restoration, and leave the system in an operationally safe condition.
+> Inspect the designated service site, identify the failed or obstructed subsystem, restore operation if permitted, verify the result, and leave the robot in a safe state.
 
-Potential mission elements:
+The environment should contain multiple visually distinguishable components and at least one semantic state that must be identified through observation. The mission can require navigation, inspection, diagnosis, manipulation, and verification.
 
-- navigation to the site;
-- locating and identifying infrastructure;
-- acquiring diagnostic observations;
-- selecting the appropriate manipulation/inspection capability;
-- interacting with a component or interface;
-- detecting an unsuccessful or incomplete operation;
-- recovery or alternative action;
-- verification of the restored state;
-- mission completion/reporting.
-
-### Mission family 2 — Logistics and servicing under contingencies
+### Mission B — Logistics and servicing
 
 Representative objective:
 
-> Deliver the required component or tool to a service location and complete the pending servicing operation while responding to changing mission conditions.
+> Deliver the required component or tool to the service location and complete the servicing objective while respecting current mission constraints.
 
-Potential mission elements:
+The environment can require item identification, retrieval, transport, placement/service, and verification.
 
-- item identification and retrieval;
-- transport/navigation;
-- manipulation and placement;
-- changed object location or blocked route;
-- temporary loss of a required remote service;
-- robot or perception degradation;
-- changed mission priority or fault condition;
-- verification of servicing result.
+The two families are sufficient if they exercise different task compositions. A third family should be added only if it tests a qualitatively different mechanism.
 
-A third mission should only be added if it provides a qualitatively different test of the runtime rather than more task variety for its own sake.
+## 5.5 Experiment I — Autonomous Mission Generalization
 
-## 5.4 Experimental factor groups
+### Question
 
-### 5.4.1 Mission openness and contingency
+**Can the system autonomously complete mission situations beyond the task/procedure/domain model that was engineered before deployment?**
 
-Vary whether the mission proceeds nominally or contains conditions that were not encoded as a complete procedural branch, such as:
+### Independent variable
 
-- changed target location;
-- changed action order;
-- unexpected object state;
-- failure of an attempted manipulation;
-- need for additional observation;
-- substitution of one available capability for another.
+Mission-model coverage:
 
-This group tests the value of agentic mission coordination relative to fixed procedures.
+- **Covered:** required task/decomposition is representable by the frozen PLEXIL/EUROPA artifacts.
+- **Held-out:** all required primitive capabilities exist, but the scenario-specific semantic diagnosis/decomposition/composition was not encoded in those artifacts.
 
-### 5.4.2 Space communication and distributed compute
+### Held-out situation design
 
-Vary:
+Held-out cases should be few but substantive. Candidate categories:
 
-- continuous versus intermittent remote connectivity;
-- Direct-to-Earth versus relay-supported availability;
-- communication interruption and reconnection;
-- local versus remote model availability;
-- link asymmetry and communication delay;
-- service availability at different compute tiers.
+1. **semantic obstruction/access problem:** a target is physically present but cannot be serviced until another observed condition is understood and resolved;
+2. **unexpected component state requiring additional inspection:** the visible state does not match the nominal task template and the system must gather evidence before choosing an action;
+3. **capability substitution/composition:** the preferred route or operation is unavailable, but a valid solution exists through a different combination of already registered capabilities.
 
-The contact patterns should be based on lunar mission geometry or published infrastructure assumptions rather than arbitrary random packet loss alone.
+The final paper does not need all three categories if two produce a sufficiently clear and repeatable test.
 
-This group tests whether the runtime continues coherently when intelligence is physically distributed.
+### Human-assistance protocol
 
-### 5.4.3 Lunar environmental and resource context
+The autonomous run begins with the standardized mission input and no operator assistance. Human interaction is event-triggered, not time-threshold-triggered. Assistance is recorded when the system explicitly requests operator input/escalation, reaches a state in which it reports no admissible continuation, or the mission terminates under a declared mission deadline/constraint.
 
-Vary mission conditions such as:
+During the autonomous run the operator may only use the common operational interface; source code/domain/plan artifacts remain frozen. A need to author/upload new mission logic is recorded as **ground re-authoring required**, not silently folded into normal intervention.
 
-- illumination/shadow state;
-- available energy margin;
-- thermal/operational condition where represented;
-- terrain difficulty or mobility uncertainty;
-- data/compute resource availability.
+### Primary metrics
 
-These conditions should affect mission decisions but should not turn the work into a resource-optimization paper.
+The study should report the following separately rather than combine them into a scalar score:
 
-### 5.4.4 Fault and degradation
+1. **Autonomous Mission Success Rate** — fraction of runs satisfying all required final mission conditions without post-reveal method-specific artifact modification.
+2. **Human Intervention Ratio (ALFUS)** — total operator–system interaction time divided by mission elapsed time.
+3. **Human Planning / Preplanning Burden (ALFUS-grounded)** — record the human mission-specific planning time and the fraction of required mission transitions whose scenario-specific structure was pre-authored. ALFUS explicitly treats human planning time and the portion of the mission pre-generated by humans as Human-Independence factors; report the raw quantities and any ratio used, rather than inventing a synthetic autonomy score. Offline plan/domain authoring effort is measured separately in Experiment II.
+4. **Level of Human Interaction (ALFUS)** — highest/typical authority level of operator input, using the ALFUS ordering: mission → strategic goal → tactical goal → mission task → route → autopilot → servo.
+5. **Mission Variation Coverage / Held-out Success** — success rate over held-out situation classes, directly operationalizing ALFUS's "degree of mission variations handled" concept.
+6. **Mission-invalid Action Rate** — proposed/executed actions that violate current mission state, authority, or required transition semantics, derived from structured event logs.
 
-Inject controlled conditions such as:
+Mission duration and low-level skill success should be reported as supporting diagnostics, not headline autonomy metrics.
 
-- perception degradation;
-- manipulation failure;
-- navigation failure or blocked route;
-- unavailable learned policy/service;
-- subsystem fault reported through FDIR;
-- remote reasoning failure or timeout.
+### Expected evidential interpretation
 
-This group tests whether FDIR and capability status are incorporated into mission-level reasoning.
+If PLEXIL and EUROPA perform strongly on covered cases but degrade when the required semantic/task structure is absent from frozen artifacts, while Ours maintains higher autonomous success with lower human-planning/intervention burden, H1 is supported. If EUROPA solves a held-out case within its existing domain model, that is a valid success for the baseline and the case should not be described as beyond model-based autonomy.
 
-### 5.4.5 Trustworthiness challenge cases
+## 5.6 Experiment II — Autonomy Extensibility / Knowledge-Engineering Cost
 
-Construct cases where a foundation model produces a locally plausible but mission-invalid proposal, such as:
+### Question
 
-- repeating a completed operation;
-- using a capability that is unavailable or outside authority;
-- performing the right operation on the wrong target;
-- ignoring a fault/degraded state;
-- acting on stale context after the physical state changed;
-- declaring mission progress without sufficient evidence.
+**How much mission-specific engineering is required to expand the autonomous mission envelope after deployment requirements change?**
 
-This group separates semantic flexibility from trustworthy execution.
+### Protocol
 
-## 5.5 Primary metrics
+1. Freeze the three systems at the end of Experiment I development.
+2. Reveal a new extension specification to all methods at the same time.
+3. The shared low-level implementation of the new capability, if one is involved, is supplied identically to all methods; the measured work begins at the point where each mission-level system must learn/represent how that capability can be used.
+4. Engineers modify only method-specific mission artifacts until a predefined validation suite passes.
+5. Freeze again.
+6. Evaluate on held-out mission instances that require the extension but were not visible during authoring.
 
-### Mission accomplishment
+Use a small number of high-quality extension cases. Suitable examples are:
 
-- complete mission success;
-- completion of mission objectives/subobjectives;
-- time or mission effort required;
-- recovery success after anomalies.
+- adding a new general-purpose inspection/manipulation capability with typed inputs/results;
+- adding support for a newly specified mission situation that requires a new task relationship but no new low-level controller.
 
-### Human decision burden
+### Primary metrics
 
-- number of human interventions;
-- number of manually specified subtasks;
-- command granularity;
-- clarification/escalation requests;
-- fraction of mission transitions handled autonomously;
-- mission completion under bounded human-supervision availability.
+1. **Engineering Time-to-Valid-Support** — active engineering time from release of the extension specification until the method passes the common validation suite. Time-on-task is a standard dependent variable in knowledge-engineering tool evaluations; it is reported directly, not converted to a synthetic cost score.
+2. **Mission-Specific Artifact Change** — descriptive delta in the artifacts that encode mission knowledge: PLEXIL plans/libraries/conditions, EUROPA NDDL/domain/solver artifacts, or proposed capability metadata/policy/runtime configuration. Report semantic constructs/files and optionally line deltas, but do not compare raw LOC as if languages were equivalent.
+3. **Validation/Modeling Error Count** — number of failed validation iterations attributable to incorrect/incomplete mission modeling, when reliably observable.
+4. **Post-Extension Held-out Mission Success** — autonomous mission success on unseen instances requiring the extension.
 
-The interpretation should focus on whether the operator can move from detailed procedure generation toward mission-level intent.
+If only one engineer performs all authoring, engineering-time results should be treated as controlled case-study evidence rather than a population-level human-factors claim. If multiple qualified engineers are available, authoring order should be counterbalanced and inter-engineer variation reported.
 
-### Trustworthiness
+### Expected evidential interpretation
 
-- safety violations;
-- authority violations;
-- mission-invalid actions;
-- stale-state actions;
-- unsupported mission-state transitions;
-- unresolved failures followed by continued execution;
-- incorrect declarations of task completion.
+H2 is supported if Ours reaches valid extension support with substantially less mission-specific artifact engineering while retaining successful held-out execution. A result in which Ours requires less authoring but produces unreliable execution does not support the hypothesis.
 
-### Adaptivity
+## 5.7 Targeted trustworthiness ablation / failure analysis
 
-- recovery/replanning following unexpected events;
-- successful capability substitution;
-- response to degraded subsystems;
-- successful continuation across changing model/service availability.
+Do not create a third large ablation campaign. If needed, run one focused comparison on a subset of Experiment I cases:
 
-### Communication and compute
+- **Full Ours** versus
+- **Ours without authoritative runtime enforcement/independent verification**.
 
-- remote and local model calls;
-- data transferred;
-- communication wait time;
-- inference latency;
-- mission idle time attributable to remote dependence;
-- operations completed during remote unavailability.
+The purpose is only to show that semantic flexibility alone is not the paper's contribution. Relevant outcomes are unsupported mission-state advancement, duplicate/stale actions, authority violations, and false success declarations.
 
-### Traceability
+If the external-baseline traces already make this point convincingly, this ablation can remain supplementary.
 
-- fraction of consequential state transitions with complete evidence/decision traces;
-- ability to reconstruct why an action was executed or rejected;
-- correspondence between mission-state updates and independent outcome evidence.
+## 5.8 Real LunarBot demonstration
 
-## 5.6 Ablation studies
+A later hardware demonstration should execute one representative mission segment with the same mission-runtime abstraction, typed capability interfaces, safety path, verifier, and natural-language mission/reporting interface.
 
-Ablations should isolate the runtime mechanisms rather than simply remove unrelated robot components.
+Its purpose is deployment feasibility and transfer, not another baseline campaign. Detailed design is intentionally deferred until the simulation experiments and real LunarBot capability stack are stable.
 
-Candidate ablations:
+## 5.9 Statistical principles
 
-- remove authoritative mission state and rely on conversational context;
-- provide space context only to the model, without independent runtime use;
-- remove independent outcome verification and accept model/controller success claims;
-- remove distributed-intelligence state reconciliation;
-- remove mission authority/FDIR integration while retaining low-level safety;
-- remove dynamic context selection and expose a static comprehensive prompt.
+- use the same scenario seeds/initial states across methods wherever possible;
+- repeat stochastic foundation-model runs sufficiently to characterize variance;
+- retain raw per-run traces and classify failure modes;
+- report confidence intervals for success and ratio metrics;
+- use paired analyses where the same scenario instance is evaluated by multiple methods;
+- do not choose sample counts or final hypothesis tests solely to obtain significance;
+- freeze metric definitions and exclusion rules before the final campaign.
 
-Only ablations relevant to mechanisms actually implemented should appear in the final paper.
-
-## 5.7 Evaluation environments
-
-Primary scientific evaluation should use a space-robotics simulation platform capable of lunar gravity, mobile manipulation, procedural/randomized scenes, and scalable repeated trials. Space Robotics Bench / Isaac Lab is the preferred basis because it already provides extraterrestrial domains, mobile-manipulation templates, manipulation tasks, domain randomization, and ROS 2 interoperability.
-
-A simpler simulator may be used for controlled mechanism ablations if needed, but the main paper must contain genuinely space-operational mission conditions.
-
-A LunarBot demonstration may be added to show that the same mission-runtime abstraction can connect to a real mobile-manipulation stack and distributed compute topology. It should validate transfer of the runtime, not attempt to reproduce the lunar environment on Earth.
-
----
+No single scalar autonomy score should be created.
 
 # 6. Planned Results and Evidence Structure
 
-No numerical results are assumed at this stage. This section defines what evidence would be required for the paper's claims.
+No numerical result is assumed. This section defines what the eventual paper must show for each claim to be defensible.
 
-## 6.1 Main comparison
+## 6.1 Main result — autonomous mission envelope
 
-A central result should compare the four operating models across increasing mission openness and increasingly space-realistic operating conditions.
+The central figure/table should compare **PLEXIL, EUROPA→PLEXIL, and Ours** under model-covered and model-held-out situations across the two mission families.
 
-The desired analysis should separate:
+The table should include at minimum:
 
-- mission completion;
-- human intervention;
-- mission-invalid actions;
-- safety/authority violations;
-- recovery after failure;
-- communication/compute dependence.
+- autonomous mission success;
+- human intervention ratio;
+- human interaction authority level;
+- held-out mission success/variation coverage;
+- mission-invalid actions.
 
-The paper should not compress all outcomes into a single score.
+The strongest valid result would not be "Ours wins everywhere." A scientifically plausible and useful pattern is:
 
-## 6.2 Key expected qualitative finding
+- PLEXIL is highly reliable when the needed procedure/recovery branch is encoded;
+- EUROPA→PLEXIL handles dynamic scheduling/replanning well inside its domain model;
+- Ours matches these methods reasonably on covered cases and degrades less when the required semantic/task structure is outside the frozen model;
+- increased flexibility does not cause a corresponding increase in mission-invalid execution because admissibility/verification remain independent.
 
-If the hypothesis is correct, the result should show a characteristic trade-off:
+## 6.2 Second result — cost of expanding autonomy
 
-- procedure-driven execution is disciplined but brittle to unmodeled contingencies and requires more human procedural intervention;
-- a generic agent harness is flexible but can make decisions inconsistent with mission-level space constraints;
-- prompt-only space awareness improves semantic behavior but does not provide an independent mission-state or assurance boundary;
-- the proposed runtime preserves much of the agent's flexibility while reducing mission-invalid behavior and human coordination burden.
+The second main table should compare extension cases using:
 
-This should be treated as a hypothesis to test, not a result to assume.
+- engineering time-to-valid-support;
+- mission-specific artifacts changed;
+- validation/modeling errors where measurable;
+- held-out mission success after extension.
 
-## 6.3 Figures that should exist if the evidence supports them
+The important interpretation is not that symbolic planning is obsolete. It is whether the foundation-model runtime reduces the amount of mission-specific knowledge engineering needed to make an existing capability useful in a new operational context.
 
-1. **Operating-model diagram:** procedure-driven operations versus agentic mission runtime.
-2. **System architecture:** foundation-model reasoning, mission runtime, space context, capabilities, safety/FDIR, and distributed compute hierarchy.
-3. **Mission trace example:** one complete long-horizon mission showing reasoning, capability calls, failures, verification, and state updates.
-4. **Autonomy–trustworthiness comparison:** mission accomplishment versus intervention and invalid/unsafe execution.
-5. **Space-condition robustness:** performance under communication/compute/environment variation.
-6. **Ablation figure:** which runtime mechanisms materially contribute.
-7. **Traceability example:** structured reconstruction of a consequential mission transition.
+## 6.3 Mission trace figure
 
-## 6.4 Tables that should exist
+Include one complete trace from a held-out situation showing:
 
-- comparison of related systems and which mission-runtime properties they support;
-- capability set shared across all baselines;
-- mission scenarios and perturbation classes;
-- primary quantitative comparison;
-- failure-mode analysis;
-- ablation results;
-- communication/compute overhead and dependence.
+**mission intent → semantic observation → diagnosis/decomposition → capability call → runtime admissibility → physical execution → verification → mission-state update → final operator report.**
 
----
+A companion trace from a classical baseline should show where the frozen model ceases to provide a continuation or requires ground re-authoring.
+
+## 6.4 Trustworthiness evidence
+
+The paper should show that the proposed method's success is not achieved by relaxing mission constraints. Suitable evidence includes:
+
+- no increase in low-level safety violations;
+- lower or comparable mission-invalid action execution;
+- examples of model proposals rejected/deferred by mission policy;
+- verification-backed rather than model-asserted completion;
+- deterministic reconstruction of the mission trace from event logs.
+
+## 6.5 Real-system evidence
+
+A short LunarBot section should show:
+
+- the same mission/runtime interface controlling real hardware;
+- real sensor/ROS feedback entering the authoritative state;
+- at least one reasoner-driven multi-step sequence;
+- independent verification of a physical outcome;
+- a trace-linked natural-language report.
+
+No claim about lunar-environment fidelity should be made from the ground demo.
+
+## 6.6 Figures and tables expected in the manuscript
+
+**Figures**
+
+1. Procedure/model-driven autonomy versus agentic mission-runtime operating model.
+2. Proposed architecture and trust boundaries.
+3. Experiment-I coverage design: model-covered versus model-held-out situations.
+4. Main autonomy/generalization results.
+5. Representative held-out mission trace.
+6. Experiment-II engineering-effort/extension result.
+7. LunarBot demonstration image/trace if included.
+
+**Tables**
+
+1. Related-system capability boundary: PLEXIL / EUROPA / CASPER-MEXEC / physical-agent harnesses / Ours.
+2. Shared LunarBot capability stack and baseline interfaces.
+3. Mission scenarios and which knowledge is covered versus held out.
+4. Primary Experiment-I metrics.
+5. Experiment-II extension effort and post-extension performance.
+6. Failure-mode/trustworthiness summary.
 
 # 7. Discussion
 
-## 7.1 What changes in the mission operating model
+## 7.1 The intended operating-model transition
 
-The central discussion should return to the original problem:
+The paper should return to one central shift:
 
-> The contribution is not that an LLM can call a robot tool, but that a lunar robot can be operated at a higher level of intent because a mission runtime continuously coordinates specialized autonomy capabilities and preserves the operational discipline required in aerospace systems.
+> **from autonomous execution/planning inside a predominantly pre-engineered mission model, toward a system that can also interpret semantically novel mission situations and compose existing trusted capabilities online.**
 
-## 7.2 Relationship to classical space executives
+This is a progression within the space-autonomy tradition, not a rejection of it.
 
-The proposed approach should be framed as an extension of, not a rejection of, the spacecraft-autonomy tradition.
+## 7.2 What classical space autonomy continues to do better
 
-Classical executives contribute:
+PLEXIL/EUROPA/MEXEC-style systems provide explicit, inspectable task/state/resource semantics, deterministic or bounded execution behavior, and strong verification/V&V properties. Where the operational domain can be comprehensively modeled in advance, these properties are major strengths.
 
-- explicit state;
-- bounded execution;
-- resource awareness;
-- FDIR;
-- trusted operational semantics.
+The proposed work should therefore avoid the claim that foundation models are universally superior planners. Its advantage is expected specifically where mission semantics, diagnosis, or task composition cannot be exhaustively enumerated at acceptable engineering cost.
 
-Foundation-model reasoning contributes:
+## 7.3 What foundation models contribute
 
-- semantic mission interpretation;
-- open-ended decomposition;
-- flexible information seeking;
-- diagnosis and response to cases not completely enumerated in advance;
-- dynamic selection among heterogeneous capabilities.
+The experimental results should support only those capabilities actually observed, but the intended advantages are:
 
-The research question is whether these strengths can be combined coherently.
+- broader semantic interpretation of mission situations;
+- dynamic task decomposition using an existing capability repertoire;
+- lower marginal effort to make newly available capabilities operationally useful;
+- mission-level natural-language commanding;
+- natural-language explanation/reporting grounded in structured evidence.
 
-## 7.3 Why the architecture is space-specific
+## 7.4 Why the runtime remains space-native
 
-The final discussion must demonstrate that the system would behave differently if deployed as a terrestrial LAN robot. Space communication geometry, intermittent service availability, distributed compute, lunar environmental state, resource limits, authority, and FDIR must all influence runtime behavior in the experiments.
+The architecture should behave differently from a generic terrestrial agent when communication, compute, resources, mission authority, or FDIR state change. These variables are enforced through structured runtime state and mission admissibility rather than left to model memory.
 
-## 7.4 Moon-to-Mars extrapolation
+Only context exercised by the final scenarios should appear as a major manuscript claim.
 
-Mars should be discussed only as an extrapolation. Greater communication delay and longer disconnection intervals strengthen the motivation for local mission-level autonomy, but the paper should not claim Mars validation.
+## 7.5 Engineering scalability
 
-## 7.5 Limitations
+If Experiment II supports H2, the discussion should distinguish **runtime generalization** from **development-time extensibility**:
 
-Expected limitations to discuss explicitly:
+- runtime generalization asks whether a frozen system handles a new situation;
+- extensibility asks how much engineering is needed to deliberately expand the supported mission envelope.
 
-- simulation cannot reproduce all lunar physical/environmental effects;
-- foundation-model behavior remains stochastic and model-dependent;
-- the mission runtime cannot guarantee correctness of faulty perception or incomplete mission rules;
-- terrestrial compute hardware is not space-qualified;
-- multi-robot coordination may remain outside the first implementation;
-- full certification is outside the scope of the paper;
-- the first implementation may use simplified power/thermal models rather than spacecraft-grade digital twins.
+These are related but distinct properties, and conflating them would weaken the paper.
 
----
+## 7.6 Human–autonomy interaction
+
+The desired operational effect is not "remove humans." It is to shift operator effort upward in abstraction:
+
+**servo/route/task-level intervention → mission/goal-level intent + exception handling.**
+
+ALFUS Human Independence metrics provide a defensible way to describe this change. Natural-language mission input/reporting supports this shift but should not be used to claim reduced workload without a proper human-subject study.
+
+## 7.7 Moon-to-Mars extrapolation
+
+Mars should remain an extrapolation. Longer delay and disconnection strengthen the motivation for onboard mission-level autonomy, but the experiments validate lunar scenarios only.
+
+## 7.8 Limitations
+
+The final manuscript should explicitly discuss:
+
+- held-out cases are designed within a closed capability set and therefore do not constitute unrestricted open-world intelligence;
+- success still depends on perception quality and the completeness of safety/mission policies;
+- foundation-model outputs remain stochastic and model-dependent;
+- engineering-time measurements can be developer-dependent, especially with a small authoring sample;
+- simulation does not reproduce all lunar physical/environmental effects;
+- the EUROPA→PLEXIL baseline is an integration built for this study from official open-source components, not an official NASA product distribution;
+- real LunarBot validation demonstrates interface/runtime transfer, not lunar environmental fidelity;
+- multi-robot autonomy and full certification remain outside the first paper.
 
 # 8. Conclusion — intended message
 
-The conclusion should return to the operation-model transition:
+The final conclusion should be narrower than the vision statement and exactly match measured evidence.
 
-> Future lunar robotics is increasingly limited not only by individual perception, planning, and control capability, but by how those capabilities are organized into a mission-level autonomous system. A Space Robotics Agent Harness offers a route from command-intensive, procedure-driven operations toward mission-intent-driven autonomy by combining foundation-model reasoning with existing conventional and learned robotics capabilities, while retaining space-native communication, resource, authority, safety, FDIR, verification, and traceability requirements as part of the runtime itself.
+Intended form:
 
-The final conclusion must be narrowed to exactly what the experiments demonstrate.
-
----
+> Classical space autonomy has already shown that onboard planning, scheduling, execution monitoring, and replanning can reduce dependence on detailed ground command sequences. The next limitation for increasingly open lunar robotic operations is the engineering boundary of the task/procedure/domain models in which that autonomy operates. This work investigates a Space Robotics Agent Harness that combines foundation-model semantic reasoning and dynamic capability composition with authoritative mission state, explicit mission constraints, FDIR, independent verification, and low-level safety. If supported by the experiments, the principal result is that this operating model expands the set of mission situations a lunar robot can handle without ground re-authoring and reduces the effort required to extend that set, while retaining the execution discipline required for aerospace robotics.
 
 # Research boundaries that must not drift
 
 This work is **not**:
 
-- another skill library or skill-registration paper;
+- another skill-library or skill-registration paper;
 - a renamed version of the previous SELENE Atomic Action Contract work;
 - a generic LLM tool-calling framework;
 - a new VLA architecture;
+- a claim that classical space autonomy cannot plan or replan;
 - a generic runtime-safety filter;
 - a communication-planning paper;
 - a power/thermal optimization paper;
 - a cloud-edge deployment paper;
-- a paper whose thesis is only communication continuity or future viability.
+- a human-factors paper unless a properly designed operator study is later added;
+- a paper whose main novelty is natural-language reporting.
 
-These are components, constraints, or related problems. The scientific center remains:
+The scientific center is:
 
-> **reorganizing fragmented space-robotics autonomy into a trustworthy, space-native, mission-intent-driven agentic runtime.**
+> **expanding the autonomous mission envelope beyond fully pre-engineered task models, and reducing the knowledge-engineering burden of extending that envelope, using foundation-model mission reasoning inside a trustworthy space-native runtime.**
 
 ---
 
 # Literature anchors for the future manuscript
 
-## Classical space autonomy
+The final manuscript should use peer-reviewed papers where available and official NASA/NIST technical material for implementation/system facts. The list below is intentionally more specific than the previous version so that future writing does not rely on memory.
 
-- Muscettola et al., *Remote Agent: To Boldly Go Where No AI System Has Gone Before*.
-- Verma et al., PLEXIL / Universal Executive.
-- Chien et al., ASPEN / CASPER / EO-1 Autonomous Sciencecraft series.
-- Estlin et al., AEGIS automated science targeting.
-- Chi et al., *Embedding a Scheduler in Execution for a Planetary Rover*.
-- Mars 2020 Onboard Planner / MEXEC publications and operations reports.
-- ERGO planetary/orbital autonomy framework.
-- ISAAC autonomous caretaking work.
+## Autonomy measurement and human interaction
 
-## Agentic and physical-agent systems
+1. **Huang, H.-M., Messina, E., and Albus, J.** *Autonomy Levels for Unmanned Systems (ALFUS) Framework, Volume II: Framework Models, Version 1.0.* NIST Special Publication 1011-II-1.0, 2007. DOI: `10.6028/NIST.SP.1011-II-1.0`. Key use: Mission Complexity / Environmental Complexity / Human Independence framing; human intervention ratio; human planning ratio; level of human interaction; dynamic-planning variation coverage.
+2. **Huang, H.-M.** *Autonomy Levels for Unmanned Systems (ALFUS) Framework, Volume I: Terminology.* NIST SP 1011-I-2.0. Key use: terminology for autonomy and human independence.
+3. **Goodrich, M. A. and Olsen, D. R. Jr.** *Metrics for Evaluating Human-Robot Interactions.* PerMIS, 2003. Key use: neglect tolerance, robot attention demand, interaction effort.
+4. **Hart, S. G. / NASA Ames.** *NASA Task Load Index (TLX).* Key use only if a formal operator workload study is later added.
 
-- OpenAI, *Unrolling the Codex Agent Loop*.
-- Anthropic, Claude Code / Agent SDK documentation.
-- OpenRAL.
-- Inspect Robots.
-- Show-Harness.
-- RoboClaw.
-- RoboHarness.
-- Physical Agentic AI.
-- RoboOS.
-- ROSA / RAI.
-- hierarchical VLA orchestration studies.
+## PLEXIL and plan execution
 
-## Trustworthy autonomy
+5. **Estlin, T., Jonsson, A., Pasareanu, C., Simmons, R., Tso, K., and Verma, V.** *Plan Execution Interchange Language (PLEXIL).* NASA/TM-2006-213483, 2006. NTRS ID 20060019246.
+6. **PLEXIL Group.** *PLEXIL Release 6 User's Guide and Reference.* `https://plexil-group.github.io/plexil_docs/`. Key implementation facts: conditions, loops, concurrency, Commands, Lookups, resources, executive configuration.
+7. **PLEXIL Group.** Official open-source repository: `https://github.com/plexil-group/plexil`.
+8. **NASA Langley / PLEXIL-V.** Formal verification environment for PLEXIL, `https://github.com/nasa/PLEXIL5`. Optional supporting reference for plan verification; not required for the main contribution.
 
-- NASA Autonomous Systems Taxonomy.
-- NASA autonomy V&V roadmap.
-- Runtime Assurance for autonomous aerospace systems.
-- STARS.
-- ECSS machine-learning handbook / safety-cage guidance.
-- lunar surface autonomy certification literature.
-- reliability-asymmetric spacecraft autonomy.
-- robot-agent runtime governance, plan verification, and policy-failure monitoring literature.
+## EUROPA and model-based planning
 
-## Space communications, compute, and lunar operations
+9. **Bedrax-Weiss, T., Frank, J., Jonsson, A., and McGann, C.** *EUROPA2: Plan Database Services for Planning and Scheduling Applications.* NASA/NTRS 20050157874, 2004. Key use: plan database, action/state/resource/constraint modeling, integration into NASA planning applications.
+10. **NASA Ames.** EUROPA open-source repository: `https://github.com/nasa/europa`. Key implementation facts: Plan Database, Problem Solver, declarative domain modeling, embedded host-application design.
+11. **Bresina, J., Jonsson, A., Morris, P., and Rajan, K.** *Activity Planning for the Mars Exploration Rovers.* ICAPS-era MER/MAPGEN publication, 2004/2005. Key use: mixed-initiative constraint-based planning and mission-operations context.
 
-- LunaNet Interoperability Specification.
-- Lunar Communications Relay and Navigation Systems (LCRNS) reference architecture and constellation material.
-- Delay/Disruption Tolerant Networking.
-- NASA High Performance Spaceflight Computing.
-- in-space edge-computing demonstrations.
-- ASTREA and related space AI demonstrations.
-- lunar south-pole illumination/communication-aware planning literature.
-- Space Robotics Bench.
+## Continuous replanning and onboard integrated planning/execution
+
+12. **JPL Artificial Intelligence Group.** *CASPER — Continuous Activity Scheduling Planning Execution and Replanning.* Official project description and linked publications. Key use: iterative repair, current goals/state/plan, continuous replanning.
+13. **Verma, V., Gaines, D., Rabideau, G., Schaffer, S., and Joshi, R.** *Autonomous Science Restart for the Planned Europa Mission with Lightweight Planning and Execution.* IWPSS 2017 / NTRS 20210008204. Key use: MEXEC, state monitoring, conflict detection, plan revision after reset/fault.
+14. **JPL Artificial Intelligence Group.** *MEXEC — Onboard Task Planning and Execution.* Official project description. Key use: task networks, planner/executive/timeline architecture, Mars 2020, CADRE, Europa/ASTERIA applications.
+15. **Campuzano et al.** *MEXEC: An Onboard Integrated Planning and Execution Approach for Spacecraft Commanding.* JPL/NTRS 20220001521, 2020. Key use: goal-based task-network commanding and ASTERIA experiments.
+16. **Rabideau, G. et al.** *Planning, Scheduling, and Execution on the Moon: The CADRE Technology Demonstration Mission.* AAMAS 2025. Key use: strong contemporary lunar onboard planning/scheduling/execution comparison point.
+17. **JPL Artificial Intelligence Group.** *Europa Lander planning and execution research.* Key use: hierarchical task-network construction from domain knowledge, flexible execution, periodic replanning, online model update.
+
+## Knowledge engineering and extensibility
+
+18. **JPL Artificial Intelligence Group.** *Efficient Task Network Generation (TaskNet).* Key use: explicit statement that task-network specification is manual/cumbersome/error-prone and that reducing plan-creation time is an autonomy-operations goal.
+19. **Strobel, V. and Kirsch, A.** *MyPDDL: Tools for Efficiently Creating PDDL Domains and Problems.* 2020. Key use: planning-model engineering is time-consuming/error-prone; user-study metrics include task completion time and error detection.
+20. **McCluskey, T. L., Vaquero, T. S., and Vallati, M.** *Engineering Knowledge for Automated Planning: Towards a Notion of Quality.* K-CAP 2017. Key use: domain-model knowledge engineering as a substantive part of planning applications.
+21. **Vallati, M., Barták, R., Chrpa, L., McCluskey, T. L., and Petrick, R. P. A.** *Knowledge Engineering for Planning and Scheduling in the LLM Era.* ICAPS 2025. Key use: LLM assistance can streamline knowledge engineering, but external validation/domain expertise remain necessary in safety-related applications.
+
+## Foundation-model and physical-agent runtime context
+
+22. **OpenRAL** — official repository/documentation for typed reasoner tool calls, rSkills, world state, safety, verification, and physical-agent execution. Used as implementation substrate, not primary scientific baseline.
+23. **Space Robotics Bench (SRB)** — extraterrestrial/lunar robotics simulation and ROS/Isaac Lab interface. Used as the main simulation substrate.
+24. **Inspect Robots** — evaluation/logging concepts where useful; not a required control-path component.
+
+## Operations, intent, and explanation
+
+25. **Castano, R., Vaquero, T., Rossi, F., Verma, V., Van Wyk, E., Allard, D., et al.** *Operations for Autonomous Spacecraft.* IEEE Aerospace Conference, 2022. JPL Artificial Intelligence Group. `https://ai.jpl.nasa.gov/public/documents/papers/castano-etal-AERO2022.pdf`. Key use: future autonomy changes both uplink and downlink operations; ground must convey intent, predict likely autonomy effects, reconstruct onboard state, and explain autonomous decisions.
+26. **JPL Artificial Intelligence Group.** *Operations for Autonomy* project. `https://ai.jpl.nasa.gov/public/projects/ops-for-autonomy/`. Key use: intent capture, state estimation/propagation, decision reconstruction, and explanation as operational requirements for autonomous spacecraft.
+27. **JPL Artificial Intelligence Group.** Mars 2020 On-Board Planner / Simple Planner publications and V&V reports. Key use: operational precedent for trusted onboard planning rather than a claim that goal-level autonomy is new.
+
+## Space-native context
+
+28. **Landon, L. B., Karasinski, J. A., Morissette, L. G., McTigue, K. R., Parisi, M. E., Wu, S.-C., and Panontin, T. L.** *Assessment of the State of Communication Delay Research in Preparation for Missions Beyond Low Earth Orbit.* NASA/TM-20250003885, 2025. `https://ntrs.nasa.gov/citations/20250003885`. Key use: 3–14 s one-way lunar communication-delay regime; limits of the traditional real-time ground-support paradigm and increased need for local autonomy.
+29. **NASA / ESA / JAXA.** *LunaNet Interoperability Specification, Version 5.* 2025. `https://www.nasa.gov/directorates/somd/space-communications-navigation-program/lunanet-interoperability-specification/`. Key use: interoperable lunar network-of-networks; Direct-with-Earth and lunar relay services; current lunar communication architecture assumptions.
+30. **NASA Space Communications and Navigation (SCaN).** *Delay/Disruption Tolerant Networking Overview.* `https://www.nasa.gov/reference/delay-disruption-tolerant-networking-overview/`. Key use: disconnections, delay, data-rate mismatch, store-and-forward operation, time-disjoint links, and DTN as a core mechanism for lunar networking/LunaNet.
+31. **NASA Space Communications and Navigation (SCaN).** *Lunar Communications Relay and Navigation Systems (LCRNS)* reference material and Reference Constellation 3.1. `https://www.nasa.gov/goddard/esc/lcrns/`. Key use: relay-supported lunar communication/navigation infrastructure. Important boundary: relay availability does not imply general-purpose onboard foundation-model compute.
+32. **NASA.** *High Performance Spaceflight Computing (HPSC).* 2024–2026 project documentation and white paper. `https://www.nasa.gov/game-changing-development-projects/high-performance-spaceflight-computing-hpsc/`. Key use: radiation environment, power management, fault tolerance, connectivity, and the growing need for high-performance onboard AI/autonomy; evidence that spaceflight compute is improving but remains resource- and assurance-constrained.
+33. **Lewis, M. E., McCleskey, C. M., Alvarez, V. R., Gomez, J. D. Jr., Latorella, K. A., Gill, T. R., Perotti, J. M., and Zeitlin, N. P.** *Uncrewed Lunar Surface Operations and Support Activities.* ASCEND 2022; NASA NTRS 20220013667. `https://ntrs.nasa.gov/citations/20220013667`. Key use: increased independence from Earth/surface crews; illumination/shadow, thermal management, battery pre-charging, load shedding, hibernation, and adaptive uncrewed operation.
+34. **Rabideau, G. et al.** *Planning, Scheduling, and Execution on the Moon: The CADRE Technology Demonstration Mission.* AAMAS 2025; plus JPL CADRE project documentation. `https://ai.jpl.nasa.gov/public/projects/cadre/`. Key use: MEXEC-based strategic planning with predicted/actual temperature and energy levels; scheduling survey, sleep, cooling, and recharge within lunar operational limits.
+35. **NAIF SPICE / SpiceyPy documentation.** Key use: Sun/Earth/Moon geometry and mission-time profiles when the selected experiment requires geometry-derived context.
 
 ## Boundary with previous work
 
-- Huang et al., *Toward Self-Evolving Lunar Robotic Autonomy Through Contract-Governed Skill Registration*, Astronautics, 2026.
+36. **Huang et al.** *Toward Self-Evolving Lunar Robotic Autonomy Through Contract-Governed Skill Registration*, Astronautics, 2026.
 
-The previous work establishes contract-based representation, registration, and dispatch of heterogeneous skills. The new paper must move from the question of **how capabilities enter a repertoire** to **how the complete autonomy stack is coordinated continuously at mission level under lunar operational constraints**.
-
+The previous work addresses how heterogeneous capabilities are represented, registered, and dispatched. The present paper asks a different question: **how a complete autonomy stack can reason and operate continuously at mission level when the required task structure is not fully pre-authored, and how that autonomy can be extended with lower mission-specific knowledge-engineering effort.**
