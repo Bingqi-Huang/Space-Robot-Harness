@@ -97,7 +97,10 @@ Build order (each verified live):
       yet (`space_context_ref`/`network_profile_ref`/`model_config` —
       B3/baselines not started). 6/6 offline checks vs. real fixtures,
       independently re-run by the coordinator before merge.
-- [ ] 9. Remaining kernel magnitude checks (`kJointTrajectory` first).
+- [x] 9. Kernel magnitude checks (F35), merged. All 4 remaining modes
+      closed same way as F12/F16. 245/245 kernel tests pass (independently
+      re-run). Found, deferred: a dormant OOB-stride risk in 3 pre-existing
+      modes (only triggers for horizon>1, nothing sends that today).
 - **Coordination**: Mid-360 landed on SRB `feat/mid360-lidar` — open/unmerged,
   fair game to build on.
 - [ ] B3: reasoner-in-the-loop two-step run with full trace = Phase B exit.

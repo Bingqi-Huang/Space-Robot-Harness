@@ -1449,3 +1449,32 @@ and merged in parallel — writes what has a real source today (revisions,
 mission_config, capability_registry, real OTel traces, rosbag opt-in),
 honestly omits what doesn't yet (baseline/space_context axes) rather than
 faking it.
+
+### F35 — Item 9 (kernel magnitude checks) built + merged; found a latent OOB-stride risk in three pre-existing modes, not fixed (dormant, out of scope)
+
+Closed `kJointTrajectory`/`kCartesianDelta`/`kGripperPosition`/
+`kCompositeMode` in the C++ kernel the same way F12/F16 closed BODY_TWIST/
+CARTESIAN_TWIST — real per-mode bounds, not stubs. Full kernel suite
+independently re-run by the coordinator after fixing an unrelated
+pre-existing `Justfile` bug (`safety-kernel-build` resolved `$(which
+python)` instead of the project venv): **245/245 tests pass, including
+`test_lifecycle_kernel` (40/40)**, which the fork itself couldn't verify
+due to a worktree toolchain issue.
+
+**Found, not fixed**: the pre-existing `kCartesianTwist`/`kBodyTwist`/
+`kCartesianPose` validator cases index `chunk.flat_data` using
+`envelope.n_dof` (the robot's total joint count) as the per-step stride,
+instead of the mode's own row width. For `horizon > 1` this reads past the
+intended row — a latent out-of-bounds read. Dormant today: every current
+dispatch path in this project sends `horizon=1` chunks (MoveIt replays
+waypoints as separate single-row chunks, not one multi-row chunk), so
+nothing currently triggers it. The four new item-9 cases correctly use the
+row width instead, with a regression test proving why. Left open per this
+session's own triage rule (record and move on when something doesn't
+block current research progress) — revisit before anything ever dispatches
+`horizon > 1` for those three modes.
+
+Process note, same as F31/F32: touches `cpp/openral_safety_kernel/`
+directly; engineered/tested to the F12/F16 precedent's bar, but formal
+safety-WG sign-off against the private hazard log is still procedurally
+owed.
