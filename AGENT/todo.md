@@ -87,16 +87,12 @@ Build order (each verified live):
       `move_group.launch.py` is still a standalone companion process, not
       wired into `deploy_e2e.launch.py` (same class of gap as item 2's
       sensor_bridge_node).
-- [~] 7. Mission verifier node (this repo, `openral_ext/mission_verifier/`)
-      — built, 8/8 offline logic tests pass, NOT live-verified. Reads real
-      SRB ground-truth TF (`srb/env0 -> srb/env0/panel`) + `/srb/env0/
+- [x] 7. Mission verifier node (this repo, `openral_ext/mission_verifier/`)
+      — built + live-verified (F33), merged into `main`. Reads real SRB
+      ground-truth TF (`srb/env0 -> srb/env0/panel`) + `/srb/env0/
       terminated`, cross-checks against the task's own self-report rather
       than trusting it, publishes `VerifierEvent` JSON on
-      `/space_harness/verifier_events`. Branch `feat/mission-verifier` in
-      worktree `space-robot-harness-item7-verifier/`.
-      **Next for all three**: live-verify sequentially against one running
-      `openral deploy sim` graph (shared GPU), then merge each worktree
-      branch back — 5 needs the ADR call first.
+      `/space_harness/verifier_events` at ~10 Hz, zero errors observed.
 - [ ] 8. §19 run-manifest writer wrapping `openral deploy sim` (this repo).
 - [ ] 9. Remaining kernel magnitude checks (`kJointTrajectory` first).
 - **Coordination**: Mid-360 landed on SRB `feat/mid360-lidar` — open/unmerged,
@@ -112,13 +108,11 @@ prep. Record: `docs/lunar_bot_joint_position_control.md`.
 
 ## Rules
 
-- Branch or worktree per task; delete after **merge** (AGENT.md §1) — every
-  branch below stays open, Phase B is still landing on them:
-  openral: `feat/lunar-bot-hal` → `fix/body-twist-speed-envelope` →
-  `feat/lunar-bot-arm-gripper` → `feat/arm-joint-position-control` →
-  `feat/lunar-bot-capability-set`; SRB: `feat/panel-remount-mission-a` →
-  `feat/switchable-arm-control` → `feat/mid360-lidar` /
-  `fix/ros-bridge-array-fast-path` → `feat/four-wheel-steer-alignment`.
+- Branch or worktree per task; delete after **merge** (AGENT.md §1). The
+  whole Phase B stack merged 2026-09-14: openral `master` @ `ec95fe8`,
+  SRB `main` @ `6d8a388` (`docs/upstream_pins.md`). Not pushed to origin
+  yet. New work starts a fresh branch off `master`/`main`, not the old
+  stack names.
 - Overwrite-update this file and `handoff.md`; ≤150 lines each (AGENT.md §2).
 - No pytest beyond upstream's own suites (AGENT.md §3). Pure-Python logic
   smoke checks (no ROS/simulator) before a live test are fine and cheap —
