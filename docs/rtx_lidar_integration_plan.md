@@ -26,22 +26,46 @@ sensor.** This is a confirmed upstream Isaac Sim bug, not an SRB or
 implementation defect — reproduced identically with both the custom
 Mid-360 sensor above AND an official whitelisted reference sensor
 (`HESAI_XT32_SD10`, created the fully-supported way), across six different
-render-advance mechanisms (bare `simulation_app.update()`,
+render-advance mechanisms in headless mode (bare `simulation_app.update()`,
 `SimulationContext.step()`, the async `next_render_simulation_async`
 matching Isaac Sim's own official test suite, and the purpose-built
 synchronous `rep.orchestrator.step()`) and the two documented headless
 workarounds from Isaac Sim's own Known Issues page
 (`rt_subframes>=2`, `--/exts/isaacsim.core.throttling/enable_async=false`).
 In every case, `/Render/PostProcess/SDGPipeline/PostProcessDispatcher`
-never advances past reference time 0/0. Matches
-[isaac-sim/IsaacSim#110](https://github.com/isaac-sim/IsaacSim/issues/110)
+never advances past reference time 0/0.
+
+**Precisely localized via a non-headless re-run against the machine's real
+display** (confirmed live, GUI screenshot inspected): general RTX
+rendering is completely healthy — the main Perspective viewport renders
+the scene correctly (lit, shaded, shadowed), and the Stage tree shows the
+whitelisted sensor's full prim hierarchy (visual mesh + the `OmniLidar`
+prim itself) present and correct. But the sensor's own dedicated
+render-product preview pane stays solid black throughout, with the GPU
+pinned at ~60%/270W (genuine sustained work, not an idle deadlock) and
+zero progress for several minutes. So this is specifically the RTX Lidar
+synthetic-data-generation render-product/dispatcher path that never
+produces a frame — in both headless and windowed/GUI mode alike — not a
+headless-only, GPU-driver, or general-renderer issue.
+
+Matches [isaac-sim/IsaacSim#110](https://github.com/isaac-sim/IsaacSim/issues/110)
 ("Cannot retrieve RTX lidar data using headless Python script", still open)
 and an [NVIDIA forum
 thread](https://forums.developer.nvidia.com/t/unable-to-reliably-produce-lidar-data-in-a-headless-simulation/337835)
 reporting the identical symptom, where an NVIDIA moderator stated (2025-09-24)
-the issue "has been fixed in Isaac Sim 5.1.0" — but our pinned build is
-`5.1.0-rc.19` (`~/Programs/isaac-sim/VERSION`), a release-candidate
-snapshot, not the GA release the fix shipped in.
+the issue "has been fixed in Isaac Sim 5.1.0". **That lead was chased and
+closed out, not left as a guess**: downloaded NVIDIA's official
+`isaac-sim-standalone-5.1.0-linux-x86_64.zip` "GA" package directly and
+compared it byte-for-byte-equivalent (VERSION string, extension versions
+like `omni.replicator.core-1.12.27+107.3.3`) against our pinned
+`5.1.0-rc.19` install — **identical**. NVIDIA shipped the RC build
+unchanged as the GA release; there is no smaller, same-series upgrade that
+could contain this fix (deleted the redundant download afterward, no
+disk left behind). The only newer Isaac Sim releases are 6.0.0/6.0.1/6.1.0
+(checked the full release list) — a two-major-version jump requiring an
+IsaacLab upgrade from the pinned 2.2.1 and a full SRB re-verification;
+disproportionate to this one sensor and not undertaken without an
+explicit user decision to fund that migration.
 
 **Consequence for `srb/core/env/mobile/env.py`**: not wired in as the
 active `lidar_robot` sensor. RayCaster remains the active implementation
@@ -53,7 +77,8 @@ at the source — not a productive use of effort until the Isaac Sim build
 is updated. **Next step, concretely: re-run this same live verification
 (a self-contained repro is in this session's scratchpad, not committed —
 recreate from `srb/core/sensor/rtx_lidar.py` + the six-mechanism list
-above) after moving off the `5.1.0-rc.19` build.**
+above) after moving to Isaac Sim 6.x (the only available newer release) or
+after NVIDIA ships an actual point-fix to the 5.1 line.**
 
 This project is **imitation learning, not RL** — no `num_envs` parallelism
 requirement — which is the load-bearing fact behind this plan: it removes

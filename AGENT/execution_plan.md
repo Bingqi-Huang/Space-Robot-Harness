@@ -846,18 +846,25 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
    the ordered plan done and committed (`.kit` files, the `__main__.py`
    gating fix, and `srb/core/sensor/rtx_lidar.py` — the Mid-360
    scan-pattern-window + custom-prim-authoring mechanism, live-verified
-   working). **Blocked on a confirmed upstream Isaac Sim bug**, not
-   anything in this codebase: RTX Lidar annotators return empty data in
-   headless mode on our pinned `5.1.0-rc.19` build — reproduced
-   identically with the custom sensor and an official whitelisted one,
-   across six different render-advance mechanisms, matching
-   isaac-sim/IsaacSim#110 (open) and an NVIDIA-confirmed-fixed-in-5.1.0-GA
-   forum report (we have the RC, not GA). See
-   `docs/rtx_lidar_integration_plan.md`'s Status section for the full
-   verification trail. Not wired into `srb/core/env/mobile/env.py` as the
-   active sensor; RayCaster stays active. F24 in
-   `docs/research_findings.md`. Next: re-verify after moving off the RC
-   build.
+   working). **Blocked on a confirmed, precisely-localized upstream Isaac
+   Sim bug**, not anything in this codebase: the RTX Lidar sensor's own
+   render-product/SDG dispatch pipeline never produces a frame — confirmed
+   in both headless AND windowed/GUI mode (GUI re-run against the
+   machine's real display: main viewport renders perfectly, GPU genuinely
+   busy at ~60%/270W, but the sensor's own render-product preview stays
+   black indefinitely) — so it is not a headless-specific or GPU/driver
+   issue, specifically the lidar SDG path. Matches isaac-sim/IsaacSim#110
+   (open). Chased down the "fixed in 5.1.0" forum lead directly: NVIDIA's
+   official 5.1.0 GA download is byte-identical to our pinned
+   `5.1.0-rc.19` (same VERSION string, same extension versions) — they
+   shipped the RC unchanged as GA, so **there is no same-series fix to
+   move to**; the only newer releases are 6.0.0/6.0.1/6.1.0, a
+   disproportionate two-major-version jump (would need an IsaacLab
+   upgrade + full SRB re-verification) not undertaken without an explicit
+   user decision. See `docs/rtx_lidar_integration_plan.md`'s Status
+   section for the full verification trail. Not wired into
+   `srb/core/env/mobile/env.py` as the active sensor; RayCaster stays
+   active. F24 in `docs/research_findings.md`.
 3. **Procedural manipulation rSkills** (`kind: procedural`, tag `lunar_bot`):
    `move_joints`, `move_ee_to_pose`, `grasp`, `release`, `stow`. Each is a
    real closed loop on OpenRAL world state / TF, emits through the kernel,
