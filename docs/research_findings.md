@@ -539,9 +539,34 @@ than 5.1.0 are 6.0.0/6.0.1/6.1.0 (full release list checked) — a two-major
 full SRB re-verification; out of proportion to this one sensor and not
 undertaken without an explicit user decision to invest in that migration.
 
+**One more concrete, official lead chased down and also ruled out**: read
+the full official Isaac Sim 5.1.0 RTX Lidar doc page plus the bundled
+official standalone example
+(`standalone_examples/api/isaacsim.sensors.rtx/rotating_lidar_rtx.py`,
+present locally, confirmed working reference code). It uses
+`SimulationApp({"headless": False, "enable_motion_bvh": True})` — a flag
+not tried in the mechanisms above. Traced `enable_motion_bvh` to its exact
+effect in `isaacsim.simulation_app.simulation_app.SimulationApp`: it sets
+three carb settings (`--/renderer/raytracingMotion/enabled=true`,
+`--/renderer/raytracingMotion/enableHydraEngineMasking=true`,
+`--/renderer/raytracingMotion/enabledForHydraEngines='0'`), needed for
+ray-traced sensors specifically (as opposed to normal Hydra viewport
+rendering). Set all three directly via `kit_args` and re-ran the
+`rep.orchestrator.step()` HESAI baseline with a 4-minute timeout: produced
+genuinely different behavior (a CPU burst to ~1690% across many threads,
+tapering to ~110% and holding — unlike every prior attempt's steady-state
+GPU-bound-idle-or-error pattern), but still zero point-cloud data at
+timeout, no `[Error]` log lines. A real, different code path was
+exercised; it did not fix the symptom either.
+
 **Not an SRB or implementation defect** — do not re-attempt fixing this in
-SRB code. Consequence: `rtx_lidar.py` exists and is correct but is not
-wired into `srb/core/env/mobile/env.py`'s active sensor path; RayCaster
-(F23) remains the active `lidar_robot` implementation. Source: this
-session's reproduction across headless and non-headless modes (scratchpad,
-not committed) plus `docs/rtx_lidar_integration_plan.md`'s Status section.
+SRB code; the avenues a diligent implementation could reasonably try
+(six render-advance mechanisms, two official documented workarounds,
+non-headless/real-display, RC-vs-GA version diff, extension-registry
+availability, and the official example's `enable_motion_bvh` flag) are
+now exhausted. Consequence: `rtx_lidar.py` exists and is correct but is
+not wired into `srb/core/env/mobile/env.py`'s active sensor path;
+RayCaster (F23) remains the active `lidar_robot` implementation. Source:
+this session's reproduction across headless and non-headless modes
+(scratchpad, not committed) plus `docs/rtx_lidar_integration_plan.md`'s
+Status section.

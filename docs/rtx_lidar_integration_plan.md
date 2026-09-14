@@ -74,11 +74,18 @@ active `lidar_robot` sensor. RayCaster remains the active implementation
 loop (§9) is real remaining work, but doing it now would mean shipping and
 testing an env-integration layer against a data source confirmed broken
 at the source — not a productive use of effort until the Isaac Sim build
-is updated. **Next step, concretely: re-run this same live verification
-(a self-contained repro is in this session's scratchpad, not committed —
-recreate from `srb/core/sensor/rtx_lidar.py` + the six-mechanism list
-above) after moving to Isaac Sim 6.x (the only available newer release) or
-after NVIDIA ships an actual point-fix to the 5.1 line.**
+is updated. Also tried and ruled out: the official standalone example's
+`enable_motion_bvh` flag (`--/renderer/raytracingMotion/*` carb settings)
+— produced genuinely different resource behavior (a CPU burst to ~1690%
+across many threads, unlike any prior attempt) but still zero data after
+a 4-minute run. Full account, including every avenue tried, in
+`docs/research_findings.md` F24 — treat that as the up-to-date
+authoritative record. **Next step, concretely: re-run this same live
+verification (a self-contained repro is in this session's scratchpad, not
+committed — recreate from `srb/core/sensor/rtx_lidar.py` + the six
+-mechanism list above, plus `enable_motion_bvh`) after moving to Isaac Sim
+6.x (the only available newer release) or after NVIDIA ships an actual
+point-fix to the 5.1 line.**
 
 This project is **imitation learning, not RL** — no `num_envs` parallelism
 requirement — which is the load-bearing fact behind this plan: it removes
