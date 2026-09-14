@@ -860,3 +860,65 @@ was left at its default `0.5`. The user's direction was to find the actual
 cause first; this entry records that direction being followed, not ignored
 — raising it remains an option once the cause is understood (or ruled out
 as fixable), not a substitute for understanding it.
+
+**Update, same session — real profiling data, gdb (py-spy could not identify
+this custom-built interpreter; `sudo` access to `ptrace` was needed and
+provided by the user).** Reproduced the slow tick again on a freshly-cleaned
+host (ruling out the F27 orphaned-process bug as a contributing factor a
+second time) and attached `gdb -p <kit-python pid>` repeatedly while it was
+ticking at ~0.36-0.38 Hz (re-confirmed via `ros2 topic hz /clock`, correct
+`ROS_DOMAIN_ID=77`). `gdb` has no CPython frame pretty-printer installed on
+this host (`py-bt` undefined), so these are native/C backtraces, symbolized
+where the relevant `.so` ships symbols:
+
+- **Isaac Sim's own `carb.profiler` extension has an active Python-level
+  trace hook** — one sample landed inside CPython's `call_trace` (`Python/
+  ceval.c`) dispatching into `carb/profiler/_profiler.cpython-311-*.so`,
+  confirming Kit's built-in profiler has installed a `sys.setprofile()`-
+  style callback that fires on function calls/returns **throughout the
+  whole interpreter**, not just inside Kit's own code. This class of hook
+  is a well-known, large (often 10-100x on hot paths) source of blanket
+  Python-level slowdown; whether it is *the* dominant cost here or one
+  contributor among several was not isolated further this session. No
+  obvious triggering env var was found (checked the process's actual
+  `/proc/<pid>/environ` for `OTEL_*`/`CARB_*`/profile-related settings —
+  none stood out), so this may simply be this Kit build/extension set's
+  default, not something this project's launch env is turning on.
+- **A real, CPU-bound (not GPU) PyTorch call was caught mid-execution**:
+  one sample resolved a full, clean stack —
+  `at::native::nan_to_num_out` → `at::native::AVX2::nan_to_num_kernel` →
+  `at::TensorIteratorBase::for_each` → `GOMP_parallel` →
+  `gomp_team_start`/`gomp_barrier_wait_end`, all in `libtorch_cpu.so`/
+  `libgomp`, not `libtorch_cuda`. So `torch.nan_to_num(...)` (or an
+  internal equivalent) is being run on a **CPU** tensor with OpenMP
+  thread-team parallelism, and the sampled instant caught it waiting at
+  the team's barrier — consistent with a real, if normally cheap,
+  operation whose barrier-wait cost balloons under CPU thread contention
+  (this host had ~3100 total OS threads across all processes against 24
+  cores at sample time) rather than the operation itself being expensively
+  large. Not yet traced to its call site (candidates: the depth-image /
+  point-cloud path in `RosInterface._publish_sensor_data`, which runs for
+  every camera every tick and commonly NaN-cleans depth before use — not
+  confirmed, a plausible next place to look with `--native` py-spy or an
+  in-SRB profiling hook instead of blind gdb sampling).
+- **A separate, sustained (not single-sample) finding**: the very first,
+  deepest capture showed the thread inside a Python **property setter**
+  (`property_descr_set` → `PyObject_SetAttr`) whose body calls Python's
+  built-in `all()` over a **generator** — and re-attaching ~1-2 s later
+  still found the *same generator object address* being iterated. A
+  sustained multi-second `all(<generator>)` is the signature of a
+  non-vectorized, pure-Python per-element loop (e.g. `all(x > 0 for x in
+  tensor)` instead of `torch.all(tensor > 0)`) — exactly the kind of thing
+  that is fast for a handful of elements and catastrophic for anything
+  image- or point-cloud-sized. Also not yet traced to its call site.
+
+**Net assessment**: no single confirmed root cause yet, but three
+independent, concrete, evidence-backed candidates now exist (a global
+profiler hook, a CPU-bound torch op degrading under thread contention, and
+a likely non-vectorized Python loop) — a materially stronger position than
+"probably rendering" (F26's original, now-disproven guess) or "some kind of
+host contention" (vague). Next step if this is picked back up: get proper
+Python-level symbolication (fix py-spy's version detection for this build,
+or install `python3.11-dbg`-equivalent gdb hooks for Isaac Sim's bundled
+interpreter) rather than more blind native-stack sampling — the call sites
+matter more than another sample confirming the same three suspects.
