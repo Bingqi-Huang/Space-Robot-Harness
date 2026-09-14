@@ -521,23 +521,61 @@ specifically the RTX Lidar synthetic-data-generation render-product/
 dispatcher path that never produces a frame, in both headless and
 windowed/GUI mode alike.
 
-Matches a still-open upstream report,
+Matches upstream report
 [isaac-sim/IsaacSim#110](https://github.com/isaac-sim/IsaacSim/issues/110)
-("Cannot retrieve RTX lidar data using headless Python script"), and an
-[NVIDIA forum thread](https://forums.developer.nvidia.com/t/unable-to-reliably-produce-lidar-data-in-a-headless-simulation/337835)
-reporting the identical symptom where a moderator stated (2025-09-24) the
-issue was fixed in Isaac Sim 5.1.0. **That lead was chased and closed
-out**: downloaded NVIDIA's official `isaac-sim-standalone-5.1.0-linux-
-x86_64.zip` "GA" package directly — its `VERSION` file and extension
-versions (e.g. `omni.replicator.core-1.12.27+107.3.3`) are byte-identical
-to our pinned `5.1.0-rc.19` install; NVIDIA shipped the RC build unchanged
-as the GA release, so **there is no smaller/same-series upgrade available
-that could contain this fix** — the download was deleted after
-confirming this (no disk left behind). The only Isaac Sim releases newer
-than 5.1.0 are 6.0.0/6.0.1/6.1.0 (full release list checked) — a two-major
--version jump, needing an IsaacLab upgrade from the pinned 2.2.1 and a
-full SRB re-verification; out of proportion to this one sensor and not
-undertaken without an explicit user decision to invest in that migration.
+("Cannot retrieve RTX lidar data using headless Python script") —
+**pulled the full issue thread via the GitHub API (not just a page
+summary, which had omitted the actual content), correcting an earlier
+misread**: the issue is **closed** (`state_reason: completed`, closed
+2026-04-17 by NVIDIA engineer `zwdoescode`: *"This issue has resolved in
+Isaac Sim 5.1"*), not open as first reported here. The full thread
+(10 comments, 2025-08-05 to 2026-04-17) is far more informative than the
+closing line alone:
+- Original repro: Isaac Sim **5.0.0** (not 5.1), A40 GPU, headless always
+  empty, non-headless intermittent (data from step 6 on).
+- NVIDIA's actual root-cause + workaround (2025-08-13): default
+  `omni:sensor:Core:skipDroppingInvalidPoints=False` **causes** the bug;
+  set it `True`.
+- A second reporter (`simplelife2010`, 2025-08-21) hit an **near-identical
+  symptom to ours** on a **Solid State** lidar with
+  `IsaacExtractRTXSensorPointCloudNoAccumulator` (the annotator this
+  session used throughout): permanently empty data plus a
+  `/Render/PostProcess/SDGPipeline/DispatchSync` "Empty typeName" warning
+  — same OmniGraph path family as our stuck `PostProcessDispatcher`. Never
+  explicitly confirmed fixed in the thread.
+- NVIDIA's engineer could only get data with the different
+  `IsaacCreateRTXLidarScanBuffer` annotator, and even then only **every 6
+  steps** (sparse), not every step.
+- The closing comment addresses a different commenter's question and does
+  not explicitly confirm the Solid-State/`NoAccumulator`/headless
+  combination (i.e., closest to our case) was actually fixed.
+
+**Tested the exact NVIDIA-validated workaround directly** —
+`omni:sensor:Core:skipDroppingInvalidPoints=True` + the
+`IsaacCreateRTXLidarScanBuffer` annotator (not `...NoAccumulator`), 40
+steps via `rep.orchestrator.step()` (matching the issue's own repro
+script), headless: **still zero data, no errors, GPU briefly active then
+idle.** This is the single closest match to what NVIDIA's own engineer
+confirmed working (if only sparsely) — testing it and having it still fail
+is the strongest evidence gathered this session that our specific
+environment (GPU: dual RTX 5090 / Blackwell, vs. the reporter's A40; a
+newer consumer architecture the pinned Aug-Nov-2025-vintage RC build's RTX
+sensor pipeline may not have been validated against) has a issue beyond
+what any of these documented, NVIDIA-confirmed workarounds address.
+
+Also chased the version-upgrade angle: downloaded NVIDIA's official
+`isaac-sim-standalone-5.1.0-linux-x86_64.zip` "GA" package directly — its
+`VERSION` file and extension versions (e.g.
+`omni.replicator.core-1.12.27+107.3.3`) are byte-identical to our pinned
+`5.1.0-rc.19` install; NVIDIA shipped the RC build unchanged as the GA
+release, so **there is no smaller/same-series upgrade available that
+could contain whatever fix the issue's closing comment refers to** — the
+download was deleted after confirming this (no disk left behind). The
+only Isaac Sim releases newer than 5.1.0 are 6.0.0/6.0.1/6.1.0 (full
+release list checked) — a two-major-version jump, needing an IsaacLab
+upgrade from the pinned 2.2.1 and a full SRB re-verification; out of
+proportion to this one sensor and not undertaken without an explicit user
+decision to invest in that migration.
 
 **One more concrete, official lead chased down and also ruled out**: read
 the full official Isaac Sim 5.1.0 RTX Lidar doc page plus the bundled
@@ -563,10 +601,15 @@ exercised; it did not fix the symptom either.
 SRB code; the avenues a diligent implementation could reasonably try
 (six render-advance mechanisms, two official documented workarounds,
 non-headless/real-display, RC-vs-GA version diff, extension-registry
-availability, and the official example's `enable_motion_bvh` flag) are
-now exhausted. Consequence: `rtx_lidar.py` exists and is correct but is
-not wired into `srb/core/env/mobile/env.py`'s active sensor path;
-RayCaster (F23) remains the active `lidar_robot` implementation. Source:
-this session's reproduction across headless and non-headless modes
-(scratchpad, not committed) plus `docs/rtx_lidar_integration_plan.md`'s
-Status section.
+availability, the official example's `enable_motion_bvh` flag, and
+NVIDIA's own engineer-confirmed workaround/annotator combination from the
+bug thread itself) are now exhausted. Consequence: `rtx_lidar.py` exists
+and is correct but is not wired into `srb/core/env/mobile/env.py`'s
+active sensor path; RayCaster (F23) remains the active `lidar_robot`
+implementation. **If revisited later**: the GPU-generation mismatch (our
+dual RTX 5090 vs. the upstream reporter's A40) is the one remaining
+un-eliminated variable and the most likely next thing to check — e.g. on
+different/older GPU hardware, or once Isaac Sim ships a build actually
+validated against Blackwell-generation cards. Source: this session's
+reproduction across headless and non-headless modes (scratchpad, not
+committed) plus `docs/rtx_lidar_integration_plan.md`'s Status section.

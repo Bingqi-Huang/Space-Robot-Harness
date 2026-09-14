@@ -78,14 +78,23 @@ is updated. Also tried and ruled out: the official standalone example's
 `enable_motion_bvh` flag (`--/renderer/raytracingMotion/*` carb settings)
 — produced genuinely different resource behavior (a CPU burst to ~1690%
 across many threads, unlike any prior attempt) but still zero data after
-a 4-minute run. Full account, including every avenue tried, in
-`docs/research_findings.md` F24 — treat that as the up-to-date
-authoritative record. **Next step, concretely: re-run this same live
-verification (a self-contained repro is in this session's scratchpad, not
-committed — recreate from `srb/core/sensor/rtx_lidar.py` + the six
--mechanism list above, plus `enable_motion_bvh`) after moving to Isaac Sim
-6.x (the only available newer release) or after NVIDIA ships an actual
-point-fix to the 5.1 line.**
+a 4-minute run. **Also pulled the full upstream bug thread via the GitHub
+API** (isaac-sim/IsaacSim#110 — closed, not open as first thought) and
+tested NVIDIA's own engineer-confirmed root-cause fix directly
+(`omni:sensor:Core:skipDroppingInvalidPoints=True` +
+`IsaacCreateRTXLidarScanBuffer`, the exact combination their team
+validated, even though only sparsely): still zero data. Full account,
+including every avenue tried, in `docs/research_findings.md` F24 — treat
+that as the up-to-date authoritative record. **Leading remaining
+hypothesis**: our GPU (dual RTX 5090 / Blackwell) vs. the upstream
+reporter's A40 — a generation this Aug-Nov-2025-vintage build's RTX
+sensor pipeline may not have been validated against. **Next step,
+concretely: re-run this same live verification** (a self-contained repro
+is in this session's scratchpad, not committed — recreate from
+`srb/core/sensor/rtx_lidar.py` + the mechanisms/workarounds above) **after
+moving to Isaac Sim 6.x** (the only available newer release), **or on
+different/older GPU hardware**, or after NVIDIA ships a build actually
+validated against Blackwell-generation cards.
 
 This project is **imitation learning, not RL** — no `num_envs` parallelism
 requirement — which is the load-bearing fact behind this plan: it removes
