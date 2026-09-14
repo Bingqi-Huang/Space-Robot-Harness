@@ -18,6 +18,8 @@
 8. **Every experimental run must be reproducible.** Save git revisions, simulator seed/configuration, model/provider configuration, mission specification, space-context profile, capability registry, trace/log locations, and final metrics.
 9. **Build mechanism-first, not benchmark-first.** Do not add task variety unless it exercises a distinct runtime mechanism.
 10. **No paper-result language in code or reports until measured.** Log observed behavior; do not label a mechanism superior before analysis.
+11. **Prerequisites are verified empirically before a dependent step starts.** A step whose preconditions are unmet (e.g. a mission run with no dispatchable manipulation capability, or no perception wired) is not started and its failure is not recorded as a "finding" — the precondition is built first. (User directive, 2026-09-14.)
+12. **Scope of coding obligations is total, not "as much as convenient".** Every piece of infrastructure the paper needs — embodiment rSkills, sensor bridges, navigation, manipulation, joint limits, verifiers, run artifacts, launch orchestration — is built, regardless of size. The only excluded work is imitation-learning data collection and VLA model training. (User directive, 2026-09-14.)
 
 ---
 
@@ -141,6 +143,30 @@ Do not fork upstream unless an integration bug cannot be solved with a sidecar o
 - isolate the patch;
 - upstream it when possible;
 - keep the research mechanism in this repository.
+
+### Actual layout as of 2026-09-14 (supersedes the sketch above where they differ)
+
+Both upstreams are forks (`DsslRobot/openral`, `DsslRobot/space_robotics_bench`)
+pinned as git submodules at `openral/` and `space_robotics_bench/`
+(`docs/upstream_pins.md`). The fork was unavoidable for OpenRAL (Python
+3.10 / ROS 2 Humble downgrade — every lab machine and the real LunarBot are
+Humble, decision D1). Given that, **embodiment-level integration lives in
+the forks, on feature branches, because it is upstream-shaped code**: a HAL
+is an OpenRAL layer-0 package (`packages/openral_hal_lunar_bot/`), a robot
+manifest is `robots/lunar_bot/robot.yaml`, an rSkill is `rskills/<id>/`, an
+SRB action term or task is `srb/core/action/term/...` / `srb/tasks/...`.
+Putting these in `openral_ext/` / `srb_ext/` would mean re-implementing
+OpenRAL's loaders to look elsewhere — the opposite of "reuse before
+implementing". The `srb_ext/` / `openral_ext/` directories in the sketch are
+therefore **not used**; their intended contents are on the fork branches,
+one branch per task, every commit recorded in `docs/upstream_pins.md`.
+
+What stays in this repository: the research mechanisms (`space_runtime/`,
+`space_context/`, the mission-level decision layer, verifiers), the
+baselines, the experiment runner/launch orchestration, run artifacts,
+metrics, and all documentation. The dividing rule: *if OpenRAL or SRB would
+plausibly accept it upstream as a generic feature, it goes on a fork
+branch; if it only makes sense for this paper, it goes here.*
 
 ---
 
@@ -522,21 +548,42 @@ Keep upstream topic/action/service contracts unchanged where possible.
 
 Create `docs/srb_integration_notes.md` based on the checked-out revision.
 
-## 6.2 Choose the robot embodiment pragmatically
+## 6.2 Robot embodiment — LunarBot, by decision (revised 2026-09-14)
 
-The first scientific campaign should use an SRB-supported mobile-manipulator combination with the least integration work.
+The original guidance ("least integration work; do not require LunarBot
+before the runtime is validated") was overridden by an explicit user
+decision: the embodiment is **LunarBot** (SRB `lunar_bot`, category
+`mobile_manipulator`, type `WheeledManipulator`): a 4WIS/4WID rover + a
+7-DoF RealMan RM-75 arm + an Inspire EG2-4C2 gripper, one PhysX
+articulation, 21 joints. The simulated model carries the same joint names
+as the real robot, so Phase I (real-robot transfer) becomes an endpoint
+swap rather than a re-integration. The RM-75 datasheet is recorded in
+`docs/lunar_bot_rm75_spec.md`.
 
-Do not require the LunarBot model before the runtime is validated.
+The consequence the original guidance was warning about has materialised
+and must be stated plainly: **no upstream rSkill can drive `lunar_bot`.**
+Every learned policy in `openral/rskills/` is trained for another
+embodiment; the `ros_action` wrappers (`moveit-*`, `nav2-*`) need servers
+that are not configured for this robot; the only actuating skill that
+matches is the base-only `rskill-procedural-body_twist` this project added.
+Likewise, no sensor from SRB reaches OpenRAL's world state yet.
 
-Selection criteria:
+This is not a detour. `research_content.md` §5.1 requires every baseline to
+share the same perception, navigation, manipulation controller, FDIR
+primitives and safety; §6.4 requires a "capability set shared across all
+baselines" table. **The LunarBot capability set is that table.** Building
+it is core Phase B work (§8.3 below), and the same procedural primitives are
+what Baseline A (procedure-driven, §11.1) is composed from.
 
-- mobile manipulation supported by `_ground_manipulation`;
-- usable RGB/depth and robot-state observations;
-- compatible navigation/manipulation control interface;
-- straightforward ROS 2 exposure;
-- ability to place mission assets and task signals in the environment.
+Selection criteria retained as *verification* criteria for the built
+capability set:
 
-Later, add a LunarBot embodiment/adapter only if it strengthens the paper without delaying the core experiments.
+- mobile manipulation on `GroundManipulationEnv` — done (`panel_remount`);
+- usable RGB/depth and robot-state observations — **not yet wired**;
+- navigation/manipulation control interface — base/arm/gripper HAL done;
+  navigation stack and manipulation skills **not yet**;
+- ROS 2 exposure — done (per-action-term topics, `docs/srb_integration_notes.md`);
+- mission assets and task signals in the environment — done for v1.
 
 ## 6.3 Build long-horizon mission environments by composition
 
@@ -586,6 +633,30 @@ Capabilities should include a mix of:
 - manipulation planning or a VLA/learned policy;
 - verification;
 - fault handling.
+
+**Status (2026-09-14):** `panel_remount` v1 exists
+(`docs/mission_a_panel_remount.md`) and satisfies "one physical
+restoration operation" and "a verifiable final condition" (a genuine
+binary success termination — the first in SRB). It does **not** yet satisfy
+the other three bullets: one pedestal+panel pair (no candidate
+discrimination), the panel is 1.5 m from the spawn (no real approach
+region), and the fault is "panel on the ground" (no inspection needed to
+identify it). **v2 is required before any Mission A campaign** — Phase C
+item, after the capability set (§8.3) works:
+
+- ≥3 visually distinguishable infrastructure components (SRB library has
+  solar panels, pedestals, sample containers, tools, bolts/nuts), one of
+  which is in a fault state that must be *observed* to be identified
+  (e.g. panel displaced vs. panels correctly mounted);
+- service site placed so the robot must navigate a non-trivial approach
+  (beyond the ~4 m flat pad, F18 — which means the terrain within the
+  approach must be verified traversable, not assumed);
+- restoration = remount; a fastening step (`bolt_hex_m8`, `screwdriver_hex_m5`)
+  is a v3 candidate once JOINT_POSITION-precision manipulation is proven;
+- simulator truth for every mission transition exposed on ROS (object
+  poses already come via `/tf` as `srb/env0/<asset>`; the success
+  termination via `/srb/env0/terminated`; add per-component fault-state
+  truth as a topic the verifier — not the reasoner — reads).
 
 ## 6.5 Mission scenario B: logistics and servicing under contingency
 
@@ -685,21 +756,84 @@ Do not tune these models to force the proposed system to win.
 
 # 8. Capability integration work package
 
-## 8.1 Inventory available capabilities
+## 8.1 Inventory available capabilities — filled in for `lunar_bot` (2026-09-14)
 
-Before adding new algorithms, build an inventory table from the pinned OpenRAL/SRB revisions:
+Inspected against the pinned revisions (`docs/upstream_pins.md`). “Upstream
+has it” and “it works for this robot” are different columns on purpose.
 
-| Needed mission capability | Existing upstream implementation | Integration path | Missing work |
+| Needed mission capability | Upstream implementation (exists) | Works for `lunar_bot` today? | Missing work |
 |---|---|---|---|
-| navigation | OpenRAL Nav2 / SRB ROS | rSkill/ROS action | inspect |
-| scene query | OpenRAL scene VLM | query tool | inspect |
-| object locate | OpenRAL detector tools | query tool | inspect |
-| manipulation planning | MoveIt/cuMotion/OMPL depending revision | rSkill/ROS action | inspect |
-| VLA | supported OpenRAL rSkill adapters | rSkill | choose only if useful |
-| progress verification | Robometer/task-progress + simulator state | query/verifier | map mission conditions |
-| FDIR | upstream failure topics + custom scenario faults | ROS events | mission-level integration |
+| base motion | `rskill-procedural-body_twist` (this project, F11) → HAL → SRB `cmd_vel` | yes, verified live | F19: 4WIS steering saturates on large in-place turns — fix in SRB's `FourWheelSteer` controller before Nav2 relies on `cmd_vel` |
+| navigation | `openral_nav2_bringup` (Nav2 launch/params), `rskill-nav2-navigate-to-pose` (`ros_action`, `mobile_base`) | **no** — needs `map`/`odom`/`base_link` TF, `/odom`, a costmap source, and a `/cmd_vel` consumer | (a) TF/odom bridge from SRB truth; (b) costmap source — LunarBot has no lidar, so `/map` must come from the front RGB-D via `octomap_server`'s projected 2-D map (visual profile), *or* a simulated lidar if the real LunarBot carries one (**ask the user; do not add a sensor the real robot lacks**); (c) route Nav2's `/cmd_vel` through the safety kernel as BODY_TWIST — upstream's manifest admits Nav2 bypasses the supervisor, which violates §10.1 for this paper |
+| scene query | `openral_perception_ros/scene_vlm_node` + `qwen35-4b-nf4` (`kind: vlm`) | **no** — no image reaches `/openral/cameras/<name>/image` | sensor bridge: SRB already publishes `Image`/`CameraInfo`/depth/pointcloud under `--interface ros` for the `*_visual` task variant; declare `sensors:` in `robot.yaml` and relay/remap into OpenRAL's `/openral/cameras/` convention with REP-103 frames |
+| object localization | `ros_image_detector_node` (`omdet-turbo-locator`, `locateanything`) → `/openral/perception/objects` → world-state 3-D lift (needs depth points + `map` TF) | **no** — same missing bridge, plus depth points on `/openral/cameras/front_depth/points` | same sensor bridge; then verify a detection of the panel lands in world state with a sane 3-D pose |
+| manipulation (execution) | HAL: CARTESIAN_TWIST + JOINT_POSITION + GRIPPER_BINARY through the kernel | HAL yes; **no rSkill** exists | new `kind: procedural` rSkills for `lunar_bot` (§8.3): `move_ee_to_pose` (closed-loop CARTESIAN_TWIST on TF), `move_joints` (JOINT_POSITION), `grasp` / `release`, `stow` |
+| manipulation (planning) | `rskill-moveit-{joints,eef-pose,look-at}` (`ros_action`, tagged franka/ur) | **no** — no MoveIt config for RM-75 here, no trajectory bridge | after the procedural skills: RM-75 MoveIt config (RealMan publishes `ros2_rm_robot` with `rm_75` description — verify content + license before use), a joint-trajectory → JOINT_POSITION-stream bridge through the kernel, retag the moveit rSkills for `lunar_bot` |
+| VLA | many, none for this embodiment | no | not adopted; excluded by scope (no training/data collection) |
+| progress verification | `verify-outcome` playbook, `robometer-4b` reward, `/srb/env0/terminated` + reward topics, `/tf` object poses | partially (topics exist) | a mission verifier node in this repo that reads simulator truth (§10.4: deterministic where truth is available) and emits typed verifier events |
+| FDIR signals | kernel `/openral/safety_status` + violations + estop; SRB `penalty_undesired_robot_contacts`; Nav2/MoveIt action results | topics exist | mapping into mission-runtime events (Phase E); scenario fault injection (Phase C) |
+| arm joint limits | kernel per-joint JOINT_POSITION check | ran against ±inf | RM-75 datasheet now available (`docs/lunar_bot_rm75_spec.md`) — declare in `robot.yaml` |
+| kernel magnitude checks for other modes | `kJointTrajectory`/`kCartesianDelta`/`kGripperPosition`/`kCompositeMode` delegate to an unlaunched Python stub | not enforced | close the same way F12/F16 were closed, for every mode the LunarBot HAL can be asked to emit |
 
 Do not select a VLA because the paper “needs AI.” Use it only where learned manipulation contributes a meaningful heterogeneous-capability case.
+
+## 8.3 LunarBot capability-set work package (Phase B2 — blocks everything after it)
+
+Ordered by dependency. Each item is verified live through the real
+safety-checked path before the next starts, and each gets a `docs/` record.
+Per-item design decisions, the upstream pieces to reuse, and the open
+questions are in `docs/lunar_bot_capability_set_plan.md` (2026-09-14).
+Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
+
+1. **RM-75 limits** into `robot.yaml` (`position_limits`, `can_lift_kg`),
+   kernel envelope regenerated; a JOINT_POSITION target outside the range
+   must be rejected live.
+2. **Sensor bridge** — front RGB-D + wrist RGB + IMU + joint states + truth
+   pose from SRB into OpenRAL conventions: `sensors:` block in `robot.yaml`;
+   a relay in `openral_hal_lunar_bot` (or a sibling `openral_sensors_lunar_bot`
+   node) publishing `/openral/cameras/<name>/{image,camera_info}`,
+   `/openral/cameras/front_depth/points`, `/joint_states`, `/odom`, and the
+   `map → odom → base_link` TF chain (in sim, `map→odom` is identity and
+   `odom→base_link` is SRB's `srb/env0/robot` truth — stated as such, not
+   dressed up as SLAM). Verify: world state shows joints + a lifted 3-D
+   object from a real detection of the panel.
+3. **Procedural manipulation rSkills** (`kind: procedural`, tag `lunar_bot`):
+   `move_joints`, `move_ee_to_pose`, `grasp`, `release`, `stow`. Each is a
+   real closed loop on OpenRAL world state / TF, emits through the kernel,
+   finishes on a measured condition, and reports failure honestly (timeout,
+   unreachable, kernel rejection). Verify: scripted sequence remounts the
+   panel in `panel_remount` v1 → `terminated == true`.
+4. **F19 fix** in SRB's `FourWheelSteer` controller. Reading the code
+   revised the hypothesis: not the 120° steering limit but missing
+   steer-before-drive sequencing — steer position targets and drive
+   velocity targets are written in the same step, so wheels drive at full
+   speed while still swinging up to 90° (≈0.8 s at the steering joints'
+   112°/s limit). Fix: scale drive velocity by `cos(steer error)`; verify
+   with an in-place 90° turn.
+5. **Navigation** — Nav2 via `openral_nav2_bringup` with the costmap source
+   decided in §8.1; `/cmd_vel` routed through the kernel; `rskill-nav2-
+   navigate-to-pose` resolves for `lunar_bot`. Verify: a `map`-frame goal
+   3–4 m away is reached without touching the pedestal.
+6. **MoveIt for RM-75** (after 3): config, trajectory→JOINT_POSITION bridge,
+   moveit rSkills retagged. Verify: `moveit-eef-pose` to a pose above the
+   panel through the kernel.
+7. **Mission verifier node** (this repo): reads `/tf` object poses,
+   `/srb/env0/terminated`, reward terms; emits typed verifier events with
+   evidence references (§4.4).
+8. **Launch orchestration + run artifacts** (this repo, `experiments/`):
+   one launch that brings up SRB-side HAL + sensor bridge + kernel + world
+   state + perception + rskill runner + prompt router + reasoner identically
+   for every baseline; a run-manifest writer producing the §19 directory
+   (git revisions of both submodules, seeds, model config, mission text,
+   OTel trace export, rosbag opt-in).
+9. **Remaining kernel magnitude checks** (§8.1 last row).
+
+**Exit condition for B2:** with the reasoner *in the loop* (`openral prompt
+--new-goal`), a two-step instruction (“drive to the pedestal, then open the
+gripper”) executes end-to-end through Nav2 + a procedural skill, and the run
+directory contains the complete trace. That is Phase B's original exit
+condition, which has not been met yet — only single scripted capability
+calls have (§21 item 4).
 
 ## 8.2 Capability metadata for mission runtime
 
@@ -730,6 +864,20 @@ Before adding space-runtime mechanisms, run the chosen mission with:
 Capture exactly how it fails or succeeds under nominal conditions.
 
 This becomes both a baseline and a diagnostic for what the new runtime actually needs.
+
+**What "unmodified/generic" means here, precisely (2026-09-14):** the
+reasoner (`ReasonerCore`, `reasoner_node`), `MissionState` +
+`decompose_mission`, the tool palette, world state, the rSkill runner and
+the safety kernel are stock. What is *not* stock, and is shared identically
+by every baseline, is the LunarBot capability set (§8.3) and the launch
+orchestration — `openral deploy sim` has no SRB scene backend
+(`SceneBackend` is `mujoco`/`isaacsim` only), so the process graph is
+assembled by this repository's launch, and the mission text enters via
+`openral prompt --new-goal` → `/openral/prompt` → `MissionState.from_prompt`.
+Baseline B in the paper is described exactly this way. Nothing in the
+capability set may encode mission logic (no "remount panel" skill — only
+`grasp`, `move_ee_to_pose`, `navigate`, …), or the baseline comparison is
+contaminated.
 
 ## 9.2 Add space information as prompt-only baseline
 
@@ -1100,6 +1248,12 @@ Integration strategy:
 - apply the same external space-context and link-emulation service;
 - do not build a lunar-analogue field environment solely for this paper.
 
+Because the simulated embodiment *is* LunarBot (§6.2) with identical joint
+names, the RM-75 datasheet limits (`docs/lunar_bot_rm75_spec.md`) and the
+Humble/3.10 runtime, the transfer surface is the HAL (`LunarBotSRBHAL` →
+a real-driver HAL) and the sensor bridge; rSkills, manifests, Nav2/MoveIt
+configs and the mission runtime carry over unchanged.
+
 Only include this in the final manuscript if it strengthens the claim without obscuring the main controlled experiments.
 
 ---
@@ -1164,9 +1318,27 @@ The development order should reduce uncertainty one integration boundary at a ti
 
 **Exit condition:** a minimal multi-step robot mission can be executed and observed end-to-end using upstream mechanisms.
 
+**Status 2026-09-14 — split into B1/B2/B3, because "connected" and
+"exit condition met" turned out to be far apart:**
+
+- **B1 — done.** LunarBot HAL for base/arm/gripper (BODY_TWIST,
+  CARTESIAN_TWIST, JOINT_POSITION, GRIPPER_BINARY) through the real C++
+  kernel; `procedural` rSkill kind; kernel gaps F12/F16 fixed; `panel_remount`
+  v1 scene. All verified by *scripted* dispatch — the reasoner has never
+  been in the loop for this robot.
+- **B2 — the capability set, §8.3.** Sensors, procedural manipulation
+  skills, F19, Nav2, MoveIt, verifier, launch + run artifacts, remaining
+  kernel checks. This is the bulk of the remaining Phase B work and is
+  where the plan previously had a hole: it assumed upstream capabilities
+  would "just resolve" for the chosen robot.
+- **B3 — the original exit condition**, run for real: reasoner in the loop,
+  a multi-step instruction, full trace in a §19 run directory. Only after B3
+  is §21 item 6 (generic OpenRAL on Mission A) meaningful.
+
 ## Phase C — Long-horizon mission construction
 
-- implement Mission A;
+- implement Mission A — **v2 of `panel_remount` per §6.4's status note**
+  (multiple candidate components, an observable fault, a real approach);
 - implement Mission B only after Mission A's orchestration needs are clear;
 - expose simulator truth needed for independent verification;
 - create scenario perturbation controls.
@@ -1263,18 +1435,24 @@ Create scripts that aggregate run artifacts into analysis tables without hand-ed
 
 ---
 
-# 21. Immediate concrete tasks for the next coding session
+# 21. Immediate concrete tasks (revised 2026-09-14)
 
-1. Create the new research repository skeleton and pin upstream OpenRAL/SRB revisions.
-2. Produce `docs/openral_integration_notes.md` after tracing the current reasoner → `ReasonerToolCall` → `ExecuteRskillTool` → `/openral/execute_rskill` path and locating `MissionState`/world-state/safety interfaces.
-3. Produce `docs/srb_integration_notes.md` after running `_ground_manipulation`, one existing manipulation task, and the ROS2 workflow; record actual topics/actions/services for the chosen environment.
-4. Build a minimal ROS integration that lets OpenRAL invoke one SRB action and observe the result through the normal state path.
-5. Define Mission A in a plain mission specification without yet implementing space constraints.
-6. Run unmodified/generic OpenRAL on Mission A and save traces; document concrete failure modes and missing semantics.
-7. Only then implement the first `space_runtime` schemas/events required by observed mission-level failures.
-8. In parallel, create the SPICE/contact-profile preprocessing scripts and a typed `space_context` service, but do not connect them to mission decisions until their outputs are validated.
-9. Add the prompt-only space-aware baseline before independent enforcement so the paper can isolate prompt information from runtime semantics.
-10. Keep an ongoing `docs/research_findings.md` containing observed failure cases, design decisions, and links to the runs that motivated each mechanism. This document should drive later method refinement and prevent architecture from being designed by intuition alone.
+Status of the original list: 1–4 done; 5 written
+(`docs/mission_a_panel_remount.md`) but **not usable yet** because 6's
+preconditions are unmet (rule 0.11); 6–10 not started. Revised order:
+
+1. ~~Repository skeleton + pins.~~ Done.
+2. ~~`docs/openral_integration_notes.md`.~~ Done.
+3. ~~`docs/srb_integration_notes.md`.~~ Done.
+4. ~~Minimal ROS integration, one SRB action through the normal path.~~ Done, and extended to the full base/arm/gripper HAL (B1).
+5. **Build the LunarBot capability set, §8.3 items 1–9, in order**, each verified live. This is the current work.
+6. **Phase B3:** reasoner-in-the-loop multi-step run with a full §19 run directory. Phase B exit.
+7. `panel_remount` v2 per §6.4's status note (Phase C start), with simulator-truth topics for every mission transition.
+8. Run unmodified/generic OpenRAL on Mission A v2 (the original item 6); save traces; document concrete failure modes and missing semantics — now meaningful, because failures will be *mission-level*, not "no capability existed".
+9. Only then implement the first `space_runtime` schemas/events required by observed mission-level failures (original 7).
+10. In parallel with 5–8, create the SPICE/contact-profile preprocessing scripts and a typed `space_context` service; do not connect them to mission decisions until validated (original 8).
+11. Prompt-only space-aware baseline before independent enforcement (original 9).
+12. Keep `docs/research_findings.md` current (original 10). Findings that are *infrastructure gaps* (F11, F12, F16, F19, F20, the rSkill/sensor gaps) are fixed, not merely recorded — rule 0.12.
 
 ---
 

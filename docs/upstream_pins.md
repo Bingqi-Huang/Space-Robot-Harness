@@ -7,10 +7,10 @@ and every experimental campaign to name the exact commits it ran against.
 
 | Project | Fork | Branch | Commit | Upstream | Tracking |
 |---|---|---|---|---|---|
-| OpenRAL | `DsslRobot/openral` | `feat/arm-joint-position-control` | `a785b88` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
+| OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-capability-set` | `f7b5ccd` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
 | Space Robotics Bench | `DsslRobot/space_robotics_bench` | `feat/switchable-arm-control` | `90f9d5e` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
 
-OpenRAL's pin has moved seven times since the initial `4700c7a`:
+OpenRAL's pin has moved eight times since the initial `4700c7a`:
 `fa7f445`/`4c1867c` (Python 3.10/Humble downgrade,
 `docs/openral_py310_patch.md`), `af61568` (the `lunar_bot` HAL,
 `docs/phase_b_lunar_bot_hal.md`), `f47e966` (the `procedural` rSkill kind,
@@ -18,11 +18,14 @@ OpenRAL's pin has moved seven times since the initial `4700c7a`:
 enforcement, `docs/f12_body_twist_envelope_fix.md`), `1a6139f` (CARTESIAN_TWIST
 angular-speed enforcement, F16), `af8fba2` (arm + gripper unified into the
 LunarBot HAL, `docs/phase_b_lunar_bot_arm_gripper.md`), `a785b88`
-(JOINT_POSITION arm control, `docs/lunar_bot_joint_position_control.md`) —
-the current commit is on branch `feat/arm-joint-position-control`, built on
-top of `feat/lunar-bot-arm-gripper` → `fix/body-twist-speed-envelope` →
-`feat/lunar-bot-hal` → `feat/py310-humble`, not yet merged (Phase B work
-continues on it).
+(JOINT_POSITION arm control, `docs/lunar_bot_joint_position_control.md`),
+`f7b5ccd` (RM-75 datasheet joint limits + payload,
+`docs/lunar_bot_rm75_spec.md`) — the current commit is on branch
+`feat/lunar-bot-capability-set` (the Phase B2 branch,
+`docs/lunar_bot_capability_set_plan.md`), built on top of
+`feat/arm-joint-position-control` → `feat/lunar-bot-arm-gripper` →
+`fix/body-twist-speed-envelope` → `feat/lunar-bot-hal` →
+`feat/py310-humble`, not yet merged.
 
 Space Robotics Bench was tracked loosely at first (excluded via `.gitignore`,
 commit recorded only in run manifests per §19) while another agent was

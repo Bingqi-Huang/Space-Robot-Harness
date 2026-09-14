@@ -40,14 +40,12 @@ gripper's SRB wire convention is inverted (`True`=close). `kJointTrajectory`/
 `kCompositeMode` still delegate to an unlaunched Python stub — same F12/F16
 gap, untouched, still open.
 
-### Then, per plan §21 items 5–6 — blocked on a new SRB task (in progress)
+### Then, per plan §21 items 5–6 — new SRB task built, item 6 in progress
 
-Investigated 2026-09-13: no existing SRB task fits Mission A + LunarBot.
-`_ground_manipulation` is a bare scaffold; every task with real objects
-(`solar_panel_assembly`, `screwdriving`, `peg_in_hole_assembly`, etc.) is
-`ManipulationEnv`-only (fixed-base arm, type-incompatible with LunarBot's
-`WheeledManipulator`); the one mobile-manipulator task
-(`mobile_debris_capture`) is `OrbitalManipulationEnv` (orbital, not ground).
+No existing SRB task fit Mission A + LunarBot (bare `_ground_manipulation`
+scaffold, or fixed-base-only `ManipulationEnv` tasks, or the one
+mobile-manipulator task being orbital) — full investigation in
+`docs/mission_a_panel_remount.md`.
 
 **`panel_remount` task written and verified live ✅ (2026-09-13)**, in
 `space_robotics_bench/srb/tasks/mobile_manipulation/panel_remount/`
@@ -60,59 +58,57 @@ real `torch.jit.script` bool check) — no existing SRB task has one at all.
 Full record: `docs/mission_a_panel_remount.md`.
 
 **F18 — found + fixed**: SRB's procedural moon terrain is only reliably
-flat within ~4 m of the env origin (`flat_area_size` in `env_cfg.py`); the
-first placement (2.4–3.0 m out) spawned the panel embedded in uneven
-terrain, and PhysX's depenetration ejection sent it falling forever
-(`z=-2637` and counting). Fixed by keeping pedestal/panel within ~1.5 m of
-origin; panel now settles to a stable rest pose, confirmed live. Documented
-in the task file and `docs/research_findings.md` so it's not rediscovered.
+flat within ~4 m of the env origin (`flat_area_size` in `env_cfg.py`);
+outside it PhysX's depenetration ejection flings a spawned object forever.
+Fixed by keeping pedestal/panel within ~1.5 m of origin; confirmed live.
 
 **Deliberate v1 simplification**: one pedestal+panel pair, not §6.4's
 "multiple candidate components" (would need genuine fault-identification
 across several instances) — a natural, cheap follow-up once this is proven.
 
 - [x] Write the new task/scene inside `space_robotics_bench/`.
-- [ ] Define Mission A's plain-language instruction text (no space
-      constraints yet — that's Phase D).
-- [ ] Run generic OpenRAL against it; save traces; document real failure
-      modes — this is what should motivate `space_runtime`'s first schemas,
-      not intuition.
+- [x] Define Mission A's plain-language instruction text — written in
+      `docs/mission_a_panel_remount.md`. **Not to be used yet** — user
+      directive 2026-09-14: Mission A does not start until its
+      prerequisites exist (execution_plan rule 0.11).
+- [ ] Run generic OpenRAL against Mission A — **deferred behind Phase B2**
+      (F21: no manipulation rSkill, no sensors wired, reasoner never in
+      the loop for this robot). Plan revised 2026-09-14: execution_plan
+      §6.2/§6.4/§8.1/§8.3/§9.1/§18/§21.
 
-**Before that: a scripted pick-and-place feasibility check was run against
-`panel_remount`** (before writing the instruction text) to confirm the
-mission is achievable at all with current actuation, not "necessarily
-fails" as the user rightly worried it might. Found: **F19** — the base's
-`cmd_vel` drifts incoherently on a large in-place turn (likely the 4WIS
-±120° steering limit saturating), not yet resolved. Also, per the user's
-explicit direction, **JOINT_POSITION control was added for the arm** (see
-below) — CARTESIAN_TWIST alone wasn't going to support the precision
-manipulation Mission A needs.
+### Phase B2 — LunarBot capability set (execution_plan §8.3) — IN PROGRESS
 
-### JOINT_POSITION arm control ✅ (2026-09-13)
+Design + reuse survey: `docs/lunar_bot_capability_set_plan.md`. Branch
+`openral/feat/lunar-bot-capability-set`. Build order (each verified live):
 
-openral branch `feat/arm-joint-position-control`; SRB branch
-`feat/switchable-arm-control` (`90f9d5e`). Full record:
-`docs/lunar_bot_joint_position_control.md`.
+- [x] 1. RM-75 limits in `robot.yaml` (`f7b5ccd`, F22) — kernel rejects
+      out-of-range JOINT_POSITION live.
+- [ ] 2. Sensor bridge: SRB cameras/depth/IMU/truth pose → `/openral/cameras/*`,
+      `/odom`, `map→odom→chassis_base_link` TF; `sensors:` in manifest;
+      `panel_remount_visual` needs ≥640×480 + depth on `cam_front`.
+- [ ] 3. Procedural rSkills `move_joints` / `move_ee_to_pose` / `grasp` /
+      `release` / `stow` (tag `lunar_bot`); scripted remount closes the loop.
+- [ ] 4. F19 fix in SRB `FourWheelSteer` (drive ∝ cos(steer error)).
+- [ ] 5. Nav2 via `openral_nav2_bringup`; costmap source = RGB-D →
+      `octomap_server` `/map` unless the real robot has a lidar (**ask**);
+      `/cmd_vel → candidate_action` relay so the kernel bounds Nav2.
+- [ ] 6. MoveIt for RM-75 (license check on RealMan `ros2_rm_robot` first).
+- [ ] 7. Mission verifier node (this repo) on simulator truth.
+- [ ] 8. Launch orchestration + §19 run-manifest writer (this repo).
+- [ ] 9. Remaining kernel magnitude checks (`kJointTrajectory` first).
+- [ ] B3: reasoner-in-the-loop two-step run with full trace = Phase B exit.
 
-Two independent SRB action terms both claiming the arm's 7 joints would
-silently fight every step (Isaac Lab's `ActionManager` applies every
-declared term unconditionally — no "pick one" mechanism). Built
-`SwitchableArmAction`: one action term, both IK and joint-position
-sub-controllers computed every step, a per-env mode flag picks which
-result is actually applied — "real robotic arms work this way, the
-mode-switch logic lives inside the arm's own controller" (the user's own
-framing). **F20 — found + fixed live**: the safety kernel forces every
-JOINT_* chunk to be the full 21-wide vector regardless of
-`action.joint_names`; a first HAL implementation wrongly assumed a 7-wide
-row when `joint_names` was set, silently dropping every JOINT_POSITION
-dispatch (caught immediately by live E2E testing, not code review — the
-unit tests written first encoded the same wrong assumption and passed).
-Verified live through the real safety chain: JOINT_POSITION moves the arm,
-CARTESIAN_TWIST still works, mode-switching (twice) is clean with no jump.
-**Gap, flagged not silent**: arm joints declare no `position_limits` (no
-real RM-75 spec available), so the kernel's JOINT_POSITION per-joint check
-— which does exist and run, unlike CARTESIAN_TWIST/BODY_TWIST before this
-project's earlier fixes — resolves to ±inf for these 7 joints today.
+A scripted pick-and-place feasibility check against `panel_remount` (run
+before trusting the instruction text) found **F19** (base `cmd_vel` drifts
+on large in-place turns — revised root cause: no steer-before-drive
+sequencing, fix planned in B2 item 4) and led to **JOINT_POSITION arm
+control ✅ (2026-09-13)**: `SwitchableArmAction` in SRB
+(`feat/switchable-arm-control` `90f9d5e`) — one action term, IK and
+joint-position sub-controllers both computed every step, a mode flag picks
+which is applied — plus the HAL branch (`feat/arm-joint-position-control`
+`a785b88`). **F20** found + fixed live (JOINT_* wire rows are always the
+full 21-wide vector). Full record: `docs/lunar_bot_joint_position_control.md`.
+The "no arm position limits" gap noted there is now closed (F22).
 
 ---
 

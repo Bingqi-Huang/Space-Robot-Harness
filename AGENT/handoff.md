@@ -1,14 +1,15 @@
 # Handoff
 
-State as of 2026-09-13. Phase A complete. Phase B slices 1–3 done and
-verified live: LunarBot is a genuine mobile manipulator — base
-(BODY_TWIST), arm (CARTESIAN_TWIST **and now JOINT_POSITION**), and
-gripper (GRIPPER_BINARY) all drive through the real safety chain from one
-unified HAL. Mission A's SRB task (`panel_remount`) is built and verified.
-F12/F16 fixed, F15 closed as a false alarm, F17–F20 found (see below).
+State as of 2026-09-14. Phase A complete. Phase B1 done and verified
+live: LunarBot is a genuine mobile manipulator — base (BODY_TWIST), arm
+(CARTESIAN_TWIST + JOINT_POSITION, RM-75 limits enforced), gripper
+(GRIPPER_BINARY) — all through the real safety chain from one HAL.
+Mission A's SRB task (`panel_remount` v1) is built. But the reasoner has
+never been in the loop for this robot, no sensor reaches OpenRAL, and no
+rSkill can move the arm (F21) — Phase B2 (capability set) is next.
 Task list: `todo.md`. Findings: `docs/research_findings.md`. Key docs:
-`docs/phase_b_lunar_bot_arm_gripper.md`, `docs/mission_a_panel_remount.md`,
-`docs/lunar_bot_joint_position_control.md`.
+`docs/lunar_bot_capability_set_plan.md`, `docs/mission_a_panel_remount.md`,
+`docs/lunar_bot_joint_position_control.md`, `docs/lunar_bot_rm75_spec.md`.
 
 ## Where things stand
 
@@ -23,23 +24,25 @@ still open, none merged.
 — the agent that developed it independently no longer manages it, so this
 project edits/commits there directly now, same discipline as `openral/`.
 
-## Next — infrastructure ready; Mission A's instruction text is next
+## Next — Phase B2, the LunarBot capability set (plan revised 2026-09-14)
 
-Per the user's explicit call ("先把基础设施准备好" — get the infrastructure
-ready first, no rush): before writing Mission A's plain-language
-instruction, a scripted pick-and-place feasibility check was run against
-`panel_remount`, which surfaced that CARTESIAN_TWIST-only arm control
-wasn't going to cut it — leading to JOINT_POSITION control (F19, F20; full
-story in `docs/lunar_bot_joint_position_control.md`).
+The user's ruling: Mission A does not start until its prerequisites exist,
+and every blocking piece of infrastructure gets built (only IL data
+collection and VLA training are out of scope). `execution_plan.md` was
+revised accordingly (rules 0.11/0.12, §2 layout, §6.2, §6.4 status, §8.1
+filled in, new §8.3, §9.1, Phase B split B1/B2/B3, §21 reordered). The
+capability-set design and reuse survey is `docs/lunar_bot_capability_set_plan.md`;
+the task list is in `todo.md`. Item 1 (RM-75 limits, F22) is done on
+`openral/feat/lunar-bot-capability-set` @ `f7b5ccd`; items 2–9 not started.
+**Open questions for the user** (plan doc §4): does the real LunarBot have
+a lidar; keep MoveIt in scope; confirm no `openral deploy sim` SRB backend.
+The user separates planning rounds from coding rounds — wait for an
+explicit go before building item 2.
 
-**Not yet started**: Mission A's plain-language instruction text itself
-(plan §21 item 5), then run generic/unmodified OpenRAL against this scene
-and save traces (item 6) — that's what should motivate `space_runtime`'s
-first schemas (item 7), not intuition. Also open: F19 (base `cmd_vel`
-in-place-rotation instability — probably don't rely on it for precise
-heading control yet), no arm joint position limits declared (a real,
-flagged gap), and the same missing-magnitude-check gap for
-`kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`(per-joint)/
+Also open: F19 (base `cmd_vel` in-place-rotation instability — probably
+don't rely on it for precise heading control yet), no arm joint position
+limits declared (a real, flagged gap), and the same missing-magnitude-check
+gap for `kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`(per-joint)/
 `kGripperPosition`/`kCompositeMode` (F12/F16's sibling gap, untouched).
 
 ## Environment reference (reusable, don't rediscover)

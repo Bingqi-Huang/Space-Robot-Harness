@@ -379,13 +379,23 @@ rather than a clean pivot. Also confirmed separately:
 `lunarbot.py`) means a naive "positive error → positive command" P
 controller drives the wrong way unless negated.
 
-**Design implication:** a real base-approach controller for this rover
-probably needs to avoid commanding large in-place rotations at all — curve
-while driving forward (car-like), rather than stop-turn-then-drive — or
-this needs further investigation into the steering saturation hypothesis
-before relying on `cmd_vel` for precise heading control. Not yet resolved;
-not blocking Mission A's other infrastructure work, but will need
-addressing before a real navigation-to-target skill is built.
+**Revised hypothesis (2026-09-14, from reading
+`srb/core/action/term/mobile/four_wheel_steer.py`):** the 120° limit is
+not it — the term wraps steer angles into (−90°, 90°] with a drive-sign
+flip, so the limit is never reached. The kinematics are correct; what is
+missing is steer-before-drive sequencing. `apply_actions` writes the
+steering *position* targets and the drive *velocity* targets in the same
+step; the steering joints are position-controlled with a 1.9635 rad/s
+(≈112°/s) velocity limit, so an in-place rotation asks every wheel to
+swing ~90° (≈0.8 s) while the drive wheels are already spinning at full
+target speed at the old steer angle. Four wheels pushing in inconsistent
+directions for most of a second is the observed drift. The wrap also
+flips a wheel's steer target by 180° (and its drive sign) whenever the
+commanded `v/ω` crosses that wheel's singular direction — another large
+transient. **Fix (planned, not yet built):** scale each wheel's drive
+velocity by `max(0, cos(steer_target − steer_measured))`, the standard
+4WIS practice. Must land before Nav2 relies on `cmd_vel`
+(`docs/lunar_bot_capability_set_plan.md` §3.4).
 Source: this session's feasibility-check scratch work (not separately
 documented as its own doc — the fix that mattered this session was adding
 JOINT_POSITION control for the arm, per the user's direction; see
@@ -408,3 +418,42 @@ code-review pass without a live test would likely have missed it, since
 the unit tests (written before the live test) encoded the same wrong
 assumption and passed against it.
 Source: `docs/lunar_bot_joint_position_control.md`.
+
+### F21 — No upstream capability resolves for `lunar_bot`: the capability set is paper infrastructure
+
+Found 2026-09-14 while checking whether execution_plan.md §21 item 6
+(generic OpenRAL on Mission A) was runnable. It was not, on three
+independent counts: (1) **no rSkill can drive this robot's arm or
+gripper** — every `kind: vla` skill is trained for another embodiment, the
+`ros_action` wrappers need Nav2/MoveIt servers that are not configured,
+and the only matching actuator skill is the base-only
+`rskill-procedural-body_twist` this project added; (2) **no sensor reaches
+OpenRAL** — the HAL subscribes joint states only; `robot.yaml` says
+`has_vision: true` but no image, depth, odometry or `map`/`base_link` TF
+exists on the OpenRAL side, so scene query, object localization and the
+world-state lift have no input; (3) **`openral deploy sim` cannot target
+SRB** — `SceneBackend` is `mujoco`/`isaacsim` only, so the process graph
+must be assembled by this repository's own launch and the mission enters
+via `openral prompt --new-goal`. The reasoner has in fact never been in
+the loop for this robot: every Phase B verification so far was scripted
+dispatch. Consequence for the plan: `research_content.md` §5.1's "same
+capabilities for every baseline" table does not exist upstream and must
+be built (execution_plan §8.3, `docs/lunar_bot_capability_set_plan.md`).
+Recorded as a finding because the original plan assumed §8.1's "inspect"
+cells would resolve to existing implementations for the chosen robot;
+they resolve to existing *frameworks* (Nav2 bringup, detector/VLM nodes,
+world-state lift, `ros2_image` reader) that need embodiment wiring.
+Source: `docs/lunar_bot_capability_set_plan.md`, `docs/mission_a_panel_remount.md`.
+
+### F22 — RM-75 joint limits now enforced (closes the JOINT_POSITION ±inf gap)
+
+The user supplied the RM-75 datasheet (`docs/lunar_bot_rm75_spec.md`);
+`robot.yaml` now declares the seven arm ranges and the 5 kg payload
+(`openral` `f7b5ccd`). Verified against a running kernel with the
+envelope regenerated the sanctioned way: J2 = 2.5 rad and J6 = −2.4 rad
+rejected (`field=joint_position`, reported limit = datasheet value), an
+all-in-range target passes. SRB's `lunarbot.py` velocity limits already
+matched the datasheet (180°/s J1–J2, 225°/s J3–J7). Remaining arm-side
+gap: nothing bounds joint *velocity* for JOINT_POSITION steps (the kernel
+checks position only) — a large step between ticks is legal today;
+relevant once MoveIt streams trajectories (§8.3 item 9).

@@ -119,6 +119,82 @@ doesn't rediscover this by watching something fall through the world.
   the next step — define Mission A's plain-language instruction, then run
   generic OpenRAL against this scene and observe real failure modes).
 
+## Mission A's instruction text (execution_plan.md §21 item 5)
+
+Plain language, no space-mission jargon beyond flavor (real environmental/
+comms constraints are Phase D's job, per §21 — this is just the goal text an
+operator would type):
+
+> A solar panel at the inspection site has come loose from its mount and is
+> lying on the ground near the pedestal. Locate the panel, pick it up, and
+> remount it securely on the pedestal in its correct position. Confirm the
+> panel is properly seated before reporting the task complete.
+
+## How a mission actually reaches the reasoner (investigated before running item 6)
+
+Two ways, both real, both go through `MissionState.from_prompt()`
+(`python/reasoner/src/openral_reasoner/mission.py:274`) → a single-task
+mission the reasoner's `decompose_mission` playbook rSkill then expands:
+
+1. `openral deploy sim --config <scene>.yaml --initial-task "<text>"` — the
+   CLI threads the text as `initial_task_prompt` into the launch. **Not
+   usable for lunar_bot/panel_remount today**: `deploy_sim`'s `scene.backend`
+   only has two registered values, `SceneBackend.MUJOCO` and
+   `SceneBackend.ISAACSIM` (`python/core/src/openral_core/schemas.py:8851`),
+   neither of which is SRB's own env/task wrapper — SRB is a separate
+   simulator layer on top of Isaac Sim, not the same thing as the
+   `isaacsim` backend's direct URDF-import scenes (`scenes/deploy/
+   isaac_franka.yaml` et al.). No `srb` `SceneBackend` variant, composer, or
+   scene YAML exists yet. Building one is real, non-trivial `openral_sim`
+   engineering (a new backend module matching `_register_backends()`'s
+   pattern, wiring SRB's per-action-term ROS topics into deploy-sim's HAL
+   topology) — out of scope for just getting a first run.
+2. `openral prompt "<text>" --new-goal` — a standalone one-shot publisher,
+   fully decoupled from `deploy_sim`/scene backends. It publishes a
+   `PromptStamped` on `/openral/prompt_in/cli`; `prompt_router_node` fans it
+   to `/openral/prompt`; the reasoner's `_on_prompt`
+   (`reasoner_node.py:1746`) calls `MissionState.from_prompt(msg.text)` and
+   proceeds exactly as it would for any other mission. **This works with
+   the manual kernel+HAL+reasoner harness already used for every live test
+   this session** — the reasoner, dispatch loop, `decompose_mission`
+   rSkill, and skill loader are all completely stock; only the process
+   wiring (which script launches which nodes) is custom, same as every
+   other live test so far. This is the practical path for item 6, not
+   building a new scene backend.
+
+## A real gap found while checking item 6 is even runnable: no manipulation rSkill exists for lunar_bot
+
+Checked every rSkill under `rskills/` for one that could actually execute
+"grasp the panel, place it back" for this embodiment:
+
+- The only `kind: "procedural"` skill is `rskill-procedural-body_twist`
+  (F11) — BODY_TWIST only, base motion, no manipulation.
+- Every `kind: "vla"` skill's `embodiment_tags` names a different robot
+  (franka_panda, so101, aloha_agilex, widowx, sawyer, galaxea_a1, r1pro,
+  gr1, openarm, ...) — none tagged for `lunar_bot`, and none of their
+  action contracts match LunarBot's CARTESIAN_TWIST/JOINT_POSITION/
+  GRIPPER_BINARY surface.
+- `kind: "ros_action"` skills (`rskill-moveit-*`, `rskill-nav2-navigate-
+  to-pose`) need live MoveIt/Nav2 servers, not configured for SRB/LunarBot.
+- `kind: "playbook"/"detector"/"vlm"/"segmenter"/"reward"` skills are
+  embodiment-agnostic reasoning/perception/scoring aids — useful to the
+  reasoner's planning, but none of them actuate anything.
+
+So today, dispatching Mission A against generic OpenRAL is expected to
+decompose cleanly (perception + planning tool calls all resolve fine) and
+then hit a wall the moment the reasoner needs to select a manipulation
+rSkill: there isn't one. Two ways to treat this, not yet decided:
+
+- Run it anyway now, and let that wall be the first documented item-6
+  finding — arguably the most honest, literal reading of "run generic
+  OpenRAL, observe real failure modes, let *that* motivate `space_runtime`'s
+  schemas, not intuition" (§21.6-7's own stated purpose).
+- Build a minimal `kind: "procedural"` manipulation rSkill first (mirroring
+  `ProceduralBodyTwistRskill`'s pattern, driving CARTESIAN_TWIST/
+  JOINT_POSITION/GRIPPER_BINARY instead of BODY_TWIST) as further
+  "necessary infrastructure," so the run tests planning/dispatch/execution
+  together instead of stopping at capability selection.
+
 ## What this does NOT cover
 
 - Only one pedestal+panel pair (see "Deliberate v1 simplification" above).
