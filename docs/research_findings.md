@@ -1419,3 +1419,33 @@ A from-cold relaunch already happened for both follow-ups above — nothing
 here is deferred for lack of trying; item 6's remaining root cause is
 deferred because isolating it needs a different tool (trace inspection)
 than "try another pose," not more live-dispatch attempts.
+
+### F34 — Two reliability bugs fixed: resident-skill cache key, E-stop recovery gap (item 8 also merged)
+
+Triaged as the three must-fix items for research validity (not just code
+quality) and dispatched in parallel; all merged into `openral` `master`,
+tests independently re-run by the coordinator before merging (100 passed,
+5 skipped/unrelated).
+
+1. **Resident-skill cache** (`rskill_runner_node._acquire_skill`) keyed on
+   `(rskill_id, revision, prompt)` only — a second dispatch of the same
+   `rskill_id` with different `goal_params_json` silently reused the first
+   dispatch's configured instance, ignoring the new goal with no error.
+   Would have silently corrupted exactly the multi-step reasoner episodes
+   B3/Phase C depend on. Fixed: key widened to include
+   `goal_params_json`/`prompt_metadata_json`.
+2. **E-stop recovery** — corrected hypothesis from F33: not a missing
+   `/openral/estop_cleared` subscription, but that neither the HAL nor the
+   skill runner watched `/openral/safety_status` for the kernel's own
+   `latched: false` transition. Calling only `/openral/estop_reset` (the
+   single documented kernel-level action) left both silently latched.
+   Fixed: both nodes now also clear on that transition, delegating into
+   their existing clear logic (HAL: per-HAL `RESETTABLE`/
+   `RESTART_REQUIRED` policy, unchanged) — a second trigger for the same
+   reviewed logic, not a weaker check.
+
+Item 8 (§19 run-manifest writer, `openral_ext/run_manifest/`) also built
+and merged in parallel — writes what has a real source today (revisions,
+mission_config, capability_registry, real OTel traces, rosbag opt-in),
+honestly omits what doesn't yet (baseline/space_context axes) rather than
+faking it.

@@ -134,14 +134,10 @@ prep. Record: `docs/lunar_bot_joint_position_control.md`.
   `openral_msgs`-typed interface needs **both**
   `/opt/ros/humble/setup.bash` **and** `install/setup.bash` sourced, every
   time — a fresh Bash call starts with neither.
-- Resetting `/openral/estop_reset` does NOT clear other nodes latched on
-  `/openral/estop` — also publish `std_msgs/Empty` on
-  `/openral/estop_cleared` (F17). At least THREE nodes latch
-  independently — kernel, `openral_hal_lunar_bot`, `openral_skill_runner`
-  itself (F33: a second goal after one E-stop was silently REJECTED by
-  the runner's own latch even after the kernel reported `latched: false`)
-  — neither reset path above clears the runner's; only a from-cold
-  relaunch reliably did, this session.
+- **FIXED (F34)**: calling only `/openral/estop_reset` now clears the HAL
+  and the skill runner too (both watch `/openral/safety_status` for
+  `latched: false`) — `/openral/estop_cleared` still works as a second
+  path but is no longer the only way to reach them.
 - A `ros2 topic list` presence check is **not** a reliable readiness signal
   right after a teardown/relaunch (repeatedly false-positived this
   session, F30) — use a real functional check (an actual TF lookup, an
