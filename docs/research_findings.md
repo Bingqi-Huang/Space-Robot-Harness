@@ -457,3 +457,31 @@ matched the datasheet (180°/s J1–J2, 225°/s J3–J7). Remaining arm-side
 gap: nothing bounds joint *velocity* for JOINT_POSITION steps (the kernel
 checks position only) — a large step between ticks is legal today;
 relevant once MoveIt streams trajectories (§8.3 item 9).
+
+### F23 — `lunarbot.step` (2026-09-14 fabrication drawing) implies the simulated chassis/mast is a stale CAD revision, not just missing a lidar
+
+Found while extracting the Mid-360 lidar mount pose from the newly
+supplied `lunarbot.step`/`mid-360-asm.stp` (XCAF-parsed via `cadquery-ocp`,
+cross-calibrated against `lunarbot.py`/`lunarbot.usdc`'s known values).
+Two independent mismatches between this STEP and the currently-simulated
+asset: (1) **wheelbase** — the STEP's front/rear wheel pairs are
+symmetric at ±532.776mm (total 1065.6mm), while `lunarbot.py`'s
+`wheel_positions` are asymmetric (492.5mm front / 522.5mm rear, total
+1015mm) — the code comment there says the rear axle was hand-shifted
+−0.03m specifically "to correct a mismatch against the (asymmetric)
+chassis hull/rail mesh", i.e. a patch against an earlier import, not a
+property of the real vehicle; (2) **front sensor mast** — the STEP's
+existing camera fixture adapter (相机工装转接块, NAUO10) sits at
+Y=+92.0mm, while the currently-simulated `rgbd_camera_frame`/`camera_frame`
+sit at Y=−25/−75mm — the opposite side. Reads as a coherent redesign (mast
+widened to carry the camera and the new Mid-360 lidar bracket side-by-side
+at Y=±92mm) rather than noise. User confirmed 2026-09-14 this STEP is the
+current fabrication drawing (supersedes what the sim asset was built
+from). **Consequence, not yet actioned:** the chassis/wheel/camera-mast
+geometry in `lunarbot.usdc` should eventually be re-imported from this
+revision so wheelbase and camera position match hardware; out of scope for
+the Mid-360 lidar task itself, which anchors its calibration to the
+existing camera mast (single-point, medium confidence) rather than the
+mismatched wheel geometry. Source: this session's CAD-extraction pass
+(`mid360_mount_result.json` in that session's scratchpad, not committed to
+the repo).
