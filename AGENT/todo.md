@@ -105,9 +105,15 @@ Build order (each verified live):
       modes (only triggers for horizon>1, nothing sends that today).
 - **Coordination**: Mid-360 landed on SRB `feat/mid360-lidar` — open/unmerged,
   fair game to build on.
-- [ ] B3: reasoner-in-the-loop two-step run with full trace = Phase B exit.
-      Items 3+4 give the reasoner real manipulation + a working (if
-      imprecise) base turn to compose; B3 itself not yet attempted.
+- [~] B3: reasoner-in-the-loop, real LLM (DeepSeek-V4.1-Flash, user
+      -supplied gateway, F38). **Reasoning exit condition MET**: 60+
+      ticks correctly decomposed "drive to pedestal, then open gripper"
+      into 2 subtasks, picked a real skill with sound rationale, never
+      double-dispatched. 2 real bugs found+fixed (gateway 400s on
+      `tool_choice="required"` → new `OPENRAL_REASONER_TOOL_CHOICE` env;
+      SOCKS proxy crashed the client → unset at launch). **Physical
+      completion pending**: chosen skill's sidecar hit a real first-use
+      cold start (multi-GB VLA download) — not a defect, won't recur.
 
 **F20** (JOINT_* wire row always full-width) found+fixed live during item-3
 prep. Record: `docs/lunar_bot_joint_position_control.md`.

@@ -1568,3 +1568,91 @@ known, already-tracked follow-up (wire `sensor_bridge_node` into
 new investigation. Until that lands, live-verifying full Nav2 autonomous
 navigation needs `sensor_bridge_node` started within a few seconds of
 `openral deploy sim`, not as an afterthought.
+
+### F38 — B3 (reasoner-in-the-loop) attempted for real: two real integration bugs found + fixed, genuine multi-step composition observed live
+
+User supplied a real LLM endpoint (`AGENT/VLM_provider.md`, a paratera.com
+OpenAI-compatible gateway) and asked for `DeepSeek-V4.1-Flash`. Verified
+directly against the endpoint before wiring it in (not assumed): a plain
+chat completion returns HTTP 200 with real content; the model is a
+thinking model (emits `reasoning_content`) — a low `max_tokens` (10) can
+consume the whole budget on reasoning before any answer forms, so use a
+generous cap. `tool_choice: "required"` gets a hard 400 ("Thinking mode
+does not support this tool_choice"); `"auto"` works and returns correctly
+-structured `tool_calls`.
+
+**Real bug found + fixed**: `openral_reasoner.tool_use._build_uncurated_model`
+hardcoded `tool_choice="required"` for the bare-URL escape hatch with no
+override — would have hard-failed every tick against this endpoint. Added
+`OPENRAL_REASONER_TOOL_CHOICE` env var (openai-dialect, uncurated path
+only; named endpoints/curated models already carry their own correct
+value and are unaffected). Two tests added, matching the existing
+huggingface-preset test's pattern for the same class of problem
+(`test_bare_url_defaults_to_required_tool_choice`,
+`test_bare_url_tool_choice_env_override`); 12/12 in
+`test_endpoint_presets.py` pass.
+
+**Real bug found + fixed**: the reasoner_node process died on first tick
+with `ImportError: Using SOCKS proxy, but the 'socksio' package is not
+installed` — this host's shell sets `all_proxy=socks5://127.0.0.1:7890`
+for general internet access, and `httpx` (under the OpenAI SDK) picked it
+up automatically. The gateway needs no proxy (confirmed: a direct curl
+succeeds). Fix applied at the process-launch level (unset
+`http_proxy`/`https_proxy`/`all_proxy` for the reasoner's environment),
+not in the client code — a proxy is a legitimate, deliberate host setting
+for other purposes; silently working around it in Python code would be
+the wrong layer to fix it at.
+
+**Live-verified real multi-step reasoning** (`openral prompt --new-goal
+"drive to the pedestal, then open the gripper"`, `openral_ext.run_manifest`
+wrapping the run): tick 1 correctly deferred (nothing to act on yet); tick
+2 correctly recognized the instruction as compound and called
+`decompose_mission`, splitting it into two ordered, independently
+-verifiable subtasks; tick 3 selected `rskill-internvla_n1-mobile_base
+-vln-nf4` (language-conditioned VLN) for "drive to the pedestal" over any
+Nav2/MoveIt rSkill, with an explicit, correct rationale ("no pedestal
+coordinates are available... the language-conditioned VLN skill is the
+correct match") — a real, well-reasoned choice given nothing in the
+palette resolves a place-name to a pose (that gap is Phase E's
+space_runtime/space_context work, not built yet, correctly deferred);
+ticks 4-22+ correctly held (no redundant re-dispatch, no invented
+busywork) while the skill's real out-of-process sidecar (a Py3.11 ZMQ
+sidecar, per CLAUDE.md's documented pattern) auto-provisioned its
+dependencies (torch/transformers/etc. — a one-time cost, this being the
+sidecar's first use on this host).
+
+**Process note, not a design flaw found here**: reasoner_node was launched
+standalone (bypassing `deploy_e2e.launch.py`'s lifecycle orchestration)
+to inject the proxy fix — it came up `unconfigured` and needed manual
+`configure`/`activate` lifecycle service calls (F14's documented pattern)
+before it would tick at all; this is expected behavior for a lifecycle
+node started outside its normal launch tree, not a bug.
+
+**Also found, unrelated to B3 itself, real and fixed**: this session had
+accumulated genuine orphaned-process debt from earlier rounds (duplicate
+`payload_scan_filter_node`/`twist_to_action_relay_node`/
+`pointcloud_to_laserscan_node` instances, two stray `ros2 topic echo`
+processes from hours earlier) — `pkill -f <pattern>` silently failed to
+signal them for unclear reasons (explicit-PID `kill -9` worked every
+time); swept clean before continuing. Matches F10/F30's standing
+guidance (`AGENT/todo.md` Rules) to `pgrep` exact current PIDs rather
+than trust a pattern match blindly — extending it: prefer explicit-PID
+`kill` over `pkill -f` on this host when a signal must land.
+
+**Final status, this session**: after 60+ consistent, correct ticks (each
+with a real, legible rationale — deferring redundant dispatch, correctly
+inferring why Nav2/MoveIt weren't viable choices here, never inventing
+busywork), the VLN skill's physical completion was still pending — its
+out-of-process sidecar's first-ever use on this host triggered a genuine
+cold start (a `uv pip install` of the full torch/transformers/diffusers
+stack, ~7 GB, followed by a multi-GB model checkpoint download from
+HuggingFace, observed still growing past 2.3 GB after several minutes).
+Judged not worth blocking on further: this is a one-time infrastructure
+cost orthogonal to what B3 is actually testing (does the reasoner compose
+and dispatch multi-step missions correctly through the real safety path —
+yes, repeatedly demonstrated), and would not recur on a second run (venv
++ weights now cached). Left running in the background rather than torn
+down; if it completes, the coordinator will capture the final outcome
+as a postscript rather than re-running the whole test. **B3's reasoning
+-level exit condition is met; full physical two-step completion is
+pending on this one cold-start, not reattempted from scratch.**
