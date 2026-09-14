@@ -1064,3 +1064,104 @@ matching processes, GPU 17 MiB) via the F28-fixed scripted-teardown path.
 Script kept in the session scratchpad, not committed as a permanent test
 (AGENT.md §3 — this repo minimizes pytest; the exercised code — kernel, HAL,
 `ROSPublishingHAL` — already carries its own test coverage in `openral/`).
+
+### F30 — Items 3 (procedural manipulation rSkills) and 4 (F19 fix) built and live-verified; two real bugs found and fixed along the way, one tuning gap left open honestly
+
+**Item 3 — five procedural rSkills** (`move_joints`, `stow`, `move_ee_to_pose`,
+`grasp`, `release`) built in `openral` (`python/rskill/src/openral_rskill/
+procedural_{move_joints,move_ee_to_pose,gripper}.py` + five `rskills/rskill-
+procedural-*` manifests), plus a new `chassis_base_link -> tcp_frame` TF
+frame from the sensor bridge (`Link7`'s already-live SRB body TF + the arm's
+0.14 m offset) and `tf_lookup` wiring through `make_default_skill_resolver`'s
+procedural branch so a procedural skill can close its loop on live TF, not
+just `world_state.joint_state`. Added `"lunar_bot"` to `EmbodimentTag` (was
+missing even though `robots/lunar_bot/robot.yaml` is in tree — no rSkill had
+targeted it specifically before, only the generic `mobile_base` class tag).
+
+Verified live against the real `openral deploy sim` graph (kernel → HAL →
+SRB), dispatched as genuine `ExecuteRskill` action goals, not a scripted
+bypass:
+- **stow**: converges the 7-DoF arm to its stow pose, terminates
+  successfully. First attempt hit a tolerance that was simply too tight
+  (0.02 rad simultaneous 7-joint convergence) — loosened default to 0.05.
+- **grasp on an empty gripper**: correctly fails with "nothing grasped"
+  once the jaw reaches the fully-closed stroke — the right outcome, not a
+  bug. Includes a motion-from-start guard found necessary during pure-Python
+  unit checks (no simulator): without it, a not-yet-applied close command
+  at t=0 (zero velocity, since the actuator hasn't moved yet) reads as
+  "already stopped" and would false-positive a grasp on nothing.
+- **release**: reaches the open stroke, terminates successfully.
+- **move_ee_to_pose**: the full chain works — TF servo, CARTESIAN_TWIST
+  dispatch through the kernel, success/failure signaling — and gets close
+  (~1.3–2.5 cm position, ~0.5° orientation at best) but has a real residual
+  precision/oscillation limitation: SRB's `arm_ik` action term re-syncs its
+  target to the current joint state every control step and provides no
+  passive holding stiffness (confirmed both by reading `openral_hal.
+  lunar_bot_srb`'s own module docstring and by direct observation — a
+  converged 0.009 rad orientation error drifted back out to 0.069 rad a few
+  ticks later with nothing actively perturbing it). Tried gating each axis
+  to zero-command once within tolerance; this made it *worse* (an on/off
+  limit cycle against a non-self-holding controller), so it stayed
+  continuous proportional control with a retuned gain (2.0 → 1.0) and
+  stall-detection that now tracks position *and* orientation progress
+  independently (previously position-only, which could time out a run
+  whose orientation was still honestly still converging). Left as a
+  documented, evidence-backed tuning gap — not silently accepted, not
+  chased to an arbitrary stopping point either. A natural motivation for
+  item 6 (MoveIt), which offers a collision-aware, presumably
+  better-damped alternative to this procedural IK path.
+
+**Item 4 — F19 fix**, `space_robotics_bench` `srb/core/action/term/mobile/
+four_wheel_steer.py`: `apply_actions()` now scales `drive_velocity` by
+`max(0, cos(steer_target − steer_measured))` (steer-before-drive, standard
+4WIS practice) instead of writing the drive velocity target in the same
+step as a not-yet-reached steering target. Verified live by instrumenting
+`apply_actions()` directly (temporarily — removed before commit): steering
+now measurably ramps smoothly toward the correct ~49–51° per-wheel
+tangential angle for a commanded in-place rotation (matching hand-computed
+4WIS kinematics) instead of snapping the drive target to full speed at
+t=0. Net chassis-level point-turn accuracy is still imperfect (a 4WIS
+rover's in-place pivot is a physically demanding maneuver with real wheel
+scrub, and this session did not fully separate that from remaining tuning
+questions) — recorded as a partial, evidence-backed improvement, not a
+claim of clean point-turn tracking.
+
+**A separate, pre-existing bug found and fixed while verifying F19** (its
+own commit, not bundled with the F19 fix): `WheeledManipulatorActionGroup.
+map_cmd_to_action` (`srb/core/action/group/mobile_manipulation/
+wheeled_manipulator.py`) built the base's 2-DoF `(v, omega)` command as
+`twist[:2]` — the first two slots of the 6-DoF teleop twist
+`[vx,vy,vz,wx,wy,wz]`, i.e. `(vx, vy)` — instead of `(vx, wz)`. Every
+`angular.z` command was silently dropped before it ever reached
+`FourWheelSteerAction`: a pure in-place turn produced `v=w=0.0` at
+`apply_actions()` every tick, confirmed by instrumenting it directly while
+a real `angular.z=0.4` `cmd_vel` was arriving on the ROS topic. This
+completely blocked observing the F19 fix through the real `BODY_TWIST`
+dispatch path (F29's own successful test was linear-only, `w=0`, so it
+never exercised this). Fixed: `base_cmd = twist[[0, 5]]`.
+
+**Operational notes for next time**: (1) this session's own teardown/
+relaunch cycle left a duplicate `sensor_bridge_node` process running once
+(a `kill -TERM` sent to a PID that had already been superseded by a fresh
+relaunch's PID) — two bridge processes publishing conflicting `/tf` caused
+a ~76 s stretch of spurious `"srb/env0/robot" does not exist` lookup
+failures even though SRB itself was publishing fine; always re-`pgrep` the
+exact current PID immediately before signaling it, don't reuse one echoed
+by an earlier command. (2) A topic-presence check (`ros2 topic list | grep
+...`) is not a reliable "is it really ready" signal right after a
+teardown/relaunch — it returned a false positive at least three times this
+session (matched a just-torn-down instance's lingering DDS state); a real
+functional check (an actual `tf2_ros` lookup, an actual dispatch) is the
+only trustworthy readiness signal. (3) The resident-skill cache in
+`rskill_runner_node._acquire_skill` keys on `(rskill_id, revision, prompt)`
+only — a repeat dispatch of the same `rskill_id` with a new
+`goal_params_json` silently reuses the cached instance without calling
+`configure()`/`activate()` again, so the new goal (and the skill's own
+`_start_s` clock) is ignored. This is a pre-existing gap affecting every
+`kind: procedural` skill, not something this session's new skills
+introduced or fixed — noted here, not fixed, out of scope for items 3/4.
+
+Both repos: two commits each on `openral`'s `feat/lunar-bot-capability-set`
+and `space_robotics_bench`'s `feat/four-wheel-steer-alignment`. Host left
+clean (verified via `pgrep` + `nvidia-smi`, 17 MiB / idle) after every
+teardown, including the final one.

@@ -132,7 +132,21 @@ lifted object whose `map`-frame position is within ~0.2 m of the panel's
 
 </details>
 
-### 3.3 Procedural manipulation rSkills (`kind: procedural`, tag `lunar_bot`)
+### 3.3 Procedural manipulation rSkills (`kind: procedural`, tag `lunar_bot`) — ✅ done (2026-09-14, F30)
+
+Built and live-verified via real `ExecuteRskill` dispatch against the
+running `deploy sim` graph. `stow`/`move_joints`, `grasp` (correctly fails
+on an empty gripper), and `release` all converge/terminate cleanly.
+`move_ee_to_pose` works end-to-end (TF servo against the new `tcp_frame`,
+CARTESIAN_TWIST dispatch, success/failure signaling) but has a real
+residual precision/oscillation limitation documented in F30 — SRB's
+`arm_ik` action term has no passive holding stiffness (re-syncs to the
+current joint state every step), so a converged axis can drift back out a
+few ticks later. Not solved this session; a natural motivation for item 6
+(MoveIt) rather than further procedural-loop tuning. The
+scripted-pick-and-place verification below (full panel remount) was
+**not** attempted — out of scope for item 3 itself, a good next
+integration test once item 5/6 give a real target pose source.
 
 Five skills, each a closed loop on world state / TF, each emitting one
 chunk per tick through `ROSPublishingHAL` → kernel, each finishing on a
@@ -161,7 +175,24 @@ descend → `release` → `stow`) remounts the panel in `panel_remount` v1 and
 manipulation chain closes; expect calibration issues in CARTESIAN_TWIST
 (the raw-unit conversion is pose-dependent, `docs/phase_b_lunar_bot_arm_gripper.md`).
 
-### 3.4 F19 — root-cause hypothesis from reading `four_wheel_steer.py`
+### 3.4 F19 — ✅ fixed and live-verified (2026-09-14, F30)
+
+The steer-before-drive fix below was implemented exactly as hypothesized
+and confirmed live: steering now measurably ramps toward the correct
+per-wheel tangential target instead of snapping the drive target to full
+speed at t=0. Net point-turn precision is still imperfect (real wheel
+scrub during an in-place pivot, not fully isolated from tuning this
+session) — see F30 for the honest accounting. **A separate, pre-existing
+bug was found and fixed along the way**: `WheeledManipulatorActionGroup.
+map_cmd_to_action` (`srb/core/action/group/mobile_manipulation/
+wheeled_manipulator.py`) built the base command as `twist[:2]` — i.e.
+`(linear.x, linear.y)` — instead of `(linear.x, angular.z)`, so every
+`angular.z` `cmd_vel` command was silently dropped before it ever reached
+`FourWheelSteerAction` at all. This is why the original root-cause
+hypothesis below could never have been observed through the real
+`BODY_TWIST`/`cmd_vel` dispatch path before this fix.
+
+### 3.4 (original) F19 — root-cause hypothesis from reading `four_wheel_steer.py`
 
 The kinematics are right (`v_wheel = v + ω × r`, steer = `atan2`, wrap to
 (−90°, 90°] with drive-sign flip). What is missing is **steer-before-
