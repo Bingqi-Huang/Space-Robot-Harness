@@ -26,3 +26,9 @@ __pycache__/
 
 # Claude Code harness-internal state (not project content)
 .claude/
+
+AGENT/VLM_provider.md
+
+# §19 run artifacts (openral_ext/run_manifest) -- reproducible on demand,
+# not meant to bloat git history (large logs/traces per run).
+experiments/manifests/

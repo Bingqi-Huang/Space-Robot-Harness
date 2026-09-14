@@ -1656,3 +1656,41 @@ down; if it completes, the coordinator will capture the final outcome
 as a postscript rather than re-running the whole test. **B3's reasoning
 -level exit condition is met; full physical two-step completion is
 pending on this one cold-start, not reattempted from scratch.**
+
+### F39 — Phase C scene (`panel_remount_v2`) live-verified: real spawn, stable physics, real rendered frames inspected — no floating/clipping, matches offline geometry
+
+Merged into `space_robotics_bench` `main`; live-checked after merge since
+the task only registers once actually loaded under a running Isaac Sim
+(`srb.tasks.__init__.py` gates discovery on `is_isaacsim_initialized()` —
+`srb agent rand --help`'s env-choice list is generated pre-boot and
+doesn't reflect this, a red herring chased briefly before finding the
+real gate).
+
+`srb agent rand -e panel_remount_v2_visual env.robot=lunar_bot --headless
+--video`: all four scene objects (target pedestal, two decoy pedestals,
+panel) spawned without error (the "prim already exists" lines are the
+same benign USD-recreation noise seen throughout this session, not a
+real problem). Ran stable for 6+ minutes of real physics stepping with
+zero sign of F18's failure mode (an object outside the safe terrain
+radius gets PhysX-depenetration-launched into the void, z→-2637 and
+counting) — the exact thing the `env_spacing` override was computed to
+prevent. `--video` produced a real 60s/50fps recording (SIGINT didn't
+cleanly stop the headless kit process in time, force-killed after
+confirming the video had already muxed to disk — host left clean after,
+`nvidia-smi`/`ps aux` verified).
+
+Three extracted frames (t≈1s, t≈12s, t≈58s) actually inspected, not
+just probed for crashes: real lunar terrain, all objects sit on the
+ground with visible contact shadows (no floating), the pedestal/panel
+cluster and two decoy objects (a short column, a low block — visually
+distinguishable, matching the three real pedestal-height variants used)
+hold stable positions across the full recording, scale reads as sane
+relative to the robot. Confirms the fork's offline Blender-derived
+geometry (real bounding boxes, no overlap, safe-radius margins) against
+an actual render rather than trusting the math alone.
+
+Arm-workspace reachability for the panel is inherited, not separately
+re-verified: v2 keeps the panel/pedestal pair's relative geometry
+byte-identical to v1 (only the whole cluster's absolute position moved),
+and v1's `move_ee_to_pose` already reached this exact relative geometry
+live (item 3, F30) — nothing about the RM-75's reach to the panel changed.

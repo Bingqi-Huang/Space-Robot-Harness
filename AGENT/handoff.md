@@ -1,108 +1,85 @@
 # Handoff
 
-State as of 2026-09-14 (evening). Phase A complete. Phase B1 done. Phase B2
-items 1/2/2b/2c/3/4 done+verified; items 5–9 and B3 remain.
-Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F30). Key
-docs: `docs/lunar_bot_capability_set_plan.md`, `docs/mission_a_panel_remount.md`,
-`docs/lunar_bot_rm75_spec.md`.
+State as of 2026-09-14 (late evening). **Phase A + Phase B both complete.**
+Phase C in progress (scene half done, mission-logic half not started).
+Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F39).
 
 ## Where things stand
 
-Branch chains — openral: `feat/py310-humble` → `feat/lunar-bot-hal` →
-`fix/body-twist-speed-envelope` → `feat/lunar-bot-arm-gripper` →
-`feat/arm-joint-position-control` → `feat/lunar-bot-capability-set`
-(current, 3 new commits this session: tf_lookup wiring + lunar_bot
-embodiment tag, the five procedural rSkills, tcp_frame). SRB: `main` →
-`feat/panel-remount-mission-a` → `feat/switchable-arm-control` →
-`feat/mid360-lidar` → `fix/ros-bridge-array-fast-path` →
-`feat/four-wheel-steer-alignment` (current, 2 new commits: the pre-existing
-`map_cmd_to_action` twist-index bug, then the F19 steer-before-drive fix).
-All pushed*, all still open, none merged. (*local commits this session not
-yet pushed — push before ending the session if that's expected.)
+openral `master` and SRB `main` both have the full Phase B2 stack merged
+(9 numbered items + 2 cross-cutting reliability fixes + B3's reasoning-level
+pass), all local commits, **not pushed to origin**. No open feature branches
+— everything gets a fresh branch/worktree off `master`/`main` from here.
+`space_robotics_bench` `main` also has `panel_remount_v2`'s scene merged
+(Phase C).
 
-## Items 3+4 — done this session (F30, full detail in research_findings.md)
+## Next — Phase C mission-logic (not started)
 
-**Item 3 — five procedural rSkills** (`move_joints`, `stow`,
-`move_ee_to_pose`, `grasp`, `release`) in `openral/python/rskill/src/
-openral_rskill/procedural_{move_joints,move_ee_to_pose,gripper}.py` + five
-`rskills/rskill-procedural-*` manifests. New `tcp_frame` TF (sensor bridge,
-`Link7` + 0.14 m offset) and `tf_lookup` wired through the procedural
-resolver branch for `move_ee_to_pose`. All five live-dispatched as real
-`ExecuteRskill` goals against the running `deploy sim` graph:
-- `stow`/`move_joints`, `grasp` (empty gripper → correctly fails), `release`
-  — all converge/terminate correctly.
-- `move_ee_to_pose` — works end-to-end but has a real, documented residual
-  precision/oscillation limitation (SRB's `arm_ik` term has no passive
-  holding stiffness — re-syncs to current joint state every step, so a
-  converged axis can drift back out between ticks). Gain retuned
-  (2.0→1.0), stall-detection now tracks position+orientation independently.
-  Not fully solved; good lead for item 6 (MoveIt).
+`panel_remount_v2`'s SCENE is done and live-verified (F39): 2 decoy
+pedestals, ~3.5 m real approach, terrain-safe. What's NOT built yet, per
+§6.4:
+- Covered examples (visible during authoring): the known displaced panel +
+  remount sequence (already works, inherited from v1), a predefined
+  retry/failure branch, a route-obstruction-with-alternate-route case.
+- Held-out examples (hidden until freeze): access blocked by a movable
+  object (inspect→diagnose→relocate→re-access→restore→verify), a
+  semantically-inconsistent observed state needing closer inspection, a
+  missing-preferred-capability case solvable via composition.
+- The actual "inspection" mechanic — right now the two decoys are just
+  *present*, nothing distinguishes "which site is the real fault" except
+  hardcoded position. Needs a real observable signal (visual difference,
+  a queryable state) the reasoner can act on, not a hidden coordinate.
+- Perturbation switches (covered/held-out toggle) — none exist yet.
+- §8.2's rule still applies: no scenario-specific decision rules baked into
+  the harness/guard — the *scene* can encode fixed facts (which pedestal is
+  real), but *what to do about it* must stay the reasoner's call.
 
-**Item 4 — F19 fix** in SRB `four_wheel_steer.py` (steer-before-drive,
-`drive_velocity *= cos(steer_target - steer_measured).clamp(min=0)`).
-Verified: steering now ramps correctly to the right per-wheel target
-instead of snapping. Net point-turn precision still imperfect (wheel
-scrub, not fully isolated from tuning). **Along the way**: found+fixed a
-separate pre-existing bug in `WheeledManipulatorActionGroup.
-map_cmd_to_action` — `twist[:2]` took `(vx,vy)` instead of `(vx,wz)`, so
-every `angular.z` cmd_vel command was silently dropped before reaching the
-base controller at all. This is why F19 couldn't be observed before fixing
-it (own commit, separate from the F19 fix itself).
-
-## Next — item 5 (Navigation)
-
-Per `docs/lunar_bot_capability_set_plan.md` §3.5 and
-`docs/srb_deploy_backend_plan.md` §5: Nav2 via `openral_nav2_bringup`,
-lidar profile from the Mid-360 (RayCaster, permanent per F24), needs
-`pointcloud_to_laserscan` apt-installed. **Important**: route Nav2's
-`/cmd_vel` through the kernel via a `cmd_vel → candidate_action` relay
-node — upstream lets Nav2 write the base directly, which violates §10.1
-(never bypass safety). Given F30's `map_cmd_to_action` finding, double-check
-that relay maps `(linear.x, angular.z)` correctly too — don't assume.
-The user separates planning rounds from coding rounds — wait for an
-explicit go before starting item 5's code.
+Do not start Mission B until this is done and Mission A's real
+orchestration needs are clear (§6.5, explicit ordering).
 
 ## Environment reference (reusable, don't rediscover)
 
-- SRB / kernel / HAL / runner launch: `docs/srb_integration_notes.md` §2,
-  `docs/phase_b_lunar_bot_hal.md`, `docs/phase_b_lunar_bot_arm_gripper.md`.
-- `openral deploy sim --config scenes/deploy/srb_panel_remount.yaml
-  --no-enable-slam --no-enable-nav2 --no-enable-octomap --no-dashboard`
-  brings up kernel+HAL+SRB (+reasoner, which will time out configuring
-  after 300s if no LLM credential is set on this host — benign, rest of
-  graph is unaffected, don't wait for it). Sensor bridge is a **separate**
-  process: `.venv/bin/python -m openral_hal_lunar_bot.sensor_bridge_node
-  --ros-args -p robot_yaml:=robots/lunar_bot/robot.yaml` (not `ros2 run` —
-  lacks structlog). Both need `ROS_DOMAIN_ID=77
-  ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` and both ROS setup.bash files
-  sourced.
-- **Readiness is NOT `ros2 topic list | grep <topic>`** — false-positived
-  repeatedly right after a teardown/relaunch this session (stale DDS state
-  from the just-killed instance). Use a real functional check: an actual
-  `tf2_ros.Buffer.lookup_transform(...)` call, or an actual dispatch.
-  Expect ~15-80s from launch to genuinely ready even with a warm shader
-  cache; don't trust "ready" until 2-3 consecutive real checks pass.
-- Dispatch an in-tree rSkill for testing: a real `rclpy.action.ActionClient`
-  against `/openral/execute_rskill` (`openral_msgs.action.ExecuteRskill`)
-  works directly against the production graph's own action server — no
-  need to build a second `RskillRunnerNode`. **Use a unique `prompt` per
-  test dispatch** — the resident-skill cache keys on `(rskill_id, revision,
-  prompt)` and reuses a cached instance (skipping `configure()`/
-  `activate()`, so a new `goal_params_json` and the skill's own clock are
-  silently ignored) on a repeat of the same key. Noted, not fixed —
-  pre-existing, affects every `kind: procedural` skill.
-- **Never `pkill -f`** — exact PIDs only, every time. **Always re-`pgrep`
-  the exact current PID immediately before signaling it** — reusing a PID
-  echoed by an earlier command can target a process that's already been
-  superseded by a fresh relaunch (F30: caused a duplicate
-  `sensor_bridge_node`, ~76s of spurious TF failures).
-- A bare `time.sleep()` before reading a ROS subscription callback is a
-  race — spin through the wait (`rclpy.spin_once` in a loop), don't sleep.
-- Colcon rebuild of the safety kernel: conda stripped from env + `PATH`,
-  `--merge-install`, `PYTHON_EXECUTABLE`/`Python3_EXECUTABLE` →
-  `.venv/bin/python`.
-- **F17**: `/openral/estop_reset` only clears the kernel's own latch —
-  also publish `/openral/estop_cleared` (`std_msgs/Empty`).
-- **F18**: SRB's moon terrain is only flat within ~4 m of env origin.
-- **F20**: a JOINT_* chunk's wire row is ALWAYS the full 21-wide robot
-  vector, even when `joint_names` names a subset.
+- Both ROS setup.bash files (`/opt/ros/humble/setup.bash` +
+  `install/setup.bash`) + `ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=
+  LOCALHOST` needed in *every* shell that touches this graph — a fresh Bash
+  call starts with none of it.
+- `openral deploy sim --config scenes/deploy/srb_panel_remount.yaml` brings
+  up kernel+HAL+SRB+Nav2+reasoner. **Sensor bridge is a separate process**
+  (`python3 install/lib/openral_hal_lunar_bot/sensor_bridge_node.py
+  --ros-args -p robot_yaml:=... -p use_sim_time:=true` — not `ros2 run`,
+  lacks structlog) and **must start within seconds of the graph coming up**
+  or Nav2's `bt_navigator` lifecycle wedges waiting on `/odom` (F37, real,
+  root-caused, deferred — fix is wiring the bridge into
+  `deploy_e2e.launch.py`, not yet done).
+- A reasoner started standalone (bypassing its normal launch tree, e.g. to
+  inject an env var fix) comes up `unconfigured` — drive it through
+  `configure` (id=1) then `activate` (id=3) via `lifecycle_msgs/srv/
+  ChangeState` before it will tick (F38). `ros2 lifecycle`/`node list`
+  don't enumerate by name on this host — use the service calls directly
+  (F14).
+- Readiness is **not** `ros2 topic list | grep <topic>` — false-positives
+  right after a teardown/relaunch. Use a real functional check (an actual
+  TF lookup, an actual dispatch, `ros2 topic hz` actually reporting a rate).
+- **Never `pkill -f`** on this host — it has silently failed to signal real
+  processes more than once this session (explicit-PID `kill -9` always
+  worked). Re-`pgrep`/`ps` for the exact current PID before signaling —
+  don't reuse one echoed by an earlier command.
+- `srb agent rand --help`'s env-choices list is generated pre-boot and does
+  **not** reflect a newly-added task — real registration only happens once
+  Isaac Sim initializes (`srb/tasks/__init__.py` gates on
+  `is_isaacsim_initialized()`). Don't chase this as a bug (F39) — just
+  launch the real env by name and check the boot log for spawn errors.
+- `srb`'s CLI resolves through Isaac Sim's own Python (`~/.local/bin/srb`
+  → `isaac-sim/python.sh`), which is an editable install pointed at the
+  **main checkout**, not whatever worktree you're sitting in — merge before
+  live-testing a worktree's SRB task changes, not after.
+- For a quick visual check of a scene: `srb agent rand -e <task>_visual
+  env.robot=lunar_bot --headless --video`; the video lands under
+  `logs/<task>/rand/<ts>/videos/.../episode-0.mp4` (gitignored) even if the
+  process has to be force-killed rather than SIGINT'd cleanly. Extract
+  frames with `ffmpeg -i <mp4> -vf "select=eq(n\,N)" -vframes 1 out.png`.
+- GPU is a shared, singleton resource on this host — one live Isaac Sim
+  instance at a time, always `nvidia-smi`/`ps aux` before launching, always
+  verify clean teardown after (the wrapper's own SIGINT/SIGTERM often
+  doesn't reach the actual `kit/python` child — check for it explicitly and
+  `kill -9` directly if it's still there).
