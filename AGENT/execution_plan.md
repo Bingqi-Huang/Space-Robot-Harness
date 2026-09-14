@@ -807,42 +807,30 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
    command brings the whole graph up and a reasoner-dispatched
    `body_twist` moves the base. Every later item is verified through this
    path.
-2c. **RTX Lidar support for the Mid-360** (user decision 2026-09-14, scheduled
-   immediately after 2's RayCaster-based Mid-360 lands — do not start early).
-   Rationale: this project is imitation learning, not RL — no `num_envs`
-   parallelism requirement — which removes IsaacLab's stated reason for
-   *not* wrapping RTX Lidar (their team evaluated it and dropped it because
-   it doesn't batch across thousands of parallel envs; that constraint does
-   not apply to us). RTX Lidar ray-traces the live render scene every frame
-   (sees dynamic objects, not just one static baked mesh like the warp
+2c. **RTX Lidar support for the Mid-360** (user decision 2026-09-14,
+   scheduled immediately after 2's RayCaster-based Mid-360 lands — do not
+   start early). Rationale: this project is imitation learning, not RL —
+   no `num_envs` parallelism requirement — which removes IsaacLab's stated
+   reason for *not* wrapping RTX Lidar (their team evaluated and dropped it
+   because it doesn't batch across thousands of parallel envs; irrelevant
+   here). RTX Lidar ray-traces the live render scene every frame (sees
+   dynamic objects, not just one static baked mesh like the warp
    `RayCaster`), so it is the correct long-term sensor, not a nice-to-have.
-   Researched 2026-09-14 (see the assistant's own session for sourcing):
-   IsaacLab has no native RTX Lidar wrapper and none is planned. RTX Lidar
-   lives in Isaac Sim itself (`isaacsim.sensors.rtx`, confirmed present in
-   our pinned Isaac Sim 5.1 install) and must be integrated by bypassing
-   IsaacLab's sensor abstraction directly against that extension. No Isaac
-   Sim version — old or new — ships an official Livox asset/config; Isaac
-   Sim 5.0 replaced the pre-5.0 mechanism (a `Camera` prim + a JSON profile
-   discovered by scanning `data/lidar_configs/<Vendor>/`, the mechanism
-   community "Livox Mid360" JSON snippets found online were hand-added
-   into) with a new `OmniLidar` prim + a hardcoded Python whitelist
-   (`isaacsim/sensors/rtx/impl/supported_lidar_configs.py`) of official
-   pre-built Nucleus USD assets, which does not include Livox and cannot be
-   satisfied by dropping a file into a folder. The old JSON-scanning search
-   path (`app.sensors.nv.lidar.profileBaseFolder` in
-   `isaacsim.sensors.rtx/config/extension.toml`) still exists in our 5.1
-   install and is very likely still what the underlying render plugin
-   (`omni.sensors.nv.lidar.lidar_core.plugin`) actually reads; the
-   whitelist only gates the convenience `IsaacSensorCreateRtxLidar`
-   command, not the prim schema itself. Planned path: hand-author an
-   `OmniLidar` prim (apply `IsaacRtxLidarSensorAPI`, following the schema of
-   an existing sample asset such as `NVIDIA/Example_Rotary.usda`) pointing
-   at a custom Livox Mid-360 JSON profile, bypassing the whitelisted
-   command entirely. Even so, the Mid-360's true non-repetitive scan
-   pattern has no known exact solution in Isaac Sim (community consensus:
-   approximate with a high-line-count rotary config, or replay recorded
-   real azimuth/zenith angle sequences) — treat as a documented
-   approximation, not a solved problem, when this item is implemented.
+   Full investigation, source-level mechanism, and an ordered executable
+   plan: `docs/rtx_lidar_integration_plan.md` (2026-09-14). Headline
+   findings: `isaacsim.sensors.rtx` is present in the pinned Isaac Sim 5.1
+   install but not loaded by IsaacLab's default headless experience (needs
+   `enable_extension`); its config whitelist
+   (`supported_lidar_configs.py`) gates only the convenience creation
+   command, and the underlying JSON-profile mechanism is still live
+   (`profileBaseFolder` in `extension.toml`) — exact bypass mechanism not
+   yet empirically confirmed, first task when implementing. The Mid-360's
+   real non-repetitive scan pattern is a solved data problem, not new
+   research: `Livox-SDK/livox_laser_simulation` officially ships
+   `scan_mode/mid360.csv` (24,000 real timestamped azimuth/zenith samples),
+   and the JSON schema's `solidState` scan type is confirmed (via a real
+   51,200-point on-disk example) to accept an arbitrary point list, not
+   just a rotary raster.
 3. **Procedural manipulation rSkills** (`kind: procedural`, tag `lunar_bot`):
    `move_joints`, `move_ee_to_pose`, `grasp`, `release`, `stow`. Each is a
    real closed loop on OpenRAL world state / TF, emits through the kernel,
