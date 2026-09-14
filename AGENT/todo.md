@@ -39,43 +39,64 @@ Build order (each verified live):
 
 - [x] 1. RM-75 limits in `robot.yaml` (`f7b5ccd`, F22).
 - [x] 2. Sensor bridge — `LunarBotSensorBridgeNode`, F25. Relays SRB
-      cameras/depth/IMU/lidar; re-roots TF to `chassis_base_link`;
-      publishes `/odom` + (new, F30) `tcp_frame`. Still runs standalone,
-      not wired into `deploy_e2e.launch.py` (robot-agnostic launch needs a
-      generic companion-node mechanism — follow-up).
-- [x] 2b. SRB backend for `openral deploy sim` — F26/F27/F28.
-      `openral_sim.backends.srb`, `process_group_wrapper.py`,
-      `scenes/deploy/srb_panel_remount.yaml`. Tick rate 0.36→~12 Hz (F28).
-      Exit condition reached (F29): kernel-path BODY_TWIST moves the robot
-      through the full `deploy sim` graph. Open, not urgent: camera topics
-      reach OpenRAL at ~2 Hz vs SRB's 12 Hz (Fast-DDS large-message loss —
-      fix = XML profile + `sysctl net.core.rmem_max`, not attempted).
-- [x] 2c. RTX Lidar — **parked by user decision** (F24, confirmed upstream
-      Isaac Sim bug). RayCaster is permanent. Do not re-open without new
-      upstream evidence.
-- [x] **3. Five procedural rSkills** — `move_joints`, `stow`,
-      `move_ee_to_pose`, `grasp`, `release` (F30). All live-verified via
-      real `ExecuteRskill` dispatch against the running graph. `stow` /
-      `grasp` (on empty gripper, correctly fails) / `release` converge
-      cleanly. `move_ee_to_pose` works end-to-end (TF servo, dispatch,
-      success/failure signaling) but has a known residual precision/
-      oscillation gap near tight tolerances — see F30, a lead for item 6
-      (MoveIt), not re-opened by default tuning alone.
+      cameras/depth/IMU/lidar; re-roots TF; publishes `/odom` +
+      `tcp_frame`. Still standalone, not wired into `deploy_e2e.launch.py`.
+- [x] 2b. SRB backend for `openral deploy sim` — F26/F27/F28/F29. Tick rate
+      0.36→~12 Hz. Kernel-path BODY_TWIST moves the robot through the full
+      graph. Open, not urgent: camera topics ~2 Hz vs SRB's 12 Hz.
+- [x] 2c. RTX Lidar — **parked by user decision** (F24, upstream Isaac Sim
+      bug). RayCaster is permanent; don't reopen without new evidence.
+- [x] **3. Five procedural rSkills** — `move_joints`/`stow`/
+      `move_ee_to_pose`/`grasp`/`release` (F30), all live-verified.
+      `move_ee_to_pose` has a known residual precision gap near tight
+      tolerances (lead for item 6, F30).
 - [x] **4. F19 fix** — steer-before-drive in SRB `FourWheelSteerAction`
-      (F30). Steering now ramps correctly toward the right per-wheel
-      target; net point-turn precision still imperfect (real wheel scrub,
-      not fully isolated from tuning this session). **Found +fixed along
-      the way**: a separate, pre-existing bug in
-      `WheeledManipulatorActionGroup.map_cmd_to_action` (`twist[:2]` took
-      `(vx,vy)` instead of `(vx,wz)` — every `angular.z` command was
-      silently dropped). Both are their own commits.
-- [ ] 5. Navigation — Nav2 via `openral_nav2_bringup`, lidar profile from
-      the Mid-360 (`pointcloud_to_laserscan` apt install needed);
-      `/cmd_vel → candidate_action` relay so the kernel bounds Nav2.
-- [ ] 6. MoveIt for RM-75 — required (license check on `ros2_rm_robot`
-      first). Also the natural fix path for move_ee_to_pose's precision
-      gap (F30).
-- [ ] 7. Mission verifier node (this repo) on simulator truth.
+      (F30); point-turn precision still imperfect (wheel scrub). Also
+      found+fixed: `WheeledManipulatorActionGroup.map_cmd_to_action` took
+      `(vx,vy)` instead of `(vx,wz)` — `angular.z` was silently dropped.
+- [x] 5. Navigation — built + live-verified, merged into
+      `feat/lunar-bot-capability-set`. User resolved the ADR-0040/0099
+      question (F32): route through the kernel, don't bypass, don't weaken
+      Nav2's own avoidance — matches this design (kernel adds only the
+      existing velocity-magnitude cap). `twist_to_action_relay_node.py`
+      closes the gap `MobileBaseBridge`'s docstring names.
+      `pointcloud_to_laserscan` installed by user; its launch wiring had a
+      real dead-code bug (function written, never called) — found + fixed.
+      **Live-verified decisively (F33)**: `/cmd_vel` → correct
+      `BODY_TWIST` chunk on `candidate_action` → kernel-approved
+      `safe_action` → robot's real SRB pose moved ~0.6 m, unlatched
+      throughout. `/scan` verified flowing 7-11 Hz.
+- [x] 6. MoveIt for RM-75 — built + merged into
+      `feat/lunar-bot-capability-set`. Vendored `ros2_rm_robot`'s RM75
+      URDF/MoveIt2 config per explicit user decision overriding CLAUDE.md
+      §1.9 for this fork (F31, license was undeclared/inconsistent
+      upstream). New `rm75` embodiment tag; `rskill-moveit-*` retagged;
+      trajectory→JOINT_POSITION bridge was already generic.
+      **Live-verified the mechanism, found a real open bug (F33), not
+      papered over**: goal→MoveIt-plan→chunked-replay-through-kernel all
+      confirmed working (both a Cartesian `eef_pose` and a joint-space
+      `joints` dispatch reached MoveIt and began replaying). Both runs hit
+      an IDENTICAL kernel rejection (`kind_workspace (joint_position)`)
+      at the SAME point — waypoint/chunk 3 — despite the second target
+      being a trivial, definitely-reachable nudge off the already-verified
+      stow pose. Rules out "bad pose"; points at the trajectory bridge or
+      the kernel's per-joint envelope on lunar_bot's 21-wide padded
+      vector. **Next**: inspect the actual chunk-3 `flat` values via OTel
+      trace (not more pose-guessing) — blocked this session by the
+      estop-reset gap below eating the remaining time, not by difficulty.
+      `move_group.launch.py` is still a standalone companion process, not
+      wired into `deploy_e2e.launch.py` (same class of gap as item 2's
+      sensor_bridge_node).
+- [~] 7. Mission verifier node (this repo, `openral_ext/mission_verifier/`)
+      — built, 8/8 offline logic tests pass, NOT live-verified. Reads real
+      SRB ground-truth TF (`srb/env0 -> srb/env0/panel`) + `/srb/env0/
+      terminated`, cross-checks against the task's own self-report rather
+      than trusting it, publishes `VerifierEvent` JSON on
+      `/space_harness/verifier_events`. Branch `feat/mission-verifier` in
+      worktree `space-robot-harness-item7-verifier/`.
+      **Next for all three**: live-verify sequentially against one running
+      `openral deploy sim` graph (shared GPU), then merge each worktree
+      branch back — 5 needs the ADR call first.
 - [ ] 8. §19 run-manifest writer wrapping `openral deploy sim` (this repo).
 - [ ] 9. Remaining kernel magnitude checks (`kJointTrajectory` first).
 - **Coordination**: Mid-360 landed on SRB `feat/mid360-lidar` — open/unmerged,
@@ -118,7 +139,12 @@ prep. Record: `docs/lunar_bot_joint_position_control.md`.
   time — a fresh Bash call starts with neither.
 - Resetting `/openral/estop_reset` does NOT clear other nodes latched on
   `/openral/estop` — also publish `std_msgs/Empty` on
-  `/openral/estop_cleared` (F17).
+  `/openral/estop_cleared` (F17). At least THREE nodes latch
+  independently — kernel, `openral_hal_lunar_bot`, `openral_skill_runner`
+  itself (F33: a second goal after one E-stop was silently REJECTED by
+  the runner's own latch even after the kernel reported `latched: false`)
+  — neither reset path above clears the runner's; only a from-cold
+  relaunch reliably did, this session.
 - A `ros2 topic list` presence check is **not** a reliable readiness signal
   right after a teardown/relaunch (repeatedly false-positived this
   session, F30) — use a real functional check (an actual TF lookup, an

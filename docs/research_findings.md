@@ -1165,3 +1165,257 @@ Both repos: two commits each on `openral`'s `feat/lunar-bot-capability-set`
 and `space_robotics_bench`'s `feat/four-wheel-steer-alignment`. Host left
 clean (verified via `pgrep` + `nvidia-smi`, 17 MiB / idle) after every
 teardown, including the final one.
+
+### F31 — `ros2_rm_robot` (RealMan's own RM-75 URDF/MoveIt source) has no clean license; item 6 redirected to a USD-derived URDF instead of vendoring it
+
+§8.3 item 6 (MoveIt for RM-75) named a license check on `ros2_rm_robot`
+(github.com/RealManRobot/ros2_rm_robot, branch `humble`) as its first step.
+Checked directly against the cloned repo, not assumed: there is no
+repo-root `LICENSE` file and no license section in either README.
+Per-package `package.xml` declarations are inconsistent and, for the
+packages actually needed, either missing or ambiguous — `rm_description`
+(the URDF + meshes, including `rm_75.urdf`/`rm_75.urdf.xacro`) is literally
+`<license>TODO: License declaration</license>`; `rm_moveit2_config/
+rm_75_config` (the RM75 MoveIt2 config) declares bare `BSD` with no
+accompanying license text; `rm_arm_examples/*` ships an Apache-2.0
+`LICENSE` file while its own `package.xml` still says "TODO"; core packages
+(`rm_driver`, `rm_control`, `rm_bringup`, …) are all "TODO" too. Given
+`openral`'s CLAUDE.md §1.9 (uniform Apache-2.0, copyleft-incoming rejected
+without TSC review) and that an undeclared license is a weaker basis for
+inclusion than a known copyleft one, this package is **not vendored** —
+that decision does not need to wait on a TSC review because nothing from
+it is being incorporated.
+
+**Decision (user, 2026-09-14, recorded per CLAUDE.md §6 "propose deviations
+as a recorded decision"):** vendor `ros2_rm_robot`'s RM75 URDF/meshes
+(`rm_description`) and MoveIt2 config (`rm_moveit2_config/rm_75_config`)
+directly rather than deriving a clean-room URDF from `lunarbot.usdc`.
+Rationale given: this is internal research use of a public repo, not
+redistribution of OpenRAL or of RealMan's code — the license-ambiguity risk
+CLAUDE.md §1.9 guards against (a public, uniformly-Apache-2.0 release)
+does not bind an internal research fork the same way, and vendoring the
+ready-made RM75 MoveIt2 config is substantially less work than deriving
+one from the USD asset. This is an explicit, recorded exception to §1.9 for
+this fork, not a silent bypass — if any part of this fork is later
+upstreamed or published standalone, the vendored `rm_description`/
+`rm_75_config` content must be revisited first (either replaced with the
+clean-room USD-derived version above, or cleared with RealMan directly).
+
+### F32 — Item 5 (Nav2) built: a real `twist_to_action` relay closes the gap `MobileBaseBridge` names; found a prior ADR that argues the opposite for `panda_mobile` — needs a human call before merging
+
+Built directly (not delegated — safety-path-adjacent):
+`packages/openral_nav2_bringup/openral_nav2_bringup/twist_to_action_relay_node.py`,
+wired into `nav2.launch.py` behind a new `cmd_vel_relay` arg (default on),
+plus a `pointcloud_to_laserscan` node
+(`/openral/lidar/points` → `/scan`, blocked on `apt install
+ros-humble-pointcloud-to-laserscan` — not installed on this host, no
+passwordless sudo available to this session, user needs to run it). Added
+`robots/lunar_bot/robot.yaml`'s missing `footprint_radius` (0.82 m,
+computed from `lunarbot.py`'s real wheel_positions/wheel_radius, not
+invented — farthest wheel centre 0.6749 m + wheel_radius 0.1453 m) and
+`base_kinematics: "differential"` (the commanded space really is `(v,
+omega)` only — `FourWheelSteerAction.action_dim == 2` — despite the
+independent-steering wheels). `RobotDescription.nav2_param_overrides()`
+verified loading correctly against the updated manifest
+(`robot_radius=0.82`, `inflation_radius=0.870`, `motion_model=DiffDrive`).
+
+The relay itself: found `openral_hal.mobile_base_bridge.MobileBaseBridge`
+already exists and already names the missing piece verbatim in its own
+docstring — "run an external `twist_to_action` relay onto
+`/openral/candidate_action` for the supervised path" — but that bridge
+only attaches when a manifest declares `base_joints` (virtual x/y/yaw
+planar joints), which LunarBot's real 4WIS/4WID chassis does not and
+should not declare. So today LunarBot has *no* `/cmd_vel` path in either
+direction — not the bypass, not a supervised one. The new node fills
+exactly that gap: subscribes `/cmd_vel`, wraps each `Twist` as a
+`BODY_TWIST` `Action` (identical field mapping to
+`MobileBaseBridge._on_cmd_vel`), and publishes it through
+`openral_runner.ROSPublishingHAL` (the same serialiser every other
+candidate_action producer uses) so it is checked by the kernel like any
+rSkill action. It self-disables — logs why, stays idle — for any robot
+that *does* declare `base_joints` (`MobileBaseBridge` already owns that
+case; running both would double-actuate every Nav2 command) or that omits
+`body_twist` from `supported_control_modes`. Offline-verified: manifest
+loads, `Action` construction matches the field mapping exactly, both
+changed files byte-compile.
+
+**Real tension found, not resolved unilaterally.** Item 6's fork
+independently surfaced `docs/architecture/repo-state-map.html`'s Nav2
+entry while researching an unrelated question: **ADR-0040 (corrected by
+ADR-0099, private `OpenRAL/management` log)** records that `panda_mobile`'s
+`/cmd_vel` deliberately bypasses the kernel — *even though that robot does
+advertise `body_twist`* — with a stated architecture: Nav2's 2-D costmap
+owns base-vs-environment avoidance, the kernel's 3-D octomap bridge owns
+arm+payload collision, and the kernel's only authority over base motion is
+a coarse spherical E-stop backstop (r=1.05 m), not fine avoidance. CLAUDE.md
+requires a decision recorded in that same private log *before* crossing a
+layer boundary like this one — which I cannot write to from here.
+
+Read that ADR text directly (not just the paraphrase) before deciding
+whether to proceed, and I think LunarBot's situation is genuinely
+different rather than a re-litigation of the same question: (1)
+`MobileBaseBridge`'s bypass mechanism structurally cannot attach to
+LunarBot at all (no `base_joints`) — so the real choice here was never
+"kernel-routed vs. bypass" the way it was for `panda_mobile`, it was
+"kernel-routed vs. *no path at all*"; (2) the kernel-side check this adds
+is a velocity-magnitude cap (`max_base_linear_speed_m_s` /
+`max_base_angular_speed_rad_s`, already enforced for BODY_TWIST since
+F12/F16), not a 2-D obstacle check — it does not touch, replace, or
+weaken Nav2's own costmap-based avoidance, which stays the base's
+collision authority exactly as ADR-0099 intends; (3) `execution_plan.md`
+§8.3 item 5, dated the same day as this session, explicitly specifies
+"`/cmd_vel` routed through the kernel so the kernel bounds Nav2" for this
+robot — the current, standing plan already calls for this, not a
+guess on my part. None of that makes the ADR's reasoning wrong for
+`panda_mobile`, and I'm not overriding it there (its bypass is untouched).
+But I'm also not the right authority to certify this crosses that boundary
+safely on my own say-so, per CLAUDE.md's own rule — **flagging for the
+user / safety-WG to confirm before this is merged out of the
+`feat/lunar-bot-capability-set` branch**, not merging it as settled.
+
+**Resolved (user, 2026-09-14):** route through the kernel, don't bypass
+it — "规范的开发... 不要削弱nav2的避障" (standard/proper development; must
+not weaken Nav2's own avoidance). Matches this branch's design as built:
+the kernel-side addition is a velocity-magnitude cap only
+(already-enforced BODY_TWIST envelope, F12/F16) layered on top of, not a
+replacement for, Nav2's own costmap-based 2-D avoidance — Nav2's
+`controller_server`/costmaps/`payload_scan_filter_node` path is untouched
+by this change. `feat/lunar-bot-nav2-cmd-vel-relay` merged into
+`feat/lunar-bot-capability-set`. `ros-humble-pointcloud-to-laserscan`
+installed by the user — item 5's `/openral/lidar/points → /scan` half is
+now unblocked too. Live verification (both item 5 and item 6, plus item
+7 standalone) next, against one running `openral deploy sim` graph.
+
+### F33 — Live verification pass on items 5/6/7: real bugs found + fixed, item 6 surfaced a genuine open question, item 5 confirmed correct but blocked on a pre-existing gap (F17) for full motion proof
+
+All three merged into `feat/lunar-bot-capability-set` and built (`just
+ros2-build`, 30 packages; `Justfile` was also missing `openral_hal_lunar_bot`
+from both package-select lists — pre-existing gap, fixed alongside the two
+new item-6 packages). `openral check` passes (22 robots, 59 rSkills, 67
+scenes). Live-verified against a real `openral deploy sim
+--config scenes/deploy/srb_panel_remount.yaml` graph, ROS_DOMAIN_ID=77.
+
+**Real bug found + fixed**: `_pointcloud_to_laserscan_nodes` was written but
+never called from `_nav2_include_with_robot_overrides` — dead code, no
+`pointcloud_to_laserscan` launch arg wired in. Fixed (added the arg +
+the `actions.extend(...)` call, mirroring `payload_scan_filter`'s pattern).
+
+**Item 7 — fully live-verified.** `mission_verifier.node` run against the
+graph: `/space_harness/verifier_events` publishes real `VerifierEvent`s at
+~10 Hz from actual `/tf` (`holds: false`, correct — nothing had moved the
+panel), zero errors/warnings over the observation window.
+
+**Item 5 — the relay itself is provably correct; full drive-the-robot
+proof is blocked on a pre-existing gap, not a defect in this work.**
+`/openral/lidar/points → /scan` verified flowing at 7-11 Hz once a
+process-management mistake was cleaned up (see below). Direct proof the
+relay does exactly what it's supposed to: published `geometry_msgs/Twist`
+manually on `/cmd_vel`, then read `/openral/candidate_action` — arrived as
+`control_mode: 7 (BODY_TWIST), flat: [0.2, 0, 0, 0, 0, 0], frame_id:
+chassis_base_link` (exact expected encoding) — then read
+`/openral/safe_action` — the SAME chunk, meaning **the kernel received,
+evaluated, and approved it** (0.2 m/s is inside the 0.3 m/s envelope). The
+full candidate_action → kernel → safe_action path the relay exists to put
+Nav2's `/cmd_vel` onto is real and working. What did NOT happen: the robot
+did not physically move (`/srb/env0/action/cmd_vel` — SRB's native input —
+received nothing). Root-caused, not left as a mystery: an earlier live
+test (item 6's MoveIt dispatch, next finding) latched a real E-stop, and
+`/openral/estop_reset` + publishing `/openral/estop_cleared` cleared the
+**kernel's own** latch (`safety_status.latched` confirmed `false`
+afterward) but not `openral_hal_lunar_bot`'s own separate `_estopped` flag
+(`openral_hal.estop_received; ignoring further commands until reset` never
+followed by a matching clear log) — this is F17, already documented
+("`estop_reset` doesn't clear other latched nodes"), not something this
+session's changes caused or need to fix. A from-cold relaunch (no prior
+E-stop in the graph's history) is the clean way to get the final
+robot-actually-moves proof; queued as the very next step, not skipped.
+
+**Item 6 — proved the full new mechanism works (goal → MoveIt plan →
+JOINT_POSITION chunks → kernel-checked replay), and the kernel legitimately
+caught something — root cause not yet isolated, flagging honestly rather
+than declaring done.** `rskill-moveit-multi-eef_pose` dispatched against
+`lunar_bot` (`group_name: rm_group`, `link_name: Link7`,
+`frame_id: chassis_base_link`, target `[0.4, 0, 0.6]`) via
+`/openral/execute_rskill`: goal accepted, MoveIt (`move_group`, brought up
+separately via `rm_75_config`'s `move_group.launch.py` — this is NOT
+launched by `openral deploy sim` today, a real gap to wire in later, see
+below) planned successfully and the runner began replaying waypoints
+(feedback showed `chunk_index: 1`, then `2`) — then the kernel latched:
+`safety_status: kind_workspace (joint_position)`. Two credible
+explanations, not yet distinguished: (a) `[0.4, 0, 0.6]` in
+`chassis_base_link` is not actually reachable within the RM-75's real joint
+limits from that base height, so MoveIt's IK solution legitimately clips a
+limit MoveIt itself should also be enforcing (its SRDF limits were
+tightened to match `robot.yaml`/F22 bit-for-bit, so this would mean a
+planner-vs-kernel disagreement worth its own investigation); (b) a
+joint-name/order mismatch between the generic trajectory→JOINT_POSITION
+bridge's row layout and the kernel's per-joint limit table for this
+specific robot's 21-wide padded vector (F20's convention). The generic
+bridge itself was independently confirmed already used correctly by
+`franka_panda`/etc., which argues against (b) as a *generic* bug, but
+doesn't rule out an `rm75`/lunar_bot-specific interaction. Next step: rerun
+with a joint-space target close to the already-verified stow pose (item 3)
+to isolate reachability from the bridge — deferred, not skipped, to keep
+this pass to one decisive follow-up rather than open-ended pose-guessing
+(project convention: think, then one decisive test).
+
+**Also found + fixed along the way (process hygiene, not code):** running
+companion processes (`sensor_bridge_node.py`, `pointcloud_to_laserscan_node`)
+via `ros2 run` in a backgrounded `nohup` and then `kill`-ing the wrapper PID
+left the actual child alive — ended up with 2-3 duplicate publishers per
+topic, which is what caused the first round of `TF_OLD_DATA` /
+"message timestamp earlier than all cached data" failures (two sources
+broadcasting the same frames on inconsistent clocks), not a real bug in
+either node. Fixed by invoking the real executable directly (or `pkill -f`
+by full command line, and verifying with `ps aux` before/after) instead of
+backgrounding the `ros2 run` wrapper. Also: neither companion node defaults
+`use_sim_time` — both need `-p use_sim_time:=true` explicitly or their
+timestamps silently drift from the graph's `/clock`, which also manifests
+as `TF_OLD_DATA`/message-filter drops that look like a TF-tree bug but
+aren't.
+
+**Not yet done, not glossed over:** `sensor_bridge_node.py` and
+`move_group.launch.py` are still standalone companion processes, not part
+of `deploy_e2e.launch.py` (same pre-existing gap item 2's write-up already
+flagged for the sensor bridge; move_group needs the same treatment,
+new).
+
+**Item 5 follow-up, on a fresh graph (no prior E-stop history) — full
+motion proof obtained.** Relaunched `openral deploy sim` clean;
+`safety_status` confirmed `latched: false, detail: "kernel activated"`
+before touching anything. Recorded `srb/world -> srb/env0/robot` via
+`tf2_echo`: `[0.178, 0.052, 0.636]`. Published `linear.x=0.2` on `/cmd_vel`
+for 5 s. After: `[-0.293, -0.326, -0.005]` — the robot physically moved
+(~0.6 m net displacement, some z/orientation drift consistent with real
+terrain contact and the known wheel-scrub imprecision F19 already
+documented, not alarming) — and `safety_status` stayed `latched: false`
+throughout. This is the decisive proof item 5 needed: `/cmd_vel` really
+drives the robot through the full kernel-checked path end to end.
+
+**Item 6 follow-up — the joint-position kernel rejection is reproducible
+and NOT a reachability issue; root cause still open.** Relaunched
+`move_group` on the same fresh graph, then dispatched
+`rskill-moveit-multi-joints` (not `eef_pose` this time — eliminates IK
+entirely) with a target one small step from the already-live-verified stow
+pose (item 3): `[0.0, -0.5, 0.0, 1.2, 0.0, 0.6, 0.0]` vs. stow's
+`[0.0, -0.6, 0.0, 1.2, 0.0, 0.6, 0.0]` — trivially reachable, nowhere near
+any joint's declared limit. **Same failure, at the identical point**:
+`chunk_index: 1` then `2` succeed, then the kernel latches
+`kind_workspace (joint_position)` "while about to dispatch inference tick
+3" — matching the earlier `eef_pose` run's failure exactly (also stopped
+right before tick 3), despite a completely different target pose. Reaching
+the same failure point with an unreachable-ruled-out target argues
+strongly against explanation (a) from the first entry (bad Cartesian
+target) and FOR (b): something in the trajectory→JOINT_POSITION bridge's
+per-waypoint handling, or in how the kernel's per-joint envelope is
+applied to lunar_bot's 21-wide zero-padded vector (F20), goes wrong
+starting at a specific waypoint index — not something this session
+resolved. **Left open, honestly, not declared fixed**: next step is
+reading the actual `flat` values the runner published for chunk 3
+specifically (via the OTel trace or a `candidate_action` capture timed to
+the goal) rather than guessing further poses.
+
+A from-cold relaunch already happened for both follow-ups above — nothing
+here is deferred for lack of trying; item 6's remaining root cause is
+deferred because isolating it needs a different tool (trace inspection)
+than "try another pose," not more live-dispatch attempts.
