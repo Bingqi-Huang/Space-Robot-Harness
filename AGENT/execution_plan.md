@@ -841,6 +841,23 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
    silently get no render pipeline without a code fix; `isaacsim.sensors.rtx`
    also needs adding to SRB's `.kit` experience files (absent from all of
    them today, confirmed by grep).
+
+   **Status 2026-09-14, implementation attempted same day:** items 1-3 of
+   the ordered plan done and committed (`.kit` files, the `__main__.py`
+   gating fix, and `srb/core/sensor/rtx_lidar.py` — the Mid-360
+   scan-pattern-window + custom-prim-authoring mechanism, live-verified
+   working). **Blocked on a confirmed upstream Isaac Sim bug**, not
+   anything in this codebase: RTX Lidar annotators return empty data in
+   headless mode on our pinned `5.1.0-rc.19` build — reproduced
+   identically with the custom sensor and an official whitelisted one,
+   across six different render-advance mechanisms, matching
+   isaac-sim/IsaacSim#110 (open) and an NVIDIA-confirmed-fixed-in-5.1.0-GA
+   forum report (we have the RC, not GA). See
+   `docs/rtx_lidar_integration_plan.md`'s Status section for the full
+   verification trail. Not wired into `srb/core/env/mobile/env.py` as the
+   active sensor; RayCaster stays active. F24 in
+   `docs/research_findings.md`. Next: re-verify after moving off the RC
+   build.
 3. **Procedural manipulation rSkills** (`kind: procedural`, tag `lunar_bot`):
    `move_joints`, `move_ee_to_pose`, `grasp`, `release`, `stow`. Each is a
    real closed loop on OpenRAL world state / TF, emits through the kernel,

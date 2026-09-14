@@ -8,6 +8,53 @@ implementation to discover) has been resolved and is stated as fact with a
 source, not hedged. Items that can only be settled by actually building the
 thing are marked as such explicitly in §9 and nowhere else.
 
+## Status (2026-09-14, implementation attempted the same day)
+
+`srb/core/sensor/rtx_lidar.py` implements and **live-verifies** §3-§7 of
+this plan: loading the real Mid-360 scan pattern
+(`srb/core/sensor/data/livox_mid360_scan_pattern.npz`, from Livox's own
+`livox_laser_simulation`), slicing it into the same sequential
+24,000-point wrapping windows the real hardware/plugin uses, building the
+`omni:sensor:Core:*` emitter-array kwargs, and authoring a custom
+`OmniLidar` prim through the fully-ungated `rep.functional.create.omni_lidar`
+path — confirmed live: correct schema applied, all attribute values
+(including the full 24,000-element arrays) round-trip exactly as
+authored.
+
+**Blocked, not by this code: pulling live point-cloud data through the
+sensor.** This is a confirmed upstream Isaac Sim bug, not an SRB or
+implementation defect — reproduced identically with both the custom
+Mid-360 sensor above AND an official whitelisted reference sensor
+(`HESAI_XT32_SD10`, created the fully-supported way), across six different
+render-advance mechanisms (bare `simulation_app.update()`,
+`SimulationContext.step()`, the async `next_render_simulation_async`
+matching Isaac Sim's own official test suite, and the purpose-built
+synchronous `rep.orchestrator.step()`) and the two documented headless
+workarounds from Isaac Sim's own Known Issues page
+(`rt_subframes>=2`, `--/exts/isaacsim.core.throttling/enable_async=false`).
+In every case, `/Render/PostProcess/SDGPipeline/PostProcessDispatcher`
+never advances past reference time 0/0. Matches
+[isaac-sim/IsaacSim#110](https://github.com/isaac-sim/IsaacSim/issues/110)
+("Cannot retrieve RTX lidar data using headless Python script", still open)
+and an [NVIDIA forum
+thread](https://forums.developer.nvidia.com/t/unable-to-reliably-produce-lidar-data-in-a-headless-simulation/337835)
+reporting the identical symptom, where an NVIDIA moderator stated (2025-09-24)
+the issue "has been fixed in Isaac Sim 5.1.0" — but our pinned build is
+`5.1.0-rc.19` (`~/Programs/isaac-sim/VERSION`), a release-candidate
+snapshot, not the GA release the fix shipped in.
+
+**Consequence for `srb/core/env/mobile/env.py`**: not wired in as the
+active `lidar_robot` sensor. RayCaster remains the active implementation
+(unchanged, still working, per `docs/research_findings.md` F23). Wiring
+`rtx_lidar.py`'s sensor into the env lifecycle and `ros.py`'s publishing
+loop (§9) is real remaining work, but doing it now would mean shipping and
+testing an env-integration layer against a data source confirmed broken
+at the source — not a productive use of effort until the Isaac Sim build
+is updated. **Next step, concretely: re-run this same live verification
+(a self-contained repro is in this session's scratchpad, not committed —
+recreate from `srb/core/sensor/rtx_lidar.py` + the six-mechanism list
+above) after moving off the `5.1.0-rc.19` build.**
+
 This project is **imitation learning, not RL** — no `num_envs` parallelism
 requirement — which is the load-bearing fact behind this plan: it removes
 the reason IsaacLab's own team gave for *not* wrapping RTX Lidar (see §2),

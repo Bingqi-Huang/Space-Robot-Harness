@@ -485,3 +485,38 @@ existing camera mast (single-point, medium confidence) rather than the
 mismatched wheel geometry. Source: this session's CAD-extraction pass
 (`mid360_mount_result.json` in that session's scratchpad, not committed to
 the repo).
+
+### F24 — RTX Lidar produces no data in headless mode on our pinned Isaac Sim build (confirmed upstream bug)
+
+Found 2026-09-14 implementing `srb/core/sensor/rtx_lidar.py` (Mid-360 RTX
+Lidar, per `docs/rtx_lidar_integration_plan.md`). The sensor-authoring
+mechanism itself is verified correct and working: a custom `OmniLidar`
+prim with the real 24,000-point Mid-360 scan-pattern window (from Livox's
+own `livox_laser_simulation` data) is created, schema applied, all
+attribute values round-trip exactly. Pulling live point-cloud data through
+it does not work: `/Render/PostProcess/SDGPipeline/PostProcessDispatcher`
+never advances past reference time 0/0, reproduced identically with (a)
+the custom Mid-360 sensor and (b) an official whitelisted reference sensor
+(`HESAI_XT32_SD10`, created the fully-supported way — ruling out anything
+specific to a custom sensor), across six different render-advance
+mechanisms tried (bare `simulation_app.update()`, `SimulationContext.
+step()`, the async `next_render_simulation_async` matching Isaac Sim's own
+official `isaacsim.sensors.rtx` test suite, and the synchronous
+`rep.orchestrator.step()` purpose-built for standalone scripts), plus the
+two documented headless workarounds from Isaac Sim's own Known Issues page
+(`rt_subframes>=2`, `--/exts/isaacsim.core.throttling/enable_async=false`).
+Matches a still-open upstream report,
+[isaac-sim/IsaacSim#110](https://github.com/isaac-sim/IsaacSim/issues/110)
+("Cannot retrieve RTX lidar data using headless Python script"), and an
+[NVIDIA forum thread](https://forums.developer.nvidia.com/t/unable-to-reliably-produce-lidar-data-in-a-headless-simulation/337835)
+reporting the identical symptom where a moderator stated (2025-09-24) the
+issue was fixed in Isaac Sim 5.1.0 — but our pinned install
+(`~/Programs/isaac-sim/VERSION`) is `5.1.0-rc.19`, a release-candidate
+snapshot predating that GA fix, not the release it shipped in. **Not an
+SRB or implementation defect** — do not re-attempt fixing this in SRB
+code; re-verify after the Isaac Sim install moves off the RC build.
+Consequence: `rtx_lidar.py` exists and is correct but is not wired into
+`srb/core/env/mobile/env.py`'s active sensor path; RayCaster (F23) remains
+the active `lidar_robot` implementation. Source: this session's six-way
+reproduction (scratchpad, not committed) plus
+`docs/rtx_lidar_integration_plan.md`'s Status section.
