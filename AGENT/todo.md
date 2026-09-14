@@ -54,9 +54,12 @@ in `docs/research_findings.md` F19–F38, this is the compressed index:
       ticks correctly decomposed a 2-step instruction, picked a real skill
       with sound rationale, never double-dispatched. 2 bugs found+fixed
       (gateway needs `tool_choice="auto"` → new `OPENRAL_REASONER_TOOL_CHOICE`
-      env; host SOCKS proxy crashed the client). **Physical completion
-      pending** on the chosen skill's one-time VLA cold-start download —
-      not a defect, left running in background, not reattempted.
+      env; host SOCKS proxy crashed the client). **Physical two-step
+      completion not reached this session** — the chosen skill's one-time
+      VLA cold-start download (11+ GB, still going after ~15 min) was
+      deliberately torn down to free the shared GPU for Phase C's
+      visual-check pass rather than left contending for it — not a
+      defect, not reattempted; next attempt starts warmer (venv cached).
 
 **F20** (JOINT_* wire row full-width) found+fixed during item-3 prep.
 

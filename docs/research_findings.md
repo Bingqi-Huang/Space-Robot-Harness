@@ -1646,16 +1646,21 @@ busywork), the VLN skill's physical completion was still pending — its
 out-of-process sidecar's first-ever use on this host triggered a genuine
 cold start (a `uv pip install` of the full torch/transformers/diffusers
 stack, ~7 GB, followed by a multi-GB model checkpoint download from
-HuggingFace, observed still growing past 2.3 GB after several minutes).
+HuggingFace, still growing past 11 GB / 178+ ticks after ~15 minutes).
 Judged not worth blocking on further: this is a one-time infrastructure
 cost orthogonal to what B3 is actually testing (does the reasoner compose
 and dispatch multi-step missions correctly through the real safety path —
 yes, repeatedly demonstrated), and would not recur on a second run (venv
-+ weights now cached). Left running in the background rather than torn
-down; if it completes, the coordinator will capture the final outcome
-as a postscript rather than re-running the whole test. **B3's reasoning
--level exit condition is met; full physical two-step completion is
-pending on this one cold-start, not reattempted from scratch.**
++ whatever weights finished downloading are now cached). Initially left
+running in the background; then, once Phase C's scene work (below) was
+ready and waiting on the same single-GPU host, the whole B3 instance
+(including the sidecar) was deliberately torn down to free the GPU for
+that live-verification pass rather than let two purposes contend for it
+— a from-scratch B3 re-run, if wanted, starts warmer next time (venv +
+partial download already cached) but was not re-attempted this session.
+**B3's reasoning-level exit condition is met; full physical two-step
+completion was not reached this session — deliberately deprioritized
+behind Phase C's GPU need, not abandoned.**
 
 ### F39 — Phase C scene (`panel_remount_v2`) live-verified: real spawn, stable physics, real rendered frames inspected — no floating/clipping, matches offline geometry
 
