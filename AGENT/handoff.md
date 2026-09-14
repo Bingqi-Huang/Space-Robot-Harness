@@ -34,10 +34,16 @@ filled in, new §8.3, §9.1, Phase B split B1/B2/B3, §21 reordered). The
 capability-set design and reuse survey is `docs/lunar_bot_capability_set_plan.md`;
 the task list is in `todo.md`. Item 1 (RM-75 limits, F22) is done on
 `openral/feat/lunar-bot-capability-set` @ `f7b5ccd`; items 2–9 not started.
-**Open questions for the user** (plan doc §4): does the real LunarBot have
-a lidar; keep MoveIt in scope; confirm no `openral deploy sim` SRB backend.
-The user separates planning rounds from coding rounds — wait for an
-explicit go before building item 2.
+Decisions received 2026-09-14: the real LunarBot has a **Livox Mid-360**
+(another agent adds it to `lunarbot.py` in the SRB fork — do not touch
+that file concurrently; interface contract in
+`docs/srb_deploy_backend_plan.md` §5); **MoveIt stays, required**; an
+**SRB backend for `openral deploy sim` is to be built** — executable plan
+in `docs/srb_deploy_backend_plan.md` (ROS-attached: migrate the isaacsim
+backend's process-lifecycle/provision discipline, keep SRB's native ROS
+data plane; `DeployScene.simulator` schema, `openral_sim.backends.srb`,
+launch spawn/gate, `lunar_bot` HAL-registry entry, scene YAML). The user
+separates planning rounds from coding rounds — wait for an explicit go.
 
 Also open: F19 (base `cmd_vel` in-place-rotation instability — probably
 don't rely on it for precise heading control yet), no arm joint position

@@ -173,16 +173,12 @@ before Nav2, whose controllers assume `cmd_vel` is tracked faithfully.
 
 ### 3.5 Navigation
 
-- **Costmap source.** LunarBot declares `has_lidar: false`; the simulated
-  model has a front RGB-D only. Two options — **open question for the
-  user**: (a) if the real LunarBot carries a lidar, add a matching
-  `RayCaster` sensor to `lunarbot.py` and use Nav2's `lidar` profile via
-  `/scan`; (b) otherwise use the `visual` profile with `/map` produced by
-  `octomap_server` from `/openral/cameras/front_depth/points`
-  (`octomap_server` publishes `projected_map` — remap to `/map`; TF
-  `map ← front_camera_optical_frame` resolves through the bridge). Option
-  (b) needs no new simulated sensor and matches the real robot's RGB-D.
-  Default is (b) unless told the real robot has a lidar.
+- **Costmap source — decided 2026-09-14: lidar.** The real LunarBot
+  carries a Livox Mid-360; another agent adds it to `lunarbot.py` in the
+  SRB fork (this project does not touch that file concurrently). The
+  interface contract and the Nav2 wiring (`has_lidar: true`, lidar profile,
+  `pointcloud_to_laserscan` for `/scan`, full cloud into the voxel layer)
+  are in `docs/srb_deploy_backend_plan.md` §5.
 - **`/cmd_vel` through the kernel.** Upstream's Nav2 manifest and
   `MobileBaseBridge` both let Nav2 write the base directly, bypassing the
   supervisor. For this paper (§10.1: never bypass safety) a
@@ -222,20 +218,12 @@ the task's own success check (panel within 0.1 m / ~51° of the mount pose)
 plus "panel is/is not grasped" (TCP–panel distance + gripper state).
 Deterministic, no learned component.
 
-### 3.8 Launch orchestration + run artifacts (this repo, `experiments/`)
+### 3.8 Launch orchestration — superseded (2026-09-14)
 
-`openral deploy sim` cannot target SRB (`SceneBackend` has no `srb`
-variant — adding one is real `openral_sim` engineering and is *not*
-planned). Instead one ROS 2 launch file in this repo brings up, in order:
-safety kernel (params generated from `robot.yaml` via
-`kernel_params_from_envelope`) → LunarBot HAL → sensor bridge →
-world state → detector / scene VLM → rskill runner → prompt router →
-reasoner; SRB itself is launched separately (`srb agent ros --env
-panel_remount_visual env.robot=lunar_bot --headless`) because it needs
-the conda-free, `PYTHONPATH`-free environment (`docs/srb_integration_notes.md`).
-A `run_manifest.yaml` writer records both submodule commits, seeds, model
-config, mission text, and the OTel/rosbag locations (§19). Every
-baseline uses this same launch with a different reasoner/runtime config.
+User decision: build a real SRB backend for `openral deploy sim` instead
+of a launch file in this repo. Design and executable plan:
+`docs/srb_deploy_backend_plan.md`. Only the §19 run-manifest writer stays
+in this repository, wrapping `openral deploy sim`.
 
 ### 3.9 Remaining kernel magnitude checks
 
@@ -245,23 +233,23 @@ Python stub. The LunarBot HAL cannot be asked to emit the first two
 today, but MoveIt (3.6) will emit joint trajectories, so at least
 `kJointTrajectory` must be closed the way F12/F16 were before 3.6 lands.
 
-## 4. Open questions for the user
+## 4. Decisions received (2026-09-14)
 
-1. Does the physical LunarBot carry a lidar? (Decides 3.5's costmap source.)
-2. MoveIt (3.6): keep it in scope after the procedural skills, or drop it
-   if the procedural IK skills prove sufficient for Mission A v2? The
-   paper's §6.4 lists "manipulation planning *or* a learned policy", so
-   it is optional in principle; I recommend keeping it as the
-   capability-substitution case.
-3. `openral deploy sim` support for SRB is deliberately *not* planned
-   (launch lives in this repo). Confirm.
+1. Lidar: yes, Livox Mid-360; added on the SRB side by another agent
+   (contract in `docs/srb_deploy_backend_plan.md` §5).
+2. MoveIt: stays in scope; required.
+3. SRB backend for `openral deploy sim`: build it
+   (`docs/srb_deploy_backend_plan.md`).
 
-## 5. Suggested branch layout for the coding rounds
+## 5. Branch layout for the coding rounds
 
 - `openral`: `feat/lunar-bot-capability-set` (created; carries 3.1) —
-  sensor bridge, procedural skills, cmd_vel relay, kernel checks, manifest.
+  sensor bridge, procedural skills, cmd_vel relay, kernel checks,
+  manifest; `feat/srb-deploy-backend` for the deploy backend (schema +
+  `openral_sim` backend + launch + registry entry).
 - `space_robotics_bench`: `feat/four-wheel-steer-alignment` (F19 fix) and
-  `feat/panel-remount-visual-config` (camera resolution/depth), stacked on
-  `feat/switchable-arm-control`.
-- research repo: `experiments/launch/`, `experiments/manifests/`,
+  `feat/panel-remount-visual-config` (camera resolution/depth, only if
+  Hydra overrides do not suffice), stacked on `feat/switchable-arm-control`;
+  the Mid-360 branch belongs to the other agent.
+- research repo: `experiments/manifests/` (run-manifest writer),
   `verifiers/`.

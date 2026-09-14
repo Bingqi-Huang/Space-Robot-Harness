@@ -83,19 +83,25 @@ Design + reuse survey: `docs/lunar_bot_capability_set_plan.md`. Branch
 
 - [x] 1. RM-75 limits in `robot.yaml` (`f7b5ccd`, F22) — kernel rejects
       out-of-range JOINT_POSITION live.
-- [ ] 2. Sensor bridge: SRB cameras/depth/IMU/truth pose → `/openral/cameras/*`,
-      `/odom`, `map→odom→chassis_base_link` TF; `sensors:` in manifest;
-      `panel_remount_visual` needs ≥640×480 + depth on `cam_front`.
+- [ ] 2. Sensor bridge: SRB cameras/depth/IMU/Mid-360/truth pose →
+      `/openral/cameras/*`, `/odom`, `map→odom→chassis_base_link` TF;
+      `sensors:` in manifest; `panel_remount_visual` needs ≥640×480 + depth.
+- [ ] 2b. SRB backend for `openral deploy sim` —
+      `docs/srb_deploy_backend_plan.md` (schema `DeployScene.simulator`,
+      `openral_sim.backends.srb`, launch spawn/gate, HAL registry entry,
+      `scenes/deploy/srb_panel_remount.yaml`). User decision 2026-09-14.
 - [ ] 3. Procedural rSkills `move_joints` / `move_ee_to_pose` / `grasp` /
       `release` / `stow` (tag `lunar_bot`); scripted remount closes the loop.
 - [ ] 4. F19 fix in SRB `FourWheelSteer` (drive ∝ cos(steer error)).
-- [ ] 5. Nav2 via `openral_nav2_bringup`; costmap source = RGB-D →
-      `octomap_server` `/map` unless the real robot has a lidar (**ask**);
+- [ ] 5. Nav2 lidar profile on the Mid-360 (SRB side: other agent;
+      contract in the backend plan §5); `pointcloud_to_laserscan` apt;
       `/cmd_vel → candidate_action` relay so the kernel bounds Nav2.
-- [ ] 6. MoveIt for RM-75 (license check on RealMan `ros2_rm_robot` first).
+- [ ] 6. MoveIt for RM-75 — required (license check on `ros2_rm_robot` first).
 - [ ] 7. Mission verifier node (this repo) on simulator truth.
-- [ ] 8. Launch orchestration + §19 run-manifest writer (this repo).
+- [ ] 8. §19 run-manifest writer wrapping `openral deploy sim` (this repo).
 - [ ] 9. Remaining kernel magnitude checks (`kJointTrajectory` first).
+- **Coordination**: another agent is adding the Mid-360 to `lunarbot.py` in
+  the SRB fork — do not edit that file until their branch lands.
 - [ ] B3: reasoner-in-the-loop two-step run with full trace = Phase B exit.
 
 A scripted pick-and-place feasibility check against `panel_remount` (run

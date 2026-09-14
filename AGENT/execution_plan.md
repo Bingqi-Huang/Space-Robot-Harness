@@ -788,15 +788,25 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
 1. **RM-75 limits** into `robot.yaml` (`position_limits`, `can_lift_kg`),
    kernel envelope regenerated; a JOINT_POSITION target outside the range
    must be rejected live.
-2. **Sensor bridge** — front RGB-D + wrist RGB + IMU + joint states + truth
-   pose from SRB into OpenRAL conventions: `sensors:` block in `robot.yaml`;
-   a relay in `openral_hal_lunar_bot` (or a sibling `openral_sensors_lunar_bot`
-   node) publishing `/openral/cameras/<name>/{image,camera_info}`,
+2. **Sensor bridge** — front RGB-D + wrist RGB + IMU + Mid-360 lidar +
+   joint states + truth pose from SRB into OpenRAL conventions: `sensors:`
+   block in `robot.yaml`; a relay in `openral_hal_lunar_bot` publishing
+   `/openral/cameras/<name>/{image,camera_info}`,
    `/openral/cameras/front_depth/points`, `/joint_states`, `/odom`, and the
    `map → odom → base_link` TF chain (in sim, `map→odom` is identity and
    `odom→base_link` is SRB's `srb/env0/robot` truth — stated as such, not
    dressed up as SLAM). Verify: world state shows joints + a lifted 3-D
    object from a real detection of the panel.
+2b. **SRB backend for `openral deploy sim`** (`docs/srb_deploy_backend_plan.md`,
+   user decision 2026-09-14): `DeployScene.simulator` schema, `srb` scene
+   backend with a provision check, the launch spawns/gates/owns the SRB
+   process, `lunar_bot` registered in the deploy HAL table, a
+   `scenes/deploy/srb_panel_remount.yaml`. Migrates the isaacsim backend's
+   process-lifecycle/provision discipline; the data plane stays SRB's
+   native ROS interface. Verify: one `openral deploy sim … --initial-task`
+   command brings the whole graph up and a reasoner-dispatched
+   `body_twist` moves the base. Every later item is verified through this
+   path.
 3. **Procedural manipulation rSkills** (`kind: procedural`, tag `lunar_bot`):
    `move_joints`, `move_ee_to_pose`, `grasp`, `release`, `stow`. Each is a
    real closed loop on OpenRAL world state / TF, emits through the kernel,
@@ -810,22 +820,23 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
    speed while still swinging up to 90° (≈0.8 s at the steering joints'
    112°/s limit). Fix: scale drive velocity by `cos(steer error)`; verify
    with an in-place 90° turn.
-5. **Navigation** — Nav2 via `openral_nav2_bringup` with the costmap source
-   decided in §8.1; `/cmd_vel` routed through the kernel; `rskill-nav2-
-   navigate-to-pose` resolves for `lunar_bot`. Verify: a `map`-frame goal
-   3–4 m away is reached without touching the pedestal.
+5. **Navigation** — Nav2 via `openral_nav2_bringup`, lidar profile fed by
+   the Mid-360 that the SRB-side agent adds (`pointcloud_to_laserscan` for
+   `/scan`, full cloud into the voxel layer; `docs/srb_deploy_backend_plan.md`
+   §5); `/cmd_vel` routed through the kernel; `rskill-nav2-navigate-to-pose`
+   resolves for `lunar_bot`. Verify: a `map`-frame goal 3–4 m away is
+   reached without touching the pedestal.
 6. **MoveIt for RM-75** (after 3): config, trajectory→JOINT_POSITION bridge,
    moveit rSkills retagged. Verify: `moveit-eef-pose` to a pose above the
    panel through the kernel.
 7. **Mission verifier node** (this repo): reads `/tf` object poses,
    `/srb/env0/terminated`, reward terms; emits typed verifier events with
    evidence references (§4.4).
-8. **Launch orchestration + run artifacts** (this repo, `experiments/`):
-   one launch that brings up SRB-side HAL + sensor bridge + kernel + world
-   state + perception + rskill runner + prompt router + reasoner identically
-   for every baseline; a run-manifest writer producing the §19 directory
-   (git revisions of both submodules, seeds, model config, mission text,
-   OTel trace export, rosbag opt-in).
+8. **Run artifacts** (this repo, `experiments/manifests/`): a run-manifest
+   writer wrapping `openral deploy sim` (item 2b) that produces the §19
+   directory (git revisions of both submodules, scene YAML, seed, model
+   config, mission text, OTel trace export, rosbag opt-in). Launch
+   orchestration itself is item 2b, not a launch file here.
 9. **Remaining kernel magnitude checks** (§8.1 last row).
 
 **Exit condition for B2:** with the reasoner *in the loop* (`openral prompt
@@ -869,12 +880,12 @@ This becomes both a baseline and a diagnostic for what the new runtime actually 
 reasoner (`ReasonerCore`, `reasoner_node`), `MissionState` +
 `decompose_mission`, the tool palette, world state, the rSkill runner and
 the safety kernel are stock. What is *not* stock, and is shared identically
-by every baseline, is the LunarBot capability set (§8.3) and the launch
-orchestration — `openral deploy sim` has no SRB scene backend
-(`SceneBackend` is `mujoco`/`isaacsim` only), so the process graph is
-assembled by this repository's launch, and the mission text enters via
-`openral prompt --new-goal` → `/openral/prompt` → `MissionState.from_prompt`.
-Baseline B in the paper is described exactly this way. Nothing in the
+by every baseline, is the LunarBot capability set (§8.3) and the SRB
+deploy backend (§8.3 item 2b — `openral deploy sim` had no SRB scene
+backend; it gains one, so the process graph and the mission text
+(`--initial-task` → `initial_task_prompt` → `MissionState.from_prompt`)
+go through the standard CLI). Baseline B in the paper is described exactly
+this way. Nothing in the
 capability set may encode mission logic (no "remount panel" skill — only
 `grasp`, `move_ee_to_pose`, `navigate`, …), or the baseline comparison is
 contaminated.
