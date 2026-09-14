@@ -922,3 +922,18 @@ Python-level symbolication (fix py-spy's version detection for this build,
 or install `python3.11-dbg`-equivalent gdb hooks for Isaac Sim's bundled
 interpreter) rather than more blind native-stack sampling — the call sites
 matter more than another sample confirming the same three suspects.
+
+**One hypothesis tested and rejected**: CPU thread oversubscription from
+running SRB alongside the rest of the `deploy sim` graph (kernel/reasoner/
+runtime_node/HAL/prompt_router all concurrently on a 24-core host) was a
+plausible mechanism for the OpenMP-barrier-wait finding above. Tested
+directly: `OMP_NUM_THREADS=4` in `ExternalSimulatorSpec.env_set` (capping
+SRB's own OpenMP thread team well below core count) — `/clock` still ticked
+at ~0.42 Hz, no material change from the unconstrained ~0.36-0.38 Hz. This
+specific mechanism is therefore **not** the (sole) explanation; the three
+candidates above remain open, and blanket thread-count tuning is not a
+fix. Both the OpenMP-torch sample and this test are consistent with the
+tick rate being roughly the same magnitude whether or not SRB is
+thread-starved by contention — pointing back toward the `carb.profiler`
+global trace-hook candidate as relatively more likely, but still not
+confirmed.
