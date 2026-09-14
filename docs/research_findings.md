@@ -679,3 +679,89 @@ through the arm, per §3.2 item 1 — only `front`/`imu`/`lidar` frames were
 individually spot-checked with `tf2_echo`; the `_publish_sensor_frames` loop
 is identical code for all four, so this is a low-risk gap, not a known
 issue).
+
+### F26 — SRB backend for `openral deploy sim` built (item 2b): six-step plan implemented, one real bug found and fixed along the way
+
+Built all six steps of `docs/srb_deploy_backend_plan.md` §3 on `openral`
+`feat/lunar-bot-capability-set`: `ExternalSimulatorSpec` schema
+(`DeployScene.simulator`), the `srb` scene backend
+(`openral_sim.backends.srb` — registry membership + a `provision_srb` preflight
+check; `reset`/`step` deliberately raise, since SRB is never scene-attached
+for `lunar_bot`), the launch spawn + readiness gate
+(`deploy_e2e.launch.py` + `tools/lifecycle_autostart.py`), the
+`_ROBOT_HAL_REGISTRY["lunar_bot"]` entry (`bare_twin_sim=True`,
+`robot.yaml`'s `hal.sim` now points at the same `LunarBotSRBHAL` as
+`hal.real`), and `scenes/deploy/srb_panel_remount.yaml`.
+
+**Design simplifications found while implementing, not assumed going in**:
+reading `deploy_sim.py`'s HAL-construction code (`resolver.py::build_hal`)
+directly rather than inferring from the plan showed `bare_twin_sim=True`
+alone is sufficient — no new `_HalSpec` flag was needed (`external_sim` as
+originally planned in the design doc). And `_scene_backend_has_sim_clock`
+already includes `PhysicsBackend.ISAACSIM` in its sim-clock set, so
+declaring `scene: {backend: isaacsim}` (honest — SRB genuinely is Isaac Sim)
+resolves `clock_origin=simulation`/`use_sim_time=true` with **no code
+change** — and `ManifestHALLifecycleNode`'s existing `/clock` publisher
+already probes for `sim_time_ns` before claiming the role, so
+`LunarBotSRBHAL` (which has none) is silently skipped rather than fighting
+SRB's own real `/clock` — no new `publish_clock:=false` param was needed
+either. Two mechanisms the plan expected to build turned out to already
+exist.
+
+**Real bug found and fixed**: `resolve_launch_invocation`'s `deploy_config:=`
+forwarding was gated on `hal_mode == "real"` only — `openral deploy sim`
+never populates the (separate) `deploy_config` parameter that check reads,
+so `compose_runtime_graph` would never have seen `DeployScene.simulator` at
+all, silently dropping the entire SRB spawn + readiness gate. Fixed by also
+forwarding `--config` (the parameter `deploy sim` actually populates) when
+`hal_mode=="sim"` and the scene declares a `simulator:`. Caught by actually
+inspecting the resolved `argv:` (the dry-run's own printed summary), not by
+assuming the wiring worked because the code compiled — the CLI's dry-run
+output looked complete and correct even with the bug present, since the
+missing arg just makes the launch fall back to its empty-string default
+silently.
+
+**A gap deliberately deferred, not silently skipped**: the sensor bridge
+(item 2, F25) is not yet wired into `deploy_e2e.launch.py` — it still runs
+as a separate manual process. This launch file is robot-agnostic by design
+("one launch file for every robot"), so wiring it in needs a generic
+mechanism (e.g. a `_HalSpec` field naming an optional companion node), not
+a `robot_id == "lunar_bot"` branch — a real follow-up, not needed for this
+item's own exit condition (sensors aren't needed for a body_twist to move
+the base).
+
+**Verified live** (`--no-enable-slam --no-enable-nav2 --no-enable-octomap
+--no-dashboard`, `openral deploy sim --config
+scenes/deploy/srb_panel_remount.yaml`, this host, 2026-09-14) through the
+*entire* graph: `openral_deploy_sim_external_simulator` spawned SRB for
+real (Isaac Sim booted, extensions loaded); the HAL's `lifecycle_autostart`
+invocation carried exactly the expected `--wait-for-topic` args and
+genuinely blocked (did not attempt `configure`) while SRB was still
+booting; safety_kernel/runtime_node/reasoner_node/prompt_router_node/the
+HAL lifecycle node all started and shut down cleanly (kernel envelope
+synthesis from the manifest's new `position_limits` succeeded); the SRB
+preflight `provision_srb()` hook fired during the CLI's own preflight
+step; once SRB's topics appeared, the gate **passed** and the HAL reached
+ACTIVE (confirmed by its subsequent `read_state` polling, not just a log
+line). Shutdown (`SIGINT` to `ros2 launch`) correctly escalated to
+`SIGTERM` for the one slow-to-die child (SRB) after its 5 s grace period —
+`ros2 launch`'s own exact-PID process tracking, no pattern-kill needed.
+
+**Not yet verified — a real, load-dependent finding, not a code bug**: once
+ACTIVE, the HAL's `read_state` repeatedly logged `SRB joint state is ~2.5-2.7
+s old (limit 0.5 s)` for the several minutes this run was observed —
+consistently, not trending down (ruling out the one-time RTX shader-compile
+warmup `srb-native-install` documents) and not growing unboundedly (ruling
+out a dead subscription callback) — so SRB's own `/srb/env0/robot/
+joint_states` publish rate was genuinely ~0.35-0.4 Hz under this run's host
+conditions (`panel_remount_visual` renders 3 cameras at 640×480 RTX; this
+shared host may have had other concurrent load). `LunarBotSRBHAL`'s
+hardcoded `staleness_limit_s=0.5` (the same default every other HAL uses)
+assumes a much faster tick and would currently reject a `read_state()` call
+under this load, blocking a live body_twist dispatch from completing — this
+item's full stated exit condition (a reasoner-dispatched body_twist
+actually moving the base) was not reached in this session, though every
+individual piece of the wiring it depends on was. Follow-up: either widen
+`staleness_limit_s` for this HAL, investigate the render cost specifically,
+or re-verify on a quieter host / with the non-visual `panel_remount` task
+(no camera rendering) to isolate whether rendering is the actual cause.

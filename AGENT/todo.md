@@ -76,16 +76,18 @@ Design + reuse survey: `docs/lunar_bot_capability_set_plan.md`. Branch
       out-of-range JOINT_POSITION live.
 - [x] 2. Sensor bridge — `LunarBotSensorBridgeNode`
       (`openral_hal_lunar_bot.sensor_bridge_node`), F25. Relays SRB's
-      cameras/depth/IMU/lidar to `/openral/cameras/*`, `/openral/lidar/points`,
-      `/imu`; re-roots TF to `chassis_base_link`; publishes `/odom`.
-      `sensors:` + `has_lidar: true` in `robot.yaml`. Verified live against
-      `panel_remount_visual env.robot=lunar_bot` — every output topic
-      checked, including a cross-checked `CameraInfo` and a real `rclpy`
-      executor gotcha (see F25).
-- [ ] 2b. SRB backend for `openral deploy sim` —
-      `docs/srb_deploy_backend_plan.md` (schema `DeployScene.simulator`,
-      `openral_sim.backends.srb`, launch spawn/gate, HAL registry entry,
-      `scenes/deploy/srb_panel_remount.yaml`). User decision 2026-09-14.
+      cameras/depth/IMU/lidar to `/openral/cameras/*`/`/openral/lidar/points`/
+      `/imu`; re-roots TF to `chassis_base_link`; publishes `/odom`. Verified
+      live, incl. a real `rclpy` executor gotcha (see F25). Not yet wired
+      into `deploy_e2e.launch.py` (runs standalone) — follow-up, see 2b.
+- [x] 2b. SRB backend for `openral deploy sim` — built + live-verified, F26.
+      Schema, `openral_sim.backends.srb`, launch spawn/gate
+      (`--wait-for-topic`), `_ROBOT_HAL_REGISTRY["lunar_bot"]`
+      (`bare_twin_sim=True`), `scenes/deploy/srb_panel_remount.yaml`. Found
+      + fixed a real `deploy_config:=` forwarding bug. Graph composes, SRB
+      spawns, HAL reaches ACTIVE — a live body_twist move not yet reached
+      (SRB's tick rate under load exceeded the HAL's 0.5s staleness budget,
+      a follow-up, not this item's own code).
 - [x] 2c. RTX Lidar for the Mid-360 — attempted, **blocked on a confirmed
       upstream Isaac Sim bug** (F24: RTX Lidar's SDG render pipeline never
       dispatches a frame, headless and GUI alike; not an SRB defect).
@@ -104,10 +106,8 @@ Design + reuse survey: `docs/lunar_bot_capability_set_plan.md`. Branch
 - [ ] 7. Mission verifier node (this repo) on simulator truth.
 - [ ] 8. §19 run-manifest writer wrapping `openral deploy sim` (this repo).
 - [ ] 9. Remaining kernel magnitude checks (`kJointTrajectory` first).
-- **Coordination**: the other agent's Mid-360 work landed on SRB
-  `feat/mid360-lidar` (RayCaster sensor + the RTX Lidar attempt) — that
-  branch is now fair game to build on (still open/unmerged, same
-  branch-per-task discipline as this project's own SRB branches).
+- **Coordination**: Mid-360 landed on SRB `feat/mid360-lidar` — open/unmerged,
+  fair game to build on (same branch-per-task discipline as this project's).
 - [ ] B3: reasoner-in-the-loop two-step run with full trace = Phase B exit.
 
 A scripted pick-and-place feasibility check against `panel_remount` found

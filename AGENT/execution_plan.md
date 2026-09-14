@@ -806,16 +806,23 @@ not started.
    World-state/detector integration (a lifted 3-D object from a real
    detection of the panel) not yet exercised — needs those nodes running,
    deferred to whichever later item first needs them.
-2b. **SRB backend for `openral deploy sim`** (`docs/srb_deploy_backend_plan.md`,
-   user decision 2026-09-14): `DeployScene.simulator` schema, `srb` scene
-   backend with a provision check, the launch spawns/gates/owns the SRB
-   process, `lunar_bot` registered in the deploy HAL table, a
-   `scenes/deploy/srb_panel_remount.yaml`. Migrates the isaacsim backend's
-   process-lifecycle/provision discipline; the data plane stays SRB's
-   native ROS interface. Verify: one `openral deploy sim … --initial-task`
-   command brings the whole graph up and a reasoner-dispatched
-   `body_twist` moves the base. Every later item is verified through this
-   path.
+2b. **SRB backend for `openral deploy sim` — built (2026-09-14), F26.**
+   `DeployScene.simulator` (`ExternalSimulatorSpec`) schema, `srb` scene
+   backend with a `provision_srb` check, the launch spawns/gates/owns the
+   SRB process (`deploy_e2e.launch.py` + `tools/lifecycle_autostart.py`
+   `--wait-for-topic`), `lunar_bot` registered `bare_twin_sim=True` in the
+   deploy HAL table (`robot.yaml`'s `hal.sim` now the same `LunarBotSRBHAL`
+   as `hal.real`), `scenes/deploy/srb_panel_remount.yaml`. Data plane stays
+   SRB's native ROS interface, as designed — no ZMQ step protocol. Found +
+   fixed one real bug along the way: `deploy_config:=` never reached the
+   launch on the sim path (F26). Live-verified: the whole graph composes,
+   SRB spawns for real, the HAL's readiness gate correctly blocks then
+   passes, the HAL reaches ACTIVE, shutdown is clean (exact-PID, no
+   pattern-kill). **Not yet reached**: the full exit condition (a
+   reasoner-dispatched `body_twist` observed moving the base) — blocked on
+   SRB's own tick rate under the verification host's load exceeding the
+   HAL's 0.5 s staleness budget (F26), not on anything in this item's own
+   code. Every later item is verified through this path.
 2c. **RTX Lidar support for the Mid-360** (user decision 2026-09-14,
    scheduled immediately after 2's RayCaster-based Mid-360 lands — do not
    start early; treated as permanent, repeatedly-reused infra, not a demo).

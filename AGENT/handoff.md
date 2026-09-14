@@ -4,9 +4,11 @@ State as of 2026-09-14. Phase A complete. Phase B1 done and verified
 live: LunarBot is a genuine mobile manipulator — base (BODY_TWIST), arm
 (CARTESIAN_TWIST + JOINT_POSITION, RM-75 limits enforced), gripper
 (GRIPPER_BINARY) — all through the real safety chain from one HAL.
-Mission A's SRB task (`panel_remount` v1) is built. But the reasoner has
-never been in the loop for this robot, no sensor reaches OpenRAL, and no
-rSkill can move the arm (F21) — Phase B2 (capability set) is next.
+Mission A's SRB task (`panel_remount` v1) is built. Phase B2 (capability
+set, items 1/2/2b/2c) is done+verified — sensors reach OpenRAL and
+`openral deploy sim` can bring up the whole graph against SRB — but the
+reasoner has still never been in the loop for this robot and no rSkill can
+move the arm (F21); items 3-9 are next.
 Task list: `todo.md`. Findings: `docs/research_findings.md`. Key docs:
 `docs/lunar_bot_capability_set_plan.md`, `docs/mission_a_panel_remount.md`,
 `docs/lunar_bot_joint_position_control.md`, `docs/lunar_bot_rm75_spec.md`.
@@ -36,29 +38,31 @@ the ordered build list; design/reuse survey in
 Done: **1** RM-75 limits (F22, `f7b5ccd`). **2** Sensor bridge (F25,
 `openral_hal_lunar_bot.sensor_bridge_node`) — relays SRB's cameras/depth/
 IMU/lidar to OpenRAL conventions, re-roots TF, publishes `/odom`; verified
-live against a running SRB instance, including a real `rclpy` executor
-gotcha (spin a `MultiThreadedExecutor` on a background thread, not
-`rclpy.spin(node)` or `.spin()` on the main thread — both silently stall).
-**2c** RTX Lidar for the Mid-360 attempted, blocked on a confirmed upstream
-Isaac Sim bug (F24), **parked by user decision** — RayCaster (item 2) is
-permanent. Mid-360 itself (the other agent's work) landed on SRB
-`feat/mid360-lidar`, unmerged but usable.
+live, including a real `rclpy` executor gotcha (spin a `MultiThreadedExecutor`
+on a background thread, not `rclpy.spin(node)`/`.spin()` on the main thread —
+both silently stall). Not yet wired into `deploy_e2e.launch.py` (runs
+standalone) — needs a generic mechanism (this launch is robot-agnostic by
+design), a follow-up. **2b** SRB backend for `openral deploy sim` (F26,
+`docs/srb_deploy_backend_plan.md`) — `DeployScene.simulator` schema, `srb`
+scene backend + provision check, launch spawn/gate, `lunar_bot` HAL registry
+entry (`bare_twin_sim=True`), `scenes/deploy/srb_panel_remount.yaml`. Found
++ fixed a real bug (`deploy_config:=` never reached the sim-path launch).
+Live-verified: graph composes, SRB spawns for real, the HAL's readiness
+gate correctly blocks then passes, HAL reaches ACTIVE, clean shutdown. NOT
+yet reached: a reasoner-dispatched body_twist actually observed moving the
+base — the verification run's SRB tick rate (~0.35-0.4 Hz under that host's
+render load) exceeded the HAL's hardcoded 0.5s staleness budget; widening
+it (or making it manifest-configurable) is the next thing to try before
+re-attempting this. **2c** RTX Lidar for the Mid-360 attempted, blocked on
+a confirmed upstream Isaac Sim bug (F24), **parked by user decision** —
+RayCaster (item 2) is permanent. Mid-360 itself (the other agent's work)
+landed on SRB `feat/mid360-lidar`, unmerged but usable.
 
-Not started: **2b** SRB backend for `openral deploy sim` (plan in
-`docs/srb_deploy_backend_plan.md` — ROS-attached, migrate the isaacsim
-backend's process-lifecycle/provision discipline, keep SRB's native ROS
-data plane) — **do this next**, before item 3, since every later item's
-plan is to verify through this launch path. **3–9**: procedural rSkills,
-F19 fix, Nav2 (`pointcloud_to_laserscan` apt install needed), MoveIt
-(required), verifier node, run-manifest writer, remaining kernel magnitude
-checks. The user separates planning rounds from coding rounds — wait for
-an explicit go before each.
-Since then: the other agent's Mid-360 work landed on SRB
-`feat/mid360-lidar` — real RayCaster sensor (`lidar_robot`, auto-wired via
-`frame_lidar`) is the permanent implementation; RTX Lidar was attempted on
-the same branch but is blocked on a confirmed upstream Isaac Sim bug (F24)
-and is **parked by user decision 2026-09-14**, not pursued further. Item 2
-(sensor bridge) now has a real point-cloud topic to target.
+Not started: **3–9** — procedural rSkills, F19 fix, Nav2
+(`pointcloud_to_laserscan` apt install needed), MoveIt (required), verifier
+node, run-manifest writer, remaining kernel magnitude checks. The user
+separates planning rounds from coding rounds — wait for an explicit go
+before each.
 
 Also open: F19 (base `cmd_vel` in-place-rotation instability — probably
 don't rely on it for precise heading control yet), no arm joint position

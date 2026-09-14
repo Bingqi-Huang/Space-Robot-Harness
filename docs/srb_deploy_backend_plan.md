@@ -1,4 +1,4 @@
-# `openral deploy sim` SRB backend — investigation and executable plan
+# `openral deploy sim` SRB backend — investigation, plan, and implementation
 
 Written 2026-09-14, read-only survey of the pinned OpenRAL revision
 (`docs/upstream_pins.md`). User decision: an SRB scene backend **is** to be
@@ -7,6 +7,13 @@ built so `openral deploy sim --config scenes/deploy/srb_<scene>.yaml
 is launched — instead of a bespoke launch file in this repository (which
 `docs/lunar_bot_capability_set_plan.md` §3.8 had proposed; that section is
 superseded by this document).
+
+**Status: built, 2026-09-14 (F26 below and in `docs/research_findings.md`).**
+§3's six steps are all implemented and live-verified through the launch
+graph composing, spawning SRB for real, and the HAL reaching ACTIVE; the
+one remaining piece (a reasoner-dispatched body_twist actually observed
+moving the base) is blocked on a host-load-dependent SRB tick rate, not on
+anything in this plan.
 
 ## 1. How the existing `isaacsim` backend works (what can migrate)
 
@@ -51,10 +58,23 @@ SRB's reset service takes no seed; the seed is fixed at launch
 (`env.seed=<n>` Hydra override). One run = one SRB process = one seed,
 which is exactly what §19's `run_manifest.yaml` records anyway.
 
-## 3. Executable plan (openral fork, branch `feat/srb-deploy-backend`)
+## 3. Executable plan (openral fork, branch `feat/srb-deploy-backend`) — DONE 2026-09-14, F26
 
 Each step names the file, the change, and how it is verified. Order is
 dependency order; 1–4 are the backend, 5–6 make LunarBot use it.
+
+All six steps implemented and live-verified against a real `openral deploy
+sim` run (`docs/research_findings.md` F26) — landed directly on
+`feat/lunar-bot-capability-set` (not a separate branch; small enough, and
+this branch already carries the other LunarBot capability-set commits).
+Two of the design's own anticipated mechanisms turned out to already exist
+(no `external_sim` `_HalSpec` flag, no `publish_clock` HAL param needed —
+see F26); one real bug was found and fixed (`deploy_config:=` never reached
+the launch on the sim path — F26). Not yet reached: the full exit condition
+below (a reasoner-dispatched body_twist actually moving the base) — every
+piece of the wiring it depends on is verified, but the run observed was
+bottlenecked on SRB's own tick rate under this host's load (F26's
+staleness finding), not on anything in this plan's own code.
 
 1. **Schema: `DeployScene.simulator`** (`python/core/src/openral_core/schemas.py`).
    New Pydantic model `ExternalSimulatorSpec`: `argv: list[str]`,
@@ -201,5 +221,20 @@ without SLAM and the paper says so.
   `chassis_base_link` pose — **confirmed** 2026-09-14 (F25) by reading a
   live `/tf`: `srb/env0/robot → srb/env0/robot/chassis_base_link` is
   translation `(0,0,0)`, rotation ≈ identity.
-- `use_sim_time` + SRB `/clock` rate vs. the world-state staleness limits
-  (`staleness_limit_s` 0.5 s wall vs. sim time).
+- [x] `use_sim_time` + SRB `/clock` rate vs. the world-state staleness
+  limits (`staleness_limit_s` 0.5 s wall vs. sim time) — **partially
+  answered, and it's a real problem, not a non-issue**: F26's live run hit
+  exactly this. `LunarBotSRBHAL`'s `staleness_limit_s=0.5` (wall-clock,
+  hardcoded) repeatedly rejected `read_state()` because SRB's own
+  `joint_states` publish rate under that run's host load was only ~0.35-0.4
+  Hz (a `panel_remount_visual` 3-camera RTX render cost, not a code bug —
+  see F26). Follow-up: widen the HAL's default, or make it
+  manifest-configurable, before relying on a visual SRB task for a live
+  demo/eval run.
+- [x] Whether `openral deploy sim` ever needed changing beyond the six
+  steps to actually reach SRB — **yes, one real bug**: `deploy_config:=`
+  forwarding to the launch was gated on `hal_mode=="real"` only, so
+  `DeployScene.simulator` never reached `compose_runtime_graph` on the sim
+  path until fixed (F26). Not something this plan anticipated; found by
+  reading the resolved dry-run `argv:` line, not assumed correct because
+  the code compiled.
