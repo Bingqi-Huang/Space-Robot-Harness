@@ -8,25 +8,28 @@
 
 # 0. Operating rules for the coding agent
 
-1. **Do not redesign the research question.** The scientific goal is fixed: reorganize fragmented space-robotics autonomy into a trustworthy, space-native, mission-intent-driven agentic runtime.
-2. **Reuse before implementing.** Inspect the current upstream implementation before adding new code. Prefer adapters and sidecar packages over forks of OpenRAL or SRB.
-3. **Do not duplicate OpenRAL features.** OpenRAL already contains typed reasoner tool calls, `MissionState`, rSkill execution, world-state aggregation, reward/progress query tools, bounded replanning, observability, and safety infrastructure. Extend only where the space-mission requirement is genuinely absent.
-4. **Do not assume roadmap features are production-ready.** OpenRAL documentation marks some safety-kernel and WAM elements as partial/planned. Code only against functionality verified in the checked-out revision.
-5. **Do not hard-code scientific thresholds.** Resource margins, retry policies, escalation rules, mission deadlines, and statistical thresholds must be configuration-driven and derived later from mission assumptions or experimental analysis.
-6. **Do not fabricate aerospace values.** Communication geometry, lunar illumination, orbital contacts, and mission resources must come from explicit datasets/models/configuration with provenance.
-7. **Keep the foundation model away from direct motor authority.** Preserve OpenRAL's typed reasoner → skill-runner → safety separation.
-8. **Every experimental run must be reproducible.** Save git revisions, simulator seed/configuration, model/provider configuration, mission specification, space-context profile, capability registry, trace/log locations, and final metrics.
-9. **Build mechanism-first, not benchmark-first.** Do not add task variety unless it exercises a distinct runtime mechanism.
-10. **No paper-result language in code or reports until measured.** Log observed behavior; do not label a mechanism superior before analysis.
-11. **Prerequisites are verified empirically before a dependent step starts.** A step whose preconditions are unmet (e.g. a mission run with no dispatchable manipulation capability, or no perception wired) is not started and its failure is not recorded as a "finding" — the precondition is built first. (User directive, 2026-09-14.)
-12. **Scope of coding obligations is total, not "as much as convenient".** Every piece of infrastructure the paper needs — embodiment rSkills, sensor bridges, navigation, manipulation, joint limits, verifiers, run artifacts, launch orchestration — is built, regardless of size. The only excluded work is imitation-learning data collection and VLA model training. (User directive, 2026-09-14.)
-
-13. **The paper has only two main scientific experiments.** Do not create separate communication, resource, failure, trustworthiness, prompt-engineering, or ablation campaigns unless a later result establishes a genuinely independent scientific question. Those factors are conditions inside Experiment I or supporting analyses.
-14. **External baselines are PLEXIL and EUROPA→PLEXIL.** A handcrafted behavior tree, generic OpenRAL, and prompt-only variants are development diagnostics or at most one targeted ablation; they are not main paper baselines.
-15. **Do not weaken classical autonomy.** PLEXIL may use its documented conditions, loops, concurrency, libraries, and resources. EUROPA may plan/replan within its encoded domain. A held-out case is valid only when the required primitive capabilities exist but the mission-level decomposition/semantic relation is absent from frozen baseline artifacts.
-16. **Autonomy metrics are grounded in ALFUS.** Do not invent a scalar autonomy score. Store the raw quantities needed for Human Intervention, Human Planning/Preplanning, Level of Human Interaction, and mission-variation coverage.
-17. **Engineering-cost claims require timed, auditable extension work.** Do not infer "lower engineering cost" from code size alone. Experiment II uses a freeze→extension specification→timed authoring→validation→held-out test protocol.
----
+1. **Do not redesign the research question.** The scientific goal is fixed: test whether a foundation-model mission agent can expand lunar robotic autonomy beyond pre-engineered task models while a thin space-native harness preserves trustworthy execution.
+2. **Pre-engineer invariants, not mission solutions.** The proposed method must not acquire a second handcrafted mission planner in Python, YAML, playbooks, verifier code, or policy rules. Task decomposition, task ordering, observation choice, substitution, and recovery belong to the model.
+3. **Reuse before implementing.** Inspect the current upstream implementation before adding new code. Prefer adapters and OpenRAL-compatible extensions over parallel infrastructure.
+4. **Do not duplicate OpenRAL features.** OpenRAL already contains typed reasoner tool calls, dynamic rSkill/tool exposure, `MissionState`, rSkill execution, world-state aggregation, observability, and safety infrastructure. Extend only where a space-mission requirement is genuinely absent.
+5. **Treat OpenRAL `MissionState` as agent working state, not authoritative mission truth.** It may contain a mutable decomposition/todo ledger. Verified physical facts, authority, capability availability, FDIR/resource state, and evidence live in the research runtime and cannot be promoted from LLM prose alone.
+6. **Audit playbooks/skills for hidden mission logic.** Generic meta-guidance is allowed; Mission A/B-specific action sequences, recovery trees, or held-out solution hints are forbidden in Ours.
+7. **Keep the invariant/authority guard thin.** It may enforce typed contracts, hard authority/approval, hard capability/service availability, explicit FDIR prohibitions, critical hard resource/health limits, and safety-critical freshness requirements. It must not decide mission appropriateness, task order, observation strategy, or recovery.
+8. **Keep the foundation model away from raw motor authority.** Preserve OpenRAL's typed reasoner → rSkill/tool dispatch → low-level safety separation.
+9. **Verification establishes effects/facts, not the correctness of a predetermined strategy.** Do not write verifiers that silently encode the expected task sequence for Ours.
+10. **Do not assume roadmap features are production-ready.** Verify the checked-out OpenRAL revision before relying on safety-kernel/WAM/other documented features.
+11. **Do not hard-code scientific thresholds.** Resource margins, retry policies, escalation rules, mission deadlines, and statistical thresholds must be configuration-driven and justified by mission assumptions or empirical analysis.
+12. **Do not fabricate aerospace values.** Communication geometry, lunar illumination, orbital contacts, and mission resources must come from explicit datasets/models/configuration with provenance.
+13. **Every experimental run must be reproducible.** Save git revisions, simulator seed/configuration, model/provider configuration, generic prompts/playbooks, hard-invariant configuration, mission specification, space-context profile, capability registry, trace/log locations, and final metrics.
+14. **Build mechanism-first, not benchmark-first.** Do not add task variety unless it exercises a distinct runtime mechanism.
+15. **No paper-result language in code or reports until measured.** Log observed behavior; do not label a mechanism superior before analysis.
+16. **Prerequisites are verified empirically before a dependent step starts.** A step whose preconditions are unmet is not started and its failure is not recorded as a scientific finding.
+17. **Scope of coding obligations is total, not “as much as convenient”.** Every piece of infrastructure the paper needs is built; imitation-learning data collection and new VLA training remain excluded unless later required.
+18. **The paper has only two main scientific experiments.** Communication, resource, failure, trustworthiness, prompt engineering, and ablations remain conditions/supporting analyses unless they become independent scientific questions.
+19. **External baselines are PLEXIL and EUROPA→PLEXIL.** Generic OpenRAL, prompt-only variants, and behavior trees are development diagnostics or at most one targeted ablation.
+20. **Do not weaken classical autonomy.** PLEXIL uses its documented reactive constructs; EUROPA plans/replans within its encoded domain. A held-out case is valid only when required primitive capabilities exist but the mission-level semantic/task relation is absent from frozen baseline artifacts.
+21. **Autonomy metrics are grounded in ALFUS.** Do not invent a scalar autonomy score.
+22. **Engineering-cost claims require timed, auditable extension work.** Experiment II uses freeze → extension specification → timed authoring → validation → held-out test.
 
 # 1. Upstream systems that must be used, not reimplemented
 
@@ -56,7 +59,7 @@ Important existing behavior that this project should preserve:
 - OpenRAL already records reasoner behavior with OTel spans;
 - low-level safety is intentionally independent of the reasoner.
 
-**Implementation implication:** the research should add a space-mission runtime around/alongside the existing OpenRAL mission/reasoner path rather than replacing it.
+**Implementation implication:** OpenRAL is treated as the robotic analogue of a coding-agent harness substrate. Preserve its model-driven typed-tool loop and execution/safety separation. The research extension adds persistent authoritative facts, space context, distributed-context reconstruction, independent effect verification, and a thin invariant/authority guard. It must **not** replace the reasoner with a second handcrafted mission planner.
 
 ## 1.2 Space Robotics Bench (SRB) / Isaac Lab — primary simulation base
 
@@ -242,7 +245,7 @@ therefore **not used**; their intended contents are on the fork branches,
 one branch per task, every commit recorded in `docs/upstream_pins.md`.
 
 What stays in this repository: the research mechanisms (`space_runtime/`,
-`space_context/`, the mission-level decision layer, verifiers), the
+`space_context/`, the thin invariant/authority guard, verifiers), the
 baselines, the experiment runner/launch orchestration, run artifacts,
 metrics, and all documentation. The dividing rule: *if OpenRAL or SRB would
 plausibly accept it upstream as a generic feature, it goes on a fork
@@ -260,117 +263,110 @@ The target runtime path is:
 Mission instruction
     ↓
 OpenRAL ReasonerCore / reasoner ROS node
-    ↓ typed ReasonerToolCall
-Space mission decision layer
-    ↓ admitted / deferred / reformulated / escalated intent
-OpenRAL rSkill dispatch
-    ↓
-OpenRAL safety + robot-control path
-    ↓
-SRB ROS 2 robot / later LunarBot
-    ↓
-observations + execution feedback
-    ↓
-OpenRAL WorldState + task-progress/scene queries
-    ↓
-Space mission state / verification
-    ↓
-next reasoner context
+    ↓ model chooses one typed query/effect tool
+Context/query tools <------------------------------+
+    ↓                                                  |
+Effectful ReasonerToolCall                             |
+    ↓                                                  |
+Thin invariant / authority guard                       |
+    ↓ allow | deny | approval-required | unavailable   |
+OpenRAL rSkill dispatch                                |
+    ↓                                                  |
+OpenRAL low-level safety + robot-control path           |
+    ↓                                                  |
+SRB ROS 2 robot / later LunarBot                       |
+    ↓                                                  |
+observations + execution result                        |
+    ↓                                                  |
+independent effect verification                        |
+    ↓                                                  |
+authoritative facts/evidence update                    |
+    +----------------> next reasoner context -----------+
 ```
 
-The project must preserve OpenRAL's existing typed and safety boundaries.
+The model owns mission strategy. The project must preserve OpenRAL's existing typed tool and safety boundaries.
 
 ## 3.2 Integration point inside OpenRAL
 
-Do **not** intercept raw motor actions.
+Do **not** intercept raw motor actions and do not insert a mission planner between the reasoner and rSkills.
 
-The preferred insertion point is the reasoner-to-effectful-tool dispatch boundary, before `ExecuteRskillTool` becomes an `/openral/execute_rskill` action goal.
+The preferred insertion point is the reasoner-to-effectful-tool dispatch boundary, before `ExecuteRskillTool` becomes an `/openral/execute_rskill` action goal. At that point the guard can enforce generic hard boundaries while leaving query tools and task strategy untouched.
 
-Reason:
+The guard can block/require approval only for explicit invariant reasons. Its structured result returns to the reasoner like any other tool outcome so the model can decide what to do next.
 
-- this is where semantic intent is still visible;
-- low-level safety remains independent;
-- existing rSkill packaging is retained;
-- the mission runtime can reject/defer/escalate a mission-level action without reimplementing controllers;
-- query tools can remain read-only and available to the reasoner.
+Implementation should first inspect the current `openral_reasoner_ros.reasoner_node` dispatch path and choose the least invasive pattern:
 
-Implementation should first inspect the current `openral_reasoner_ros.reasoner_node` tool-dispatch path and determine whether one of these patterns is cleaner:
+1. **sidecar invariant-guard service** called before effectful dispatch;
+2. **effectful-tool dispatch wrapper** leaving read/query tools untouched;
+3. **upstream-compatible dispatcher hook** if the pinned OpenRAL revision exposes one.
 
-1. **sidecar mission-decision service:** reasoner node calls a new ROS service/action before dispatching an effectful tool;
-2. **tool-dispatch wrapper:** an extension package wraps effectful tool dispatch while leaving query and memory tools untouched;
-3. **upstream-compatible dispatcher hook:** if OpenRAL already exposes a stable hook/protocol in the checked-out revision, implement against that instead of patching the node.
-
-Select the least invasive option after code inspection. Do not decide by assumption.
-
----
+The guard must remain mission-generic. Do not add `if panel_obstructed -> move_obstacle` or any equivalent scenario logic here.
 
 # 4. New research components to implement
 
-The project should implement only the mechanisms absent from generic OpenRAL that are necessary to turn it into the paper's space-native mission runtime.
+The project should implement only mechanisms absent from generic OpenRAL that are necessary for a **thin, space-native agent harness**. The model remains the mission-strategy owner.
 
-## 4.1 `space_runtime`: authoritative mission runtime
+## 4.1 `space_runtime`: authoritative facts, evidence, and context persistence
 
-Purpose: maintain mission-critical state independently from the LLM context and OpenRAL's current sequential task text ledger.
+Purpose: maintain mission-critical **facts** independently from LLM conversation history and independently from OpenRAL's mutable task/decomposition ledger.
 
-Responsibilities:
+Authoritative responsibilities:
 
-- mission objective and priority representation;
-- current mission phase/objective;
-- verified completed/pending transitions;
-- unresolved anomalies;
-- active execution reference;
-- authority state;
-- mission-relevant resource/health summary;
-- evidence references for completed transitions;
-- reconciliation state after model/service reconnection;
+- original mission intent and operator-imposed hard constraints;
+- verified effects/facts relevant to mission progress;
+- active execution reference and latest tool result;
+- unresolved factual anomalies/unknowns;
+- authority/approval state;
+- mission-relevant resource, health, and FDIR facts;
+- capability/service availability/degradation;
+- evidence references, timestamps, and freshness;
+- reconciliation state after model/service reconnect;
 - persistence across reasoner restart/model change.
 
-Do not duplicate full robot world state. Store references/snapshots only where mission continuity requires them; robot kinematics, detections, transforms, and freshness remain owned by OpenRAL WorldState.
+Non-authoritative agent working state may include current objective, tentative decomposition, todo/task ledger, hypotheses, and recovery preference. OpenRAL `MissionState` can remain the primary representation of this working task state.
+
+Do not duplicate full robot world state. Robot kinematics, detections, transforms, and freshness remain owned by OpenRAL WorldState; the research runtime stores mission-relevant references/snapshots only.
 
 Suggested modules:
 
 ```text
 space_runtime/
-├── schemas.py              # mission-runtime Pydantic models
-├── mission_store.py        # persistent authoritative state
-├── reducer.py              # event -> state transition
-├── context_builder.py      # builds reasoner-facing mission context
-├── decision.py             # mission-level disposition of effectful proposals
-├── verification.py         # evidence-backed state advancement
-├── authority.py            # mission authority/policy evaluation
-├── reconciliation.py       # reconnect / stale-context handling
-└── events.py               # typed mission events
+├── schemas.py
+├── fact_store.py            # persistent authoritative facts/evidence refs
+├── reducer.py               # typed event -> authoritative fact update
+├── context_builder.py       # assembles model-facing context; no action choice
+├── invariant_guard.py       # thin hard-boundary/approval checks
+├── verification.py          # evidence -> verified physical effect/fact
+├── authority.py             # explicit authority/approval boundaries
+├── reconciliation.py       # reconnect / endpoint-switch context rebuild
+└── events.py
 ```
 
 ### State-management design
 
-Use an event-driven reducer pattern rather than allowing arbitrary mutation from multiple ROS callbacks.
+Use an event-driven reducer rather than arbitrary mutation from ROS callbacks or LLM prose.
 
-Examples of typed events:
+Representative events:
 
 - operator mission received;
-- task/subtask proposed;
-- execution requested;
-- execution accepted/deferred/rejected/escalated;
+- model tool call proposed;
+- guard allowed/denied/approval-required/unavailable;
 - execution started/finished/failed;
-- verifier result received;
-- FDIR event received;
-- communication state changed;
-- compute service state changed;
-- resource state changed;
-- authority changed;
+- verifier/effect result received;
+- FDIR state changed;
+- communication/compute service state changed;
+- resource/health fact changed;
+- authority/approval changed;
 - reasoner/model changed;
 - human decision received.
 
-Persist the mission state and enough event history for deterministic replay/debugging.
+Persist enough event history for deterministic replay/debugging. A model-generated task decomposition may be stored as agent working state but is never promoted to physical truth without evidence.
 
-Do not use LLM-generated prose as the canonical state representation.
+## 4.2 `space_context`: typed lunar operational facts
 
-## 4.2 `space_context`: aerospace operational context service
+Purpose: produce a typed, time-indexed summary of communication, compute, resource, health, and relevant environmental facts used by the agent and by the thin guard where a genuinely hard limit exists.
 
-Purpose: produce a typed, time-indexed summary of the lunar operating environment used by the mission runtime.
-
-Suggested modules:
+Suggested modules remain:
 
 ```text
 space_context/
@@ -386,184 +382,103 @@ space_context/
 └── service_node.py
 ```
 
-### 4.2.1 Mission clock
+Only implement variables exercised by the final missions. Geometry/contact profiles come from documented sources/tools; resource models remain transparent and configurable.
 
-Maintain mission epoch/time independently from wall-clock simulation time. Support accelerated or replayed timelines if needed for contact/illumination experiments.
+**Critical rule:** space context is primarily **agent context**, not a rule engine. Moderate energy, delay, or service quality should normally be exposed to the model for strategy. Only an explicitly documented hard operating boundary belongs in the invariant guard.
 
-### 4.2.2 Sun/Earth geometry
+## 4.3 Thin invariant / authority guard
 
-Use SPICE/SpiceyPy and documented kernels. Required outputs depend on selected experiment but may include:
-
-- Sun direction/elevation at the lunar site;
-- Earth direction/elevation;
-- geometry transitions relevant to illumination/visibility;
-- timestamps of upcoming state changes.
-
-Keep geometry computation outside the LLM.
-
-### 4.2.3 Surface visibility / terrain effects
-
-If the chosen mission requires terrain occlusion, use SRB terrain/DEM information or a documented lunar terrain source to determine local horizon/line-of-sight. Do not claim terrain-aware DTE if only body-level occultation is modeled.
-
-### 4.2.4 Relay contact timeline
-
-Use published LCRNS/reference relay information or another documented lunar relay scenario.
-
-Preferred architecture:
-
-- generate contact windows offline using a trusted orbital-analysis tool;
-- save a provenance-rich contact schedule;
-- runtime reads/query the schedule rather than integrating orbital dynamics during each agent tick.
-
-This keeps orbital mechanics real enough to influence the experiment without turning the project into an orbit-propagation study.
-
-### 4.2.5 Resource service
-
-Start with mission-level resource summaries needed by the selected scenarios:
-
-- battery/energy state;
-- thermal operational state if represented;
-- storage/data budget where relevant;
-- subsystem health;
-- current capability degradation.
-
-Resource models should be simple, transparent, and replaceable. They are context/constraints, not a new optimizer.
-
-### 4.2.6 Compute availability
-
-Represent reasoning/services by location and current availability, e.g.:
-
-- onboard/local;
-- surface/LAN;
-- remote/Earth.
-
-Track at least:
-
-- reachable/unreachable;
-- observed/request latency;
-- capability/model identity;
-- whether the current mission authority permits use;
-- whether service state is stale or unknown.
-
-Do not invent a learned router initially.
-
-## 4.3 Mission-level decision layer
-
-Purpose: determine how an effectful reasoner proposal should proceed in the current mission context.
+Purpose: enforce non-negotiable execution boundaries without deciding mission strategy.
 
 Input:
 
 - typed OpenRAL effectful tool call;
-- authoritative mission state;
-- OpenRAL world-state summary/reference;
-- space context;
-- authority/policy;
-- active FDIR/degradation state;
-- capability/service availability.
+- capability contract/current availability;
+- authoritative authority/approval state;
+- active FDIR/hard degradation state;
+- safety-critical freshness/dependency facts;
+- explicitly configured hard resource/health limits where used.
 
-Output should be a small typed disposition set such as:
+Allowed checks:
 
-- execute;
-- defer/wait;
-- return to reasoner for replanning/additional observation;
-- escalate/request higher authority.
+- capability exists and typed arguments are valid;
+- capability/service is hard-available;
+- requested operation is within current autonomous authority or has required approval;
+- active FDIR state does not explicitly prohibit it;
+- critical hard resource/health boundary is not violated;
+- mandatory safety-critical input is sufficiently fresh;
+- action proceeds through the shared low-level safety path.
 
-Avoid embedding arbitrary numeric thresholds in code. Evaluation logic should read mission policy/resource configuration and explain the reason for each disposition.
+Output:
 
-Every disposition must emit a structured trace event.
+- `allow`;
+- `deny(reason)`;
+- `approval_required(reason)`;
+- `unavailable(reason)`.
 
-Important distinction:
+Forbidden checks/logic:
 
-- this layer decides **mission appropriateness**;
-- OpenRAL safety decides **physical-action admissibility**.
+- objective consistency as a semantic judgment;
+- task ordering;
+- “should inspect first” logic;
+- scenario-specific recovery branches;
+- preferred capability selection;
+- deciding that a different observation would be strategically better;
+- checking compliance with a hidden expected task sequence.
 
-Do not merge these concerns.
+Every guard decision emits a structured trace event. Guard configuration is generic, auditable, and frozen before held-out cases.
 
-## 4.4 Verification layer
+## 4.4 Independent effect verification
 
-Purpose: prevent mission-state progress from being determined solely by the language model or by a controller's nominal completion flag.
+Purpose: establish what physically happened without asking the model to certify itself and without encoding a hidden procedure.
 
-Reuse existing OpenRAL sources where available:
+Reuse OpenRAL/SRB sources where available:
 
-- `query_task_progress` / reward monitor;
-- scene VLM query;
 - world-state object/pose updates;
-- rSkill action result;
+- rSkill/action results;
 - navigation goal state;
-- FDIR/telemetry.
+- deterministic simulator truth for evaluation/verification;
+- task-progress/reward signals where they correspond to observable physical conditions;
+- FDIR/telemetry;
+- semantic perception only where the condition itself is genuinely semantic.
 
-Add mission-specific verifiers only when the mission objective requires a condition not represented upstream.
+Verifier output:
 
-A verifier should produce:
-
-- condition/result;
-- evidence source;
+- physical condition/effect result;
+- evidence source/reference;
 - timestamp/state version;
-- confidence/quality metadata if available;
-- reference to raw observation/log rather than embedding all raw data in mission state.
+- confidence/quality metadata where applicable.
 
-Mission completion/subtask advancement occurs through verifier events.
+Verification should answer **effect questions** (“object moved?”, “goal reached?”, “component mounted?”), not **strategy questions** (“was this the correct next task?”). Final mission-success evaluation may use evaluator-only conditions not exposed to the agent.
 
-## 4.5 Distributed reasoner adapter
+## 4.5 Distributed reasoner adapter and context reconstruction
 
-Purpose: allow reasoning to be available at different compute tiers while preserving a single mission state.
+Purpose: allow reasoning at different compute tiers while preserving one source of mission truth.
 
-Do not implement a new model-serving system. Use provider/OpenAI-compatible endpoints supported by OpenRAL or a thin adapter.
+Use provider/OpenAI-compatible endpoints already supported by OpenRAL or a thin adapter. Maintain a service registry with model/service identifier, location, reachability, endpoint, observed latency, and capability/authority metadata.
 
-Implement a service registry containing:
+Whenever reasoning changes endpoint or reconnects, reconstruct context from authoritative facts, verified world state, current space context, active faults, available capabilities, agent working state where useful, and recent evidence. Never use a stale remote chat transcript as the authoritative resume mechanism.
 
-- model/service identifier;
-- location category;
-- connectivity status;
-- endpoint information;
-- measured latency/availability;
-- authority/capability metadata.
-
-Reasoner selection can initially be policy-based and configurable. The research question is not learning an optimal model router.
-
-### Context transfer rule
-
-Never use an old remote chat transcript as the authoritative resume mechanism.
-
-Whenever reasoning moves to another endpoint or reconnects, reconstruct the relevant context from:
-
-- authoritative mission state;
-- current verified world state;
-- current space context;
-- active faults;
-- available capabilities;
-- relevant recent evidence/events.
-
-This is the mechanism to test against naive conversation/history continuation.
+Endpoint selection can initially be configurable/policy-based; learning an optimal router is outside scope.
 
 ## 4.6 Trace and evidence store
 
-Integrate with OpenRAL's existing OpenTelemetry spans rather than create a separate opaque logger.
+Integrate with OpenRAL OpenTelemetry rather than creating an opaque parallel logger.
 
-Add mission-runtime spans/events that can be correlated with:
+Correlate:
 
 - reasoner tick;
-- selected tool/rSkill;
-- mission disposition;
+- query/effect tool call;
+- capability schema/version;
+- invariant/authority guard result;
 - space-context snapshot/version;
-- execution result;
-- verifier result;
-- mission-state transition;
+- execution/safety result;
+- verifier/effect result;
+- authoritative fact update;
 - model/service switch;
-- human intervention.
+- human approval/intervention.
 
-Also retain experiment-level artifacts:
-
-- config;
-- seeds;
-- model/provider versions;
-- upstream git revisions;
-- mission definition;
-- link/contact profile;
-- simulator logs/rosbags where enabled;
-- final normalized metrics.
-
----
+The trace is the basis for behavioral explainability: it should show what facts were available, what action the model chose, whether a hard boundary applied, what physically happened, and why authoritative facts changed — without requiring chain-of-thought or a pre-authored mission graph.
 
 # 5. OpenRAL integration work package
 
@@ -653,7 +568,7 @@ share the same perception, navigation, manipulation controller, FDIR
 primitives and safety; §6.4 requires a "capability set shared across all
 baselines" table. **The LunarBot capability set is that table.** Building
 it is core Phase B work (§8.3 below), and the same procedural primitives are
-what Baseline A (procedure-driven, §11.1) is composed from.
+what the PLEXIL and EUROPA→PLEXIL baselines ultimately invoke through the shared capability path.
 
 Selection criteria retained as *verification* criteria for the built
 capability set:
@@ -703,7 +618,7 @@ Required scene properties:
 - multiple visually distinguishable infrastructure components;
 - at least one component/state that must be inspected to determine what is wrong;
 - one or more general-purpose physical operations that can restore the final condition;
-- deterministic simulator truth for scoring/verifying every required transition;
+- deterministic simulator truth for the physical effects/final conditions needed by evaluation and independent verification, without encoding a required action sequence;
 - perturbation switches that can create both model-covered and model-held-out situations.
 
 The operator instruction gives a mission objective, not an action sequence.
@@ -751,7 +666,7 @@ The final paper should not add a third mission family unless Mission A/B fail to
 
 Space context is an enabling part of the proposed runtime, not a third scientific axis. Do **not** build a comprehensive lunar digital-twin stack by default. Before implementing any SPICE, relay, link, thermal, energy, or compute model, identify the exact Experiment-I/II scenario and decision whose outcome depends on that variable. If no final scenario uses it, leave it out of the first paper.
 
-For the initial campaign, prefer one or two well-justified operational constraints that materially change mission decisions (for example, remote-service availability across a documented contact interruption and one resource/health constraint). The same context must be exposed fairly to all methods in whatever representation their architecture requires.
+For the initial campaign, prefer one or two well-justified operational variables that materially affect the mission (for example, remote-service availability across a documented contact interruption and one resource/health condition). The same underlying facts must be exposed fairly to all methods. For Ours, distinguish **context facts** from **hard invariants**: the model reasons over the former; only genuinely non-negotiable limits are enforced by the guard.
 
 ## 7.1 Define scenario metadata
 
@@ -876,14 +791,7 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
    native ROS interface. Verify: one `openral deploy sim … --initial-task`
    command brings the whole graph up and a reasoner-dispatched
    `body_twist` moves the base. Every later item is verified through this
-   path. Status 2026-09-14: built + live-verified (F26/F27); the SRB tick
-   rate that stalled the exit condition is root-caused and fixed (F28,
-   0.36 → ~12 Hz, `staleness_limit_s` untouched); the body_twist
-   observation itself is done (F29): a kernel-dispatched (not
-   reasoner-dispatched — no LLM credential on this host) BODY_TWIST moved
-   the base 0.55 m over 5.05 s, measured via real `/tf`. Item 2b is fully
-   closed. Open from F28: Fast-DDS large-message loss caps camera topics
-   at ~2 Hz into OpenRAL.
+   path.
 2c. **RTX Lidar support for the Mid-360** (user decision 2026-09-14,
    scheduled immediately after 2's RayCaster-based Mid-360 lands — do not
    start early; treated as permanent, repeatedly-reused infra, not a demo).
@@ -1015,142 +923,155 @@ directory contains the complete trace. That is Phase B's original exit
 condition, which has not been met yet — only single scripted capability
 calls have (§21 item 4).
 
-## 8.2 Capability metadata for mission runtime
+## 8.2 Capability metadata as a model-facing tool contract
 
-Do not change the rSkill format unless necessary. Maintain research-side metadata keyed by capability/rSkill ID for space-mission properties not represented upstream, such as:
+Do not change the rSkill format unless necessary. Maintain research-side metadata keyed by capability/rSkill ID only for properties not represented upstream.
 
-- requires remote service;
-- usable offline;
-- authority class;
-- relevant resource/service dependencies;
-- compatible degraded modes;
-- verification method.
+Each model-facing capability contract should contain:
 
-If OpenRAL has a clean extensible field mechanism in the pinned revision, use it. Otherwise keep this metadata in the research runtime to avoid contaminating upstream skill definitions.
+- semantic description of what the capability does;
+- typed inputs;
+- typed result/error schema;
+- current availability/degradation;
+- intrinsic service/hardware dependencies;
+- authority/approval class where inherently required;
+- evidence/result interface;
+- execution endpoint.
 
----
+Examples of acceptable metadata: `requires_remote_service`, `usable_offline`, `authority_class`, `hard_dependency`, `verification_source`.
+
+Examples of **forbidden mission logic**: “after inspection call X”, “if panel is blocked move object Y”, “retry twice then use Z”, or any scenario-specific action ordering/recovery relation.
+
+If OpenRAL exposes a clean extensible field mechanism, use it; otherwise keep metadata in the research runtime. The capability registry should behave like a coding-agent tool registry: it tells the model **what can be done and what the call means**, not how to solve the mission.
 
 # 9. Foundation-model reasoning and semantic-observation work package
 
-This work package implements the functions that distinguish the proposed method. Generic OpenRAL runs remain development diagnostics, not a main paper baseline.
+This work package implements the functions that distinguish the proposed method. The model must genuinely own mission strategy; generic OpenRAL remains a development diagnostic, not a paper baseline.
 
 ## 9.1 Development diagnostic: unmodified OpenRAL
 
-Before enabling the new mission runtime, run Mission A through stock OpenRAL reasoner + world state + typed tools + shared LunarBot capabilities. Save the trace to identify integration failures and to ensure the proposed changes are actually necessary.
+Before enabling the new space-native runtime, run Mission A through stock OpenRAL reasoner + world state + typed tools + shared LunarBot capabilities. Save the trace to identify integration gaps. This diagnostic is not one of the three paper methods unless later evidence makes it scientifically indispensable.
 
-This diagnostic is **not** one of the three paper methods unless later evidence shows that a specific comparison is scientifically indispensable.
+## 9.2 Agent mission-strategy contract
 
-## 9.2 LLM mission-reasoning contract
+The reasoner owns:
 
-The reasoner may:
-
-- interpret the mission instruction;
-- propose/decompose subgoals;
-- request scene/state information;
-- select registered capabilities;
-- diagnose unexpected observations;
-- recompose the remaining mission;
-- request escalation/clarification;
-- generate a report from structured state/evidence.
+- mission-intent interpretation;
+- task decomposition and re-decomposition;
+- choosing whether/what to observe next;
+- semantic diagnosis;
+- registered capability selection/order/composition;
+- substitution after capability/service degradation;
+- recovery strategy after tool failure or changed evidence;
+- escalation/clarification decisions;
+- evidence-grounded status/report generation.
 
 The reasoner may not:
 
 - issue raw joint/base commands;
 - create an unregistered physical capability;
-- directly mutate authoritative mission state;
-- override mission authority, FDIR, or low-level safety;
-- mark a transition verified without a verifier event.
+- directly mutate authoritative physical/operational facts;
+- override hard authority, FDIR prohibition, or low-level safety;
+- mark a physical effect verified without verifier evidence.
 
-Encode these boundaries in the tool schema and dispatcher, not only in prompt prose.
+Encode these boundaries in tool schemas/dispatch, not only prompt prose.
 
-## 9.3 VLM / semantic observation path
+## 9.3 Playbook / prompt policy — generic operating guidance only
 
-Reuse OpenRAL's scene-VLM path where possible. Add only the minimum interface needed to support Mission A semantic cases.
+OpenRAL playbooks and any research prompts must be audited before the final campaign.
 
-The VLM query API should support questions such as:
+Allowed generic guidance includes:
 
-- identify which infrastructure component appears abnormal;
-- determine whether access is visually obstructed;
-- compare the observed configuration with a named expected configuration;
-- suggest what region/component requires closer inspection.
+- use tool results/evidence rather than inventing state;
+- inspect/query when the model itself determines information is insufficient;
+- react to explicit tool failures;
+- do not bypass safety/authority;
+- use verification evidence before reporting a physical effect as fact;
+- keep the operator informed when approval/escalation is required.
 
-VLM output is logged with image/evidence reference, timestamp, model identity, and confidence/quality metadata if provided. It enters reasoner context as an observation; deterministic simulator truth remains confined to the verifier/evaluator unless the same state would be available on the real robot.
+Forbidden guidance includes:
 
-## 9.4 Context builder
+- Mission A/B-specific decompositions;
+- named-object repair sequences;
+- scenario-specific recovery branches;
+- action ordering that solves held-out cases;
+- rules that select a particular capability for a particular hidden semantic condition.
+
+The final freeze manifest hashes all system prompts/playbooks/skills available to Ours. Any scenario-specific hidden solution invalidates the held-out comparison.
+
+## 9.4 VLM / semantic observation path
+
+Reuse OpenRAL's scene-VLM path where possible. Support semantic questions such as abnormal-component identification, visual obstruction/access, configuration comparison, and what region warrants closer inspection.
+
+VLM output is logged with image/evidence reference, timestamp, and model identity. It enters agent context as an observation. Deterministic simulator truth remains confined to common verifier/evaluator paths unless the equivalent signal would be available on the real robot.
+
+## 9.5 Context builder
 
 Construct compact context from:
 
-- mission objective/current objective;
-- verified progress;
-- unresolved anomalies;
-- relevant world state;
-- current semantic observations;
-- available/degraded capabilities;
-- active FDIR state;
-- current mission authority;
-- mission-relevant communication/compute/resource context;
-- recent evidence and failed attempts.
+- mission intent;
+- agent working objective/decomposition;
+- verified effects/facts;
+- relevant world state and semantic observations;
+- available/degraded capability contracts;
+- FDIR/health facts;
+- communication/compute/resource context;
+- hard authority/approval boundaries;
+- recent evidence/tool failures;
+- unresolved hypotheses/questions.
 
-Do not dump the full mission history or raw telemetry.
+The context builder selects/normalizes information. **It does not choose the next action or insert a handcrafted recovery plan.**
 
-## 9.5 Natural-language status/report generation
+## 9.6 Natural-language status/report generation
 
-At mission end or operator request, generate a concise report from authoritative state and evidence references. The report must distinguish verified facts from unresolved hypotheses and escalations.
+At mission end or operator request, generate a concise report from authoritative facts, tool/guard events, and evidence references. Distinguish verified facts from agent hypotheses and unresolved issues. Do not score prose quality as a main experiment metric.
 
-Do not score prose quality as a main experiment metric. The report is a system capability and qualitative trace artifact.
+## 9.7 Optional trustworthiness ablation
 
-## 9.6 Optional prompt-only ablation
+Only after the full method works, a targeted ablation may selectively bypass the invariant/authority guard and/or independent effect verification while keeping the same agent context. This tests whether the thin execution boundaries prevent unsafe/unsupported state transitions. It is not a prompt-only or “less rules” baseline and must not introduce/remove mission-specific task knowledge.
 
-Do not implement this as a main baseline. Only after the full method works, a single targeted ablation may bypass authoritative mission-level enforcement/verification while leaving the LLM informed of the same state. Run it only on the small trustworthiness subset needed to establish H3.
+# 10. Trustworthiness / FDIR integration work package
 
-# 10. Trustworthiness/FDIR integration work package
+Trustworthiness is achieved through **bounded authority, independent safety, authoritative facts, effect verification, and evidence traces** — not by hard-coding the correct mission procedure.
 
 ## 10.1 Preserve low-level safety
 
-Do not disable, bypass, or weaken OpenRAL safety for experimental convenience.
+Do not disable, bypass, or weaken OpenRAL safety for experimental convenience. If an action is physically rejected, propagate the failure as a tool/execution result and authoritative event. The agent decides what to do next.
 
-If an action is physically rejected by safety, propagate the failure into the mission runtime as an execution event.
+## 10.2 Hard authority and approval boundaries
 
-Do not reinterpret safety rejection as task success.
-
-## 10.2 Mission authority
-
-Define mission authority through configuration/data rather than hidden Python conditionals.
-
-Examples of qualitative authority classes:
+Represent only genuine authority classes/approval requirements through configuration/data, for example:
 
 - autonomously permitted;
-- permitted under stated mission conditions;
-- requires confirmation/escalation;
+- permitted under an explicit mission condition;
+- human approval required;
 - prohibited.
 
-The exact content depends on the selected mission and should be justified as an experimental assumption, not presented as universal lunar policy.
+Authority configuration must identify classes of operation/risk, not encode the Mission A/B solution sequence. A denial/approval requirement returns structured feedback to the agent.
 
-## 10.3 FDIR event flow
+## 10.3 FDIR event flow: facts and hard prohibitions, not recovery trees
 
-Map OpenRAL failure topics and simulated subsystem faults into mission-runtime events.
+Map OpenRAL safety/failure topics and simulated subsystem faults into authoritative FDIR/capability facts.
 
-The mission runtime should update capability availability and reasoning context when a fault occurs.
+- If a fault makes a capability unavailable, update availability.
+- If a documented critical fault hard-prohibits an operation, the invariant guard blocks it.
+- Otherwise expose degradation/fault facts to the reasoner and let the model choose mission recovery.
 
-Do not build a new diagnosis algorithm unless the selected experiment genuinely requires one. The paper contribution is mission-level integration of fault information.
+Do not implement a scenario-specific FDIR recovery planner for this paper.
 
-## 10.4 Verification mapping
+## 10.4 Verification mapping: effects, not procedures
 
-For every mission transition, define its evidence source in a mission specification file.
+For every capability and mission-relevant physical condition, define evidence sources in capability/mission specifications. Example effect predicates include:
 
-Example categories:
+- pose/region reached;
+- object moved/grasped/released;
+- component state/pose changed;
+- action result plus independent state observation;
+- FDIR state cleared/changed;
+- semantic condition when deterministic sensing is genuinely unavailable;
+- human confirmation where authority policy requires it.
 
-- pose/region condition;
-- object state in simulator;
-- perception/scene classification;
-- rSkill result plus independent state observation;
-- task-progress monitor;
-- FDIR cleared state;
-- human confirmation.
-
-The verifier implementation should be deterministic where direct simulator/robot state is available, and learned only where semantic perception is genuinely required.
-
----
+Verification should be deterministic where direct simulator/robot state is available. It must not check whether a predetermined sequence was followed. Final mission-success conditions live in the evaluator and may be hidden from all methods.
 
 # 11. External baseline implementation
 
@@ -1227,7 +1148,7 @@ Enable:
 - authoritative mission state;
 - dynamic context builder;
 - typed capability orchestration;
-- mission-level admissibility/authority;
+- thin invariant/authority guard (no mission-strategy rules);
 - mission-relevant space context;
 - FDIR/capability degradation integration;
 - independent verification;
@@ -1292,7 +1213,7 @@ Every run manifest must include:
 - random seed;
 - foundation-model/provider configuration where used;
 - PLEXIL/EUROPA/OpenRAL/SRB revisions;
-- hashes of frozen mission/domain/prompt/capability artifacts;
+- hashes of frozen mission/domain artifacts and Ours generic prompt/playbook/capability/invariant artifacts;
 - space/network profile IDs;
 - capability-registry snapshot;
 - operator event log;
@@ -1313,11 +1234,11 @@ Before collecting paper results:
 2. validate Mission A/B success conditions independently from all methods;
 3. run PLEXIL and EUROPA→PLEXIL on model-covered development cases until infrastructure/baseline bugs are resolved;
 4. run Ours on the same development cases;
-5. finalize generic capability metadata, prompts/policies, PLEXIL plan libraries, EUROPA domain/solver configuration, mission policies, and verifier mappings;
+5. finalize generic capability contracts, generic prompts/playbooks, hard invariant/authority configuration, PLEXIL plan libraries, EUROPA domain/solver configuration, and effect-verifier mappings;
 6. create a cryptographic freeze manifest for all method-specific artifacts;
 7. only then reveal/instantiate final held-out cases.
 
-Infrastructure defects discovered after freeze may be fixed only if the same correction is applied fairly and the affected campaign is rerun from the start. A method-specific change that adds missing task knowledge invalidates the freeze and is counted as re-authoring.
+Infrastructure defects discovered after freeze may be fixed only if the same correction is applied fairly and the affected campaign is rerun from the start. A method-specific change that adds missing task knowledge invalidates the freeze and is counted as re-authoring. For Ours, “missing task knowledge” includes adding scenario-specific prompts/playbooks, guard rules, verifier logic, or capability hints that encode a held-out solution.
 
 ## 13.2 Experiment I — Autonomous Mission Generalization
 
@@ -1340,7 +1261,7 @@ Before a held-out instance is admitted to the campaign, an evaluator script/manu
 
 - a valid solution exists using only capabilities present before freeze;
 - every required observation is available through the shared perception stack;
-- the proposed method has no scenario-specific hard-coded solution;
+- the proposed method has no scenario-specific solution in prompts, playbooks, capability metadata, guard rules, verifier logic, or runtime code;
 - the baseline's missing knowledge is mission-level structure, not a missing controller/sensor.
 
 Store this certificate with the scenario manifest but do not expose the solution sequence to the methods.
@@ -1409,7 +1330,7 @@ allowed_shared_changes: ...    # identical for all methods
 
 Two useful extension types are enough:
 
-1. **new capability registration/use** — low-level implementation is provided identically; each method must make it usable at mission level;
+1. **new capability registration/use** — low-level implementation is provided identically; each method must make it usable at mission level. For Ours, the intended mechanism is generic capability-contract registration plus only genuinely intrinsic hard dependencies/authority metadata, not a new mission workflow;
 2. **new task relationship/mission situation** — no new controller, but mission-level knowledge must be extended.
 
 Do not create many trivial extension cases.
@@ -1457,7 +1378,7 @@ Do not run a broad third experiment.
 If required to support H3, select a small subset of Experiment-I cases that can expose stale/duplicate/unsupported mission transitions and compare:
 
 - Full Ours;
-- Ours with mission-level enforcement/independent verification bypassed while retaining the same model context.
+- Ours with the thin invariant/authority guard and/or independent effect verification selectively bypassed while retaining the same model context.
 
 Only the relevant trust metrics are reported. This belongs in failure analysis/supplement unless it becomes essential to the main result.
 
@@ -1518,7 +1439,7 @@ human_mission_specific_planning_time_s
 preplanned_transition_fraction
 ```
 
-`preplanned_transition_fraction` is the fraction of required mission transitions whose scenario-specific decomposition/order is explicitly represented in a frozen human-authored plan/task artifact rather than generated online. The annotation rule must be fixed before the final campaign.
+`preplanned_transition_fraction` is an evaluator-side annotation of how much scenario-specific decomposition/order was explicitly represented in frozen human-authored method artifacts rather than generated online. It is not a required action sequence enforced on Ours; the annotation rule must be fixed before the final campaign.
 
 Experiment II separately measures the larger offline domain/plan engineering burden.
 
@@ -1546,19 +1467,18 @@ ALFUS suggests the degree of mission variation handled and the percentage of a m
 
 ## 14.3 Trustworthiness measures
 
-Derived from the authoritative event log/evaluator:
+Derived from authoritative event logs and evaluator-only hard-boundary definitions:
 
-- mission-invalid proposed action count;
-- mission-invalid executed action count;
-- authority violation count;
+- hard-invariant/authority-violating proposal count;
+- hard-invariant/authority-violating **executed** action count;
 - low-level safety rejection/violation count;
-- stale-state action count;
-- duplicate action count;
-- unsupported mission-state advancement count;
-- false completion declaration count;
-- continued execution after unresolved critical fault count.
+- execution using stale safety-critical state where explicitly prohibited;
+- unsupported authoritative-fact advancement count;
+- false physical-effect/completion declaration count;
+- continued execution after a critical FDIR prohibition count;
+- guard false-positive cases identified in review, where a valid action was blocked by an incorrectly broad invariant.
 
-The main paper should report only the subset needed to establish that higher autonomy did not come from relaxing mission discipline. Keep the rest for failure analysis/supplement.
+The main paper reports only the subset needed to show that higher autonomy was not obtained by relaxing hard boundaries. Do **not** score “mission-invalid action” by comparison with a pre-authored preferred sequence; unconventional but valid agent strategies are allowed.
 
 ## 14.4 Experiment-II engineering measures
 
@@ -1575,7 +1495,7 @@ from extension-spec release until the common visible validation suite first pass
 For every method record:
 
 - files added/modified;
-- artifact types changed;
+- artifact types changed (including whether Ours required any mission-specific rule/workflow rather than only generic capability/invariant metadata);
 - semantic constructs added where countable;
 - line delta as supplemental descriptive data only;
 - validation/build/test iterations;
@@ -1606,7 +1526,7 @@ For each consequential mission transition, automatically verify presence of:
 - mission-state version;
 - relevant context/evidence reference;
 - proposal/tool call;
-- mission-level disposition for Ours;
+- invariant/authority guard outcome for Ours;
 - execution result;
 - verifier result;
 - resulting mission-state transition.
@@ -1643,7 +1563,7 @@ Every failed run is assigned one primary category from a frozen taxonomy such as
 - mission-model coverage/decomposition;
 - planner/executive failure;
 - capability/controller failure;
-- runtime admissibility/authority;
+- invariant/authority guard;
 - verification failure;
 - infrastructure failure.
 
@@ -1675,8 +1595,8 @@ Cover:
 - mission reducer/state transitions;
 - persistence/replay;
 - context construction;
-- decision-layer dispositions;
-- authority-policy parsing;
+- invariant/authority guard decisions and rule-scope tests;
+- hard authority/approval policy parsing;
 - contact-profile queries;
 - SPICE profile loading/interpolation;
 - verifier mappings;
@@ -1688,8 +1608,8 @@ Cover:
 
 Cover:
 
-- OpenRAL typed proposal → mission layer → rSkill dispatch;
-- rejected/deferred proposal returns useful structured feedback to the reasoner;
+- OpenRAL typed effect proposal → thin invariant/authority guard → rSkill dispatch;
+- denied/approval-required/unavailable proposal returns structured feedback to the reasoner;
 - SRB ROS observations populate OpenRAL state correctly;
 - execution results reach verifier and mission state;
 - failure topics alter mission state/capability availability;
@@ -1762,16 +1682,18 @@ The development order should reduce uncertainty one integration boundary at a ti
 
 **Exit condition:** every implemented space-context variable changes an actual mission decision or availability condition in Experiment I/II and has documented provenance.
 
-## Phase E — Authoritative mission runtime
+## Phase E — Thin space-native harness
 
-- implement mission event schema/reducer/store;
-- connect OpenRAL events and SRB verification;
-- build dynamic reasoner context;
-- add mission-level decision path;
-- integrate authority and FDIR signals;
+- implement authoritative fact/evidence event schema, reducer, and persistent store;
+- keep OpenRAL `MissionState`/decomposition as agent working state rather than fixed mission truth;
+- connect OpenRAL/SRB effect verification;
+- build dynamic evidence-grounded context;
+- implement the thin invariant/authority guard at effectful dispatch;
+- audit prompts/playbooks to remove scenario-specific mission logic;
+- integrate FDIR/capability availability and distributed endpoint reconciliation;
 - link traces.
 
-**Exit condition:** the foundation model can be restarted or changed without losing authoritative mission progress.
+**Exit condition:** (1) the foundation model can be restarted/switched without losing authoritative physical/operational facts; (2) task decomposition/recovery can change online without editing harness rules; and (3) the guard contains no Mission A/B-specific action ordering or recovery logic.
 
 ## Phase F — External baseline integration
 
@@ -1808,7 +1730,7 @@ The development order should reduce uncertainty one integration boundary at a ti
 
 ## Phase I — Targeted trustworthiness analysis
 
-Only if necessary, run the single enforcement/verification ablation on selected Experiment-I scenarios and produce the mission-invalid-transition analysis.
+Only if necessary, run the single guard/verification ablation on selected Experiment-I scenarios and analyze hard-boundary violations, unsupported authoritative-fact advancement, stale/duplicate execution, and false effect declarations.
 
 ## Phase J — LunarBot demonstration
 
@@ -1869,7 +1791,7 @@ Do not interrupt the current LunarBot capability-set work. The scientific redesi
 5. Pin/build PLEXIL Release 6 and implement the LunarBot adapter; run one covered Mission A instance end-to-end.
 6. Pin/build EUROPA and implement a minimal NDDL domain + host + EUROPA→PLEXIL activity bridge; verify online feedback and replanning inside the encoded domain on the same covered case.
 7. Implement experiment scenario manifests, evaluator-only success annotations, freeze-manifest hashing, and the closed-capability validator.
-8. Finish the proposed `space_runtime`/LLM/VLM mission path needed for Mission A; implement only the space-context variables actually exercised by final scenarios.
+8. Finish the proposed thin `space_runtime`/LLM/VLM path for Mission A: authoritative facts/evidence, dynamic context, generic capability contracts, thin invariant/authority guard, playbook audit, and only the space-context variables exercised by final scenarios. Do not add mission-specific decision rules.
 9. Run all three methods on covered development cases until infrastructure defects are removed; do not tune against final held-out cases.
 10. Construct final held-out cases, freeze all method artifacts, and run Experiment I.
 11. After Experiment I, define extension cases and implement timed engineering worklogs for Experiment II.
@@ -1892,7 +1814,10 @@ Baseline and metric implementation decisions in this plan are grounded in the fo
 - NIST SP 1011-II-1.0 ALFUS Framework for Human Independence and dynamic-planning metrics;
 - Goodrich/Olsen HRI metrics as supporting operator-attention context;
 - planning knowledge-engineering literature including MyPDDL for time-on-task/error measurement precedent;
-- OpenRAL pinned source/documentation;
+- OpenRAL pinned source/documentation, especially the typed `ReasonerToolCall` contract, dynamic rSkill/tool palette, MissionState/decomposition, and safety/dispatch path;
+- Hermes Agent official Agent Loop / Tools Runtime / Skills documentation as a design precedent for model-owned task strategy over registered tools;
+- Pi official documentation as a design precedent for a deliberately minimal, extension-oriented harness;
+- OpenAI, *Unrolling the Codex agent loop* and *Running Codex safely at OpenAI*, as precedents for separating model strategy from sandbox/approval/execution/telemetry boundaries;
 - Space Robotics Bench pinned source/documentation;
 - NAIF SPICE and selected lunar communication/context references only for variables actually exercised in final scenarios.
 
