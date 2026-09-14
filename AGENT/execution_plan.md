@@ -854,17 +854,51 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
    busy at ~60%/270W, but the sensor's own render-product preview stays
    black indefinitely) — so it is not a headless-specific or GPU/driver
    issue, specifically the lidar SDG path. Matches isaac-sim/IsaacSim#110
-   (open). Chased down the "fixed in 5.1.0" forum lead directly: NVIDIA's
-   official 5.1.0 GA download is byte-identical to our pinned
+   (closed 2026-04-17 as "resolved in Isaac Sim 5.1" — but see below, this
+   did not hold up). Chased down the "fixed in 5.1.0" forum lead directly:
+   NVIDIA's official 5.1.0 GA download is byte-identical to our pinned
    `5.1.0-rc.19` (same VERSION string, same extension versions) — they
    shipped the RC unchanged as GA, so **there is no same-series fix to
-   move to**; the only newer releases are 6.0.0/6.0.1/6.1.0, a
-   disproportionate two-major-version jump (would need an IsaacLab
-   upgrade + full SRB re-verification) not undertaken without an explicit
-   user decision. See `docs/rtx_lidar_integration_plan.md`'s Status
-   section for the full verification trail. Not wired into
-   `srb/core/env/mobile/env.py` as the active sensor; RayCaster stays
-   active. F24 in `docs/research_findings.md`.
+   move to**. See `docs/rtx_lidar_integration_plan.md`'s Status section
+   for the full verification trail (six render-advance mechanisms, two
+   documented Known Issues workarounds, non-headless/real-display
+   localization, the official example's `enable_motion_bvh` flag, and
+   NVIDIA's own engineer-confirmed workaround from the #110 thread itself
+   — all tried, all failed). Not wired into `srb/core/env/mobile/env.py`
+   as the active sensor; RayCaster stays active. F24 in
+   `docs/research_findings.md`.
+
+   **Parked 2026-09-14 (user decision), not abandoned.** A same-day
+   follow-up closed out the remaining question — is this worth more
+   effort — on two fronts: (a) re-read `research_content.md`: the word
+   "lidar" never appears in it; every baseline only needs to *share* the
+   same perception (§5.1), and the LunarBot demo's purpose is validating
+   runtime transfer, explicitly "not attempt to reproduce the lunar
+   environment on Earth" (§5.7) — RTX Lidar's realism has no bearing on
+   the paper's actual claims; (b) researched an Isaac Sim 6.1.0 upgrade as
+   a possible fix and found it is not a small/safe change: IsaacLab v2.2.1
+   does not target Isaac Sim 6.x (needs IsaacLab **v3.0.0-beta2+**, still
+   beta, CI coverage for the pairing incomplete per the IsaacLab team
+   itself); Kit's bundled Python moves 3.11→3.12 (risk to the pinned
+   torch/cu128 wheels and the cross-ABI trick this project's ROS bridging
+   depends on to import system Humble's `rclpy` into Kit's interpreter);
+   9+ documented breaking changes plus a PyTorch→Warp Core-API rework in
+   6.0; **and, most load-bearing, independent evidence that our exact GPU
+   class has its own unresolved bugs on this exact build** — an NVIDIA
+   forum report titled for our precise combination ("Isaac Sim
+   5.1.0-rc.19 crashes on startup with RTX 5090 and NVIDIA 580-open
+   driver") and
+   [IsaacLab#4951](https://github.com/isaac-sim/IsaacLab/issues/4951)
+   (TiledCamera hangs indefinitely on RTX 5090/Blackwell with Isaac Sim
+   5.1.0, "the hang occurs before the warp kernel receives any input
+   data" — the same failure shape as our Lidar SDG dispatcher never
+   advancing), **with no confirmed fix in any later version including
+   6.1** for either. Given the paper doesn't need it and the upgrade path
+   is unproven-at-best for actually fixing it while carrying real
+   migration risk, **this item is shelved — RayCaster remains the
+   permanent `lidar_robot` implementation.** Do not re-open without new
+   evidence that a future Isaac Sim build both (a) fixes RTX Lidar and
+   (b) doesn't regress on Blackwell-class GPUs.
 3. **Procedural manipulation rSkills** (`kind: procedural`, tag `lunar_bot`):
    `move_joints`, `move_ee_to_pose`, `grasp`, `release`, `stow`. Each is a
    real closed loop on OpenRAL world state / TF, emits through the kernel,
