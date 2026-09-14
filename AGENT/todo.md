@@ -89,7 +89,10 @@ Design + reuse survey: `docs/lunar_bot_capability_set_plan.md`. Branch
       (`openral/845483c`). **Open (F28)**: camera topics reach OpenRAL at
       ~2 Hz — Fast-DDS large-message loss, fix = XML profile both sides +
       `sysctl net.core.rmem_max`. Still not reached: a reasoner-dispatched
-      body_twist observed moving the base — nothing blocks it now.
+      body_twist observed moving the base — **reached (F29)**: kernel-path
+      BODY_TWIST (bypassing the reasoner — no LLM credential on this host,
+      same scope as Phase B1) moved `srb/env0/robot` 0.55 m over 5.05 s of
+      0.2 m/s commands, measured via real `/tf`. Item 2b is fully done.
 - [x] 2c. RTX Lidar for the Mid-360 — **blocked on a confirmed upstream
       Isaac Sim bug** (F24: the SDG render pipeline never dispatches a
       frame). **Parked 2026-09-14 by user decision**; RayCaster (item 2) is

@@ -879,8 +879,11 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
    path. Status 2026-09-14: built + live-verified (F26/F27); the SRB tick
    rate that stalled the exit condition is root-caused and fixed (F28,
    0.36 → ~12 Hz, `staleness_limit_s` untouched); the body_twist
-   observation itself is the next step. Open from F28: Fast-DDS
-   large-message loss caps camera topics at ~2 Hz into OpenRAL.
+   observation itself is done (F29): a kernel-dispatched (not
+   reasoner-dispatched — no LLM credential on this host) BODY_TWIST moved
+   the base 0.55 m over 5.05 s, measured via real `/tf`. Item 2b is fully
+   closed. Open from F28: Fast-DDS large-message loss caps camera topics
+   at ~2 Hz into OpenRAL.
 2c. **RTX Lidar support for the Mid-360** (user decision 2026-09-14,
    scheduled immediately after 2's RayCaster-based Mid-360 lands — do not
    start early; treated as permanent, repeatedly-reused infra, not a demo).

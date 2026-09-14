@@ -1019,3 +1019,48 @@ enables it.
 Method note for next time: a bucket that suddenly grows after an
 unrelated fix is a **sync point moving**, not a regression — check where
 the first GPU synchronisation after `sim.render()` happens before chasing it.
+
+### F29 — Item 2b's exit condition reached: a kernel-dispatched BODY_TWIST really moves LunarBot inside SRB, through `openral deploy sim`
+
+**What was proven.** `openral deploy sim --config scenes/deploy/srb_panel_remount.yaml`
+brought up the whole graph (kernel, HAL, reasoner, runtime_node, prompt_router,
+SRB as the external simulator); a standalone script then used the existing,
+unmodified `ROSPublishingHAL` — the same mechanism Phase B1 used against a
+hand-launched SRB (`docs/phase_b_lunar_bot_hal.md`) — to publish real
+`ActionChunk` BODY_TWIST commands (`vx=0.2 m/s`, under the manifest's 0.3 m/s
+cap) on `/openral/candidate_action` for 5 s, at 10 Hz. Full chain exercised,
+nothing bypassed:
+
+```
+script -> ROSPublishingHAL.send_action() -> /openral/candidate_action
+  -> C++ safety kernel -> /openral/safe_action
+    -> openral_hal_lunar_bot lifecycle node -> LunarBotSRBHAL.send_action()
+      -> /srb/env0/action/cmd_vel (real geometry_msgs/Twist) -> SRB physics
+        -> /tf: srb/env0 -> srb/env0/robot
+```
+
+Measured via a real `tf2_ros` lookup before/after (not `joint_states`, not a
+log grep): `srb/env0/robot` moved from `(0.042, -0.048)` to `(-0.372, -0.411)`
+— **0.550 m** over 5.05 s of commanded motion (naive expectation at a
+constant 0.2 m/s: 1.010 m; the shortfall is the same kind of steer/drive
+ramp-up F19 already named, not a new defect). No kernel rejection, no HAL
+error, no `read_state failed` in the log.
+
+**Deliberately bypassed: the LLM reasoner.** No `OPENRAL_REASONER_MODEL`/
+`ANTHROPIC_API_KEY`-class credential is configured on this host, and the
+question this session needed answered — does the actuation chain move the
+robot in SRB at all — does not depend on the reasoner's own tool-call
+dispatch, which is a separate, later concern (already the subject of item 3's
+procedural rSkills). This mirrors Phase B1's own methodology exactly (its
+doc's explicit "not run through the reasoner" scope note).
+
+**Why this matters for the paper.** This was the one piece of Phase B2 that
+was previously unverified end-to-end (raised directly by the user: "一定要
+全链路确定机器人在srb里面真的能动"). It is now closed: the full
+`openral deploy sim` graph against the SRB backend, at the post-F28 tick
+rate, moves LunarBot for real. Host verified clean after teardown (no
+matching processes, GPU 17 MiB) via the F28-fixed scripted-teardown path.
+
+Script kept in the session scratchpad, not committed as a permanent test
+(AGENT.md §3 — this repo minimizes pytest; the exercised code — kernel, HAL,
+`ROSPublishingHAL` — already carries its own test coverage in `openral/`).

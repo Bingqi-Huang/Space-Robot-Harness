@@ -68,13 +68,15 @@ non-interactive shell inherits `SIGINT=SIG_IGN` (`openral/845483c`,
 trampoline + SIGTERM-the-wrapper sweep), verified clean twice. **Open**:
 camera topics arrive in OpenRAL at ~2 Hz while SRB publishes at 12 Hz —
 Fast-DDS large-message loss (both sides Fast-DDS, `rmem_max` 208 KB), fix
-= XML profile for both + sysctl (F28). NOT yet reached: a
-reasoner-dispatched body_twist observed moving the base — nothing blocks
-it now. **Debugging a live `deploy sim` graph**: `ROS_DOMAIN_ID=77` +
-`ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (`confine_sim_scope`) — export
-both or `ros2 topic` sees only `/parameter_events`/`/rosout` (F27). The
-sensor bridge must be started with `.venv/bin/python -m
-openral_hal_lunar_bot.sensor_bridge_node` (system `ros2 run` lacks structlog).
+= XML profile for both + sysctl (F28). **Item 2b's exit condition reached
+(F29)**: a kernel-path BODY_TWIST (reasoner bypassed — no LLM credential
+on this host, same scope Phase B1 used) moved `srb/env0/robot` 0.55 m
+over 5.05 s of 0.2 m/s commands via real `/tf`; host clean after. **Live
+`deploy sim` graph**: export `ROS_DOMAIN_ID=77` +
+`ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` (`confine_sim_scope`) before
+`ros2 topic`, or it sees only `/parameter_events`/`/rosout` (F27). Sensor
+bridge: `.venv/bin/python -m openral_hal_lunar_bot.sensor_bridge_node`
+(`ros2 run` lacks structlog).
 **2c** RTX Lidar for the Mid-360: blocked on a confirmed upstream Isaac
 Sim bug (F24), **parked by user decision** — RayCaster is permanent.
 
@@ -100,12 +102,10 @@ item 4 fixes it) and the same missing-magnitude-check gap for
   Isaac Lab source lives at `~/isaaclab/source/isaaclab/isaaclab/envs/mdp/
   actions/` and `~/isaaclab/source/isaaclab/isaaclab/controllers/` on this
   host — read it, don't guess from `srb/core/action/`'s thin wrapper alone.
-- **F17 — multi-node estop reset**: the kernel's `/openral/estop_reset`
-  service only clears the kernel's own latch. Every other node that latched
-  on `/openral/estop` (e.g. a HAL lifecycle node) stays latched and
-  silently drops commands until `/openral/estop_cleared` (`std_msgs/Empty`)
-  is also published — normally the operator dashboard's job. Any test
-  script driving the kernel directly must publish it too after every reset.
+- **F17 — multi-node estop reset**: `/openral/estop_reset` only clears the
+  kernel's own latch. Every other node latched on `/openral/estop` stays
+  latched until `/openral/estop_cleared` (`std_msgs/Empty`) is also
+  published — a direct-kernel test script must publish it after every reset.
 - **F18 — SRB's moon terrain is only flat within ~4 m of the env origin**
   (`flat_area_size`); an object spawned outside gets embedded, then flung
   by PhysX depenetration forever in lunar gravity. Keep scene objects
@@ -119,9 +119,9 @@ item 4 fixes it) and the same missing-magnitude-check gap for
   regardless. `joint_names` only marks which slots are the real ones; it
   never shrinks the row. Caught this the hard way (silently dropped every
   JOINT_POSITION dispatch) — see `docs/lunar_bot_joint_position_control.md`.
-- `RskillRunnerNode`: mirror `compose.py` — construct with `skill_resolver=
-  None`, then swap `node._skill_resolver = make_default_skill_resolver(node,
-  search_paths=["rskills"])` before `configure()`.
+- `RskillRunnerNode`: construct with `skill_resolver=None`, then swap
+  `node._skill_resolver = make_default_skill_resolver(node,
+  search_paths=["rskills"])` before `configure()` (mirrors `compose.py`).
 - Any shell calling `ros2 action send_goal`/`topic echo`/`topic hz` on an
   `openral_msgs` interface needs both `/opt/ros/humble/setup.bash` and
   `install/setup.bash` sourced.
