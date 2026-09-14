@@ -65,24 +65,26 @@ Build order (each verified live):
       **Live-verified decisively (F33)**: `/cmd_vel` → correct
       `BODY_TWIST` chunk on `candidate_action` → kernel-approved
       `safe_action` → robot's real SRB pose moved ~0.6 m, unlatched
-      throughout. `/scan` verified flowing 7-11 Hz.
+      throughout. `/scan` verified flowing 7-11 Hz. Two more real bugs
+      (missing `footprint_polygon`, per-package pluginlib names) found +
+      fixed live-dispatching an actual NavigateToPose (F36). **Open (F37,
+      deferred)**: bt_navigator never reaches ACTIVE unless
+      `sensor_bridge_node` is already publishing `/odom` when Nav2's
+      lifecycle bringup starts (root-caused, not a mystery) — real fix is
+      the already-tracked "wire sensor_bridge into deploy_e2e.launch.py"
+      follow-up; the kernel-checked-motion claim itself doesn't depend on
+      this.
 - [x] 6. MoveIt for RM-75 — built + merged into
       `feat/lunar-bot-capability-set`. Vendored `ros2_rm_robot`'s RM75
       URDF/MoveIt2 config per explicit user decision overriding CLAUDE.md
       §1.9 for this fork (F31, license was undeclared/inconsistent
       upstream). New `rm75` embodiment tag; `rskill-moveit-*` retagged;
       trajectory→JOINT_POSITION bridge was already generic.
-      **Live-verified the mechanism, found a real open bug (F33)**:
-      goal→MoveIt-plan→chunked-kernel-replay all confirmed working, but
-      TWO different targets (one a trivial, definitely-reachable nudge)
-      both hit an IDENTICAL kernel rejection at the SAME waypoint (chunk
-      3) — rules out "bad pose", points at the trajectory bridge or the
-      kernel's per-joint envelope on lunar_bot's 21-wide padded vector.
-      **Next**: read the actual chunk-3 `flat` values via OTel trace, not
-      more pose-guessing — deprioritized (research validity doesn't need
-      it: procedural `move_ee_to_pose` already beats panel_remount's
-      tolerance by ~10x). `move_group.launch.py` still standalone, not in
-      `deploy_e2e.launch.py`.
+      **Fully live-verified end to end (F36, resolves F33)**: root cause
+      was a units mismatch (gripper backfill echoed raw SRB units into a
+      `[0,1]`-normalised envelope), not a bad waypoint — fixed, re-run
+      reaches `success: true`, arm converges to ~0.03 rad of target.
+      `move_group.launch.py` still standalone, not in `deploy_e2e.launch.py`.
 - [x] 7. Mission verifier node (this repo, `openral_ext/mission_verifier/`)
       — built + live-verified (F33), merged into `main`. Reads real SRB
       ground-truth TF (`srb/env0 -> srb/env0/panel`) + `/srb/env0/

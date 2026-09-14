@@ -1478,3 +1478,93 @@ Process note, same as F31/F32: touches `cpp/openral_safety_kernel/`
 directly; engineered/tested to the F12/F16 precedent's bar, but formal
 safety-WG sign-off against the private hazard log is still procedurally
 owed.
+
+### F36 — Full Nav2 live integration test: two real bugs found+fixed; F33's MoveIt bug fully root-caused and fixed (units mismatch, not a waypoint problem)
+
+First real `NavigateToPose` dispatch through Nav2's actual planner/
+controller stack (not just raw `/cmd_vel`) surfaced two bugs `openral
+check`/offline validation couldn't have caught:
+
+1. `lunar_bot` declared only `footprint_radius`, not `footprint_polygon`.
+   The shared Nav2 base params have MPPI's `CostCritic.consider_footprint:
+   true`, which needs a real polygon — the radius-only `"[]"` sentinel
+   crashed `controller_server.configure()`. `lunar_bot` was the first
+   radius-only mobile base in this project (`panda_mobile` always had a
+   polygon), so this path was never exercised. Fixed: a real rectangle in
+   `robot.yaml` from the same wheel geometry `footprint_radius` uses, each
+   corner pushed out by `wheel_radius` for margin consistency.
+2. Every `plugin:` value in `nav2_panda_mobile.yaml` used the uniform C++
+   `pkg::Class` form, but pluginlib's registered lookup name is
+   per-package (some declare `name="pkg/Class"` in their plugin XML,
+   others default to the type string) — crashed `planner_server`. Fixed
+   per-package, cross-checked against `nav2_bringup`'s own shipped
+   reference params rather than a blanket find-replace guess.
+
+**Open, not resolved**: `lifecycle_manager_navigation` hung mid-bringup
+during this test (`bt_navigator`/`behavior_server` never activated,
+`/navigate_to_pose` never came up) even with every individual node healthy
+and responsive to direct lifecycle service calls — live during heavy
+concurrent host load (two other forks' C++ builds + live-sim work running
+at once, load average 23-26). Suspected contention, not a code defect;
+queued for a clean-host retest before treating it as closed either way.
+
+**F33's MoveIt kernel rejection — fully resolved, not a mystery anymore.**
+Root cause: `ros_action_rskill.py`'s backfill for joints a MoveIt plan
+doesn't move echoes their raw `world_state` reading unconditionally —
+LunarBot's gripper joints read back in SRB's raw mechanical-stroke units
+(~±0.82 rad) while the kernel's envelope for those joints is the
+normalised `[0,1]` jaw-fraction contract, so every JOINT_POSITION chunk
+carried an out-of-envelope gripper slot from chunk 1 on. The "fails right
+before chunk 3" pattern from F33 was a reporting-delay artifact
+(ungrouped chunks don't block on a per-chunk ack; the runner only notices
+on its next `safety_status` poll), not evidence about *which* chunk was
+bad. Fixed: the backfilled reading is used only when it falls inside that
+joint's own `position_limits`, else `0.0` (both validated) — Franka's
+already-working path (readings always in-range there) is unaffected. 4
+new TDD tests + a live re-run of the exact original repro: now reaches
+`chunk_index: 8`, `success: true`, arm converges to ~0.03 rad of every
+target.
+
+Both fixes independently re-verified by the coordinator (tests re-run,
+`openral check` clean) — landed directly on `master` (not a branch) because
+the shared checkout's `master` moved under this fork mid-session (item 9's
+merge); sequential commit timestamps confirm no concurrent-write
+corruption, just a moving base — worth noting as a process gap (this fork
+should have had its own worktree, same as item 9's) rather than repeating.
+
+### F37 — Nav2's BT-based autonomous navigation root-caused (real sequencing bug, not host contention as first suspected); left open, deferred
+
+Coordinator retested F36's open item ("`lifecycle_manager_navigation` hung
+mid-bringup") on an idle host to rule out contention — it reproduced
+identically, ruling contention OUT as the (sole) explanation. Root cause,
+read directly from the log: `local_costmap`'s `activate()` blocks on a
+`base_link -> odom` TF transform that only exists once
+`sensor_bridge_node` is running and publishing `/odom` — but
+`sensor_bridge_node` is a manually-launched companion process, not part
+of `openral deploy sim`'s own graph (the same standalone-process gap F25/
+item 2 already flagged, now shown to have a second, concrete consequence:
+it isn't just "camera/odom data is missing," it's "Nav2's lifecycle
+bringup silently wedges if the operator doesn't start it fast enough").
+`controller_server` retries the TF lookup for a few seconds then goes
+quiet without erroring (Nav2's own tolerant-wait behavior, not a crash);
+`lifecycle_manager_navigation` then never proceeds past `Activating
+controller_server` to activate `bt_navigator`, so `/navigate_to_pose`
+exists on the graph (created at `configure()`) but rejects every goal
+(not yet `ACTIVE`) — exactly the `ROSRuntimeError("wrapped server
+rejected the goal")` this session's live dispatch hit.
+
+A same-session retest sequencing `sensor_bridge_node` to start immediately
+(waiting only for `/srb/env0/robot/joint_states`, not launched by hand
+minutes later) was in progress to confirm the fix when it hit an
+unrelated tooling constraint (a background-process memory ceiling in this
+agent's own sandbox killed the watch process, not a host or code issue —
+`free -h` showed 180+ GiB genuinely free at the time). **Left open,
+deliberately, per this project's own debugging-discipline rule**: the
+root cause is understood and actionable, item 5's actually-safety-relevant
+claim (kernel-checked `/cmd_vel` produces real, bounded motion) is already
+decisively proven independent of this, and the real fix is already the
+known, already-tracked follow-up (wire `sensor_bridge_node` into
+`deploy_e2e.launch.py` so it can never race Nav2's bringup) rather than a
+new investigation. Until that lands, live-verifying full Nav2 autonomous
+navigation needs `sensor_bridge_node` started within a few seconds of
+`openral deploy sim`, not as an afterthought.
