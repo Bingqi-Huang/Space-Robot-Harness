@@ -72,28 +72,31 @@ Build order (each verified live):
       §1.9 for this fork (F31, license was undeclared/inconsistent
       upstream). New `rm75` embodiment tag; `rskill-moveit-*` retagged;
       trajectory→JOINT_POSITION bridge was already generic.
-      **Live-verified the mechanism, found a real open bug (F33), not
-      papered over**: goal→MoveIt-plan→chunked-replay-through-kernel all
-      confirmed working (both a Cartesian `eef_pose` and a joint-space
-      `joints` dispatch reached MoveIt and began replaying). Both runs hit
-      an IDENTICAL kernel rejection (`kind_workspace (joint_position)`)
-      at the SAME point — waypoint/chunk 3 — despite the second target
-      being a trivial, definitely-reachable nudge off the already-verified
-      stow pose. Rules out "bad pose"; points at the trajectory bridge or
-      the kernel's per-joint envelope on lunar_bot's 21-wide padded
-      vector. **Next**: inspect the actual chunk-3 `flat` values via OTel
-      trace (not more pose-guessing) — blocked this session by the
-      estop-reset gap below eating the remaining time, not by difficulty.
-      `move_group.launch.py` is still a standalone companion process, not
-      wired into `deploy_e2e.launch.py` (same class of gap as item 2's
-      sensor_bridge_node).
+      **Live-verified the mechanism, found a real open bug (F33)**:
+      goal→MoveIt-plan→chunked-kernel-replay all confirmed working, but
+      TWO different targets (one a trivial, definitely-reachable nudge)
+      both hit an IDENTICAL kernel rejection at the SAME waypoint (chunk
+      3) — rules out "bad pose", points at the trajectory bridge or the
+      kernel's per-joint envelope on lunar_bot's 21-wide padded vector.
+      **Next**: read the actual chunk-3 `flat` values via OTel trace, not
+      more pose-guessing — deprioritized (research validity doesn't need
+      it: procedural `move_ee_to_pose` already beats panel_remount's
+      tolerance by ~10x). `move_group.launch.py` still standalone, not in
+      `deploy_e2e.launch.py`.
 - [x] 7. Mission verifier node (this repo, `openral_ext/mission_verifier/`)
       — built + live-verified (F33), merged into `main`. Reads real SRB
       ground-truth TF (`srb/env0 -> srb/env0/panel`) + `/srb/env0/
       terminated`, cross-checks against the task's own self-report rather
       than trusting it, publishes `VerifierEvent` JSON on
       `/space_harness/verifier_events` at ~10 Hz, zero errors observed.
-- [ ] 8. §19 run-manifest writer wrapping `openral deploy sim` (this repo).
+- [x] 8. §19 run-manifest writer (`openral_ext/run_manifest/`), merged.
+      Wraps `openral deploy sim` (doesn't reimplement its orchestration).
+      Writes what's real today (revisions, mission_config,
+      capability_registry, real OTel traces, metrics, rosbag opt-in);
+      honestly omits (recorded reason, not fake data) what has no source
+      yet (`space_context_ref`/`network_profile_ref`/`model_config` —
+      B3/baselines not started). 6/6 offline checks vs. real fixtures,
+      independently re-run by the coordinator before merge.
 - [ ] 9. Remaining kernel magnitude checks (`kJointTrajectory` first).
 - **Coordination**: Mid-360 landed on SRB `feat/mid360-lidar` — open/unmerged,
   fair game to build on.
