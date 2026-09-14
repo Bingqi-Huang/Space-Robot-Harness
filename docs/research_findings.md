@@ -613,3 +613,69 @@ different/older GPU hardware, or once Isaac Sim ships a build actually
 validated against Blackwell-generation cards. Source: this session's
 reproduction across headless and non-headless modes (scratchpad, not
 committed) plus `docs/rtx_lidar_integration_plan.md`'s Status section.
+
+### F25 — Sensor bridge built + verified live (item 2); a real `rclpy` executor gotcha found along the way
+
+Built `openral_hal_lunar_bot.sensor_bridge_node` (`LunarBotSensorBridgeNode`):
+relays SRB's already-computed `Image`/`CameraInfo`/`PointCloud2`/`Imu` onto
+`/openral/cameras/{front,front_depth,wrist}/*`, `/openral/lidar/points`,
+`/imu`, with `header.frame_id` rewritten to the matching `robots/lunar_bot/
+robot.yaml` `sensors[].frame_id` — a relay, not a resynthesis (§3.2 item 1's
+"no new relay code if the binding supports frame rewriting" fallback,
+exercised because `openral_rskill_ros.sensor_leg`'s `deploy_binding` route
+isn't wired into any launch for `lunar_bot` yet, item 2b). A `tf2_ros` buffer
+re-roots every sensor's SRB-native pose (`srb/env0/<sensor> ← srb/env0`) onto
+`chassis_base_link -> <manifest frame>`, plus `/odom` (pose from the same
+lookup, twist from finite-differenced position + the IMU's angular rate,
+rotated into the body frame — `rotate_vector_by_quat_xyzw`, unit-tested) and
+a static identity `map -> odom`. `robot.yaml` gained a `sensors:` block
+(`front`/`front_depth`/`wrist`/`imu`/`lidar`) and `has_lidar: true`.
+
+Two things the design doc (`docs/srb_deploy_backend_plan.md` §6) flagged as
+open, resolved live against a running `panel_remount_visual env.robot=
+lunar_bot` instance rather than assumed:
+
+- **SRB's articulation-root TF frame (`srb/env0/robot`) is numerically
+  `chassis_base_link`'s pose** — confirmed by reading the live `/tf`: the
+  per-body transform `srb/env0/robot -> srb/env0/robot/chassis_base_link` is
+  translation `(0,0,0)`, rotation ≈ identity (float noise only). So
+  `robot_tf_frame` (a bridge parameter, not hardcoded, precisely for this
+  reason) can default to `srb/env0/robot` with confidence, not a guess.
+- **The Hydra dotlist override `env.camera_resolution=[640,480]` on the
+  `srb agent ros` command line works** — the live `/openral/cameras/front/
+  camera_info` (relayed straight from SRB) reported `height: 480, width:
+  640`, and its `k` matrix (`fx=fy=266.667, cx=320, cy=240`) exactly matches
+  this manifest's hand-computed `PinholeCameraCfg` intrinsics
+  (`focal_length=5.0, horizontal_aperture=12.0`) — a live cross-check, not
+  just "the override didn't error."
+
+**A real `rclpy` gotcha, not an SRB or design bug**: the bridge node
+silently stalled ~1-2s after startup (no crash, no error — `_on_tick`
+simply stopped firing, so every TF/odom lookup timed out from then on) under
+two different spin strategies before the fix was found: (1) a bare
+`rclpy.spin(node)` — `tf2_ros.TransformListener` puts its `/tf`/`/tf_static`
+subscriptions on a `ReentrantCallbackGroup`, which apparently needs a
+`MultiThreadedExecutor` to coexist with this node's several
+MutuallyExclusive-group relay subscriptions; (2) even a `MultiThreadedExecutor`
+still stalled when `.spin()` was called directly on the **main** thread —
+only spinning it on a background thread (main thread just waits/joins)
+ran cleanly for the full length of every test. Root cause not chased past
+that point (a main-thread-specific interaction with rclpy's wait-set wakeup
+is the working hypothesis); the fix is empirically verified over multiple
+30-50s live runs, not theorised. Documented in the module's `_make_main`
+docstring so it isn't rediscovered by trial and error next time.
+
+Verified live end-to-end: `/odom` (`frame_id: odom`, `child_frame_id:
+chassis_base_link`, real moving pose), `/imu` (`frame_id: imu_link`,
+`orientation_covariance[0]=-1` — no orientation estimate, per the
+`sensor_msgs/Imu` convention, since SRB's `Imu` sensor models linear
+acceleration + angular velocity only), `/openral/lidar/points` (`frame_id:
+lidar_link`, ~14k points, matching `env.py`'s density comment),
+`/openral/cameras/front_depth/points` (`frame_id: front_camera_optical_frame`,
+~196k points), and `tf2_echo chassis_base_link front_camera_optical_frame`
+resolving to a real, changing transform. Not yet verified: `wrist`'s camera
+frame TF chain specifically (parented flat under `chassis_base_link`, not
+through the arm, per §3.2 item 1 — only `front`/`imu`/`lidar` frames were
+individually spot-checked with `tf2_echo`; the `_publish_sensor_frames` loop
+is identical code for all four, so this is a low-risk gap, not a known
+issue).

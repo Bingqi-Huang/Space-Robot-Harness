@@ -148,42 +148,58 @@ deploy backend** → procedural manipulation skills → F19 → Nav2 (Mid-360)
 → MoveIt → verifier → run-manifest writer → remaining kernel checks →
 B3.
 
-## 5. Mid-360 lidar — interface contract with the SRB-side agent
+## 5. Mid-360 lidar — interface contract with the SRB-side agent — landed 2026-09-14
 
-The physical LunarBot carries a Livox Mid-360 (user, 2026-09-14). Another
-agent adds it to `lunarbot.py` in the SRB fork; this project does **not**
-touch `lunarbot.py` concurrently. What the OpenRAL side will consume, and
-therefore asks the SRB side to fix and record:
+The physical LunarBot carries a Livox Mid-360 (user, 2026-09-14). The other
+agent's work landed on SRB branch `feat/mid360-lidar` (`4baea49` RayCaster
+sensor, `9bae384` an RTX Lidar attempt — parked, blocked on a confirmed
+upstream Isaac Sim bug, F24). What actually shipped, corrected from this
+section's original proposal below:
 
-- sensor key in `scene._sensors` (proposed: `lidar`) → SRB publishes
-  `/srb/env0/lidar/pointcloud` (`sensor_msgs/PointCloud2`, frame
-  `srb/env0/lidar`) automatically via `RosInterface` for any `RayCaster`;
-- mount: parent prim + offset on `chassis_base_link` (record the numbers;
-  the sensor bridge re-roots `srb/env0/lidar` → `chassis_base_link →
-  lidar_link`);
-- pattern: Mid-360 is a non-repetitive 3-D scanner, 360° × 59° FOV
-  (−7° … +52°), 40 m range at 10 % reflectivity, ~200 k points/s, 10 Hz —
-  whichever `RayCasterCfg` pattern approximates it, record it and the
-  chosen ray count / update period so the paper can state the fidelity.
+- sensor key in `scene._sensors` is **`lidar_robot`** (not the proposed
+  `lidar`) → SRB publishes `/srb/env0/lidar_robot/pointcloud`
+  (`sensor_msgs/PointCloud2`, frame `srb/env0/lidar_robot`, ~14k points/scan,
+  a `LidarPatternCfg` approximation of the real non-repetitive Mid-360
+  pattern — `srb/core/env/mobile/env.py`);
+- mount: `frame_lidar = Frame(prim_relpath="lidar_mid360_frame")` on
+  `chassis_base_link`'s front mast — the sensor bridge (F25) re-roots
+  `srb/env0/lidar_robot` → `chassis_base_link → lidar_link`, verified live
+  via `tf2_echo`;
+- pattern: `channels=40`, `vertical_fov_range=(-7, 52)` deg,
+  `horizontal_res=1.0` deg, `max_distance=40` m — recorded in
+  `robots/lunar_bot/robot.yaml`'s `sensors.lidar` entry.
 
-OpenRAL side (capability-set item 5, Nav2): `has_lidar: true` selects the
-`lidar` costmap profile, which needs a 2-D `/scan` for `slam_toolbox` and
-the collision monitor. `pointcloud_to_laserscan` is **not** installed on
-this host (checked); plan is `apt install ros-humble-pointcloud-to-laserscan`
-and a slice of the Mid-360 cloud → `/scan`, while Nav2's local costmap
-additionally consumes the full `PointCloud2` through the `voxel_layer`. In
-simulation `map → odom` is truth from the bridge, so `slam_toolbox` is
-optional; it is kept in the graph only if it proves reliable on moon
-terrain, otherwise the profile runs without SLAM and the paper says so.
+The sensor bridge (`openral_hal_lunar_bot.sensor_bridge_node`, item 2, F25)
+is built and live-verified — it relays this pointcloud onto
+`/openral/lidar/points` today. OpenRAL side (capability-set item 5, Nav2)
+is **not built yet**: `has_lidar: true` is set in `robot.yaml`, selecting
+the `lidar` costmap profile, which needs a 2-D `/scan` for
+`slam_toolbox`/the collision monitor/the costmap's `obstacle_layer` —
+correcting this section's original claim, `openral_nav2_bringup`'s lidar
+profile (`config/nav2_panda_mobile.yaml`, confirmed by reading
+`nav2.launch.py`) consumes **only** `/scan`, not a raw `PointCloud2`
+through a `voxel_layer` — so there is no separate full-cloud costmap feed
+to wire, just the one `pointcloud_to_laserscan` conversion.
+`pointcloud_to_laserscan` is **not** installed on this host (checked); item
+5's plan is `apt install ros-humble-pointcloud-to-laserscan` and a
+`/openral/lidar/points → /scan` node. In simulation `map → odom` is truth
+from the bridge, so `slam_toolbox` is optional; it is kept in the graph
+only if it proves reliable on moon terrain, otherwise the profile runs
+without SLAM and the paper says so.
 
 ## 6. Open items to verify in the coding round (not assumptions)
 
-- Hydra dotlist overrides for `camera_resolution` / `camera_data_types` via
-  `srb agent … env.camera_resolution=[640,480]`.
+- [x] Hydra dotlist overrides for `camera_resolution` / `camera_data_types`
+  via `srb agent … env.camera_resolution=[640,480]` — **works**, verified
+  live 2026-09-14 (F25): the relayed `CameraInfo` on `/openral/cameras/
+  front/camera_info` reports `640x480` and its `k` matrix matches this
+  manifest's hand-computed intrinsics exactly.
 - `srb agent ros` reset service `env0/reset` behaviour mid-run (does it
   re-randomize the panel pose with the fixed seed — needed for repeated
   trials without relaunching Isaac Sim, which costs ~1–2 min per boot).
-- `SRB`'s articulation root pose (`srb/env0/robot`) equals the
-  `chassis_base_link` pose.
+- [x] `SRB`'s articulation root pose (`srb/env0/robot`) equals the
+  `chassis_base_link` pose — **confirmed** 2026-09-14 (F25) by reading a
+  live `/tf`: `srb/env0/robot → srb/env0/robot/chassis_base_link` is
+  translation `(0,0,0)`, rotation ≈ identity.
 - `use_sim_time` + SRB `/clock` rate vs. the world-state staleness limits
   (`staleness_limit_s` 0.5 s wall vs. sim time).

@@ -783,20 +783,29 @@ Ordered by dependency. Each item is verified live through the real
 safety-checked path before the next starts, and each gets a `docs/` record.
 Per-item design decisions, the upstream pieces to reuse, and the open
 questions are in `docs/lunar_bot_capability_set_plan.md` (2026-09-14).
-Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
+Item 1 is done (`openral` `f7b5ccd`); item 2 is done (F25); items 2b–9 are
+not started.
 
 1. **RM-75 limits** into `robot.yaml` (`position_limits`, `can_lift_kg`),
    kernel envelope regenerated; a JOINT_POSITION target outside the range
    must be rejected live.
-2. **Sensor bridge** — front RGB-D + wrist RGB + IMU + Mid-360 lidar +
-   joint states + truth pose from SRB into OpenRAL conventions: `sensors:`
-   block in `robot.yaml`; a relay in `openral_hal_lunar_bot` publishing
+2. **Sensor bridge — done (2026-09-14), F25.** Front RGB-D + wrist RGB +
+   IMU + Mid-360 lidar + truth pose from SRB into OpenRAL conventions:
+   `sensors:` block + `has_lidar: true` in `robot.yaml`;
+   `LunarBotSensorBridgeNode` (`openral_hal_lunar_bot.sensor_bridge_node`)
+   relays SRB's own `Image`/`CameraInfo`/`PointCloud2`/`Imu` onto
    `/openral/cameras/<name>/{image,camera_info}`,
-   `/openral/cameras/front_depth/points`, `/joint_states`, `/odom`, and the
-   `map → odom → base_link` TF chain (in sim, `map→odom` is identity and
-   `odom→base_link` is SRB's `srb/env0/robot` truth — stated as such, not
-   dressed up as SLAM). Verify: world state shows joints + a lifted 3-D
-   object from a real detection of the panel.
+   `/openral/cameras/front_depth/points`, `/openral/lidar/points`, `/imu`,
+   and re-roots TF as `chassis_base_link → <manifest frame>` +
+   `map → odom → chassis_base_link` (in sim, `map→odom` is identity and
+   `odom→chassis_base_link` is SRB's `srb/env0/robot` truth — stated as
+   such, not dressed up as SLAM; confirmed live that this frame really is
+   `chassis_base_link`'s pose). Verified live against a running
+   `panel_remount_visual env.robot=lunar_bot` instance: every output topic
+   checked, `CameraInfo` cross-matches this manifest's computed intrinsics.
+   World-state/detector integration (a lifted 3-D object from a real
+   detection of the panel) not yet exercised — needs those nodes running,
+   deferred to whichever later item first needs them.
 2b. **SRB backend for `openral deploy sim`** (`docs/srb_deploy_backend_plan.md`,
    user decision 2026-09-14): `DeployScene.simulator` schema, `srb` scene
    backend with a provision check, the launch spawns/gates/owns the SRB

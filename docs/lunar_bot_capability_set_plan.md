@@ -69,7 +69,18 @@ Not published: `/odom`, any `map`/`base_link` frame, any `LaserScan`.
 
 ### 3.1 RM-75 limits — done (`f7b5ccd`), verified against the kernel alone.
 
-### 3.2 Sensor bridge (SRB → OpenRAL conventions)
+### 3.2 Sensor bridge (SRB → OpenRAL conventions) — done (2026-09-14), F25
+
+Built and verified live as `LunarBotSensorBridgeNode` (a plain `Node`, not
+folded into the HAL lifecycle node — kept separate so the HAL's executor
+stays free, per the "decide at build time" note below). Full record,
+including two live-verified open questions this section originally left
+open (`srb/env0/robot` == `chassis_base_link` pose; the Hydra
+`camera_resolution` override actually works) and a real `rclpy` executor
+gotcha: `docs/research_findings.md` F25.
+
+<details>
+<summary>Original design notes (superseded by the F25 build)</summary>
 
 A new node in `packages/openral_hal_lunar_bot` (`sensor_bridge_node`, a
 lifecycle node beside the HAL, or folded into `LunarBotHALLifecycleNode`
@@ -118,6 +129,8 @@ Verification: world state lists 21 joints, two live camera frames, and
 after pointing the detector at `front` with query "solar panel", one
 lifted object whose `map`-frame position is within ~0.2 m of the panel's
 `/tf` truth.
+
+</details>
 
 ### 3.3 Procedural manipulation rSkills (`kind: procedural`, tag `lunar_bot`)
 

@@ -17,20 +17,12 @@ Full records: `docs/phase_b_lunar_bot_hal.md`, `docs/phase_b_procedural_kind.md`
 candidate_action→kernel→safe_action→HAL→SRB path. One-line-each findings
 (full write-ups in `docs/research_findings.md`):
 
-- **F11** — added a genuine `kind: "procedural"` rSkill (Baseline A needs
-  it too); `ProceduralBodyTwistRskill` verified through the real
-  `ExecuteRskill` action server.
-- **F15** — RESOLVED as a false alarm: kernel heartbeats
-  `/openral/safety_status` fine at 1 Hz; the "zero messages" reading was a
-  shell-piping artifact. Do not spend more effort on this.
-- **F12** — FIXED: `max_base_linear_speed_m_s`/`max_base_angular_speed_rad_s`
-  were declared but enforced by nothing; fixed in `kBodyTwist`, scope
-  BODY_TWIST only (`docs/f12_body_twist_envelope_fix.md`).
-- **F16** — FIXED: CARTESIAN_TWIST's `max_ee_angular_speed_rad_s` had the
-  same gap as F12; fixed the same way, verified live.
-- **F17** — the kernel's `/openral/estop_reset` doesn't clear other nodes
-  latched on `/openral/estop` — also publish `/openral/estop_cleared`. See
-  "Watch out" below.
+**F11** (procedural rSkill kind, verified via `ExecuteRskill`), **F15**
+(false alarm — kernel heartbeats fine), **F12**+**F16** (FIXED: BODY_TWIST/
+CARTESIAN_TWIST speed envelopes were declared but unenforced), **F17** (the
+kernel's `/openral/estop_reset` doesn't clear other estop-latched nodes —
+also publish `/openral/estop_cleared`, see "Watch out"). Full write-ups:
+`docs/research_findings.md`.
 
 Built: `LunarBotSRBHAL` dispatches BODY_TWIST/CARTESIAN_TWIST/GRIPPER_BINARY
 (now also JOINT_POSITION, see below); arm's raw-unit conversion is
@@ -57,14 +49,13 @@ genuine binary success termination (position + orientation tolerance, a
 real `torch.jit.script` bool check) — no existing SRB task has one at all.
 Full record: `docs/mission_a_panel_remount.md`.
 
-**F18 — found + fixed**: SRB's procedural moon terrain is only reliably
-flat within ~4 m of the env origin (`flat_area_size` in `env_cfg.py`);
-outside it PhysX's depenetration ejection flings a spawned object forever.
-Fixed by keeping pedestal/panel within ~1.5 m of origin; confirmed live.
+**F18 — found + fixed**: SRB's procedural moon terrain is only reliably flat
+within ~4 m of the env origin (`flat_area_size`); outside it PhysX's
+depenetration ejection flings a spawned object forever. Fixed by keeping
+pedestal/panel within ~1.5 m of origin; confirmed live.
 
 **Deliberate v1 simplification**: one pedestal+panel pair, not §6.4's
-"multiple candidate components" (would need genuine fault-identification
-across several instances) — a natural, cheap follow-up once this is proven.
+"multiple candidate components" — a cheap follow-up once this is proven.
 
 - [x] Write the new task/scene inside `space_robotics_bench/`.
 - [x] Define Mission A's plain-language instruction text — written in
@@ -83,13 +74,26 @@ Design + reuse survey: `docs/lunar_bot_capability_set_plan.md`. Branch
 
 - [x] 1. RM-75 limits in `robot.yaml` (`f7b5ccd`, F22) — kernel rejects
       out-of-range JOINT_POSITION live.
-- [ ] 2. Sensor bridge: SRB cameras/depth/IMU/Mid-360/truth pose →
-      `/openral/cameras/*`, `/odom`, `map→odom→chassis_base_link` TF;
-      `sensors:` in manifest; `panel_remount_visual` needs ≥640×480 + depth.
+- [x] 2. Sensor bridge — `LunarBotSensorBridgeNode`
+      (`openral_hal_lunar_bot.sensor_bridge_node`), F25. Relays SRB's
+      cameras/depth/IMU/lidar to `/openral/cameras/*`, `/openral/lidar/points`,
+      `/imu`; re-roots TF to `chassis_base_link`; publishes `/odom`.
+      `sensors:` + `has_lidar: true` in `robot.yaml`. Verified live against
+      `panel_remount_visual env.robot=lunar_bot` — every output topic
+      checked, including a cross-checked `CameraInfo` and a real `rclpy`
+      executor gotcha (see F25).
 - [ ] 2b. SRB backend for `openral deploy sim` —
       `docs/srb_deploy_backend_plan.md` (schema `DeployScene.simulator`,
       `openral_sim.backends.srb`, launch spawn/gate, HAL registry entry,
       `scenes/deploy/srb_panel_remount.yaml`). User decision 2026-09-14.
+- [x] 2c. RTX Lidar for the Mid-360 — attempted, **blocked on a confirmed
+      upstream Isaac Sim bug** (F24: RTX Lidar's SDG render pipeline never
+      dispatches a frame, headless and GUI alike; not an SRB defect).
+      **Parked 2026-09-14 by user decision** — paper doesn't need lidar
+      realism (`research_content.md` never requires it), a 6.1.0 upgrade is
+      unproven and carries its own Blackwell-GPU risk. RayCaster (item 2)
+      is the permanent `lidar_robot` implementation. Do not re-open without
+      new upstream evidence.
 - [ ] 3. Procedural rSkills `move_joints` / `move_ee_to_pose` / `grasp` /
       `release` / `stow` (tag `lunar_bot`); scripted remount closes the loop.
 - [ ] 4. F19 fix in SRB `FourWheelSteer` (drive ∝ cos(steer error)).
@@ -100,21 +104,20 @@ Design + reuse survey: `docs/lunar_bot_capability_set_plan.md`. Branch
 - [ ] 7. Mission verifier node (this repo) on simulator truth.
 - [ ] 8. §19 run-manifest writer wrapping `openral deploy sim` (this repo).
 - [ ] 9. Remaining kernel magnitude checks (`kJointTrajectory` first).
-- **Coordination**: another agent is adding the Mid-360 to `lunarbot.py` in
-  the SRB fork — do not edit that file until their branch lands.
+- **Coordination**: the other agent's Mid-360 work landed on SRB
+  `feat/mid360-lidar` (RayCaster sensor + the RTX Lidar attempt) — that
+  branch is now fair game to build on (still open/unmerged, same
+  branch-per-task discipline as this project's own SRB branches).
 - [ ] B3: reasoner-in-the-loop two-step run with full trace = Phase B exit.
 
-A scripted pick-and-place feasibility check against `panel_remount` (run
-before trusting the instruction text) found **F19** (base `cmd_vel` drifts
-on large in-place turns — revised root cause: no steer-before-drive
-sequencing, fix planned in B2 item 4) and led to **JOINT_POSITION arm
-control ✅ (2026-09-13)**: `SwitchableArmAction` in SRB
-(`feat/switchable-arm-control` `90f9d5e`) — one action term, IK and
-joint-position sub-controllers both computed every step, a mode flag picks
-which is applied — plus the HAL branch (`feat/arm-joint-position-control`
-`a785b88`). **F20** found + fixed live (JOINT_* wire rows are always the
-full 21-wide vector). Full record: `docs/lunar_bot_joint_position_control.md`.
-The "no arm position limits" gap noted there is now closed (F22).
+A scripted pick-and-place feasibility check against `panel_remount` found
+**F19** (base `cmd_vel` drifts on large in-place turns — no steer-before-drive
+sequencing, fix planned in B2 item 4) and led to **JOINT_POSITION arm control
+✅ (2026-09-13)**: `SwitchableArmAction` in SRB (`feat/switchable-arm-control`
+`90f9d5e`) + the HAL branch (`feat/arm-joint-position-control` `a785b88`).
+**F20** found + fixed live (JOINT_* wire rows are always the full 21-wide
+vector). Full record: `docs/lunar_bot_joint_position_control.md` (the "no arm
+position limits" gap noted there is now closed, F22).
 
 ---
 

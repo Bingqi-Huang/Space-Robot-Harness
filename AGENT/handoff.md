@@ -17,8 +17,9 @@ Branch chains — openral: `feat/py310-humble` → `feat/lunar-bot-hal`
 (`f47e966`) → `fix/body-twist-speed-envelope` (`fabe588`) →
 `feat/lunar-bot-arm-gripper` (`af8fba2`) → `feat/arm-joint-position-control`
 (current). SRB: `main` (`9caeb46`) → `feat/panel-remount-mission-a`
-(`b3e8d92`) → `feat/switchable-arm-control` (`90f9d5e`). All pushed, all
-still open, none merged.
+(`b3e8d92`) → `feat/switchable-arm-control` (`90f9d5e`) →
+`feat/mid360-lidar` (`4baea49` RayCaster Mid-360, `9bae384` RTX Lidar
+attempt, parked — F24). All pushed, all still open, none merged.
 
 **`space_robotics_bench/` is a real git submodule** (`docs/upstream_pins.md`)
 — the agent that developed it independently no longer manages it, so this
@@ -28,22 +29,36 @@ project edits/commits there directly now, same discipline as `openral/`.
 
 The user's ruling: Mission A does not start until its prerequisites exist,
 and every blocking piece of infrastructure gets built (only IL data
-collection and VLA training are out of scope). `execution_plan.md` was
-revised accordingly (rules 0.11/0.12, §2 layout, §6.2, §6.4 status, §8.1
-filled in, new §8.3, §9.1, Phase B split B1/B2/B3, §21 reordered). The
-capability-set design and reuse survey is `docs/lunar_bot_capability_set_plan.md`;
-the task list is in `todo.md`. Item 1 (RM-75 limits, F22) is done on
-`openral/feat/lunar-bot-capability-set` @ `f7b5ccd`; items 2–9 not started.
-Decisions received 2026-09-14: the real LunarBot has a **Livox Mid-360**
-(another agent adds it to `lunarbot.py` in the SRB fork — do not touch
-that file concurrently; interface contract in
-`docs/srb_deploy_backend_plan.md` §5); **MoveIt stays, required**; an
-**SRB backend for `openral deploy sim` is to be built** — executable plan
-in `docs/srb_deploy_backend_plan.md` (ROS-attached: migrate the isaacsim
+collection and VLA training are out of scope). `execution_plan.md` §8.3 has
+the ordered build list; design/reuse survey in
+`docs/lunar_bot_capability_set_plan.md`; task list in `todo.md`.
+
+Done: **1** RM-75 limits (F22, `f7b5ccd`). **2** Sensor bridge (F25,
+`openral_hal_lunar_bot.sensor_bridge_node`) — relays SRB's cameras/depth/
+IMU/lidar to OpenRAL conventions, re-roots TF, publishes `/odom`; verified
+live against a running SRB instance, including a real `rclpy` executor
+gotcha (spin a `MultiThreadedExecutor` on a background thread, not
+`rclpy.spin(node)` or `.spin()` on the main thread — both silently stall).
+**2c** RTX Lidar for the Mid-360 attempted, blocked on a confirmed upstream
+Isaac Sim bug (F24), **parked by user decision** — RayCaster (item 2) is
+permanent. Mid-360 itself (the other agent's work) landed on SRB
+`feat/mid360-lidar`, unmerged but usable.
+
+Not started: **2b** SRB backend for `openral deploy sim` (plan in
+`docs/srb_deploy_backend_plan.md` — ROS-attached, migrate the isaacsim
 backend's process-lifecycle/provision discipline, keep SRB's native ROS
-data plane; `DeployScene.simulator` schema, `openral_sim.backends.srb`,
-launch spawn/gate, `lunar_bot` HAL-registry entry, scene YAML). The user
-separates planning rounds from coding rounds — wait for an explicit go.
+data plane) — **do this next**, before item 3, since every later item's
+plan is to verify through this launch path. **3–9**: procedural rSkills,
+F19 fix, Nav2 (`pointcloud_to_laserscan` apt install needed), MoveIt
+(required), verifier node, run-manifest writer, remaining kernel magnitude
+checks. The user separates planning rounds from coding rounds — wait for
+an explicit go before each.
+Since then: the other agent's Mid-360 work landed on SRB
+`feat/mid360-lidar` — real RayCaster sensor (`lidar_robot`, auto-wired via
+`frame_lidar`) is the permanent implementation; RTX Lidar was attempted on
+the same branch but is blocked on a confirmed upstream Isaac Sim bug (F24)
+and is **parked by user decision 2026-09-14**, not pursued further. Item 2
+(sensor bridge) now has a real point-cloud topic to target.
 
 Also open: F19 (base `cmd_vel` in-place-rotation instability — probably
 don't rely on it for precise heading control yet), no arm joint position
