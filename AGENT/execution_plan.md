@@ -809,28 +809,38 @@ Item 1 is done (`openral` `f7b5ccd`); items 2–9 are not started.
    path.
 2c. **RTX Lidar support for the Mid-360** (user decision 2026-09-14,
    scheduled immediately after 2's RayCaster-based Mid-360 lands — do not
-   start early). Rationale: this project is imitation learning, not RL —
-   no `num_envs` parallelism requirement — which removes IsaacLab's stated
-   reason for *not* wrapping RTX Lidar (their team evaluated and dropped it
-   because it doesn't batch across thousands of parallel envs; irrelevant
-   here). RTX Lidar ray-traces the live render scene every frame (sees
-   dynamic objects, not just one static baked mesh like the warp
-   `RayCaster`), so it is the correct long-term sensor, not a nice-to-have.
-   Full investigation, source-level mechanism, and an ordered executable
-   plan: `docs/rtx_lidar_integration_plan.md` (2026-09-14). Headline
-   findings: `isaacsim.sensors.rtx` is present in the pinned Isaac Sim 5.1
-   install but not loaded by IsaacLab's default headless experience (needs
-   `enable_extension`); its config whitelist
-   (`supported_lidar_configs.py`) gates only the convenience creation
-   command, and the underlying JSON-profile mechanism is still live
-   (`profileBaseFolder` in `extension.toml`) — exact bypass mechanism not
-   yet empirically confirmed, first task when implementing. The Mid-360's
-   real non-repetitive scan pattern is a solved data problem, not new
-   research: `Livox-SDK/livox_laser_simulation` officially ships
-   `scan_mode/mid360.csv` (24,000 real timestamped azimuth/zenith samples),
-   and the JSON schema's `solidState` scan type is confirmed (via a real
-   51,200-point on-disk example) to accept an arbitrary point list, not
-   just a rotary raster.
+   start early; treated as permanent, repeatedly-reused infra, not a demo).
+   Rationale: this project is imitation learning, not RL — no `num_envs`
+   parallelism requirement — which removes IsaacLab's stated reason for
+   *not* wrapping RTX Lidar (their team evaluated and dropped it because it
+   doesn't batch across thousands of parallel envs; irrelevant here). RTX
+   Lidar ray-traces the live render scene every frame (sees dynamic
+   objects, not just one static baked mesh like the warp `RayCaster`), so
+   it is the correct long-term sensor, not a nice-to-have. Fully
+   researched 2026-09-14, mechanism confirmed from source (not inferred),
+   ordered 9-step executable plan with a full USD-attribute reference:
+   `docs/rtx_lidar_integration_plan.md`. Headline findings, all settled
+   (not open questions): (1) there is **no JSON-config/whitelist mechanism
+   to bypass** in the modern (5.0+) path — a custom lidar is authored as
+   literal `omni:sensor:Core:*` USD attributes on an `OmniLidar` prim via
+   the fully-ungated `rep.functional.create.omni_lidar(**kwargs)`, full
+   attribute reference read from the generated USD schema; (2) the
+   Mid-360's real non-repetitive scan pattern is a solved data problem —
+   `Livox-SDK/livox_laser_simulation` (MIT-licensed) ships the official
+   `scan_mode/mid360.csv`, 800,000 real timestamped azimuth/zenith
+   samples covering one full 4s cycle, replayed by the real plugin as a
+   sliding 24,000-point window advancing and wrapping every tick — this
+   plan requires reproducing that same window-cycling (not a single
+   static pattern) for real fidelity, and confirms via the schema that
+   per-tick array-value updates are supported; (3) Livox's official
+   datasheet numbers (FOV, range, wavelength, blind zone, point rate) are
+   recorded with citation; (4) a real gap was found and must be fixed as
+   part of this item: SRB's `enable_cameras`/rendering-experience gating
+   (`srb/__main__.py`, keyed off task-id `_visual` suffix) does not
+   trigger for `panel_remount env.robot=lunar_bot`, so RTX Lidar would
+   silently get no render pipeline without a code fix; `isaacsim.sensors.rtx`
+   also needs adding to SRB's `.kit` experience files (absent from all of
+   them today, confirmed by grep).
 3. **Procedural manipulation rSkills** (`kind: procedural`, tag `lunar_bot`):
    `move_joints`, `move_ee_to_pose`, `grasp`, `release`, `stow`. Each is a
    real closed loop on OpenRAL world state / TF, emits through the kernel,
