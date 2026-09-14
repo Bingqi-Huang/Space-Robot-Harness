@@ -7,44 +7,33 @@ and every experimental campaign to name the exact commits it ran against.
 
 | Project | Fork | Branch | Commit | Upstream | Tracking |
 |---|---|---|---|---|---|
-| OpenRAL | `DsslRobot/openral` | `feat/lunar-bot-capability-set` | `845483c` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
-| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `fix/ros-bridge-array-fast-path` (on `feat/mid360-lidar`) | `04c308a` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
+| OpenRAL | `DsslRobot/openral` | `master` | `ec95fe8` | `OpenRAL/openral` @ `4700c7a` | git submodule at `openral/` |
+| Space Robotics Bench | `DsslRobot/space_robotics_bench` | `main` | `6d8a388` | `AndrejOrsula/space_robotics_bench` | git submodule at `space_robotics_bench/` |
 
-OpenRAL's pin has moved eight times since the initial `4700c7a`:
-`fa7f445`/`4c1867c` (Python 3.10/Humble downgrade,
-`docs/openral_py310_patch.md`), `af61568` (the `lunar_bot` HAL,
-`docs/phase_b_lunar_bot_hal.md`), `f47e966` (the `procedural` rSkill kind,
-`docs/phase_b_procedural_kind.md`), `fabe588` (BODY_TWIST base-speed envelope
-enforcement, `docs/f12_body_twist_envelope_fix.md`), `1a6139f` (CARTESIAN_TWIST
-angular-speed enforcement, F16), `af8fba2` (arm + gripper unified into the
-LunarBot HAL, `docs/phase_b_lunar_bot_arm_gripper.md`), `a785b88`
-(JOINT_POSITION arm control, `docs/lunar_bot_joint_position_control.md`),
-`f7b5ccd` (RM-75 datasheet joint limits + payload,
-`docs/lunar_bot_rm75_spec.md`) — the current commit is on branch
-`feat/lunar-bot-capability-set` (the Phase B2 branch,
-`docs/lunar_bot_capability_set_plan.md`), built on top of
-`feat/arm-joint-position-control` → `feat/lunar-bot-arm-gripper` →
-`fix/body-twist-speed-envelope` → `feat/lunar-bot-hal` →
-`feat/py310-humble`, not yet merged.
+OpenRAL's pin has moved to `ec95fe8` (2026-09-14): the Phase B2
+`feat/lunar-bot-capability-set` stack (execution_plan.md §8.3 items 1-6 —
+RM-75 limits, sensor bridge, the SRB deploy-sim backend, five procedural
+rSkills, the F19 steer-before-drive fix, the Nav2 `/cmd_vel` kernel relay,
+and MoveIt for the RM-75) merged into `master` via `--no-ff`, superseding
+the eight intermediate pins recorded previously
+(`fa7f445`/`4c1867c`/`af61568`/`f47e966`/`fabe588`/`1a6139f`/`af8fba2`/
+`a785b88`/`f7b5ccd` — all now reachable from `master` through this merge).
+Local branches for the whole stack were deleted after merging, per this
+project's own convention; nothing was pushed to `origin` — that pin move
+is local until pushed. Full rationale: `docs/research_findings.md`
+F22/F25-F33.
 
-Space Robotics Bench was tracked loosely at first (excluded via `.gitignore`,
-commit recorded only in run manifests per §19) while another agent was
-actively developing the `DsslRobot/space_robotics_bench` fork independently —
-a real git submodule would have fought that work. That agent no longer
-maintains it, so as of 2026-09-13 it is formally pinned the same way as
-OpenRAL: a git submodule at `space_robotics_bench/`, tracking
-`DsslRobot/space_robotics_bench` (itself a fork of the real upstream,
-`AndrejOrsula/space_robotics_bench`, same relationship OpenRAL's fork has to
-`OpenRAL/openral`), bumped and committed explicitly whenever this project
-changes something in it. Pin has moved twice so far: `b3e8d92` adds the
-`panel_remount` Mission A task (`docs/mission_a_panel_remount.md`);
-`90f9d5e` adds `SwitchableArmAction` (IK-twist + joint-position control in
-one slot, `docs/lunar_bot_joint_position_control.md`) — the current commit
-is on branch `feat/switchable-arm-control`, built on top of
-`feat/panel-remount-mission-a` → `main`, not yet merged. Every experimental
-run manifest (§19) should still record the exact commit it ran against —
-the submodule pin makes that commit reconstructible from this repo alone,
-it doesn't replace per-run provenance.
+Space Robotics Bench's pin moved to `6d8a388` (2026-09-14) the same way:
+the `feat/four-wheel-steer-alignment` stack (`panel_remount` task,
+`SwitchableArmAction`, the Mid-360 RayCaster lidar, the idle-CPU/rosidl
+perf fixes, the `map_cmd_to_action` angular.z bug, and the F19
+steer-before-drive fix) merged into `main`, superseding the two
+intermediate pins recorded previously (`b3e8d92`/`90f9d5e` — both now
+reachable from `main`). Local branches deleted after merging; not pushed.
+Every experimental run manifest (§19) should still record the exact
+commit it ran against — the submodule pin makes that commit
+reconstructible from this repo alone, it doesn't replace per-run
+provenance.
 
 ## Decision D1 — Humble + Python 3.10, fully native
 
