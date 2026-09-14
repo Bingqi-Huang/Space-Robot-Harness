@@ -817,12 +817,23 @@ not started.
    fixed one real bug along the way: `deploy_config:=` never reached the
    launch on the sim path (F26). Live-verified: the whole graph composes,
    SRB spawns for real, the HAL's readiness gate correctly blocks then
-   passes, the HAL reaches ACTIVE, shutdown is clean (exact-PID, no
-   pattern-kill). **Not yet reached**: the full exit condition (a
-   reasoner-dispatched `body_twist` observed moving the base) — blocked on
-   SRB's own tick rate under the verification host's load exceeding the
-   HAL's 0.5 s staleness budget (F26), not on anything in this item's own
-   code. Every later item is verified through this path.
+   passes, the HAL reaches ACTIVE. Shutdown is clean by construction now
+   (F27): SRB's own interpreter (`python.sh`) forks its real process
+   without `exec`, and `launch`'s `ExecuteLocal` has no process-group
+   handling at all — a bare `ExecuteProcess` orphaned the Kit/PhysX process
+   for over an hour after shutdown before this was caught. Fixed with
+   `tools/process_group_wrapper.py` (new process-group leader, kills the
+   whole group on SIGTERM/SIGINT), tested against the real failure mode
+   (`tests/unit/test_process_group_wrapper.py`) and re-verified live.
+   **Not yet reached**: the full exit condition (a reasoner-dispatched
+   `body_twist` observed moving the base) — SRB's `/clock` genuinely ticks
+   at ~0.36 Hz, independently re-confirmed on a clean host (F27); ruled out
+   as the cause: GPU render cost (0-4% GPU util measured), sustained disk
+   I/O, the orphaned-process bug above. One CPU thread is pegged near
+   100%, unprofiled (blocked on `sudo` for `py-spy`) — the next concrete
+   step, not a hypothesis. Per user direction, `staleness_limit_s` is not
+   being raised as a workaround before the cause is found. Every later item
+   is verified through this path.
 2c. **RTX Lidar support for the Mid-360** (user decision 2026-09-14,
    scheduled immediately after 2's RayCaster-based Mid-360 lands — do not
    start early; treated as permanent, repeatedly-reused infra, not a demo).

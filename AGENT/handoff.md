@@ -42,18 +42,32 @@ live, including a real `rclpy` executor gotcha (spin a `MultiThreadedExecutor`
 on a background thread, not `rclpy.spin(node)`/`.spin()` on the main thread —
 both silently stall). Not yet wired into `deploy_e2e.launch.py` (runs
 standalone) — needs a generic mechanism (this launch is robot-agnostic by
-design), a follow-up. **2b** SRB backend for `openral deploy sim` (F26,
+design), a follow-up. **2b** SRB backend for `openral deploy sim` (F26/F27,
 `docs/srb_deploy_backend_plan.md`) — `DeployScene.simulator` schema, `srb`
 scene backend + provision check, launch spawn/gate, `lunar_bot` HAL registry
 entry (`bare_twin_sim=True`), `scenes/deploy/srb_panel_remount.yaml`. Found
-+ fixed a real bug (`deploy_config:=` never reached the sim-path launch).
-Live-verified: graph composes, SRB spawns for real, the HAL's readiness
-gate correctly blocks then passes, HAL reaches ACTIVE, clean shutdown. NOT
-yet reached: a reasoner-dispatched body_twist actually observed moving the
-base — the verification run's SRB tick rate (~0.35-0.4 Hz under that host's
-render load) exceeded the HAL's hardcoded 0.5s staleness budget; widening
-it (or making it manifest-configurable) is the next thing to try before
-re-attempting this. **2c** RTX Lidar for the Mid-360 attempted, blocked on
++ fixed two real bugs: `deploy_config:=` never reached the sim-path launch
+(F26), and SRB's Kit/PhysX process outlived `ros2 launch` by over an hour
+after shutdown, still holding GPU memory — root-caused to NVIDIA's
+`python.sh` forking without `exec` plus `ExecuteLocal` having no
+process-group handling at all; fixed with `tools/process_group_wrapper.py`
+(new process-group leader, kills the whole group on SIGTERM), tested
+against the real failure mode in `tests/unit/test_process_group_wrapper.py`
+(F27). Live-verified twice: graph composes, SRB spawns for real, the HAL's
+readiness gate blocks then passes, HAL reaches ACTIVE, and (2nd run) full
+process + GPU cleanup confirmed via `ps`/`nvidia-smi`. NOT yet reached: a
+reasoner-dispatched body_twist actually observed moving the base — SRB's
+`/clock` is genuinely ~0.36 Hz, re-confirmed independently on a clean host
+(F27); ruled out as causes: GPU render cost (0-4% GPU util measured),
+sustained disk I/O, the orphaned-process bug above. One CPU thread pegged
+near 100%, unprofiled — blocked on `sudo` for `py-spy` on this host. User
+direction: do not raise `staleness_limit_s` without finding the cause
+first — not done. **Debugging a live `deploy sim` graph**: it runs on
+`ROS_DOMAIN_ID=77` + `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` by design
+(`confine_sim_scope`) — an ordinary shell sees only `/parameter_events`/
+`/rosout` and looks exactly like the graph is missing; export both before
+using `ros2 topic` against it (cost real time this session, F27).
+**2c** RTX Lidar for the Mid-360 attempted, blocked on
 a confirmed upstream Isaac Sim bug (F24), **parked by user decision** —
 RayCaster (item 2) is permanent. Mid-360 itself (the other agent's work)
 landed on SRB `feat/mid360-lidar`, unmerged but usable.
@@ -64,11 +78,10 @@ node, run-manifest writer, remaining kernel magnitude checks. The user
 separates planning rounds from coding rounds — wait for an explicit go
 before each.
 
-Also open: F19 (base `cmd_vel` in-place-rotation instability — probably
-don't rely on it for precise heading control yet), no arm joint position
-limits declared (a real, flagged gap), and the same missing-magnitude-check
-gap for `kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`(per-joint)/
-`kGripperPosition`/`kCompositeMode` (F12/F16's sibling gap, untouched).
+Also open: F19 (don't rely on `cmd_vel` for precise heading control yet —
+item 4 fixes it) and the same missing-magnitude-check gap for
+`kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`(per-joint)/
+`kGripperPosition`/`kCompositeMode` (F12/F16's sibling gap, item 9).
 
 ## Environment reference (reusable, don't rediscover)
 
@@ -95,21 +108,19 @@ gap for `kJointTrajectory`/`kCartesianDelta`/`kGripperBinary`(per-joint)/
   scene object within ~1.5–2 m of the env origin unless you've confirmed
   the terrain is flat further out.
 - **F19 — LunarBot's base drifts/rotates incoherently on a large in-place
-  `cmd_vel` turn** (likely the 4WIS/4WID `max_steering_angle: 120°` limit
-  saturating for a real pivot). Also don't forget `scale_linear=-1.0`/
-  `scale_angular=-1.0` (already in `lunarbot.py`) — a naive P-controller
-  drives the wrong way unless negated. Not resolved; avoid relying on
-  `cmd_vel` for precise heading control until this is understood.
+  `cmd_vel` turn** — root cause: no steer-before-drive sequencing (fix in
+  item 4). Also don't forget `scale_linear=-1.0`/`scale_angular=-1.0`
+  (already in `lunarbot.py`) — a naive P-controller drives the wrong way
+  unless negated.
 - **F20 — a JOINT_* chunk's wire row is ALWAYS the full robot-wide vector**,
   even when `action.joint_names` names a subset (ADR-0102) — the C++
   kernel's structural check forces `chunk.n_dof == envelope.n_dof`
   regardless. `joint_names` only marks which slots are the real ones; it
   never shrinks the row. Caught this the hard way (silently dropped every
   JOINT_POSITION dispatch) — see `docs/lunar_bot_joint_position_control.md`.
-- `RskillRunnerNode` is constructed directly in Python — mirror `compose.py`:
-  construct with `skill_resolver=None`, then swap `node._skill_resolver =
-  make_default_skill_resolver(node, search_paths=["rskills"])` before
-  `configure()`.
+- `RskillRunnerNode`: mirror `compose.py` — construct with `skill_resolver=
+  None`, then swap `node._skill_resolver = make_default_skill_resolver(node,
+  search_paths=["rskills"])` before `configure()`.
 - Any shell calling `ros2 action send_goal`/`topic echo`/`topic hz` on an
   `openral_msgs` interface needs both `/opt/ros/humble/setup.bash` and
   `install/setup.bash` sourced.

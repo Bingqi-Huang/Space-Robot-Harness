@@ -765,3 +765,98 @@ individual piece of the wiring it depends on was. Follow-up: either widen
 `staleness_limit_s` for this HAL, investigate the render cost specifically,
 or re-verify on a quieter host / with the non-visual `panel_remount` task
 (no camera rendering) to isolate whether rendering is the actual cause.
+
+### F27 — A real orphaned-process bug found and fixed (not "just loosen the value"); the F26 slow-tick finding is real but its cause is still open
+
+Follow-up investigation, user-directed 2026-09-14: do not raise
+`staleness_limit_s` as a fix without first finding the actual cause, and
+stop leaving Isaac Sim processes running after a session.
+
+**Orphaned-process bug — found, root-caused, fixed, tested.** F26's
+verification run was never actually cleaned up: `ros2 launch` reported the
+SRB process it spawned as dead (SIGTERM, exit -15), but the real Kit/PhysX
+process was a **different PID**, found still running **78 minutes later**
+— 100%+ CPU, several GB of GPU memory held on both GPUs, zero ROS topics
+publishing (a dead simulation from OpenRAL's perspective, not a slow one).
+Root cause, read from source, not guessed: NVIDIA's `python.sh` (SRB's own
+interpreter) runs its real process as a plain foreground command with **no
+`exec`** (`$python_exe "$@" || error_exit`) — bash therefore **forks** a
+child and stays alive supervising it, so the heavy process is a distinct
+PID from the one `python.sh` itself is. `launch.actions.execute_local.
+ExecuteLocal` (confirmed by reading its installed source) has **no**
+process-group handling anywhere — no `setsid`/`killpg`/`preexec_fn` — it
+only ever signals the one PID it directly spawned. Killing that PID kills
+bash; the already-forked Kit process is unaffected, orphaned, reparented to
+init, and keeps running indefinitely.
+
+Fixed with `tools/process_group_wrapper.py`: becomes a new process-group
+leader (`os.setsid`) before spawning the real command, and on SIGTERM/
+SIGINT signals the **whole group** (`os.killpg`), reaching every
+descendant regardless of how many non-`exec` forks deep — `deploy_e2e.
+launch.py` now routes `DeployScene.simulator` through it instead of
+running its `argv` directly. Verified two ways: (1)
+`tests/unit/test_process_group_wrapper.py` reproduces the exact failure
+mode with a real subprocess tree (a script that forks a `sleep` child via
+`&`/`wait`, mirroring `python.sh` exactly) — one test proves the wrapper
+kills the whole tree, a control test proves the SAME script survives a
+bare SIGTERM without the wrapper (so the fix is proven against a real
+bug, not a test that would pass either way); (2) a second live `openral
+deploy sim` run against SRB, this time confirmed via `ps`/`nvidia-smi`
+that every process (including the Kit/PhysX PID) and all GPU memory were
+released after shutdown.
+
+**Operational note, needed for any future live debugging of a running
+`deploy sim` graph**: `openral deploy sim` (hal_mode=sim) deliberately
+runs on `ROS_DOMAIN_ID=77` with `ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST`
+(`openral_cli._dds_scope.confine_sim_scope`, `SIM_DOMAIN_ID="77"` — by
+design, so a sim graph doesn't join whatever else is on the LAN). A plain
+`ros2 topic list`/`hz` from an ordinary shell (domain 0, unset discovery
+range) sees **only** `/parameter_events` and `/rosout` — not an error, not
+a hang, just wrong-domain isolation; it looks exactly like "the graph
+isn't there." `export ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=
+LOCALHOST` before observing. This cost real time this session before
+being traced to source.
+
+**The F26 slow-tick-rate finding is real, re-confirmed independently on a
+freshly-cleaned host, and its actual cause is still open** — the orphaned
+process above was ruled out as the (sole) explanation: no other Isaac Sim
+instance was running during the original observation window, and this
+follow-up run started from a verified-clean host and was **still** slow
+(~0.36 Hz on `/clock`, confirmed via `ros2 topic hz` once the domain-scope
+issue above was fixed — not just the HAL's own internal log, an
+independent external measurement agreeing with it). What this run added,
+and what it ruled out:
+
+- **Not GPU-bound**: `nvidia-smi` during the slow period showed 0-4% GPU
+  utilization on both cards — directly contradicts the "3-camera RTX
+  render is just expensive" hypothesis F26 offered as the leading
+  explanation. That hypothesis is **not** supported by measurement.
+- **One CPU thread pegged near 100%**, system load average ~7, while 218
+  other Kit threads sat idle (`S` sleeping) — so the bottleneck is CPU-side
+  single-threaded work in the Kit/SRB step loop, not parallelised physics
+  or the GPU.
+- **Not (sustained) disk I/O**: `/proc/<pid>/io` on the busy process over a
+  3 s sample showed only light write activity (~8 KB/s of actual block
+  I/O, ~2 write syscalls/s) — not consistent with a heavy I/O bottleneck,
+  despite `top` showing a one-off high `%wa` reading at one sampled
+  instant (not reproduced on a direct, longer per-process I/O measurement;
+  likely a transient blip, not the sustained cause).
+- **Not identified**: which specific CPU-bound call is consuming that one
+  thread. `py-spy dump` (installed, `0.4.0`) needs `ptrace` permission
+  this host's Yama LSM denies without `sudo` (`ptrace_scope=1`, and no
+  passwordless `sudo` is configured) — blocked on that access, not
+  attempted and abandoned. Getting a real stack trace (`sudo py-spy dump
+  --pid <kit-python>` while a run is slow, or temporarily `echo 0 | sudo
+  tee /proc/sys/kernel/yama/ptrace_scope`) is the single highest-value next
+  step; profiling data beats further hypothesis generation here.
+- Also not yet tried: the non-visual `panel_remount` task (no camera
+  sensors at all) as a differential test — if it ticks at a normal rate,
+  that would at least re-implicate the camera pipeline specifically
+  (despite the GPU-idle finding) rather than something in the base physics/
+  ROS-bridge loop every SRB task shares.
+
+**Explicitly not done as a workaround**: `LunarBotSRBHAL.staleness_limit_s`
+was left at its default `0.5`. The user's direction was to find the actual
+cause first; this entry records that direction being followed, not ignored
+— raising it remains an option once the cause is understood (or ruled out
+as fixable), not a substitute for understanding it.
