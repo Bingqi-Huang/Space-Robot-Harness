@@ -85,12 +85,13 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
 - [x] Asset round 2 + 66-item shortlist; all sim assets live in the SRB fork
       (`space_robotics_bench/assets/lunar_base/`, branch `feat/lunar-base-assets`):
       manifest (81 sources) + fetcher; 68 free downloads + 8 Sketchfab-token picks.
-- [~] C1 asset processing — Blender pipeline (`processing.yaml`, `process/`),
-      batch 1 = 20 real-scale USDs with colliders, pxr structure check all OK,
-      gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
-      **Waiting on user look review.** Not yet loaded in Isaac Sim (user's GUI
-      instance held the GPU). Static assets with many meshes (battery container
-      1451, Starship 127) need meshes merged before scene use.
+- [x] C1 asset processing — Blender pipeline (`processing.yaml`, `process/`),
+      20 real-scale USDs, user approved look 2026-09-15 after rev 2 (PV arrays
+      ×0.63, MMSEV/ExoMars at LunarBot size, crate 2.5 kg / ORU 3 kg, friction
+      0.8/0.6 + restitution 0.05 on all colliders). Merged into SRB `main`.
+      Gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U. Still to do at
+      C2 start: load in Isaac Sim (textures/colliders/scale) once the GPU is
+      free; merge the many-mesh statics (battery container 1451, Starship 127).
 - [ ] C2 terrain + blockout → user layout approval. [ ] C3 interaction points
       (touch waypoints / dummy buttons) + settle checks. [ ] C4 Mission A task.
       [ ] C5 Mission B task. [ ] C6 full §8 verification + docs.

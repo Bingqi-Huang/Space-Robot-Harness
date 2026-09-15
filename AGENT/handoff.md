@@ -18,31 +18,33 @@ Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F41).
   Isaac assets allowed. Memory: `feedback-scene-quality-bar`.
 - This round was planning-only (docs + research, no code, no sim runs).
 
-## Next — C1 look review, then C2
+## Next — C2 terrain + layout blockout
 
 Design: `docs/lunar_base_scene_design.md` (read the scope-correction box at the
 top first: no fine articulation; maintenance = touch waypoints / dummy button).
 Evidence: `docs/lunar_base_research/`.
 
-All simulation work now lives in the SRB fork (user convention). Assets:
-`space_robotics_bench/assets/lunar_base/` on SRB branch `feat/lunar-base-assets`
-(not merged yet — merge after the user approves the look):
+All simulation work lives in the SRB fork (user convention). C1 is done and
+merged into SRB `main`: `space_robotics_bench/assets/lunar_base/`
 - `manifest.yaml` + `fetch_assets.py` — 81 sources; `raw/` git-ignored (3.6 GB+).
   19 Sketchfab items need a token; only the 8 the user approved were fetched
   with it (user's account has a 10-download quota — never re-run those).
 - `processing.yaml` + `process/process.py` (Blender 4.5 headless, one run per
   output) → `usd/<category>/<name>/` (git LFS) + git-ignored `previews/`.
-  Batch 1: 20 assets, gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
+  20 assets, user approved the look (rev 2), gallery
+  https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
 - Pipeline gotchas found: Blender bound_box is stale after mesh.transform until
   `view_layer.update()`; Blender's USD exporter drops textures unless the
   material is a Principled BSDF graph (glTF unlit materials rebuilt first);
   collapse-decimation of unwelded meshes throws spikes (weld first); Isaac
-  Lab's `UsdFileCfg` only modifies existing collision/rigid APIs, so colliders
-  are authored in the USD.
+  Lab's `UsdFileCfg` only modifies existing collision/rigid APIs, so colliders,
+  physics material and mass are authored in the USD.
 
-Next: user reviews gallery → fix/replace flagged assets → load batch in Isaac
-Sim once the GPU is free (textures, colliders, scale) → C2 terrain + layout
-blockout with multi-angle renders → user layout approval.
+C2 steps: load the batch in Isaac Sim once the GPU is free (the user had an
+Isaac GUI instance open) → merge many-mesh statics → LOLA Site01 DEM terrain
+with graded pads + roads → place zones per design §4 → bake terrain + static
+exteriors into the scenery's single lidar mesh → multi-angle renders + GUI
+walkthrough → user layout approval.
 
 Key constraints the new scene must respect (F41): no infrastructure at
 fixed z on procedural relief (it is not flat); lidar/Nav2 only see the
