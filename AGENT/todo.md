@@ -65,38 +65,27 @@ in `docs/research_findings.md` F19–F38, this is the compressed index:
 
 ---
 
-## Phase C: Long-horizon mission construction (execution_plan §6.4) — IN PROGRESS
+## Phase C: Long-horizon mission construction (execution_plan §6.4) — RESTARTED
 
-Mission A v2 = `panel_remount_v2`.
+**`panel_remount_v2` rejected by the user 2026-09-15** (too simple, SRB-assets
+only, panel on a pedestal top, pedestal floating, panel out of reach, panel
+still tumbling). Not patched — the whole scene is being redesigned. Its code
+(F39/F40 fixes, `scenario_variant`) stays in git history as reference only.
 
-- [x] Scene half — merged into SRB `main` (F39). 2 decoy pedestals, real
-      navigable approach, terrain-safe (details in `docs/
-      mission_a_panel_remount.md` history / F39).
-- [x] Mission logic half — designed + implemented + live-verified
-      2026-09-15 (`docs/panel_remount_v2_mission_logic_plan.md`, F40).
-      `scenario_variant: covered | heldout_access_block |
-      heldout_state_mismatch` perturbation switch on `panel_remount_v2`.
-      Covered case now needs a real inspect step to tell the true panel
-      from a decoy (mount-size compatibility, not object presence).
-      Held-out A: a `MoonRock` blocks manipulator access to the panel,
-      solvable with existing grasp/relocate skills. Held-out B: panel
-      starts near-mount but past tolerance, needs a second/closer check.
-      mission_verifier reuses its existing `panel_displaced` predicate for
-      the rock, no new schema. **Found+fixed F40 along the way**: the
-      panel's spawn `pose_range` had silently doubled its offset from the
-      pedestal since v1 (Isaac Lab's `reset_root_state_uniform` adds
-      `pose_range` to the default root state, not absolute — v1's code
-      assumed absolute). All three variants live-verified two ways:
-      numeric spawn pose from simulator ground truth (temp debug print,
-      removed after use) and a full 60s/3000-frame recorded episode with
-      a clean log and clean GPU teardown.
-- [ ] §5 open question (mount-compatibility query capability) — deferred
-      to Phase E's baseline-adapter work, not required for the mechanism
-      above.
-- [ ] Covered-case route obstruction (optional, plan doc §1) — not started.
-- [ ] Full end-to-end reasoner run through the held-out variants — gated
-      on F37 (Nav2 lifecycle wedge), not attempted this session.
-- [ ] Mission B — explicitly after Mission A's orchestration needs are clear.
+- [x] Research (4 surveys) — `docs/lunar_base_research/`: NVIDIA/SimReady
+      assets, NASA/internet assets + licenses, lunar sims (OmniLRS), SRB
+      integration + LunarBot manipulation envelope. F41.
+- [x] Redesign proposal — `docs/lunar_base_scene_design.md`: "Connecting
+      Ridge Outpost" (habitat, power field w/ articulated PDUs, comm station,
+      landing pad + cargo depot, ISRU yard, rover dock), zone→case mapping,
+      asset pipeline, verification protocol, phases C1–C6.
+- [ ] **User decisions** (design doc §10): DEM vs procedural terrain; core
+      size; lidar-mesh baking vs RayCaster patch; authoring gap assets in Blender.
+- [ ] C1 asset gallery → user look approval. [ ] C2 terrain + blockout →
+      user layout approval. [ ] C3 articulated infrastructure. [ ] C4 Mission A
+      task. [ ] C5 Mission B task. [ ] C6 full §8 verification + docs.
+- Carried over, still open: mount/semantic query capability for perception
+  (Phase E); full reasoner run through held-out cases gated on F37.
 
 ---
 

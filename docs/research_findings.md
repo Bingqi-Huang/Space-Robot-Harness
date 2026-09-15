@@ -1794,3 +1794,42 @@ evidence that a spawn configuration is safe when an object starts near
 other solid geometry. For any new spawn pose close to existing scenery,
 track the object's position/velocity over enough ticks to see it either
 settle or not, not just at one instant.
+
+### F41 — Scene-design constraints measured for the Phase C restart: SRB's "flat pad" is a ramp, lidar sees one mesh, LunarBot grasps only 0.45–1.0 m high
+
+After the user rejected `panel_remount_v2` (multi-angle GUI inspection: a
+pedestal floating above terrain, the panel out of arm reach, panel still
+tumbling off; plus design rejection — too simple, SRB-assets only), four
+read-only surveys were run. Full reports + citations:
+`docs/lunar_base_research/0{0..4}_*.md`. Constraints that invalidate prior
+assumptions:
+
+1. **F18 correction — the procedural MoonSurface has no flat pad.**
+   `flat_area_size` multiplies vertex z by a quadratic radial falloff
+   (simforge `moon_surface/nodes.py`, FloatCurve points (0,1)…(1,0)), and
+   deletes craters/rocks inside it. Measured on the cached spacing-32 mesh:
+   ±0.001 m at r<0.5, ±0.05 at 1–1.5, −0.12…+0.15 at 1.5–2, ±0.28 at 2–2.5,
+   −0.49…+0.71 at 3–4 m. Vertical scale is 0.1×spacing (16 m at spacing
+   160). Static assets at literal z=0 float or sink — the rejected pedestal.
+   Rule: never place infrastructure on procedural relief at fixed z; own the
+   terrain with graded pads, or snap by measured height.
+2. **RayCaster lidar ray-casts only the first `Mesh` child of the scenery
+   prim** (IsaacLab 2.2.1 `ray_caster.py:164-181`, single warp BVH; SRB
+   passes the scenery path only). Nav2 costmaps use only that lidar scan →
+   every separate building/prop prim is invisible to Nav2.
+3. **LunarBot manipulation envelope** (pxr reads of `lunarbot.usdc` + RM-75
+   URDF, planar model, MoveIt confirmation pending): arm base on the chassis
+   −X end at z 0.727 m, camera/lidar on the +X end; reachable TCP z ≈0.32–1.13 m;
+   grasp targets 0.05–0.35 m beyond the −X hull edge (top-down ≤0.25 m), side
+   ≈0.15 m; EG2 jaw opens ≈66 mm → features 15–45 mm; hold ≤~1 kg in sim
+   (no holding stiffness under CARTESIAN_TWIST); Nav2 needs ≥2 m aisles /
+   turnaround pads. Nothing on the ground is graspable.
+4. **Asset landscape:** no lunar/space content in NVIDIA's 5.1 library (only
+   an astronaut figure); physics-ready industrial props (SimReady, 1,029) and
+   one articulated storage asset (Sektion cabinet). NASA 3D Resources (PD)
+   has a habitat demo unit, SEV rover, RASSOR, Tall Dish, ORU, carrier, tools;
+   no free credible VSAT/CLPS/ISRU/PDU-type models anywhere — must be
+   authored. License blockers: TurboSquid/CGTrader free assets (ML clause),
+   `/Isaac/Environments/*` (no modification), NASA insignia in AI imagery.
+
+Redesign built on these: `docs/lunar_base_scene_design.md`.

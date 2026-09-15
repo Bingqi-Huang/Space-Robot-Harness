@@ -1,63 +1,47 @@
 # Handoff
 
-State as of 2026-09-15. **Phase A + Phase B complete. Phase C mission-logic
-(execution_plan §6.4) implemented + live-verified this session.**
-Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F40).
+State as of 2026-09-15 (evening). **Phase A + B complete. Phase C restarted:
+the user rejected `panel_remount_v2` outright; a full lunar-base scene
+redesign is proposed and awaiting user decisions.**
+Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F41).
 
 ## Where things stand
 
-openral `master` unchanged this session. SRB `main` and this repo's `main`
-both need `feat/panel-remount-v2-mission-logic` merged (this session's work:
-scene changes in `panel_remount_v2/task.py`, `mission_verifier` updates,
-`docs/panel_remount_v2_mission_logic_plan.md`, F40). No other open feature
-branches — everything gets a fresh branch/worktree off `master`/`main`.
+- openral `master`, SRB `main`, research `main` all merged, no open branches.
+  `panel_remount_v2` + its mission-logic code remain in SRB `main` as a
+  superseded reference; do not build on it.
+- User's rejection (multi-angle GUI inspection): too simple, SRB-assets
+  only, a solar panel sitting on a pedestal top is nonsense, a pedestal
+  floats above terrain, the panel is out of arm reach, the panel still
+  tumbles off. Wants a good-looking lunar base with real buildings and
+  diverse operable assets, built from experiment needs first; internet and
+  Isaac assets allowed. Memory: `feedback-scene-quality-bar`.
+- This round was planning-only (docs + research, no code, no sim runs).
 
-## Next — Phase C remainder
+## Next — wait for user decisions, then C1
 
-Mission-logic mechanism (scenario_variant switch, covered discrimination
-signal, both held-out perturbations) is done and live-verified — see
-`docs/panel_remount_v2_mission_logic_plan.md` (status: implemented) and
-`docs/research_findings.md` F40. What's NOT done:
+Read `docs/lunar_base_scene_design.md` (design) and
+`docs/lunar_base_research/` (evidence). §10 lists 4 decisions (terrain DEM,
+core size, lidar-mesh baking, Blender-authored gap assets). After approval:
+C1 asset gallery (fetch/convert/author, provenance, turntable renders) →
+user look approval → C2 terrain + blockout → user layout approval → C3–C6.
 
-- §5's open question (mount-compatibility query capability) — deferred to
-  Phase E's baseline-adapter work, not required for the mechanism itself.
-- Covered-case route obstruction (plan doc §1, optional) — not started.
-- Full end-to-end reasoner run through the held-out variants — gated on
-  F37 (Nav2 lifecycle wedge / sensor-bridge launch wiring), not attempted
-  this session; the verification done was scene-level only (`srb agent
-  rand`/`zero`, no kernel/reasoner graph).
-- Mission B — explicitly after Mission A's orchestration needs are clear
-  (§6.5).
+Key constraints the new scene must respect (F41): no infrastructure at
+fixed z on procedural relief (it is not flat); lidar/Nav2 only see the
+scenery's first Mesh child; grasp features at z 0.45–1.00 m, 0.05–0.35 m
+beyond the arm-end (−X) hull edge, 15–45 mm wide, ≤~1 kg; ≥2 m aisles;
+sim ≈12 Hz so keep the core compact and dynamic bodies few.
 
-## F40, briefly (full writeup in research_findings.md)
+## Lessons from the rejected scene (F40 addendum, F41)
 
-The panel's spawn position had silently drifted ~2.8 m from its documented
-offset since v1: Isaac Lab's `reset_root_state_uniform` **adds**
-`pose_range` to the asset's default root state, it is not an absolute
-pose — v1's `EventCfg` was written as if it were absolute. Fixed; also
-moved `_ROCK_BLOCKING_POS` (held-out A) since the corrected panel jitter
-range is now closer to it than before. Caught via a temporary debug print
-of simulator ground truth in `_reset_idx` (removed after use) — pixel-
-level video inspection alone did not catch this; the camera framing in
-`panel_remount_v2_visual`'s recordings does not clearly resolve which
-on-screen shape is which scene object at this zoom level, so treat that
-video as a stability/crash check, not a precise-position check. For exact
-poses, read simulator state directly (a temporary print, removed after).
-
-**Caveat, found right after by the user actually watching the recorded
-video**: `heldout_state_mismatch`'s panel was getting flung across the
-scene — a real spawn-inside-the-mount-geometry overlap that F40's
-log-keyword grep and single-instant position check both missed (an
-ordinary PhysX contact-resolution impulse doesn't print a distinctive
-warning, and the launch develops over ~20 ticks, not at the reset
-instant). Fixed by spawning `_PANEL_MISMATCH_DROP_HEIGHT_M` (0.2 m) above
-the mount and letting it fall, instead of starting inside a collider —
-re-verified with a per-tick trace out to 400 ticks showing a genuine
-stable rest (position/velocity frozen, physics sleep) by ~tick 125, no
-further launches. Full detail + the standing lesson (a clean log + sparse
-stills is not enough evidence near existing geometry — track
-position/velocity over enough ticks) in `docs/research_findings.md`'s F40
-addendum.
+- `reset_root_state_uniform` pose_range is a delta on the default root
+  state, not an absolute pose.
+- Spawning a body overlapping a collider produces a silent PhysX launch
+  over ~20 ticks — no log warning. Check spawn overlaps offline, trace
+  pose/velocity per tick to sleep, cap `max_depenetration_velocity`.
+- `panel_remount_v2_visual`'s recording camera can't resolve object
+  identity or ground contact. "Works" requires multi-angle views + a user
+  look, not a clean log and a few top-down frames.
 
 ## Environment reference (reusable, don't rediscover)
 
