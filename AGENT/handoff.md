@@ -18,12 +18,13 @@ Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F41).
   Isaac assets allowed. Memory: `feedback-scene-quality-bar`.
 - This round was planning-only (docs + research, no code, no sim runs).
 
-## Next — wait for user decisions, then C1
+## Next — C1 asset gallery (decisions made, not started)
 
 Read `docs/lunar_base_scene_design.md` (design) and
-`docs/lunar_base_research/` (evidence). §10 lists 4 decisions (terrain DEM,
-core size, lidar-mesh baking, Blender-authored gap assets). After approval:
-C1 asset gallery (fetch/convert/author, provenance, turntable renders) →
+`docs/lunar_base_research/` (evidence). User chose all four §10
+recommendations: real LOLA DEM + procedural detail, ~50×50 m core, statics
+baked into the single lidar mesh, gap assets authored in Blender.
+C1 = fetch/convert/author assets with provenance + turntable renders →
 user look approval → C2 terrain + blockout → user layout approval → C3–C6.
 
 Key constraints the new scene must respect (F41): no infrastructure at

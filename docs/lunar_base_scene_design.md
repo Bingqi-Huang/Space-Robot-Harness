@@ -210,9 +210,9 @@ LunarBot is the resident maintenance/logistics robot.
 | C5 Mission B task | same for B | §8.4–8.5 pass |
 | C6 Wrap-up | findings, docs, retire `panel_remount_v2` | full §8 on all variants |
 
-## 10. Decisions needed from the user
+## 10. User decisions (2026-09-15)
 
-1. Terrain: real LOLA south-pole DEM (Connecting Ridge) + procedural detail (recommended) vs purely procedural.
-2. Core size ≈50 × 50 m (recommended, traverse time at 12 Hz) vs larger.
-3. Nav2 visibility: bake static structures into the single lidar mesh (recommended, no upstream change) vs patch RayCaster for multi-mesh.
-4. Gap assets (VSAT mast, PDU, racks, cabinets) authored by us in Blender (recommended, CC0, fully articulable) vs paid marketplace assets kept local-only.
+1. Terrain: **real LOLA south-pole DEM (Connecting Ridge) + procedural cm-scale detail**, graded pads.
+2. Core size: **compact ≈50 × 50 m**.
+3. Nav2 visibility: **bake terrain + static structure exteriors into the single lidar mesh**; no RayCaster patch.
+4. Gap assets (VSAT-style mast, PDU, racks, cradle, comm cabinet, dock): **authored by us in Blender** (CC0, articulated).

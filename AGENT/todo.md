@@ -79,8 +79,9 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       Ridge Outpost" (habitat, power field w/ articulated PDUs, comm station,
       landing pad + cargo depot, ISRU yard, rover dock), zone→case mapping,
       asset pipeline, verification protocol, phases C1–C6.
-- [ ] **User decisions** (design doc §10): DEM vs procedural terrain; core
-      size; lidar-mesh baking vs RayCaster patch; authoring gap assets in Blender.
+- [x] User decisions (design doc §10): real LOLA DEM + procedural detail;
+      ~50×50 m core; bake statics into the single lidar mesh; Blender-authored
+      gap assets.
 - [ ] C1 asset gallery → user look approval. [ ] C2 terrain + blockout →
       user layout approval. [ ] C3 articulated infrastructure. [ ] C4 Mission A
       task. [ ] C5 Mission B task. [ ] C6 full §8 verification + docs.
