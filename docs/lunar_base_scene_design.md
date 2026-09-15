@@ -1,6 +1,9 @@
 # Lunar base scene — redesign for Mission A/B (Phase C restart)
 
-**Status:** design, 2026-09-15; C1 (asset processing) batch 1 done. Supersedes
+**Status:** design, 2026-09-15; C1 (asset processing) done; C2 blockout built (SRB
+`feat/lunar-base-scene`, `assets/lunar_base/scene/layout.yaml` is now the source of truth for
+positions — it deviates from §4 where noted there: PDUs face south, landing pad moved NW so the
+Starship shadow misses the base, core platform graded to one level), awaiting user approval. Supersedes
 `docs/panel_remount_v2_mission_logic_plan.md` and the `panel_remount_v2` scene, which the
 user rejected outright (too simple, SRB-assets-only, a solar panel sitting on a pedestal top,
 a pedestal floating above terrain, the panel out of arm reach, the panel still tumbling off).

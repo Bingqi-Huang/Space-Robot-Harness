@@ -1,56 +1,52 @@
 # Handoff
 
-State as of 2026-09-15 (evening). **Phase A + B complete. Phase C restarted:
-the user rejected `panel_remount_v2` outright; a full lunar-base scene
-redesign is proposed and awaiting user decisions.**
-Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F41).
+State as of 2026-09-15 (night). **Phase A + B complete. Phase C: C1 merged,
+C2 scene blockout built and verified in SRB, waiting on user layout approval.**
+Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F42).
 
 ## Where things stand
 
-- openral `master`, SRB `main`, research `main` all merged, no open branches.
-  `panel_remount_v2` + its mission-logic code remain in SRB `main` as a
-  superseded reference; do not build on it.
-- User's rejection (multi-angle GUI inspection): too simple, SRB-assets
-  only, a solar panel sitting on a pedestal top is nonsense, a pedestal
-  floats above terrain, the panel is out of arm reach, the panel still
-  tumbles off. Wants a good-looking lunar base with real buildings and
-  diverse operable assets, built from experiment needs first; internet and
-  Isaac assets allowed. Memory: `feedback-scene-quality-bar`.
-- This round was planning-only (docs + research, no code, no sim runs).
+- SRB branch `feat/lunar-base-scene` @ 5c975fd (not merged; `main` has C1).
+  openral `master`, research `main` otherwise clean. `panel_remount_v2` stays
+  in SRB `main` as superseded reference only.
+- Review page for the user: https://claude.ai/artifact/KAmnfrHaxBom4RnRNLUwMA
+  (source `.artifact_build/lunar_base_review/`, git-excluded).
+- Open user decisions: (1) layout approval; (2) F42 — LunarBot's Mid-360
+  RayCaster frame is roll −90°, so the scan ring is vertical; fix in
+  `lunarbot.py` only with the user's OK (another agent edits that file).
 
-## Next — C2 terrain + layout blockout
+## C2 — what was built (all in `space_robotics_bench/assets/lunar_base/`)
 
-Design: `docs/lunar_base_scene_design.md` (read the scope-correction box at the
-top first: no fine articulation; maintenance = touch waypoints / dummy button).
-Evidence: `docs/lunar_base_research/`.
+Pipeline, rerun top to bottom after any layout edit:
+`python3 scene/build_terrain.py && python3 scene/build_scene.py`
+(build_scene calls `bake_albedo.py` and Blender's pxr via `usd_writer.py`;
+prints placement problems and <2 m clearances — both must be empty).
+- `scene/layout.yaml` — DEM window (Site01 row 1950 col 1970), noise/craters,
+  albedo bake, sun (12° elev, bearing 200°), 7 pads, 7 roads, 23 placements.
+- Terrain: 160 m near field @0.4 m (collider, graded core platform at one
+  level, pads flat, ship pad NW at +1.64 m), 6 km far field @20 m, 220 OmniLRS
+  rocks outside the platform. Near-field albedo baked (8160², roads, wheel
+  tracks, sintered dock/landing pads with markings); normal/roughness tiled 4 m.
+- USD prim order: `/lunar_base/lidar` (terrain + one box per structure,
+  invisible, no collider) is the first Mesh on purpose (F41); `terrain`
+  carries the collider; assets referenced with their own convex hulls.
+- SRB: `srb/assets/scenery/lunar_base.py` (`LunarBase`, Moon, fixed sun, no
+  sun randomization, env_spacing 200) and task `lunar_base` (+`_visual`),
+  LunarBot fixed on the dock (zero pose_range deltas, F40).
+- Checks: `scene/render_review.py <out> [views]` (standalone RTX, no physics);
+  `scene/srb_scene_check.py <out>` (real SRB env: settle, drive, lidar
+  diagnostics, renders). Last result: settles in 40 steps, drives 0.57 m/s
+  at cmd 0.6 (+cmd moves −X), lidar mesh loaded, no clearance problems.
+- Processing fixes this round: fake glTF alpha dropped; `material_overrides`
+  in processing.yaml (PV cell sheet push + PV glass look); PDU yaw −90 so
+  the switch panel faces the sun/roads.
 
-All simulation work lives in the SRB fork (user convention). C1 is done and
-merged into SRB `main`: `space_robotics_bench/assets/lunar_base/`
-- `manifest.yaml` + `fetch_assets.py` — 81 sources; `raw/` git-ignored (3.6 GB+).
-  19 Sketchfab items need a token; only the 8 the user approved were fetched
-  with it (user's account has a 10-download quota — never re-run those).
-- `processing.yaml` + `process/process.py` (Blender 4.5 headless, one run per
-  output) → `usd/<category>/<name>/` (git LFS) + git-ignored `previews/`.
-  20 assets, user approved the look (rev 2), gallery
-  https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
-- Pipeline gotchas found: Blender bound_box is stale after mesh.transform until
-  `view_layer.update()`; Blender's USD exporter drops textures unless the
-  material is a Principled BSDF graph (glTF unlit materials rebuilt first);
-  collapse-decimation of unwelded meshes throws spikes (weld first); Isaac
-  Lab's `UsdFileCfg` only modifies existing collision/rigid APIs, so colliders,
-  physics material and mass are authored in the USD.
+## Next — C3 (after approval)
 
-C2 steps: load the batch in Isaac Sim once the GPU is free (the user had an
-Isaac GUI instance open) → merge many-mesh statics → LOLA Site01 DEM terrain
-with graded pads + roads → place zones per design §4 → bake terrain + static
-exteriors into the scenery's single lidar mesh → multi-angle renders + GUI
-walkthrough → user layout approval.
-
-Key constraints the new scene must respect (F41): no infrastructure at
-fixed z on procedural relief (it is not flat); lidar/Nav2 only see the
-scenery's first Mesh child; grasp features at z 0.45–1.00 m, 0.05–0.35 m
-beyond the arm-end (−X) hull edge, 15–45 mm wide, ≤~1 kg; ≥2 m aisles;
-sim ≈12 Hz so keep the core compact and dynamic bodies few.
+Touch waypoints / dummy buttons on PDU fronts, PV trackers, comm dish base,
+habitat door; 1 kg crate + ORU at grasp height (0.45–1.0 m, on the SLI
+carrier / a stand, never on the ground); settle trace per dynamic body; then
+merge the branch. Known cosmetic: near/far detail seam visible from >100 m up.
 
 ## Lessons from the rejected scene (F40 addendum, F41)
 

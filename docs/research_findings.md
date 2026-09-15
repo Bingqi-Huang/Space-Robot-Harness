@@ -1833,3 +1833,34 @@ assumptions:
    `/Isaac/Environments/*` (no modification), NASA insignia in AI imagery.
 
 Redesign built on these: `docs/lunar_base_scene_design.md`.
+
+### F42 — C2 bring-up of the lunar base scene: LunarBot's Mid-360 RayCaster scans a vertical plane; four asset/pipeline gotchas
+
+Found running `assets/lunar_base/scene/srb_scene_check.py` (SRB task
+`lunar_base`, LunarBot on the dock, 2026-09-15).
+
+1. **Lidar scan ring is vertical.** `lidar_mid360_frame` world quaternion
+   (w,x,y,z) = (0.707, −0.707, 0, 0), i.e. roll −90°, not the documented
+   inverted (roll 180°) mount. With `ray_alignment="base"` the 40×360
+   pattern becomes a vertical fan: world ray elevations −89°…+89°, zero
+   near-horizontal rays pointing south at the charging station 1.4 m away.
+   Nav2's 0.05–0.6 m costmap band therefore only gets returns along the
+   robot's x–z plane. Robot-side (F23 mount pose), not scene-side; not yet
+   changed — the user decides, and another agent edits `lunarbot.py`.
+   The scene's lidar mesh itself loads (`/lunar_base/lidar`, 320 k tris;
+   ~7 350 of 14 360 rays hit).
+2. **glTF BLEND alpha**: Sketchfab materials exported as BLEND with a texture
+   alpha never below 0.44 render see-through and metallic-looking in RTX
+   (the PDU cabinets looked like dark glass slabs). Processing now drops the
+   alpha link unless ≥1 % of texels are < 0.1.
+3. **Coplanar PV cell sheet**: the PV models' cell material sits 0–5 mm
+   under a grey slab face; RTX shows the slab (white panels). Fixed with a
+   per-material rigid 15 mm push along the sheet normal. Blender material
+   names lack USD's leading "_" for names starting with a digit — override
+   regexes must match the Blender name.
+4. **`rep.orchestrator.step()` hangs inside a running IsaacLab env**
+   (headless, after `env.step`). Moving a plain `UsdGeom.Camera` and pumping
+   `env.sim.render()` ×60 before reading the annotator works.
+5. **Tall-structure shadows at a 12° sun**: the 50 m Starship cast a ~235 m
+   shadow across the whole base; the landing pad moved NW so its shadow
+   falls outward. Any sun-bearing change must re-check this.
