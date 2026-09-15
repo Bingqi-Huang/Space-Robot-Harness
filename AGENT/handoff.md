@@ -9,9 +9,11 @@ Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F43).
 - Branches (user rule: only trunk + the working dev branch): SRB `main` + dev
   branch `feat/lunar-base-scene` (6c04598, all Phase C work continues here);
   openral `master` only (a253ef3, includes the 0.6 m/s bound); research `main`.
-  Local trunks are ahead of GitHub (SRB +13, openral +9, dev branch unpushed)
-  and origin still has old merged feature branches — push/delete only when the
-  user asks.
+  Pushed 2026-09-15: SRB now lives in **git@github.com:DsslRobot/srb_assets.git**
+  (`origin`; non-fork because GitHub refuses LFS uploads to public forks),
+  `main` + `feat/lunar-base-scene`; the old fork is remote `fork` (only its stale
+  `main` left), `upstream` = AndrejOrsula. openral `master` pushed, old remote
+  branches deleted. `.gitmodules` points SRB at srb_assets (branch = dev branch).
 - Review page: https://claude.ai/artifact/KAmnfrHaxBom4RnRNLUwMA (rev 2, pre-F43
   layout changes).
 - LunarBot conventions now (F43): REP-103 base twist (+v toward the camera end,

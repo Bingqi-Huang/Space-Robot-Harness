@@ -3,4 +3,5 @@
 	url = git@github.com:DsslRobot/openral.git
 [submodule "space_robotics_bench"]
 	path = space_robotics_bench
-	url = git@github.com:DsslRobot/space_robotics_bench.git
+	url = git@github.com:DsslRobot/srb_assets.git
+	branch = feat/lunar-base-scene
