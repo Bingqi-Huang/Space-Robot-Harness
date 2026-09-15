@@ -24,8 +24,18 @@ Read `docs/lunar_base_scene_design.md` (design) and
 `docs/lunar_base_research/` (evidence). User chose all four §10
 recommendations: real LOLA DEM + procedural detail, ~50×50 m core, statics
 baked into the single lidar mesh, gap assets authored in Blender.
-C1 = fetch/convert/author assets with provenance + turntable renders →
-user look approval → C2 terrain + blockout → user layout approval → C3–C6.
+User then asked for a second, harder asset search before any modelling
+(don't hand-build what exists open-source). Round 2 reports:
+`docs/lunar_base_research/05_articulated_assets.md` (ArtVIP Apache-2.0
+Isaac-ready articulated cases/drawers/cabinets, DRC valves, SRC dish with
+handwheel joints), `06_space_hardware_round2.md` (Mars One base, IDSS
+hatch, MMSEV, ExoMars, antennas), `07_industrial_analogs.md` (Poly Haven
+PDU shells, BESS/switchgear, PV racks). 66-item shortlist by zone published
+as an artifact (https://claude.ai/artifact/CaK97Scgt1pqNnZhDaSST4; item
+table source `docs/lunar_base_research/shortlist_catalog.py`).
+**Waiting on the user to pick/drop items by ID.** Then C1 = fetch/convert/
+re-material/articulate the picks with provenance + renders → user look
+approval → C2 terrain + blockout → C3–C6.
 
 Key constraints the new scene must respect (F41): no infrastructure at
 fixed z on procedural relief (it is not flat); lidar/Nav2 only see the
