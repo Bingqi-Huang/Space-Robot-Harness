@@ -1886,3 +1886,52 @@ Found running `assets/lunar_base/scene/srb_scene_check.py` (SRB task
 6. **Tall-structure shadows at a 12° sun**: the 50 m Starship cast a ~235 m
    shadow across the whole base; the landing pad moved NW so its shadow
    falls outward. Any sun-bearing change must re-check this.
+
+### F43 — LunarBot base conventions on the lunar base: twist signs were wrong, keyboard teleop inverted the base, speed bound raised, drivable roads
+
+Found driving LunarBot at the new speed bound on the `lunar_base` task
+(2026-09-15; `assets/lunar_base/scene/srb_drive_check.py`,
+`srb_teleop_check.py`).
+
+1. **Twist signs.** `FourWheelSteerActionCfg` had `scale_linear=-1,
+   scale_angular=-1`: +v drove toward the chassis −X (arm end) and +ω yawed
+   about −Z (ω=+0.5 → −0.305 rad/s measured). Everything downstream (Nav2,
+   odom TF, sensor frames) uses REP-103 in `chassis_base_link`, and a yaw-rate
+   sign cannot depend on which end is "forward", so both are now +1: +v toward
+   +X (camera + Mid-360), +ω counter-clockwise. Programmatic (v, ω): straight
+   0.58 m/s at 0.6, travel 0.6° off +X; spin +Z at 0.33 rad/s for 0.5
+   commanded (in-place turns reach ~2/3 of the command); arc correct.
+2. **Keyboard teleop inverted the base.** `srb agent teleop` negates twist
+   x/y for every `ManipulationEnv` (`--invert_controls` is `store_true` with
+   `default=True`, so always on); LunarBot's `GroundManipulationEnv` inherits
+   it. The old −1 linear scale cancelled it (W forward) while yaw on C/V was
+   reversed; with +1 scales W drove backwards (user report).
+   `teleop_twist_for_env()` now skips the inversion when the action group is
+   in "base" teleop mode and maps A/D to yaw; arm mode and fixed-base
+   manipulation envs are unchanged. Headless check PASS: W/S ±X, A/C left,
+   D/V right; ROS cmd_vel (0.5, 0.3) forward-left.
+3. **Speed bound 0.6 m/s (user decision), angular 0.5 rad/s.** openral
+   `robots/lunar_bot/robot.yaml`. The shared Nav2 base file caps 0.5 m/s /
+   1.9 rad/s (panda_mobile tuning) — every Nav2 turn would exceed LunarBot's
+   0.5 rad/s kernel bound, and the kernel rejects the whole chunk. New optional
+   `nav2_max_linear/angular_speed` (validated ≤ safety bounds) are emitted as
+   MPPI `vx_max`/`wz_max` and velocity-smoother limits; LunarBot declares
+   0.57 / 0.47. Nav2 itself not re-run (F37 open).
+4. **Roads were decoration.** Spokes dead-ended, the perimeter crossed the
+   dish, cable reels, RMU and battery container, and the straight route to the
+   landing pad hit the relay antennas; the dock → depot line clipped the
+   charging station (robot stuck, 22° tilt). Rebuilt as a drivable network
+   with a road/route-vs-footprint clearance check (≥1 m) in `build_scene.py`;
+   mission sites moved closer (PDUs 13/19/26 m, cargo carrier 17 m). The
+   +1.64 m graded ramp to the landing pad measured 14.5° tilt and the robot
+   slid back; the pad and access road are now cut to platform level. An
+   open-loop 30 m reverse drifted 92° off the road and rolled the robot on
+   the berm — long open-loop drives are not a valid test.
+5. **PhysX log flood.** Cylinder wheel colliders against the triangle-mesh
+   terrain log "PxShape::getMaterialFromInternalFaceIndex received
+   0xFFFFffff" per contact (812 k lines / 189 MB in 2 min). Convex-hull
+   approximation removes it but cost ~22 % wheel speed; the user ruled the
+   robot model must not change for a log. SRB now limits the
+   `omni.physx.plugin` log channel to errors (no message-level filter exists;
+   `maxNumberOfPhysXErrors` does not cover warnings); `SRB_PHYSX_WARNINGS=1`
+   restores it. Logs 24 KB, identical driving.

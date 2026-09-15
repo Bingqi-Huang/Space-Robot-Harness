@@ -90,15 +90,11 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       ×0.63, MMSEV/ExoMars at LunarBot size, crate + ORU 1 kg (user), friction
       0.8/0.6 + restitution 0.05 on all colliders). Merged into SRB `main`.
       Gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
-- [x] C2 terrain + blockout (SRB `feat/lunar-base-scene` @ 8645335, not merged):
-      `assets/lunar_base/scene/` (layout.yaml → build_terrain → bake_albedo →
-      build_scene/usd_writer → `usd/scene/lunar_base/lunar_base.usda`),
-      `LunarBase` scenery + `lunar_base` task (LunarBot fixed on dock). Verified
-      in SRB: settles, drives 0.57 m/s, lidar sees structures, clearances ≥2 m.
-      Review page https://claude.ai/artifact/KAmnfrHaxBom4RnRNLUwMA.
-      F42 Mid-360 inverted-mount + sensor-frame cloud fix merged to SRB main;
-      near/mid/far terrain seam fixed. **Waiting on user**: layout approval.
-- [ ] Merge `feat/lunar-base-scene` after approval. [ ] C3 interaction points
+- [x] C2 terrain + blockout — SRB dev branch `feat/lunar-base-scene` (6c04598), user
+      approved layout with closer sites; drivable road network + clearance checks;
+      landing pad cut to platform level. F42 lidar + F43 base twist/teleop/log
+      fixes and 0.6 m/s bound (openral master a253ef3) verified in SRB.
+- [ ] C3 interaction points
       (touch waypoints / dummy buttons on PDU/PV/comm/habitat) + 1 kg crate/ORU
       + settle checks. [ ] C4 Mission A task. [ ] C5 Mission B task.
       [ ] C6 full §8 verification + docs.

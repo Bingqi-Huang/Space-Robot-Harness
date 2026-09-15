@@ -1,21 +1,24 @@
 # Handoff
 
-State as of 2026-09-15 (night). **Phase A + B complete. Phase C: C1 merged,
-C2 scene blockout built and verified in SRB, waiting on user layout approval.**
-Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F42).
+State as of 2026-09-15 (late night). **Phase A + B complete. Phase C: C1 merged,
+C2 done (layout approved with closer mission sites), next C3.**
+Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F43).
 
 ## Where things stand
 
-- SRB branch `feat/lunar-base-scene` @ 8645335 (not merged; `main` has C1 +
-  the lidar fix, merged into the branch).
-  openral `master`, research `main` otherwise clean. `panel_remount_v2` stays
-  in SRB `main` as superseded reference only.
-- Review page for the user: https://claude.ai/artifact/KAmnfrHaxBom4RnRNLUwMA
-  (source `.artifact_build/lunar_base_review/`, git-excluded).
-- Open user decision: layout approval. Done since: F42 Mid-360 fix merged to
-  SRB `main` (927426c: inverted mount via `lidar_joint` localRot0 + sensor-
-  frame point cloud in `ros.py`); terrain seam fixed on the scene branch.
-  The other agent that edited `lunarbot.py` has stopped (user, 2026-09-15).
+- Branches (user rule: only trunk + the working dev branch): SRB `main` + dev
+  branch `feat/lunar-base-scene` (6c04598, all Phase C work continues here);
+  openral `master` only (a253ef3, includes the 0.6 m/s bound); research `main`.
+  Local trunks are ahead of GitHub (SRB +13, openral +9, dev branch unpushed)
+  and origin still has old merged feature branches — push/delete only when the
+  user asks.
+- Review page: https://claude.ai/artifact/KAmnfrHaxBom4RnRNLUwMA (rev 2, pre-F43
+  layout changes).
+- LunarBot conventions now (F43): REP-103 base twist (+v toward the camera end,
+  +ω CCW); keyboard teleop base mode W/S drive, A/D and C/V yaw; kernel bound
+  0.6 m/s / 0.5 rad/s, Nav2 caps 0.57 / 0.47; Mid-360 inverted (F42).
+- PhysX `omni.physx.plugin` warnings are hidden by SRB (wheel-cylinder log flood);
+  `SRB_PHYSX_WARNINGS=1` to see them.
 
 ## C2 — what was built (all in `space_robotics_bench/assets/lunar_base/`)
 
@@ -39,9 +42,9 @@ prints placement problems and <2 m clearances — both must be empty).
   LunarBot fixed on the dock (zero pose_range deltas, F40).
 - Checks: `scene/render_review.py <out> [views]` (standalone RTX, no physics);
   `scene/srb_scene_check.py <out>` (real SRB env: settle, drive, lidar
-  diagnostics, renders). Last result: settles in 40 steps, drives 0.57 m/s
-  at cmd 0.6 (+cmd moves −X); lidar −52°…+7°, blind cone 0.67 m, station at
-  1.30 m returned, 1 325 Nav2-band points; no clearance problems.
+  diagnostics, renders); `srb_drive_check.py` (open-loop moves + first
+  reference route, ~2 min); `srb_teleop_check.py` (keyboard + cmd_vel signs,
+  ~1 min). Keep checks short; do not run long open-loop drives.
 - Processing fixes this round: fake glTF alpha dropped; `material_overrides`
   in processing.yaml (PV cell sheet push + PV glass look); PDU yaw −90 so
   the switch panel faces the sun/roads.
