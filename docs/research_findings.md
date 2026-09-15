@@ -2036,3 +2036,82 @@ RM-75 kinematics `assets/lunar_base/scene/rm75_ik.py`.
 Still not shown: Nav2 (F37) and the OpenRAL kernel/HAL path. The oracle drives
 with pure pursuit on hand-set aisle waypoints and commands SRB actions
 directly, so this is §8.4 feasibility, not a harness run.
+
+### F46 — C5 Mission B: the EG2 cannot pinch a 1 kg spare, so spares are hooked by a bail handle; carrying a hanging load needs stoppable speed profiles; the depot stand was too narrow
+
+Built 2026-09-16 on SRB `feat/lunar-base-scene`: task `lunar_base_mission_b`
+(`srb/tasks/mobile_manipulation/lunar_base_mission_b/task.py`), oracle
+primitives factored out of the Mission A script into
+`assets/lunar_base/scene/lunar_oracle.py`, executor + recorder
+`scene/srb_mission_b_run.py`.
+
+1. **Mission B cases.** Deliver the spare ORU from the depot staging stand to
+   PDU-1's spares shelf, then dock with the arm stowed.
+   - `covered`: ORU on slot 0 as the manifest says.
+   - `heldout_destination_occupied`: a returned cargo crate sits on the
+     destination shelf and has to be cleared first (the oracle returns it to
+     the free stand slot).
+   - `heldout_spare_swapped`: the manifest says slot 0, but the ORU is on
+     slot 1 and the crate on slot 0. This is the semantic-confusion case: the
+     spare has to be identified by how it looks.
+   The verifier needs all of: ORU resting upright on the destination shelf,
+   not held; crate resting on a stand slot or another shelf (not dropped, not
+   held); rover docked; arm stowed.
+2. **Spares had nothing a 100 mm gripper can hold.** The ORU (0.45 × 0.39 ×
+   0.37 m) and crate (0.29 × 0.45 × 0.36 m) now get a bail handle on the lid
+   centre from the processing pipeline (`processing.yaml` `top_handle`:
+   25 mm bar, 0.16 m long, 0.10 m standoff). The handle frame goes into the
+   asset json → `interaction.json` (pick points now at the handle,
+   z 1.01–1.02 m). REACH for pick/place is 0.45 like press/grasp;
+   `GRASP_Z` is (0.45, 1.10).
+3. **Pinch and cage grasps slipped.** Closing on the bar blocked the jaws
+   (q 0.22–0.29), but on lifting the object stayed put and joints 4/5/6
+   saturated (30/10/10 N·m) as the jaws were pried open to 0.57.
+   - The measured EG2 collision boxes (Link7 frame) show why: finger pads
+     only span z 0.110–0.143, and the inner four-bar links reach z 0.12 at
+     |x| ≥ 4 mm. The Mission A cage depth (TCP 35 mm past the bar) puts the
+     bar inside the linkage.
+   - In the grasp state only two of the six EG2 joints moved; the others read
+     0, so there is no reliable squeeze.
+   - Depths of 13, 0 and −8 mm all slipped. The robot model was left
+     unchanged (user rule).
+4. **Hook grasp.** The closed gripper goes flat side up, tip raised 10°, with
+   the tool axis 42.5 mm below the bar centre, so the raised fingertips pass
+   5 mm under the bar.
+   - The arm cannot reach 0.22 m further back side-on. So the arm lines the
+     gripper up at the 0.45 m reach, and the **base reverses 0.22 m** to slide
+     it under the bar.
+   - The arm then lifts; the bar lands on the fingertips and rolls back to the
+     wrist (g·sin 10° = 0.28 m/s² holds it).
+   - Placing: lower onto the support, level the tool about the bar, drop
+     12 mm, and drive the base forward to withdraw.
+   - Side close-ups (`Oracle.snapshot`) found the first version's 12° tilt
+     drove the fingertips into the bar.
+5. **Carrying a hanging load.** First full runs "succeeded" with the crate
+   left on the road (the verifier only checked it was off the shelf; fixed,
+   see 1).
+   - The rate limiter slowed braking, so pure pursuit overshot the stand's
+     staging point and circled. The swinging crate knocked both spares off
+     the stand.
+   - While carrying, `Oracle.step` now rate-limits (0.2 m/s², 0.15 rad/s²),
+     and `follow`/`turn_to` cap speed at √(2·a·remaining). The staging point
+     is 2.0 m out.
+   - The load is carried with its base 8 cm above the highest support
+     (stand 0.55 m). Lifting only 5 cm off a 0.50 m shelf jammed the crate on
+     the stand edge, and PhysX depenetration threw it 1.5 m up.
+6. **Depot stand widened 1.00 → 1.30 m** (slots ±0.24 → ±0.32 m). Two 0.45 m
+   spares had a 3 cm gap, and returning the crate next to the ORU pushed the
+   ORU off. `author_props.py` → `process.py --only staging_stand` →
+   `build_scene.py` (30 s, no problems; work-pose clearance 0.252 m).
+7. **Result.** With the fixes above, every case reaches verifier success, recorded
+   one or two at a time (videos + phase JSON in
+   `assets/lunar_base/review/mission_b/`):
+   - `covered`: 413 s sim / 17 min wall with video.
+   - `heldout_destination_occupied`: 660 s sim / 23 min. The crate goes back to
+     stand slot 1, then the ORU is delivered.
+   - `heldout_spare_swapped`: 402 s sim / 15 min.
+   The refactored Mission A obstruction case still succeeds (326 s sim).
+8. **Background-task kills.** Two batches of 2–3 Isaac instances were
+   stopped as "system running low on memory" while `free` showed 237 GB
+   available (116 GB page cache). Launching through `setsid nohup` outside
+   the tool's task tree avoided it.

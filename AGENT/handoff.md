@@ -1,8 +1,8 @@
 # Handoff
 
 State as of 2026-09-15 (late night). **Phase A + B complete. Phase C: C1 merged,
-C2 built + verified; C3 interaction layer done (F44); C4 Mission A done (F45), next C5 Mission B.**
-Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F45).
+C2 built + verified; C3 interaction layer done (F44); C4 Mission A done (F45); C5 Mission B done (F46), next C6.**
+Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F46).
 
 ## Where things stand
 
@@ -79,12 +79,25 @@ prints placement problems and <2 m clearances — both must be empty).
   −X hull edge. Handle grasp: TCP 35 mm past the bar centre (cage).
 - Videos: `assets/lunar_base/review/mission_a/mission_a_<scenario>.mp4` + `.json` phases.
 
-## Next — C5 Mission B task
+## C5 — Mission B (done, F46)
 
-Spare ORU / crate from the depot staging stand to a PDU shelf, occupied-shelf held-out case.
-Reuse `rm75_ik.py` + the executor primitives; first re-check the top-down place/pick reach (REACH
-0.24, still from the old joint-1≈π analysis) with the offline IK before trusting those work poses.
-Nav2 (F37) and the OpenRAL kernel path are still not exercised by any lunar_base run.
+- Task `lunar_base_mission_b`: `scenario` covered | heldout_destination_occupied | heldout_spare_swapped,
+  `destination` (pdu_1), `terminate_on_success`; `where_is(object)` / `on_support()` = verifier truth.
+- `~/Programs/isaac-sim/python.sh assets/lunar_base/scene/srb_mission_b_run.py <out> --scenario <s> [--no-video]
+  [--arm-only --object spare_crate --place-on depot_stand/slot_1]` (arm-only teleports to the pick pose; ~5 min).
+  Full runs: 400–690 s sim, 17–28 min wall with video.
+- Shared primitives: `scene/lunar_oracle.py` (`Oracle`: base, IK arm, hook_pick/hook_place, carry rate limits,
+  follow camera, `snapshot()` close-ups). Mission A script uses it too (regression PASS).
+- Spares: `processing.yaml top_handle` (bar 0.16 m, standoff 0.10 m). Grasp = hook: base reverses 0.22 m to slide
+  the flat closed gripper under the bar, arm lifts; EG2 pinch/cage slips (F46 §3). Don't pinch 1 kg objects.
+- Depot stand is 1.30 m wide now (slots ±0.32); scene rebuilt (`build_scene.py`, 30 s).
+- Launch long Isaac batches with `setsid nohup` — the tool's background tasks were killed as "low memory" with
+  237 GB free (F46 §7).
+
+## Next — C6 verification + wrap-up
+
+Re-run `scene/srb_settle_check.py` (stand width + handles changed), render review of the new stand/handles, Nav2
+costmap + route checks (§8.5, F37 still open), retire `panel_remount_v2`, then Phase D/E per execution plan.
 
 ## Lessons from the rejected scene (F40 addendum, F41)
 

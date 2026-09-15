@@ -227,7 +227,7 @@ LunarBot is the resident maintenance/logistics robot.
 | C2 Terrain + blockout | DEM terrain, pads, roads, zone blockout with hero assets, lidar mesh, renders + GUI walkthrough | user approves layout/look |
 | C3 Interaction layer (was "articulated infrastructure"; scope correction) | service panels (button + status lamp + cover ledge), spares shelves, staging stand, dynamic spares + cover, interaction frames, work/view poses — **done 2026-09-15, F44** | §8.1–8.2 pass |
 | C4 Mission A task | scenario block, verifier truth, scripted runs of all three cases with follow-camera videos — **done 2026-09-16, F45** (§8.5 Nav2 still open, F37) | §8.4–8.5 pass |
-| C5 Mission B task | same for B | §8.4–8.5 pass |
+| C5 Mission B task | same for B — **done 2026-09-16, F46** (hook grasp on bail handles; §8.5 Nav2 still open) | §8.4–8.5 pass |
 | C6 Wrap-up | findings, docs, retire `panel_remount_v2` | full §8 on all variants |
 
 ## 10. User decisions (2026-09-15)

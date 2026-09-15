@@ -104,8 +104,14 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       `scene/srb_mission_a_run.py` completes all three with verifier success;
       follow-camera videos in `assets/lunar_base/review/mission_a/`. REACH
       press/grasp corrected to 0.45 m (work poses regenerated).
-      [ ] C5 Mission B task (spare pick/place to a PDU shelf, occupied shelf).
-      [ ] C6 full §8 verification + docs.
+- [x] C5 Mission B task (F46): `lunar_base_mission_b` (covered /
+      heldout_destination_occupied / heldout_spare_swapped). Spares got bail
+      handles and are hooked (EG2 pinch slips); shared oracle
+      `scene/lunar_oracle.py`; depot stand widened to 1.30 m. All three cases
+      verifier success; videos in `assets/lunar_base/review/mission_b/`.
+- [ ] C6 full §8 verification + docs: settle re-check after the stand/handle
+      changes, render review, Nav2 costmap/route checks (F37), retire
+      `panel_remount_v2`.
 - Carried over, still open: mount/semantic query capability for perception
   (Phase E); full reasoner run through held-out cases gated on F37.
 
