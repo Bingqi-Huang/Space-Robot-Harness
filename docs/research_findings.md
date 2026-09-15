@@ -2115,3 +2115,65 @@ primitives factored out of the Mission A script into
    stopped as "system running low on memory" while `free` showed 237 GB
    available (116 GB page cache). Launching through `setsid nohup` outside
    the tool's task tree avoided it.
+
+### F47 — F37 closed: Nav2 plans and drives LunarBot on the lunar base through `openral deploy sim`; it took five separate fixes
+
+2026-09-16, openral `master` 60345fd, scene `scenes/deploy/srb_lunar_base.yaml`,
+smoke test `experiments/launch/lunar_base_nav2/run_nav2_smoke.sh`. Each fault
+only showed up once the previous one was fixed, on live runs of the full graph
+(SRB + kernel + HAL + reasoner + SLAM + Nav2):
+
+1. **Sensor bridge not in the graph (F37's root cause).** New
+   `ExternalSimulatorSpec.bridges` (`SimulatorBridgeSpec`): the scene declares
+   the simulator's topic/TF adapter.
+   - `deploy_e2e.launch.py` starts it with the simulator, injecting
+     `use_sim_time` and the manifest path.
+   - Nav2 now waits for HAL ACTIVE **and** the bridges' `publishes` topics
+     (`tools/wait_for_topics.py`).
+   - The launch file has no robot-specific branch; the lunar_bot bridge is
+     declared in the SRB scene YAMLs.
+2. **`velocity_smoother` configure threw**: `max_velocity` arrived as a
+   string. This is my own F43 speed-cap override: `RewrittenYaml`
+   `convert_types` only converts scalars. `nav2.launch.py` now writes overrides
+   whose base value is a YAML list as lists into a temporary params file. The
+   costmap `footprint` stays a string.
+3. **`controller_server` looked unresponsive** ("failed to send response
+   (timeout)", `get_state` unanswered). It was not the DDS transport: a
+   UDP-only Fast-DDS profile changed nothing.
+   - Its costmap waited in its lifecycle callback for `base_link → odom`.
+   - The shared Nav2 and slam_toolbox configs name panda_mobile's
+     `base_link`; LunarBot's base is `chassis_base_link`.
+   - Now `nav2_param_overrides()` sets `robot_base_frame` / `base_frame_id` /
+     `base_frame` from the manifest, and slam_toolbox gets `base_frame`.
+     slam_toolbox's "Failed to compute odom pose" flood had the same cause.
+4. **Goals "succeeded" instantly without motion.** Upstream
+   `navigation_launch.py` rewrites `use_sim_time` via `RewrittenYaml`, which
+   replaces keys but adds none, and the base files have no `use_sim_time`. So
+   every Nav2 server ran on wall time against SRB's sim-time TF, and the
+   controller logged "Transform data too old" and "Reached the goal!".
+   `use_sim_time` is now written into every `ros__parameters` block (all eight
+   servers verified True live).
+5. **Lifecycle bringup robustness.** Humble's `lifecycle_manager_navigation`
+   blocks forever on a lost `change_state` reply (seen once while fault 3 was
+   present).
+   - Nav2 now starts with `autostart:=false`.
+   - `tools/lifecycle_autostart.py` (now multi-node, with
+     `--response-timeout-s` / `--attempts`) drives the seven servers and reads
+     each node's real state instead of trusting the reply.
+   - All seven reached ACTIVE about 30 s after launch (warm shader cache).
+
+**Live result.** From the dock:
+- NavigateToPose (3.0, 1.5): SUCCEEDED at odom (3.04, 1.47) after 59 s.
+- Then (9.0, 1.5): SUCCEEDED, but odom read (10.35, 1.48) right after the
+  result — **1.35 m past the goal**.
+
+The overshoot is still open. Next to check are stop latency in the
+cmd_vel → twist_to_action_relay → kernel → HAL chain, or the goal checker
+firing while at speed. Other gotchas:
+- Python Nav2 helper nodes (relay, payload scan filter) survived SIGINT/SIGTERM
+  of the launch group and kept publishing across runs; the smoke script now
+  kill -9s them.
+- `pkill -f <pattern>` inside a Bash tool call matched and killed the tool's
+  own shell.
+- The unrelated `twist_to_action_relay_node.py` executable-bit test failure is
+  fixed.

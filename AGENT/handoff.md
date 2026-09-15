@@ -2,7 +2,7 @@
 
 State as of 2026-09-15 (late night). **Phase A + B complete. Phase C: C1 merged,
 C2 built + verified; C3 interaction layer done (F44); C4 Mission A done (F45); C5 Mission B done (F46), next C6.**
-Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F46).
+Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F47).
 
 ## Where things stand
 
@@ -96,8 +96,9 @@ prints placement problems and <2 m clearances — both must be empty).
 
 ## Next — C6 verification + wrap-up
 
-Re-run `scene/srb_settle_check.py` (stand width + handles changed), render review of the new stand/handles, Nav2
-costmap + route checks (§8.5, F37 still open), retire `panel_remount_v2`, then Phase D/E per execution plan.
+Done: settle re-check PASS; Nav2 on the lunar base live (F47, openral 60345fd). Open: Nav2 stop overshoot
+(1.35 m on a 6 m goal), route-block/loop-road variants, retire `panel_remount_v2`; then Phase D/E per
+execution plan (space_context, harness-driven Mission A/B through the OpenRAL graph instead of the oracle).
 
 ## Lessons from the rejected scene (F40 addendum, F41)
 
@@ -117,10 +118,11 @@ costmap + route checks (§8.5, F37 still open), retire `panel_remount_v2`, then 
   LOCALHOST` needed in *every* shell that touches the openral/ROS graph —
   a fresh Bash call starts with none of it. Pure-`srb` scene checks
   (`agent rand`/`agent zero`, no `--interface ros`) don't need this.
-- `openral deploy sim --config scenes/deploy/srb_panel_remount.yaml` brings
-  up kernel+HAL+SRB+Nav2+reasoner. **Sensor bridge is a separate process**
-  and **must start within seconds of the graph coming up** or Nav2's
-  `bt_navigator` lifecycle wedges waiting on `/odom` (F37, deferred).
+- `openral deploy sim --config scenes/deploy/srb_lunar_base.yaml` (or
+  `srb_panel_remount.yaml`) brings up kernel+HAL+SRB+sensor bridge+Nav2+reasoner;
+  the bridge is declared under `simulator.bridges` and Nav2 waits for it (F47).
+  Live smoke: `experiments/launch/lunar_base_nav2/run_nav2_smoke.sh <logdir>`
+  (launch detached). Kill leftover `openral_nav2_bringup` python nodes after runs.
 - A reasoner started standalone comes up `unconfigured` — drive it through
   `configure`(id=1)/`activate`(id=3) via `lifecycle_msgs/srv/ChangeState`
   (F38). `ros2 lifecycle`/`node list` don't enumerate by name on this host.
