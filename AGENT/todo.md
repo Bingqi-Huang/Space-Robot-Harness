@@ -89,16 +89,15 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       20 real-scale USDs, user approved look 2026-09-15 after rev 2 (PV arrays
       ×0.63, MMSEV/ExoMars at LunarBot size, crate + ORU 1 kg (user), friction
       0.8/0.6 + restitution 0.05 on all colliders). Merged into SRB `main`.
-      Gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U. Still to do at
-      C2 start: load in Isaac Sim (textures/colliders/scale) once the GPU is
-      free; merge the many-mesh statics (battery container 1451, Starship 127).
-- [x] C2 terrain + blockout (SRB `feat/lunar-base-scene` @ 5c975fd, not merged):
+      Gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
+- [x] C2 terrain + blockout (SRB `feat/lunar-base-scene` @ 8645335, not merged):
       `assets/lunar_base/scene/` (layout.yaml → build_terrain → bake_albedo →
       build_scene/usd_writer → `usd/scene/lunar_base/lunar_base.usda`),
       `LunarBase` scenery + `lunar_base` task (LunarBot fixed on dock). Verified
-      in SRB: settles, drives 0.57 m/s, lidar mesh loads, clearances ≥2 m.
+      in SRB: settles, drives 0.57 m/s, lidar sees structures, clearances ≥2 m.
       Review page https://claude.ai/artifact/KAmnfrHaxBom4RnRNLUwMA.
-      **Waiting on user**: layout approval; F42 Mid-360 vertical scan fix yes/no.
+      F42 Mid-360 inverted-mount + sensor-frame cloud fix merged to SRB main;
+      near/mid/far terrain seam fixed. **Waiting on user**: layout approval.
 - [ ] Merge `feat/lunar-base-scene` after approval. [ ] C3 interaction points
       (touch waypoints / dummy buttons on PDU/PV/comm/habitat) + 1 kg crate/ORU
       + settle checks. [ ] C4 Mission A task. [ ] C5 Mission B task.

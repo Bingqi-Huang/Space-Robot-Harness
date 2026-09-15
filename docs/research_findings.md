@@ -1834,21 +1834,29 @@ assumptions:
 
 Redesign built on these: `docs/lunar_base_scene_design.md`.
 
-### F42 — C2 bring-up of the lunar base scene: LunarBot's Mid-360 RayCaster scans a vertical plane; four asset/pipeline gotchas
+### F42 — C2 bring-up of the lunar base scene: Mid-360 scanned a vertical plane and published world points as sensor-frame (both fixed); terrain seam; asset/pipeline gotchas
 
 Found running `assets/lunar_base/scene/srb_scene_check.py` (SRB task
 `lunar_base`, LunarBot on the dock, 2026-09-15).
 
-1. **Lidar scan ring is vertical.** `lidar_mid360_frame` world quaternion
-   (w,x,y,z) = (0.707, −0.707, 0, 0), i.e. roll −90°, not the documented
-   inverted (roll 180°) mount. With `ray_alignment="base"` the 40×360
-   pattern becomes a vertical fan: world ray elevations −89°…+89°, zero
-   near-horizontal rays pointing south at the charging station 1.4 m away.
-   Nav2's 0.05–0.6 m costmap band therefore only gets returns along the
-   robot's x–z plane. Robot-side (F23 mount pose), not scene-side; not yet
-   changed — the user decides, and another agent edits `lunarbot.py`.
-   The scene's lidar mesh itself loads (`/lunar_base/lidar`, 320 k tris;
-   ~7 350 of 14 360 rays hit).
+1. **Lidar scan ring was vertical — fixed (SRB `main` 927426c).**
+   `lidar_mid360_frame` world quaternion (w,x,y,z) = (0.707, −0.707, 0, 0),
+   roll −90° (a Y-up mesh convention), not the inverted roll-180° mount. With
+   `ray_alignment="base"` the 40×360 pattern was a vertical fan: world ray
+   elevations −89°…+89°, no near-horizontal rays toward the charging station
+   1.4 m away. The frame is an **articulation link on `lidar_joint`**, so
+   PhysX places it from the joint's `physics:localRot0`, not its xformOp —
+   changing only the xformOp had no effect in the sim. Fix: `localRot0` and
+   the xformOp both roll 180°, child mesh xform roll +90° (mesh world pose
+   unchanged, < 1e-6). Second bug on the same path: `ros.py` published
+   `ray_hits_w` (world coordinates) under the sensor `frame_id`, so every
+   consumer (pointcloud_to_laserscan → Nav2) transformed world points as if
+   they were sensor-frame; now `RayCaster.ray_hits_sensor_frame()`.
+   Verified live (`srb_scene_check.py`): elevations −52°…+7°, blind cone
+   below −52° = 0.67 m radius on the ground around the mast, 510
+   near-horizontal returns from the station at 1.30 m, 1 325 points in the
+   0.05–0.6 m Nav2 band, sensor-frame round trip 1e-5 m. Nav2 itself not
+   re-run (F37 still open).
 2. **glTF BLEND alpha**: Sketchfab materials exported as BLEND with a texture
    alpha never below 0.44 render see-through and metallic-looking in RTX
    (the PDU cabinets looked like dark glass slabs). Processing now drops the
@@ -1861,6 +1869,20 @@ Found running `assets/lunar_base/scene/srb_scene_check.py` (SRB task
 4. **`rep.orchestrator.step()` hangs inside a running IsaacLab env**
    (headless, after `env.step`). Moving a plain `UsdGeom.Camera` and pumping
    `env.sim.render()` ×60 before reading the annotator works.
-5. **Tall-structure shadows at a 12° sun**: the 50 m Starship cast a ~235 m
+5. **Near/far terrain seam from altitude — fixed.** Three causes, all
+   needed: (a) the near field's craters and fine noise stopped at its border
+   (and a keep-out sign bug rejected every crater outside it); (b) the 2 m
+   mid mesh cannot show 1.2/4 m relief, so the 0.4 m near field read as a
+   brighter, grainier square — solved with a baked normal map carrying the
+   full relief on a mid mesh whose vertex normals point straight up (a
+   tangent-space map relative to interpolated 2 m normals left a 2 m grid
+   pattern, because RTX interpolates per triangle); (c) texture downsampling
+   averaged sRGB-encoded values, darker than the GPU's linear mips of the
+   tiled far material. One world-space surface function now feeds near
+   (200 m @0.4), mid (600 m @2 + 7 cm maps) and far (6 km @20); heights
+   agree on borders to 6.5 mm. Remaining: the mid ring seen from <30 m looks
+   softer than the near field (7 cm vs 2 cm texels); the landing pad is
+   ≥26 m from it.
+6. **Tall-structure shadows at a 12° sun**: the 50 m Starship cast a ~235 m
    shadow across the whole base; the landing pad moved NW so its shadow
    falls outward. Any sun-bearing change must re-check this.
