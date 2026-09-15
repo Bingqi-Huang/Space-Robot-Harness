@@ -1,7 +1,7 @@
 # Handoff
 
 State as of 2026-09-15 (late night). **Phase A + B complete. Phase C: C1 merged,
-C2 done (layout approved with closer mission sites), next C3.**
+C2 built + verified (mission sites moved closer per user; final layout look not yet re-reviewed), next C3.**
 Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F43).
 
 ## Where things stand

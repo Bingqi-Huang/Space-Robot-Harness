@@ -90,8 +90,8 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       ×0.63, MMSEV/ExoMars at LunarBot size, crate + ORU 1 kg (user), friction
       0.8/0.6 + restitution 0.05 on all colliders). Merged into SRB `main`.
       Gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
-- [x] C2 terrain + blockout — SRB dev branch `feat/lunar-base-scene` (6c04598), user
-      approved layout with closer sites; drivable road network + clearance checks;
+- [x] C2 terrain + blockout — SRB dev branch `feat/lunar-base-scene` (6c04598); mission
+      sites moved closer per user; drivable road network + clearance checks;
       landing pad cut to platform level. F42 lidar + F43 base twist/teleop/log
       fixes and 0.6 m/s bound (openral master a253ef3) verified in SRB.
 - [ ] C3 interaction points
