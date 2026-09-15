@@ -13,26 +13,29 @@ pass), all local commits, **not pushed to origin**. No open feature branches
 `space_robotics_bench` `main` also has `panel_remount_v2`'s scene merged
 (Phase C).
 
-## Next — Phase C mission-logic (not started)
+## Next — Phase C mission-logic (design done 2026-09-15, not yet coded)
 
 `panel_remount_v2`'s SCENE is done and live-verified (F39): 2 decoy
-pedestals, ~3.5 m real approach, terrain-safe. What's NOT built yet, per
-§6.4:
-- Covered examples (visible during authoring): the known displaced panel +
-  remount sequence (already works, inherited from v1), a predefined
-  retry/failure branch, a route-obstruction-with-alternate-route case.
-- Held-out examples (hidden until freeze): access blocked by a movable
-  object (inspect→diagnose→relocate→re-access→restore→verify), a
-  semantically-inconsistent observed state needing closer inspection, a
-  missing-preferred-capability case solvable via composition.
-- The actual "inspection" mechanic — right now the two decoys are just
-  *present*, nothing distinguishes "which site is the real fault" except
-  hardcoded position. Needs a real observable signal (visual difference,
-  a queryable state) the reasoner can act on, not a hidden coordinate.
-- Perturbation switches (covered/held-out toggle) — none exist yet.
-- §8.2's rule still applies: no scenario-specific decision rules baked into
-  the harness/guard — the *scene* can encode fixed facts (which pedestal is
-  real), but *what to do about it* must stay the reasoner's call.
+pedestals, ~3.5 m real approach, terrain-safe. Full mission-logic spec
+now written: `docs/panel_remount_v2_mission_logic_plan.md`. User decided
+(2026-09-15): (1) covered-case discrimination needs a real inspect step
+(add a decoy `SolarPanel` near the 25cm decoy pedestal — mount-size
+compatibility is the real discriminator, not object presence); (2)
+held-out categories = movable-object access block (manipulation-level,
+new `MoonRock`) + semantically-inconsistent state (panel starts
+near-but-not-at target pose, needs closer/second observation — no new
+verifier code needed, existing tolerance check already fails it
+correctly). Capability-substitution held-out case not adopted.
+
+8-step ordered checklist is in the plan doc. First step, independent of
+the design: `openral_ext/mission_verifier/panel_remount_logic.py` still
+has v1's target constants (`(1.5,0,0.5)`, should be v2's `(3.5,0,0.5)`) —
+fix before any live verification against v2.
+
+Open question flagged in the plan (§5): whether "mount compatibility
+between a panel and a pedestal" is already expressible via the existing
+scene-query/object-localization output, or needs a small mission-generic
+metadata addition — check before assuming.
 
 Do not start Mission B until this is done and Mission A's real
 orchestration needs are clear (§6.5, explicit ordering).

@@ -86,8 +86,13 @@ decision rules" rule).
       panel_remount_v2_visual`, 6+ min stable physics, real rendered
       frames inspected (no floating/clipping, sane scale, matches offline
       Blender-derived geometry).
-- [ ] Mission logic — not started: covered/held-out case authoring,
-      semantic inspection condition, perturbation switches.
+- [ ] Mission logic — design done (2026-09-15), not yet coded. Full spec:
+      `docs/panel_remount_v2_mission_logic_plan.md`. User decisions: (1)
+      covered-case true/decoy discrimination needs a real inspect step,
+      not a geometric shortcut; (2) held-out categories = movable-object
+      access block + semantically-inconsistent state (not
+      capability-substitution). 8-step ordered checklist in the plan doc,
+      starting with fixing mission_verifier's stale v1 target constants.
 - [ ] Mission B — explicitly after Mission A's orchestration needs are clear.
 - [ ] Simulator-truth exposure for independent verification beyond what
       item 7's verifier already does for v1's single pair.
