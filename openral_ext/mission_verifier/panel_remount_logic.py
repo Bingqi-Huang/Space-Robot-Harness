@@ -5,7 +5,7 @@ offline (`python3 -m openral_ext.mission_verifier.tests.smoke`, no sim, no
 ROS graph). `node.py` is the only place that touches ROS; it calls these.
 
 Independence from the task's own self-report (the actual point of §4.4):
-`space_robotics_bench/srb/tasks/mobile_manipulation/panel_remount/task.py`
+`space_robotics_bench/srb/tasks/mobile_manipulation/panel_remount_v2/task.py`
 computes `termination_success` from `tf_pos_panel`/`tf_quat_panel` that are
 already resident in the running Isaac Lab process (`RigidObject.data.
 root_pos_w`), using its own reward/termination scaffolding
@@ -35,7 +35,7 @@ from typing import NamedTuple
 # intentionally NOT imported from `srb` (that would make this "verifier
 # module" import torch/Isaac Lab, defeating the point of an independent,
 # lightweight, offline-testable check).
-PANEL_TARGET_POS = (1.5, 0.0, 0.5)  # task.py _PANEL_TARGET_POS, env-origin-relative
+PANEL_TARGET_POS = (3.5, 0.0, 0.5)  # task.py _PANEL_TARGET_POS, env-origin-relative (v2)
 PANEL_TARGET_QUAT = (1.0, 0.0, 0.0, 0.0)  # task.py _PANEL_TARGET_QUAT (w, x, y, z)
 SUCCESS_POS_TOLERANCE_M = 0.1  # task.py _compute_step_return SUCCESS_POS_TOLERANCE_M
 SUCCESS_ROT_TOLERANCE_COS_HALF_ANGLE = 0.9  # task.py SUCCESS_ROT_TOLERANCE_COS_HALF_ANGLE
