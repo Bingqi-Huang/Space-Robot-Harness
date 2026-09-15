@@ -76,15 +76,24 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       assets, NASA/internet assets + licenses, lunar sims (OmniLRS), SRB
       integration + LunarBot manipulation envelope. F41.
 - [x] Redesign proposal — `docs/lunar_base_scene_design.md`: "Connecting
-      Ridge Outpost" (habitat, power field w/ articulated PDUs, comm station,
-      landing pad + cargo depot, ISRU yard, rover dock), zone→case mapping,
-      asset pipeline, verification protocol, phases C1–C6.
-- [x] User decisions (design doc §10): real LOLA DEM + procedural detail;
-      ~50×50 m core; bake statics into the single lidar mesh; Blender-authored
-      gap assets.
-- [ ] C1 asset gallery → user look approval. [ ] C2 terrain + blockout →
-      user layout approval. [ ] C3 articulated infrastructure. [ ] C4 Mission A
-      task. [ ] C5 Mission B task. [ ] C6 full §8 verification + docs.
+      Ridge Outpost" (habitat, power field, comm station, landing pad + cargo
+      depot, ISRU yard, rover dock), zone→case mapping, verification protocol.
+- [x] User decisions: real LOLA DEM + procedural detail; ~50×50 m core; bake
+      statics into the single lidar mesh. **Scope correction**: no fine
+      articulation — good-looking downloaded assets, maintenance = touch
+      waypoints / dummy button (memory `feedback-scope-no-fine-manipulation`).
+- [x] Asset round 2 + 66-item shortlist; all sim assets live in the SRB fork
+      (`space_robotics_bench/assets/lunar_base/`, branch `feat/lunar-base-assets`):
+      manifest (81 sources) + fetcher; 68 free downloads + 8 Sketchfab-token picks.
+- [~] C1 asset processing — Blender pipeline (`processing.yaml`, `process/`),
+      batch 1 = 20 real-scale USDs with colliders, pxr structure check all OK,
+      gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
+      **Waiting on user look review.** Not yet loaded in Isaac Sim (user's GUI
+      instance held the GPU). Static assets with many meshes (battery container
+      1451, Starship 127) need meshes merged before scene use.
+- [ ] C2 terrain + blockout → user layout approval. [ ] C3 interaction points
+      (touch waypoints / dummy buttons) + settle checks. [ ] C4 Mission A task.
+      [ ] C5 Mission B task. [ ] C6 full §8 verification + docs.
 - Carried over, still open: mount/semantic query capability for perception
   (Phase E); full reasoner run through held-out cases gated on F37.
 

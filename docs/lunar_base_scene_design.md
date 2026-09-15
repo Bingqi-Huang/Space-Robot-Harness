@@ -1,11 +1,28 @@
 # Lunar base scene — redesign for Mission A/B (Phase C restart)
 
-**Status:** design proposal, 2026-09-15. Not implemented. Supersedes
+**Status:** design, 2026-09-15; C1 (asset processing) batch 1 done. Supersedes
 `docs/panel_remount_v2_mission_logic_plan.md` and the `panel_remount_v2` scene, which the
 user rejected outright (too simple, SRB-assets-only, a solar panel sitting on a pedestal top,
 a pedestal floating above terrain, the panel out of arm reach, the panel still tumbling off).
 Research behind every claim here: `docs/lunar_base_research/` (00 requirements, 01 NVIDIA
-assets, 02 NASA/internet assets, 03 lunar simulators, 04 SRB integration + LunarBot envelope).
+assets, 02 NASA/internet assets, 03 lunar simulators, 04 SRB integration + LunarBot envelope,
+05–07 second asset round).
+
+> **Scope correction (user, 2026-09-15) — overrides the articulation detail in §5, §6.4, §8.4.**
+> The paper proves the mission-level harness, not dexterous manipulation. Use good-looking
+> downloaded assets with minimal edits; do not hand-model or articulate PDU doors, ORU bays,
+> breaker levers or connectors. Maintenance/inspection = the robot navigates, observes (VLM),
+> and touches marked waypoints on the asset or presses a dummy button; completion is read from
+> simulator truth (EE reached waypoint / button state / object at destination). Logistics keeps
+> simple pick-and-place of ≤1 kg items. Add a mechanism only when a covered/held-out case needs
+> an observable state change. Concretely: Z2 PDU = Sketchfab "Electrical Distribution Cabinet"
+> (Z2-03) as-is; Z2 solar = "PV racks & trackers" (Z2-12) crops; no Blender-authored gap assets
+> unless nothing downloaded fits.
+>
+> **Assets live in the SRB fork** (user convention): `space_robotics_bench/assets/lunar_base/`
+> — `manifest.yaml` (81 sources, licenses), `fetch_assets.py`, `processing.yaml` +
+> `process/` Blender pipeline, `usd/` (git LFS). Batch 1 = 20 processed assets; review gallery
+> https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
 
 ## 1. Design principles
 

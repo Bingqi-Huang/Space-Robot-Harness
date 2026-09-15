@@ -18,24 +18,31 @@ Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F41).
   Isaac assets allowed. Memory: `feedback-scene-quality-bar`.
 - This round was planning-only (docs + research, no code, no sim runs).
 
-## Next — C1 asset gallery (decisions made, not started)
+## Next — C1 look review, then C2
 
-Read `docs/lunar_base_scene_design.md` (design) and
-`docs/lunar_base_research/` (evidence). User chose all four §10
-recommendations: real LOLA DEM + procedural detail, ~50×50 m core, statics
-baked into the single lidar mesh, gap assets authored in Blender.
-User then asked for a second, harder asset search before any modelling
-(don't hand-build what exists open-source). Round 2 reports:
-`docs/lunar_base_research/05_articulated_assets.md` (ArtVIP Apache-2.0
-Isaac-ready articulated cases/drawers/cabinets, DRC valves, SRC dish with
-handwheel joints), `06_space_hardware_round2.md` (Mars One base, IDSS
-hatch, MMSEV, ExoMars, antennas), `07_industrial_analogs.md` (Poly Haven
-PDU shells, BESS/switchgear, PV racks). 66-item shortlist by zone published
-as an artifact (https://claude.ai/artifact/CaK97Scgt1pqNnZhDaSST4; item
-table source `docs/lunar_base_research/shortlist_catalog.py`).
-**Waiting on the user to pick/drop items by ID.** Then C1 = fetch/convert/
-re-material/articulate the picks with provenance + renders → user look
-approval → C2 terrain + blockout → C3–C6.
+Design: `docs/lunar_base_scene_design.md` (read the scope-correction box at the
+top first: no fine articulation; maintenance = touch waypoints / dummy button).
+Evidence: `docs/lunar_base_research/`.
+
+All simulation work now lives in the SRB fork (user convention). Assets:
+`space_robotics_bench/assets/lunar_base/` on SRB branch `feat/lunar-base-assets`
+(not merged yet — merge after the user approves the look):
+- `manifest.yaml` + `fetch_assets.py` — 81 sources; `raw/` git-ignored (3.6 GB+).
+  19 Sketchfab items need a token; only the 8 the user approved were fetched
+  with it (user's account has a 10-download quota — never re-run those).
+- `processing.yaml` + `process/process.py` (Blender 4.5 headless, one run per
+  output) → `usd/<category>/<name>/` (git LFS) + git-ignored `previews/`.
+  Batch 1: 20 assets, gallery https://claude.ai/artifact/EjraQQQRg3251eNQpUnF9U.
+- Pipeline gotchas found: Blender bound_box is stale after mesh.transform until
+  `view_layer.update()`; Blender's USD exporter drops textures unless the
+  material is a Principled BSDF graph (glTF unlit materials rebuilt first);
+  collapse-decimation of unwelded meshes throws spikes (weld first); Isaac
+  Lab's `UsdFileCfg` only modifies existing collision/rigid APIs, so colliders
+  are authored in the USD.
+
+Next: user reviews gallery → fix/replace flagged assets → load batch in Isaac
+Sim once the GPU is free (textures, colliders, scale) → C2 terrain + layout
+blockout with multi-angle renders → user layout approval.
 
 Key constraints the new scene must respect (F41): no infrastructure at
 fixed z on procedural relief (it is not flat); lidar/Nav2 only see the
