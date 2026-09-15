@@ -7,7 +7,9 @@ from nav2_msgs.action import NavigateToPose
 from lifecycle_msgs.srv import GetState
 from nav_msgs.msg import Odometry
 
-GOALS = [(3.0, 1.5, 0.0), (9.0, 1.5, 0.0)]
+import os
+# NAV2_GOALS="x,y;x,y" (map frame, heading 0); default: two legs along the PDU aisle
+GOALS = [(*map(float, g.split(",")), 0.0) for g in os.environ.get("NAV2_GOALS", "3.0,1.5;9.0,1.5").split(";")]
 rclpy.init()
 from rclpy.parameter import Parameter
 n = Node("f37_nav2_goal_check", parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, True)])
@@ -77,8 +79,13 @@ for gx, gy, gyaw in GOALS:
         continue
     rf = h.get_result_async()
     ts = time.time()
-    while not rf.done() and time.time() - ts < 240:
+    track, last_s = [], 0.0
+    while not rf.done() and time.time() - ts < 300:
         rclpy.spin_once(n, timeout_sec=0.5)
+        if time.time() - last_s > 2.0 and "x" in odom:  # sparse trajectory, e.g. to see a detour
+            track.append((round(odom["x"], 2), round(odom["y"], 2)))
+            last_s = time.time()
+    print("TRACK", (gx, gy), track, flush=True)
     status = rf.result().status if rf.done() else "timeout"
     t_done = time.time()
     stop_pose = dict(odom)

@@ -4,6 +4,7 @@
 # waits for bt_navigator ACTIVE and the map->odom->chassis_base_link TF, then sends two
 # NavigateToPose goals along the PDU aisle and reports the reached odometry.
 #
+#   [NAV2_SCENE=scenes/deploy/srb_lunar_base_route_block.yaml NAV2_GOALS="4,1.5;6,-6"] \
 #   experiments/launch/lunar_base_nav2/run_nav2_smoke.sh <log_dir>
 #
 # Launch it detached (setsid nohup ... &): this tool's background tasks get killed as
@@ -16,7 +17,7 @@ cd "$HERE/../../../openral"
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
-setsid .venv/bin/openral deploy sim --config scenes/deploy/srb_lunar_base.yaml --no-enable-octomap --no-object-detector > "$LOG/deploy.log" 2>&1 &
+setsid .venv/bin/openral deploy sim --config "${NAV2_SCENE:-scenes/deploy/srb_lunar_base.yaml}" --no-enable-octomap --no-object-detector > "$LOG/deploy.log" 2>&1 &
 DEPLOY=$!
 sleep 30
 timeout 2700 .venv/bin/python "$HERE/nav2_goal_check.py" > "$LOG/goal.log" 2>&1

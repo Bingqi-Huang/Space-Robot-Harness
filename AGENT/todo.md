@@ -8,69 +8,18 @@ A0–A4 done. See `docs/research_findings.md` before designing any mechanism.
 
 ## Phase B: Generic OpenRAL on SRB — ✅ COMPLETE (2026-09-14)
 
-Per execution_plan.md §18. Embodiment: **LunarBot** (user directive).
-
-### Slices 1–3 + `panel_remount` v1 — ✅ (2026-09-13)
-
-Full records: `docs/phase_b_lunar_bot_hal.md`, `docs/phase_b_procedural_kind.md`,
-`docs/phase_b_lunar_bot_arm_gripper.md`, `docs/mission_a_panel_remount.md`.
-All verified live through the real candidate_action→kernel→safe_action→
-HAL→SRB path. **F11/F12/F15/F16/F17/F18** — see `docs/research_findings.md`.
-
-### Phase B2 — LunarBot capability set (execution_plan §8.3) — ✅ ALL 9 ITEMS + B3
-
-Design: `docs/lunar_bot_capability_set_plan.md`. Merged into openral `master`
-(`ec95fe8`+) and SRB `main` (`6d8a388`+); not pushed to origin. Every item
-verified live, most with real bugs found+fixed along the way — full detail
-in `docs/research_findings.md` F19–F38, this is the compressed index:
-
-- [x] 1. RM-75 limits (F22). [x] 2/2b. Sensor bridge + SRB deploy backend
-      (F25–F29) — sensor bridge still standalone, not in
-      `deploy_e2e.launch.py`. [x] 2c. RTX Lidar parked (F24, upstream bug).
-- [x] 3/4. Five procedural rSkills + F19 steer-before-drive fix (F30).
-      `move_ee_to_pose` has a residual precision gap, well inside
-      panel_remount's tolerance.
-- [x] 5. Nav2 — kernel-checked `/cmd_vel` relay (F32/F33/F36). **F37 closed
-      (F47)**: sensor bridge declared in the SRB scene and started by
-      deploy_e2e; Nav2 NavigateToPose drives LunarBot on the lunar base
-      (`experiments/launch/lunar_base_nav2/run_nav2_smoke.sh`). Open: ~0.8 m
-      along-track overshoot from 0.57 m/s (MPPI approach vs 0.9 s base τ).
-- [x] 6. MoveIt for RM-75 — `ros2_rm_robot` vendored per user decision
-      overriding CLAUDE.md §1.9 (F31, license was undeclared upstream).
-      F33's kernel rejection fully root-caused + fixed (F36): a units
-      mismatch, not a bad waypoint. `move_group.launch.py` still standalone.
-- [x] 7. Mission verifier (`openral_ext/mission_verifier/`), live-verified,
-      merged into research-repo `main`.
-- [x] 8. §19 run-manifest writer (`openral_ext/run_manifest/`), merged —
-      writes what's real, honestly omits what has no source yet.
-- [x] 9. Kernel magnitude checks, all 4 remaining modes (F35), 245/245
-      kernel tests. Found+deferred: dormant OOB-stride risk in 3
-      pre-existing modes (needs `horizon>1`, nothing sends that today).
-- [x] Two cross-cutting reliability bugs found+fixed (F34): resident-skill
-      cache ignored `goal_params_json`; e-stop recovery didn't reach the
-      HAL/runner latches without a second broadcast.
-- [~] B3: reasoner-in-the-loop, real LLM (DeepSeek-V4.1-Flash via
-      user-supplied gateway, F38). **Reasoning exit condition MET** — 60+
-      ticks correctly decomposed a 2-step instruction, picked a real skill
-      with sound rationale, never double-dispatched. 2 bugs found+fixed
-      (gateway needs `tool_choice="auto"` → new `OPENRAL_REASONER_TOOL_CHOICE`
-      env; host SOCKS proxy crashed the client). **Physical two-step
-      completion not reached this session** — the chosen skill's one-time
-      VLA cold-start download (11+ GB, still going after ~15 min) was
-      deliberately torn down to free the shared GPU for Phase C's
-      visual-check pass rather than left contending for it — not a
-      defect, not reattempted; next attempt starts warmer (venv cached).
-
-**F20** (JOINT_* wire row full-width) found+fixed during item-3 prep.
+Embodiment **LunarBot**. Records: `docs/phase_b_*.md`, `docs/lunar_bot_capability_set_plan.md`,
+findings F11–F38 (+F47 for Nav2). B1 HAL/procedural kind/panel_remount v1; B2 items 1–9 all live-verified
+(RM-75 limits, sensor bridge + SRB deploy backend, 5 procedural rSkills, Nav2 relay — **F37 closed by F47**,
+MoveIt (`move_group.launch.py` still standalone), mission verifier, run manifest, kernel checks).
+- [~] B3 reasoner-in-the-loop with a real LLM (F38): reasoning exit condition met; physical two-step completion
+      not reached (VLA cold download torn down to free the GPU). Needs the gateway env from `AGENT/VLM_provider.md`.
 
 ---
 
 ## Phase C: Long-horizon mission construction (execution_plan §6.4) — RESTARTED
 
-**`panel_remount_v2` rejected by the user 2026-09-15** (too simple, SRB-assets
-only, panel on a pedestal top, pedestal floating, panel out of reach, panel
-still tumbling). Not patched — the whole scene is being redesigned. Its code
-(F39/F40 fixes, `scenario_variant`) stays in git history as reference only.
+**`panel_remount_v2` rejected 2026-09-15** → scene redesigned; v2 task retired in C6 (F48).
 
 - [x] Research (4 surveys) — `docs/lunar_base_research/`: NVIDIA/SimReady
       assets, NASA/internet assets + licenses, lunar sims (OmniLRS), SRB
@@ -109,9 +58,9 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       handles and are hooked (EG2 pinch slips); shared oracle
       `scene/lunar_oracle.py`; depot stand widened to 1.30 m. All three cases
       verifier success; videos in `assets/lunar_base/review/mission_b/`.
-- [ ] C6 full §8 verification + docs: settle re-check PASS (post stand/handle
-      changes, renders reviewed); Nav2 on the lunar base live (F47); open:
-      Nav2 along-track overshoot (~0.8 m), route-block variants, retire `panel_remount_v2`.
+- [x] C6 wrap-up (F47–F48): settle re-check PASS; Nav2 drives LunarBot on the lunar
+      base through `openral deploy sim`; route-block variant detoured; `panel_remount_v2`
+      retired. Open (tuning): ~0.8 m along-track Nav2 overshoot.
 - Carried over, still open: mount/semantic query capability for perception
   (Phase E); full reasoner run through held-out cases gated on F37.
 

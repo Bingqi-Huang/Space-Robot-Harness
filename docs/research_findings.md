@@ -2189,3 +2189,35 @@ only showed up once the previous one was fixed, on live runs of the full graph
   own shell.
 - The unrelated `twist_to_action_relay_node.py` executable-bit test failure is
   fixed.
+
+### F48 — C6 wrap-up: route-block variant passes the Nav2 check; `panel_remount_v2` retired
+
+2026-09-16:
+
+- **Route-block variant.** `build_scene.py --variant route_block` bakes a
+  parked MMSEV crew rover across the west leg of the depot loop at
+  (5.0, −2.25) into a second scene file, `lunar_base_route_block.usda`
+  (SRB scenery `lunar_base_route_block`, openral scene
+  `srb_lunar_base_route_block.yaml`).
+  - It has to be baked: the Mid-360 RayCaster only casts against
+    `/lunar_base/lidar` (F41), so a runtime-spawned obstacle would never
+    reach the costmap.
+  - The build report flags the depot road and both Mission B reference
+    routes as blocked, as intended.
+- **Live result.** With `NAV2_GOALS="4,1.5;6,-6"`:
+  - Leg 1: dock → (4, 1.5) reached at (4.10, 1.43).
+  - Leg 2: (4, 1.5) → (6, −6), whose straight line passes through the rover.
+    Reached (7.06, −6.29) in 178 s, 165 replans, no Spin/BackUp recovery.
+  - The blocker is a static collider, so reaching the goal means Nav2 drove
+    around it.
+  - The smoke check now also logs a sparse odometry track so the next run
+    shows the detour directly.
+  - The ~1 m along-track overshoot (F47) remains.
+- **`panel_remount_v2` retired** (SRB 1fffa59): the rejected scene's task is
+  removed. `panel_remount` v1 stays for Phase B deploy scenes and
+  `openral_ext/mission_verifier`.
+- **Harmless messages seen in every deploy run.**
+  - The reasoner never configures without the LLM gateway env (F38), so
+    `lifecycle_autostart` for `/openral_reasoner` exits after 300 s.
+  - Isaac warns "A prim already exists at /World/envs/env_0/scenery".
+  - Neither affects Nav2, the HAL or the kernel.
