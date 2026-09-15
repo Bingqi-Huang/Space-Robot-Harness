@@ -1752,3 +1752,45 @@ from `_PANEL_TARGET_POS` on y -- past `SUCCESS_POS_TOLERANCE_M` (0.1) as
 designed. All three ran a full 60 s/3000-frame recorded episode plus
 ~170 s total wall time with a clean log (no NaN/depenetration/exception)
 and a clean GPU teardown afterward.
+
+**Caveat found immediately after, by the user watching the recorded
+video, not by this verification:** `heldout_state_mismatch`'s panel was
+visibly flung across the scene. F40's log-keyword grep (`nan`,
+`depenetrat`, `exceeded`, `traceback`, `exception`) does not catch an
+ordinary-looking PhysX contact-resolution impulse -- there is no
+distinctive warning string for "a body started overlapping a collider
+and got pushed out fast"; it just looks like normal physics stepping in
+the log. The single-instant post-reset position check (above) also
+missed it, because the launch develops over the following ~20 ticks, not
+at the reset instant itself. **Corrected instrumentation**: a per-tick
+print of `root_pos_w`/`root_lin_vel_w` for the first 400 ticks (removed
+after use) showed the true mechanism -- spawning the panel directly at
+`_PANEL_TARGET_POS` with a 0.18 m lateral offset placed it overlapping
+the pedestal's mount geometry; PhysX pushed it up ~0.1 m over ~12 ticks,
+then resolved a remaining overlap with a real high-velocity launch
+(`vx` spiked to ~4.8 m/s) around tick 20.
+
+**Fix**: spawn the panel `_PANEL_MISMATCH_DROP_HEIGHT_M` (0.2 m) above
+the mount -- clear of any solid geometry -- and let it fall onto the
+offset landing spot under gravity, rather than starting inside a
+collider. Re-verified with the same per-tick trace extended to 400
+ticks: the panel now reaches a genuine stable rest (position and
+velocity frozen bit-for-bit, i.e. the physics engine puts it to sleep)
+by ~tick 125, with no further launches. It settles onto a lower part of
+the pedestal structure (`z~0.40`) rather than the top mount surface
+itself (`z~0.5`) -- the 0.18 m lateral offset apparently exceeds the
+mount surface's actual radius, which wasn't known in advance. Still
+correctly reads as displaced and still fails
+`SUCCESS_POS_TOLERANCE_M`, just via a slightly different resting spot
+than originally designed -- noted honestly rather than re-tuned to hit
+the exact original number, since the actual engineering bar (no
+launch, reaches a stable state, still fails tolerance) is met.
+Re-verified live: clean log, clean GPU teardown, stable frames deep into
+the episode (video `n=100`/`n=200`).
+
+**Standing lesson for this project's own verification practice**: a
+clean log plus a couple of sparse still frames is not sufficient
+evidence that a spawn configuration is safe when an object starts near
+other solid geometry. For any new spawn pose close to existing scenery,
+track the object's position/velocity over enough ticks to see it either
+settle or not, not just at one instant.

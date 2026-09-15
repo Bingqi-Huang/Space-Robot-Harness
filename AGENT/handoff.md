@@ -44,6 +44,21 @@ on-screen shape is which scene object at this zoom level, so treat that
 video as a stability/crash check, not a precise-position check. For exact
 poses, read simulator state directly (a temporary print, removed after).
 
+**Caveat, found right after by the user actually watching the recorded
+video**: `heldout_state_mismatch`'s panel was getting flung across the
+scene — a real spawn-inside-the-mount-geometry overlap that F40's
+log-keyword grep and single-instant position check both missed (an
+ordinary PhysX contact-resolution impulse doesn't print a distinctive
+warning, and the launch develops over ~20 ticks, not at the reset
+instant). Fixed by spawning `_PANEL_MISMATCH_DROP_HEIGHT_M` (0.2 m) above
+the mount and letting it fall, instead of starting inside a collider —
+re-verified with a per-tick trace out to 400 ticks showing a genuine
+stable rest (position/velocity frozen, physics sleep) by ~tick 125, no
+further launches. Full detail + the standing lesson (a clean log + sparse
+stills is not enough evidence near existing geometry — track
+position/velocity over enough ticks) in `docs/research_findings.md`'s F40
+addendum.
+
 ## Environment reference (reusable, don't rediscover)
 
 - Both ROS setup.bash files (`/opt/ros/humble/setup.bash` +
