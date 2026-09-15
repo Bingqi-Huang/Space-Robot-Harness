@@ -12,7 +12,11 @@ rclpy.init()
 from rclpy.parameter import Parameter
 n = Node("f37_nav2_goal_check", parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, True)])
 odom = {}
-n.create_subscription(Odometry, "/odom", lambda m: odom.update(x=m.pose.pose.position.x, y=m.pose.pose.position.y, t=time.time()), 10)
+n.create_subscription(Odometry, "/odom", lambda m: odom.update(x=m.pose.pose.position.x, y=m.pose.pose.position.y, vx=m.twist.twist.linear.x, t=time.time()), 10)
+from geometry_msgs.msg import Twist
+stream = []  # (wall t, source, value) for the stop-latency trace
+n.create_subscription(Twist, "/cmd_vel", lambda m: stream.append((time.time(), "cmd_vel", round(m.linear.x, 3), round(m.angular.z, 3))), 50)
+n.create_subscription(Twist, "/srb/env0/action/cmd_vel", lambda m: stream.append((time.time(), "srb_cmd_vel", round(m.linear.x, 3), round(m.angular.z, 3))), 50)
 t0 = time.time()
 
 def state(node):
@@ -76,6 +80,15 @@ for gx, gy, gyaw in GOALS:
     while not rf.done() and time.time() - ts < 240:
         rclpy.spin_once(n, timeout_sec=0.5)
     status = rf.result().status if rf.done() else "timeout"
+    t_done = time.time()
+    stop_pose = dict(odom)
+    while time.time() - t_done < 8.0:  # watch the stop: commands and odometry after the result
+        rclpy.spin_once(n, timeout_sec=0.1)
+    for src in ("cmd_vel", "srb_cmd_vel"):
+        after = [e for e in stream if e[1] == src and e[0] >= t_done - 1.0]
+        print("STOP_TRACE", (gx, gy), src, "n", len(after), "last", after[-3:] and [(round(e[0] - t_done, 2), e[2], e[3]) for e in after[-3:]], flush=True)
+    print("STOP_POSE", (gx, gy), "at_result", {k: round(v, 3) for k, v in stop_pose.items() if k != "t"}, "after_8s", {k: round(v, 3) for k, v in odom.items() if k != "t"}, flush=True)
+    stream.clear()
     d = math.hypot(odom.get("x", 1e9) - gx, odom.get("y", 1e9) - gy)
     print("GOAL_RESULT", (gx, gy), "status", status, "odom", {k: round(v, 2) for k, v in odom.items() if k != "t"}, "dist", round(d, 2), "secs", round(time.time() - ts), flush=True)
 print("RESULT done", flush=True)

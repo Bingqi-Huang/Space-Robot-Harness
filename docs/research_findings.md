@@ -2167,9 +2167,21 @@ only showed up once the previous one was fixed, on live runs of the full graph
 - Then (9.0, 1.5): SUCCEEDED, but odom read (10.35, 1.48) right after the
   result — **1.35 m past the goal**.
 
-The overshoot is still open. Next to check are stop latency in the
-cmd_vel → twist_to_action_relay → kernel → HAL chain, or the goal checker
-firing while at speed. Other gotchas:
+**Overshoot follow-up (same day).**
+- A stop trace shows `/cmd_vel` and SRB's `action/cmd_vel` both reach zero
+  promptly, so the command chain is not the cause.
+- SRB alone: from 0.55 m/s the base stops in 0.53 m, velocity decaying with
+  τ ≈ 0.9 s; no coasting fault.
+- Root cause: the shared file's stateful goal checker latched xy success, then
+  waited on a 0.05 rad heading that LunarBot's coarse in-place turning (F43)
+  could not settle. It drifted 1.4 m sideways while "finishing".
+- New manifest fields `nav2_goal_checker_stateful: false` and
+  `nav2_goal_yaw_tolerance_rad: 0.25` (openral `master`). Re-run:
+  - (3.0, 1.5) ends at (3.15, 1.46).
+  - (9.0, 1.5) ends at (9.82, 1.46): no lateral drift. Along-track it was
+    0.54 m past at the result, still at 0.34 m/s.
+- Remaining open item: MPPI does not slow early enough for the base's 0.9 s
+  time constant. Other gotchas:
 - Python Nav2 helper nodes (relay, payload scan filter) survived SIGINT/SIGTERM
   of the launch group and kept publishing across runs; the smoke script now
   kill -9s them.

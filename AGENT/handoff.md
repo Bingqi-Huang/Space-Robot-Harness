@@ -96,8 +96,8 @@ prints placement problems and <2 m clearances — both must be empty).
 
 ## Next — C6 verification + wrap-up
 
-Done: settle re-check PASS; Nav2 on the lunar base live (F47, openral 60345fd). Open: Nav2 stop overshoot
-(1.35 m on a 6 m goal), route-block/loop-road variants, retire `panel_remount_v2`; then Phase D/E per
+Done: settle re-check PASS; Nav2 on the lunar base live (F47, openral 60345fd). Open: Nav2 along-track overshoot
+(~0.8 m at rest from 0.57 m/s; lateral drift fixed), route-block/loop-road variants, retire `panel_remount_v2`; then Phase D/E per
 execution plan (space_context, harness-driven Mission A/B through the OpenRAL graph instead of the oracle).
 
 ## Lessons from the rejected scene (F40 addendum, F41)

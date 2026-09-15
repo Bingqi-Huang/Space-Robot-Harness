@@ -8,7 +8,7 @@
 #
 # Launch it detached (setsid nohup ... &): this tool's background tasks get killed as
 # "low memory" around Isaac Sim (F46 §8). Shuts the whole deploy process group down at the end.
-set -u
+# (no `set -u`: ROS setup.bash reads unset variables)
 LOG=${1:?log dir}
 mkdir -p "$LOG"
 HERE=$(cd "$(dirname "$0")" && pwd)

@@ -33,8 +33,8 @@ in `docs/research_findings.md` F19–F38, this is the compressed index:
 - [x] 5. Nav2 — kernel-checked `/cmd_vel` relay (F32/F33/F36). **F37 closed
       (F47)**: sensor bridge declared in the SRB scene and started by
       deploy_e2e; Nav2 NavigateToPose drives LunarBot on the lunar base
-      (`experiments/launch/lunar_base_nav2/run_nav2_smoke.sh`). Open: 1.35 m
-      overshoot on a 6 m goal (stop latency?).
+      (`experiments/launch/lunar_base_nav2/run_nav2_smoke.sh`). Open: ~0.8 m
+      along-track overshoot from 0.57 m/s (MPPI approach vs 0.9 s base τ).
 - [x] 6. MoveIt for RM-75 — `ros2_rm_robot` vendored per user decision
       overriding CLAUDE.md §1.9 (F31, license was undeclared upstream).
       F33's kernel rejection fully root-caused + fixed (F36): a units
@@ -111,7 +111,7 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       verifier success; videos in `assets/lunar_base/review/mission_b/`.
 - [ ] C6 full §8 verification + docs: settle re-check PASS (post stand/handle
       changes, renders reviewed); Nav2 on the lunar base live (F47); open:
-      Nav2 stop overshoot, route-block variants, retire `panel_remount_v2`.
+      Nav2 along-track overshoot (~0.8 m), route-block variants, retire `panel_remount_v2`.
 - Carried over, still open: mount/semantic query capability for perception
   (Phase E); full reasoner run through held-out cases gated on F37.
 
