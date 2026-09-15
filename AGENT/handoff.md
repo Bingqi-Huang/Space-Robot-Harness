@@ -1,7 +1,7 @@
 # Handoff
 
 State as of 2026-09-15 (late night). **Phase A + B complete. Phase C: C1 merged,
-C2 built + verified (mission sites moved closer per user; final layout look not yet re-reviewed), next C3.**
+C2 built + verified; C3 interaction layer done (F44), next C4 Mission A task.**
 Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F43).
 
 ## Where things stand
@@ -51,69 +51,23 @@ prints placement problems and <2 m clearances — both must be empty).
   in processing.yaml (PV cell sheet push + PV glass look); PDU yaw −90 so
   the switch panel faces the sun/roads.
 
-## Next — C3 (after approval)
+## C3 — interaction layer (done, F44)
 
-Touch waypoints / dummy buttons on PDU fronts, PV trackers, comm dish base,
-habitat door; 1 kg crate + ORU at grasp height (0.45–1.0 m, on the SLI
-carrier / a stand, never on the ground); settle trace per dynamic body; then
-merge the branch. Known cosmetic: the mid ring looks softer than the near
-field when a camera is within ~30 m of it (7 cm vs 2 cm texels).
+- Props authored by `assets/lunar_base/process/author_props.py` (CC0) and processed like any
+  asset (`keep_origin`, `source_root: authored`): staging_stand, pdu_service_panel (button z 0.78,
+  StatusLamp z 1.02, cover ledge), pdu_service_shelf (z 0.50, 1.05 m beside the panel),
+  service_cover (dynamic 0.5 kg).
+- `layout.yaml` props / dynamic_objects / inspection_points → `scene/interaction.py` →
+  `usd/scene/lunar_base/interaction.json` (frames, object spawns, work + view poses) and
+  `/lunar_base/interaction/*` prims. `srb.assets.scenery.lunar_base`: objects spawned as
+  `lb_<name>` with fixed reset events (`events.reset_lb_<name>`, pose_range = delta, F40);
+  `set_status_lamp(env_ids, "pdu_2_panel", rgb)`.
+- Checks: `scene/srb_settle_check.py` (settle ×3, shelves, lamps, renders; ~6 min) PASS.
 
-## Lessons from the rejected scene (F40 addendum, F41)
+## Next — C4 Mission A task
 
-- `reset_root_state_uniform` pose_range is a delta on the default root
-  state, not an absolute pose.
-- Spawning a body overlapping a collider produces a silent PhysX launch
-  over ~20 ticks — no log warning. Check spawn overlaps offline, trace
-  pose/velocity per tick to sleep, cap `max_depenetration_velocity`.
-- `panel_remount_v2_visual`'s recording camera can't resolve object
-  identity or ground contact. "Works" requires multi-angle views + a user
-  look, not a clean log and a few top-down frames.
-
-## Environment reference (reusable, don't rediscover)
-
-- Both ROS setup.bash files (`/opt/ros/humble/setup.bash` +
-  `install/setup.bash`) + `ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=
-  LOCALHOST` needed in *every* shell that touches the openral/ROS graph —
-  a fresh Bash call starts with none of it. Pure-`srb` scene checks
-  (`agent rand`/`agent zero`, no `--interface ros`) don't need this.
-- `openral deploy sim --config scenes/deploy/srb_panel_remount.yaml` brings
-  up kernel+HAL+SRB+Nav2+reasoner. **Sensor bridge is a separate process**
-  and **must start within seconds of the graph coming up** or Nav2's
-  `bt_navigator` lifecycle wedges waiting on `/odom` (F37, deferred).
-- A reasoner started standalone comes up `unconfigured` — drive it through
-  `configure`(id=1)/`activate`(id=3) via `lifecycle_msgs/srv/ChangeState`
-  (F38). `ros2 lifecycle`/`node list` don't enumerate by name on this host.
-- Readiness is **not** `ros2 topic list | grep <topic>` — use a real
-  functional check.
-- **Process hygiene, hard-won this session**: never `pkill -f`. But also
-  don't fully trust `pgrep -f <pattern>` right after backgrounding a
-  `srb`/Isaac Sim launch — it can match a short-lived transient helper
-  fork instead of the real `kit/python` process, and killing that "PID"
-  is a silent no-op while the real instance keeps running. This session
-  leaked 4 orphaned instances this way before catching it via `nvidia-smi`
-  showing load with no tracked PID left. Correct pattern: capture `$!`
-  from the backgrounded wrapper, `ps --ppid $!` a few seconds later for
-  the real child, and always `ps aux | grep kit/python` + `nvidia-smi`
-  before AND after every launch/kill to confirm exactly one (or zero)
-  instance — don't trust a `kill`'s silence as proof it worked.
-- `srb agent rand --video` / `agent zero` **never stop on their own** —
-  no duration flag. `SIGINT` after a bounded wait (~150-170s wall time
-  for a 60s-episode video: boot + episode + mux margin), poll for exit,
-  `kill -9` if still alive after ~60s more. Waiting for natural exit
-  hangs indefinitely.
-- `srb agent rand --help`'s env-choices list is generated pre-boot and
-  does **not** reflect a newly-added task (`srb/tasks/__init__.py` gates
-  registration on `is_isaacsim_initialized()`) — not a bug, just launch
-  the real env by name.
-- `srb`'s CLI resolves through Isaac Sim's own Python, an editable
-  install pointed at the **main checkout**, not whatever worktree/branch
-  you're sitting in if that's a separate directory — a same-directory
-  `git checkout -b` (no `git worktree add`) does not have this problem.
-- Quick scene check: `srb agent rand -e <task>_visual env.robot=lunar_bot
-  --headless --video`; video lands under `logs/<task>/rand/<ts>/videos/
-  .../episode-0.mp4` (gitignored). `ffprobe`/`ffmpeg -vf "select=eq(n\,N)"
-  -vframes 1` to extract frames — but see F40: this camera framing does
-  not clearly resolve object identity/position, only stability/crashes.
-- GPU is a shared, singleton resource — one live Isaac Sim instance at a
-  time, always verify before AND after.
+Scenario block on the lunar_base task: faulty PDU (lamp red), covered case = walk up, inspect,
+press; held-out = cover leaning on the faulty panel's button, lamp/physical mismatch. Verifier
+truth: TCP within tolerance of `<pdu>_panel/press` + lamp state set by the task. Then §8.4
+manipulation feasibility with the Phase B procedural skills (press, pick cover, place) and
+§8.5 Nav2 (F37 still open).

@@ -94,9 +94,13 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       sites moved closer per user; drivable road network + clearance checks;
       landing pad cut to platform level. F42 lidar + F43 base twist/teleop/log
       fixes and 0.6 m/s bound (openral master a253ef3) verified in SRB.
-- [ ] C3 interaction points
-      (touch waypoints / dummy buttons on PDU/PV/comm/habitat) + 1 kg crate/ORU
-      + settle checks. [ ] C4 Mission A task. [ ] C5 Mission B task.
+- [x] C3 interaction layer (SRB fd3dbc3, F44): PDU service panels (reset button,
+      status lamp, cover ledge), spares shelves, depot staging stand, spare ORU +
+      crate + service cover, interaction.json (frames, work/view poses); §8.1
+      offline checks + §8.2 settle PASS.
+- [ ] C4 Mission A task (scenario block: faulty PDU lamp, cover obstruction,
+      lamp/physical mismatch; verifier = button-press truth + lamp state).
+      [ ] C5 Mission B task (spare pick/place to a PDU shelf, occupied shelf).
       [ ] C6 full §8 verification + docs.
 - Carried over, still open: mount/semantic query capability for perception
   (Phase E); full reasoner run through held-out cases gated on F37.

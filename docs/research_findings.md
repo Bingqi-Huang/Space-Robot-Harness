@@ -1935,3 +1935,36 @@ Found driving LunarBot at the new speed bound on the `lunar_base` task
    `omni.physx.plugin` log channel to errors (no message-level filter exists;
    `maxNumberOfPhysXErrors` does not cover warnings); `SRB_PHYSX_WARNINGS=1`
    restores it. Logs 24 KB, identical driving.
+
+### F44 — C3 interaction layer: reach geometry drove the hardware design; the "invisible" lidar mesh was a collider in SRB
+
+Built 2026-09-15 on SRB `feat/lunar-base-scene` (fd3dbc3): authored CC0 props
+(staging stand, PDU service panel with reset button + emissive status lamp,
+spares shelf, 0.5 kg service cover), dynamic spares on the stand, interaction
+frames, LunarBot work/view poses (`usd/scene/lunar_base/interaction.json`).
+
+1. **Reach table shapes the hardware.** A horizontal button press only reaches
+   ~0.15 m past the −X hull edge, top-down placing ≤0.25 m. A shelf under the
+   button (first design) put the button 0.27–0.38 m away; the shelf therefore
+   sits 1.05 m beside the panel (hull must clear it while pressing), stand slots
+   are 0.19 m behind the table edge, and the Mission A access obstruction is a
+   cover leaning on the button cap (a first version intersected the cap).
+   `scene/interaction.py` checks every work pose's footprint against all
+   structures (press 0.06 m from the panel ledge, place/pick 0.04 m from the
+   support edge) plus grasp heights (spares 0.91–0.92 m, cover handle 0.90 m).
+2. **The lidar mesh collided in SRB.** `/lunar_base/lidar` (terrain + a box
+   per structure, invisible, no CollisionAPI) behaved as a collider inside the
+   SRB env but not in a plain Isaac stage: the spare ORU came to rest at
+   z 0.607 = the stand's lidar box top, 5 cm above the table; the crate slid
+   off the box edge. Standalone CPU/GPU PhysX probes with the same USD settled
+   both at 0.548/0.55. An explicitly applied CollisionAPI with
+   `collisionEnabled=false` fixed it. Likely also behind C2's robot "stuck on
+   the charging station" (22° tilt) — that route ran into the station's box.
+3. **YAML 1.1 `on:` is a boolean.** A `dynamic_objects` key named `on`
+   silently parsed as `True`; renamed `support`.
+4. **Status lamp colour.** Emission ×4 saturated red into orange next to an
+   amber lamp; `set_status_lamp()` uses ×1.5 and pure red (1, 0, 0) / amber
+   (1, 0.5, 0), visibly distinct in close renders.
+5. **Settle (§8.2) PASS.** 3 resets: every object still within 0.24 s, drift
+   equal to the 3–7 mm spawn lift, tilt change <1°; crate and ORU also settle
+   on the PDU shelves. Manipulation feasibility (§8.4) is C4/C5.
