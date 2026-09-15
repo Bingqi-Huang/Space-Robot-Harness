@@ -1968,3 +1968,71 @@ frames, LunarBot work/view poses (`usd/scene/lunar_base/interaction.json`).
 5. **Settle (§8.2) PASS.** 3 resets: every object still within 0.24 s, drift
    equal to the 3–7 mm spawn lift, tilt change <1°; crate and ORU also settle
    on the PDU shelves. Manipulation feasibility (§8.4) is C4/C5.
+
+### F45 — C4 Mission A runs end to end in SRB: the arm needed model IK on the shoulder-back branch, the "reach table" was wrong, and the cover-block test was too lenient
+
+Built 2026-09-16 on SRB `feat/lunar-base-scene`: task `lunar_base_mission_a`
+(`srb/tasks/mobile_manipulation/lunar_base_mission_a/task.py`), scripted
+executor + follow-camera recorder `assets/lunar_base/scene/srb_mission_a_run.py`,
+RM-75 kinematics `assets/lunar_base/scene/rm75_ik.py`.
+
+1. **Result.** A procedural oracle (not a method under test) completes all three
+   Mission A cases in simulation; success is judged by the task's own
+   verifier (no fault left, rover within 0.6 m of the dock, arm stowed, cover
+   not held):
+   - `covered` (report PDU-2, PDU-2 red): drive → inspect → reverse into the
+     work pose → press → re-inspect (green) → dock. SUCCESS, 195 s sim /
+     347 s wall with video.
+   - `heldout_cover_obstruction`: the cover plate is over PDU-2's button;
+     grasp handle → lift → carry → lay it on PDU-2's spares shelf → press →
+     verify → dock. SUCCESS, 337 s sim / 748 s wall with video.
+   - `heldout_status_mismatch` (report PDU-1, PDU-2 red): PDU-1 green → check
+     PDU-2 → red → press → verify → dock. SUCCESS, 209 s sim / 500 s wall.
+   Videos + per-phase JSON: `assets/lunar_base/review/mission_a/`.
+2. **Online resolved-rate IK on the sim Jacobian did not converge** (stalled at
+   0.10–0.15 m, joints driven into limits). Replacement: numpy DLS IK on the
+   RM-75 URDF chain with the root→arm-base mount calibrated in simulation from
+   one measured Link7 pose (FK check 0.0 mm; mount = (−0.4475, 0, 0.727) m in
+   the root frame). Joint limits are handled by dropping clamped joints from the
+   solve, with a posture bias; the executor sends the solution as joint-position
+   targets and adds the measured TCP residual back to the goal (≤2 corrections).
+   Final tool errors 5–12 mm, 0.01–0.03 rad; one 4 cm straight-line step takes
+   ~0.5 s.
+3. **The F44 reach table picked the wrong arm branch.** Its "side press
+   ≤0.15 m past the hull edge" came from solutions with joint 1 ≈ π, which is
+   against the ±3.107 rad limit and forces q2/q4 to their limits (joint lag
+   0.5–0.7 rad, ~100 s per approach). With joint 1 = 0 and the shoulder pitched
+   back (READY = (0, −1.0, 0, −1.4, 0, 1.2, 0)) the same targets have ≥0.2
+   joint-range margin, and the comfortable tool distance is **0.45 m** past the
+   hull edge for z 0.78–0.95 m (0.55 m already fails at z 0.78). `interaction.py`
+   REACH press/grasp 0.12 → 0.45; `interaction.json` work poses regenerated
+   (0.33 m further out, clearance 0.198 m to the shelf; frames, objects and
+   view poses unchanged). Top-down place/pick (0.24) is unverified until C5.
+4. **Open-jaw contact looked like a slow joint 7.** During the first cover
+   attempt joint 7 sat 1.1 rad from its target for a minute; a free-space probe
+   showed joint 7 tracks within 0.1 rad with the gripper open or closed. The
+   folded arm was touching the scene, not a drive problem.
+5. **Grasp: cage, not pinch.** The 25 mm handle bar is horizontal, so the jaws
+   close vertically. TCP 15 mm past the bar centre did not lift the cover; TCP
+   35 mm past (fingertips ~2 cm beyond the centre) cages the bar and the cover
+   follows the TCP within 2 cm. Released over the shelf, the cover lies flat on
+   it (handle z 0.557 = shelf 0.50 + plate + standoff) and stays there.
+6. **Verifier fix: the handle-distance block test let presses through the
+   cover.** "Blocked if the handle is within 0.10 m of the button" was false
+   (the handle is 0.125 m above the button), so a press through the plate
+   cleared the fault. Now `Task.cover_blocks()` puts each button in the plate
+   frame: covered when within the plate's width × height footprint and 6 cm of
+   its plane. The overlay and `mission_state()["covered"]` use the same test.
+7. **Success terminated the episode and SRB auto-reset it.** The first full
+   runs reached the dock with every fault cleared and then reported failure:
+   termination on success reset the lamps and counters in the same step.
+   `TaskCfg.terminate_on_success` (default True, for learning/eval loops); the
+   scripted demo sets it False and logs any env-ended episode.
+8. **Three rendering instances on one GPU.** Starting three recorders 30 s apart
+   crashed one at start-up (`VkResult: ERROR_DEVICE_LOST`), and that process
+   hung instead of exiting. Two in parallel ran. imageio `quality=8` wrote
+   540 MB for 5.6 min; CRF 24 gives 50–75 MB.
+
+Still not shown: Nav2 (F37) and the OpenRAL kernel/HAL path. The oracle drives
+with pure pursuit on hand-set aisle waypoints and commands SRB actions
+directly, so this is §8.4 feasibility, not a harness run.

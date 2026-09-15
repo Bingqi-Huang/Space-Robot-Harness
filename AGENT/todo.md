@@ -98,8 +98,12 @@ still tumbling). Not patched — the whole scene is being redesigned. Its code
       status lamp, cover ledge), spares shelves, depot staging stand, spare ORU +
       crate + service cover, interaction.json (frames, work/view poses); §8.1
       offline checks + §8.2 settle PASS.
-- [ ] C4 Mission A task (scenario block: faulty PDU lamp, cover obstruction,
-      lamp/physical mismatch; verifier = button-press truth + lamp state).
+- [x] C4 Mission A task (F45): `lunar_base_mission_a` (covered /
+      heldout_cover_obstruction / heldout_status_mismatch; verifier = press
+      truth + lamps + cover-over-button + dock + stow). Scripted oracle
+      `scene/srb_mission_a_run.py` completes all three with verifier success;
+      follow-camera videos in `assets/lunar_base/review/mission_a/`. REACH
+      press/grasp corrected to 0.45 m (work poses regenerated).
       [ ] C5 Mission B task (spare pick/place to a PDU shelf, occupied shelf).
       [ ] C6 full §8 verification + docs.
 - Carried over, still open: mount/semantic query capability for perception

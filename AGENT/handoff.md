@@ -1,8 +1,8 @@
 # Handoff
 
 State as of 2026-09-15 (late night). **Phase A + B complete. Phase C: C1 merged,
-C2 built + verified; C3 interaction layer done (F44), next C4 Mission A task.**
-Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F43).
+C2 built + verified; C3 interaction layer done (F44); C4 Mission A done (F45), next C5 Mission B.**
+Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F45).
 
 ## Where things stand
 
@@ -64,13 +64,27 @@ prints placement problems and <2 m clearances — both must be empty).
   `set_status_lamp(env_ids, "pdu_2_panel", rgb)`.
 - Checks: `scene/srb_settle_check.py` (settle ×3, shelves, lamps, renders; ~6 min) PASS.
 
-## Next — C4 Mission A task
+## C4 — Mission A (done, F45)
 
-Scenario block on the lunar_base task: faulty PDU (lamp red), covered case = walk up, inspect,
-press; held-out = cover leaning on the faulty panel's button, lamp/physical mismatch. Verifier
-truth: TCP within tolerance of `<pdu>_panel/press` + lamp state set by the task. Then §8.4
-manipulation feasibility with the Phase B procedural skills (press, pick cover, place) and
-§8.5 Nav2 (F37 still open).
+- Task `lunar_base_mission_a` (`srb/tasks/mobile_manipulation/lunar_base_mission_a/task.py`):
+  `scenario` covered | heldout_cover_obstruction | heldout_status_mismatch, `faulted_pdu`,
+  `reported_pdu` (auto), `terminate_on_success`; `mission_state()` = verifier truth,
+  `cover_blocks()` = button inside the cover plate footprint.
+- Oracle + recorder: `~/Programs/isaac-sim/python.sh assets/lunar_base/scene/srb_mission_a_run.py
+  <out> --scenario <s> [--no-video] [--arm-only]` (`--arm-only` teleports to the press work pose to
+  debug arm steps in ~2 min). No-video run 3–5 min wall; with video 8–13 min. Run ≤2 recorders at once
+  (3 crashed one with Vulkan DEVICE_LOST and it hung).
+- Arm: `scene/rm75_ik.py` (URDF chain, mount calibrated in sim, DLS with limit clamping) → joint
+  targets → residual correction. READY = (0, −1.0, 0, −1.4, 0, 1.2, 0), tool point 0.45 m past the
+  −X hull edge. Handle grasp: TCP 35 mm past the bar centre (cage).
+- Videos: `assets/lunar_base/review/mission_a/mission_a_<scenario>.mp4` + `.json` phases.
+
+## Next — C5 Mission B task
+
+Spare ORU / crate from the depot staging stand to a PDU shelf, occupied-shelf held-out case.
+Reuse `rm75_ik.py` + the executor primitives; first re-check the top-down place/pick reach (REACH
+0.24, still from the old joint-1≈π analysis) with the offline IK before trusting those work poses.
+Nav2 (F37) and the OpenRAL kernel path are still not exercised by any lunar_base run.
 
 ## Lessons from the rejected scene (F40 addendum, F41)
 
