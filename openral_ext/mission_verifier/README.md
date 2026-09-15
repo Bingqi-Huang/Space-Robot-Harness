@@ -1,7 +1,7 @@
 # mission_verifier
 
 Independent mission-effect verifier (execution_plan.md §8.3 item 7 / §4.4
-"Independent effect verification"), for the `panel_remount` task.
+"Independent effect verification"), for the `panel_remount_v2` task.
 
 ## Why this exists
 
@@ -25,7 +25,9 @@ reports success — logging a warning if they ever disagree.
   `panel_displaced`), no ROS/torch import, independently testable.
   Constants (target pose, tolerances) transcribed from `task.py`, cited by
   line.
-- `node.py` — the rclpy node. Subscribes `/tf` (`srb/env0/panel`),
+- `node.py` — the rclpy node. Subscribes `/tf` (`srb/env0/panel`, and
+  `srb/env0/rock` for the `heldout_access_block` scenario_variant --
+  reuses `panel_displaced` as a generic movable-object-displacement check),
   `/srb/env0/terminated`, `/srb/env0/truncated`; publishes `VerifierEvent`
   JSON on `/space_harness/verifier_events` (`std_msgs/String`).
 - `smoke_test_logic.py` — offline check (no ROS/sim), run directly with

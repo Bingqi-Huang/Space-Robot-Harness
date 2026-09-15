@@ -52,6 +52,13 @@ _SRB_QOS = QoSProfile(
 
 _ENV_TF_FRAME = "srb/env0"
 _PANEL_TF_FRAME = "srb/env0/panel"
+# `task.py`'s `rock` scene entity is always spawned (Isaac Lab's vectorized
+# scene graph is fixed once built; `scenario_variant` only moves it) and is
+# broadcast by SRB's `RosInterface._broadcast_transforms` like any other
+# scene rigid object, so this frame always exists -- checked regardless of
+# variant, same as the panel. Reused `panel_displaced`-style logic just
+# reports "not displaced" when the rock stays parked.
+_ROCK_TF_FRAME = "srb/env0/rock"
 _VERIFIER_EVENTS_TOPIC = "/space_harness/verifier_events"
 _TICK_HZ = 5.0
 
@@ -69,6 +76,7 @@ class MissionVerifierNode(Node):
 
         self._terminated = False
         self._rest_pos: tuple[float, float, float] | None = None
+        self._rock_rest_pos: tuple[float, float, float] | None = None
         self._state_version = 0
 
         self.create_subscription(
@@ -93,20 +101,22 @@ class MissionVerifierNode(Node):
         if self._terminated and not was_terminated:
             self._emit_episode_terminated_crosscheck()
         if not self._terminated and was_terminated:
-            # New episode starting -- forget the old rest pose so
+            # New episode starting -- forget the old rest poses so
             # `panel_displaced` re-baselines against the next `/tf` sample.
             self._rest_pos = None
+            self._rock_rest_pos = None
 
     def _on_truncated(self, msg: BoolMsg) -> None:
         if bool(msg.data):
             self._rest_pos = None
+            self._rock_rest_pos = None
 
-    def _lookup_panel_pose(
-        self,
+    def _lookup_pose(
+        self, frame: str
     ) -> tuple[tuple[float, float, float], tuple[float, float, float, float]] | None:
         try:
             t: TransformStamped = self._tf_buffer.lookup_transform(
-                _ENV_TF_FRAME, _PANEL_TF_FRAME, rclpy.time.Time()
+                _ENV_TF_FRAME, frame, rclpy.time.Time()
             )
         except LookupException:
             return None
@@ -141,7 +151,7 @@ class MissionVerifierNode(Node):
         return self._state_version
 
     def _tick(self) -> None:
-        pose = self._lookup_panel_pose()
+        pose = self._lookup_pose(_PANEL_TF_FRAME)
         if pose is None:
             return  # TF not up yet (sim still booting) -- nothing to verify.
         panel_pos, panel_quat = pose
@@ -178,11 +188,34 @@ class MissionVerifierNode(Node):
             )
         )
 
+        # Held-out A (movable-object access block): reuse the same generic
+        # displacement check for the rock. Effect-only, per §4.4/§8.2 -- this
+        # reports whether the rock moved, never whether moving it was the
+        # right thing to do or in the right order.
+        rock_pose = self._lookup_pose(_ROCK_TF_FRAME)
+        if rock_pose is not None:
+            rock_pos, _rock_quat = rock_pose
+            if self._rock_rest_pos is None:
+                self._rock_rest_pos = rock_pos
+            rock_displaced = panel_displaced(rock_pos, self._rock_rest_pos)
+            self._publish_event(
+                VerifierEvent(
+                    condition=EffectCondition.OBJECT_DISPLACED,
+                    holds=rock_displaced.holds,
+                    evidence_source=EvidenceSource.SIMULATOR_TRUTH,
+                    evidence_ref=f"{_ENV_TF_FRAME} -> {_ROCK_TF_FRAME}",
+                    stamp_ns=stamp_ns,
+                    state_version=self._next_state_version(),
+                    confidence=1.0 if rock_displaced.holds else 0.0,
+                    detail=rock_displaced.detail,
+                )
+            )
+
     def _emit_episode_terminated_crosscheck(self) -> None:
         """On the task's own `terminated=True` edge, cross-check it against
         this node's independent `panel_at_target` judgment from the last
         `/tf` sample -- the actual point of §4.4 (not blind trust)."""
-        pose = self._lookup_panel_pose()
+        pose = self._lookup_pose(_PANEL_TF_FRAME)
         stamp_ns = time.time_ns()
         if pose is None:
             detail = "task_self_report=True but panel TF unavailable -- cannot cross-check"

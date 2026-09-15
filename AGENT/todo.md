@@ -67,35 +67,36 @@ in `docs/research_findings.md` F19–F38, this is the compressed index:
 
 ## Phase C: Long-horizon mission construction (execution_plan §6.4) — IN PROGRESS
 
-Mission A v2 = `panel_remount_v2`. Scope split: **scene** (this session) vs.
-**mission logic** (covered/held-out cases, inspection semantics, perturbation
-switches — explicit follow-on, not started, per §8.2's "no scenario-specific
-decision rules" rule).
+Mission A v2 = `panel_remount_v2`.
 
-- [x] Scene half — `space_robotics_bench` `srb/tasks/mobile_manipulation/
-      panel_remount_v2/`, merged into `main` (F39). Real SRB assets only
-      (`industrial_pedestal_{25,50,100}cm.usdz`, `solar_panel.usdz` — no
-      internet/Isaac-Sim-library asset needed). 2 decoy pedestals at
-      separate bearings (multiple distinguishable components); target
-      cluster moved to ~3.5 m out (real navigable approach, was ~1.5 m in
-      v1); `env_spacing` 32→160 grows the safe flat-terrain radius
-      ~2.1m→~4.85m via `env_cfg.py`'s own existing formula (not a new
-      mechanism) so every object sits inside it with real margin.
-      Reward/termination unchanged from v1 (mission logic is follow-on).
-      **Live-verified, not just offline-computed**: `srb agent rand -e
-      panel_remount_v2_visual`, 6+ min stable physics, real rendered
-      frames inspected (no floating/clipping, sane scale, matches offline
-      Blender-derived geometry).
-- [ ] Mission logic — design done (2026-09-15), not yet coded. Full spec:
-      `docs/panel_remount_v2_mission_logic_plan.md`. User decisions: (1)
-      covered-case true/decoy discrimination needs a real inspect step,
-      not a geometric shortcut; (2) held-out categories = movable-object
-      access block + semantically-inconsistent state (not
-      capability-substitution). 8-step ordered checklist in the plan doc,
-      starting with fixing mission_verifier's stale v1 target constants.
+- [x] Scene half — merged into SRB `main` (F39). 2 decoy pedestals, real
+      navigable approach, terrain-safe (details in `docs/
+      mission_a_panel_remount.md` history / F39).
+- [x] Mission logic half — designed + implemented + live-verified
+      2026-09-15 (`docs/panel_remount_v2_mission_logic_plan.md`, F40).
+      `scenario_variant: covered | heldout_access_block |
+      heldout_state_mismatch` perturbation switch on `panel_remount_v2`.
+      Covered case now needs a real inspect step to tell the true panel
+      from a decoy (mount-size compatibility, not object presence).
+      Held-out A: a `MoonRock` blocks manipulator access to the panel,
+      solvable with existing grasp/relocate skills. Held-out B: panel
+      starts near-mount but past tolerance, needs a second/closer check.
+      mission_verifier reuses its existing `panel_displaced` predicate for
+      the rock, no new schema. **Found+fixed F40 along the way**: the
+      panel's spawn `pose_range` had silently doubled its offset from the
+      pedestal since v1 (Isaac Lab's `reset_root_state_uniform` adds
+      `pose_range` to the default root state, not absolute — v1's code
+      assumed absolute). All three variants live-verified two ways:
+      numeric spawn pose from simulator ground truth (temp debug print,
+      removed after use) and a full 60s/3000-frame recorded episode with
+      a clean log and clean GPU teardown.
+- [ ] §5 open question (mount-compatibility query capability) — deferred
+      to Phase E's baseline-adapter work, not required for the mechanism
+      above.
+- [ ] Covered-case route obstruction (optional, plan doc §1) — not started.
+- [ ] Full end-to-end reasoner run through the held-out variants — gated
+      on F37 (Nav2 lifecycle wedge), not attempted this session.
 - [ ] Mission B — explicitly after Mission A's orchestration needs are clear.
-- [ ] Simulator-truth exposure for independent verification beyond what
-      item 7's verifier already does for v1's single pair.
 
 ---
 
@@ -113,6 +114,19 @@ decision rules" rule).
 - On this shared host, kill only exact PIDs, never a pattern — `pkill -f`
   has silently failed to signal real processes on this host more than
   once this session; explicit-PID `kill -9` has always worked (F10/F30/F38).
+  `pgrep -f <pattern>` right after backgrounding a `srb`/`isaac-sim` launch
+  can also match a wrong/transient PID (a short-lived helper fork) instead
+  of the real long-running `kit/python` process — this session leaked 4
+  orphaned Isaac Sim instances this way before catching it. Prefer `$!`
+  from the backgrounded wrapper, then `ps --ppid $!` after a few seconds
+  to get the real child; always `ps aux | grep kit/python` before AND
+  after every launch/kill to confirm exactly one (or zero) instance.
+- `srb agent rand --video`/`agent zero` do **not** stop on their own —
+  there is no duration flag; they run until signaled. Send `SIGINT` after
+  a bounded wait (a 60s-episode video needs ~150-170s wall time: boot +
+  the episode + mux margin), then poll for exit, `kill -9` if still alive
+  after ~60s. Waiting for natural exit hangs indefinitely (this session's
+  first attempt waited 9 minutes before realizing this).
 - `ros2 lifecycle`/`node list` don't work on this host — use direct
   `lifecycle_msgs/srv/ChangeState`/`GetState` service calls (F14). A node
   started standalone (bypassing its normal launch tree) comes up

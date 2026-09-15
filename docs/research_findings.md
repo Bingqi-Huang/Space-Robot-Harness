@@ -1699,3 +1699,56 @@ re-verified: v2 keeps the panel/pedestal pair's relative geometry
 byte-identical to v1 (only the whole cluster's absolute position moved),
 and v1's `move_ee_to_pose` already reached this exact relative geometry
 live (item 3, F30) — nothing about the RM-75's reach to the panel changed.
+
+### F40 — `panel_remount`/`panel_remount_v2`'s panel spawn has silently drifted ~2.8 m from its documented position since v1; root-caused and fixed while building Phase C mission-logic
+
+Found while live-verifying the new `heldout_state_mismatch` scenario_variant
+(`docs/panel_remount_v2_mission_logic_plan.md`): a temporary debug print of
+`self._panel.data.root_pos_w` in `_reset_idx` (removed after use) showed the
+panel actually resting at `(6.31, 0.57, 0.60)` under the **unmodified**
+`covered`-path `EventCfg`, not near `_PANEL_SPAWN_POS = (3.1, 0.3, 0.3)` as
+every comment in the file (since v1) claims.
+
+Root cause, confirmed against Isaac Lab source
+(`isaaclab/envs/mdp/events.py::reset_root_state_uniform`): the function's
+`pose_range` is **added to the asset's `default_root_state`**
+(`positions = root_states[:, 0:3] + env.scene.env_origins[env_ids] +
+rand_samples[:, 0:3]`), not used as an absolute pose. `default_root_state`
+here is `panel.init_state.pos` = `_PANEL_SPAWN_POS`. v1's `EventCfg` was
+written as if `pose_range` were absolute (`x: (_PANEL_SPAWN_POS[0] - 0.2,
+_PANEL_SPAWN_POS[0] + 0.2)`), so the real final position was
+`_PANEL_SPAWN_POS + (_PANEL_SPAWN_POS +- 0.2)` -- roughly double the
+intended offset. This has been true since v1 (F-series before F39); it
+never crashed or broke termination logic (the reward/success check only
+cares about the panel's *final* pose, not its start), so nothing in prior
+live checks (including F39's visual pass) surfaced it -- at F39's camera
+zoom, "somewhat further from the pedestal than intended" did not read as
+obviously wrong.
+
+**Fix** (`panel_remount_v2/task.py`, `EventCfg.randomize_panel_state`):
+`pose_range` x/y are now pure `+-_PANEL_SPAWN_POS_RANGE_XY` deltas and z is
+`(0.0, 0.0)`, so the final pose lands at `_PANEL_SPAWN_POS` +- jitter as
+originally intended. `roll`/`yaw` needed no change -- the panel's default
+orientation is identity, so `quat_mul(identity, delta) == delta` already
+made those absolute. The new `heldout_state_mismatch` pose_range (added
+this session) was written correctly from the start using this same
+delta-from-`_PANEL_SPAWN_POS` convention.
+
+**Consequence for `_ROCK_BLOCKING_POS`** (held-out A): the corrected panel
+now actually jitters within `_PANEL_SPAWN_POS[0] +- 0.2` = `[2.9, 3.3]`,
+closer to the rock than the pre-fix (effectively unreachable) spawn was.
+`_ROCK_BLOCKING_POS` was moved from `(2.7, 0.3, 0.3)` to `(2.3, 0.3, 0.3)`
+to keep a `>=0.6` m worst-case clearance against the panel's full jitter
+range, re-verified live (no interpenetration/depenetration signature).
+
+**Live-verified after the fix** (`srb agent zero`/`srb agent rand
+--headless --video`, all three `scenario_variant` values,
+`panel_remount_v2`/`panel_remount_v2_visual`): exact post-reset spawn
+poses read directly from simulator state --
+`covered`: panel `~(3.1-3.3, 0.1-0.5, 0.3)`, matching intent;
+`heldout_access_block`: rock `(2.3, 0.3, 0.3)`, panel jitter clear of it;
+`heldout_state_mismatch`: panel exactly `(3.5, 0.18, 0.5)`, i.e. `0.18`m
+from `_PANEL_TARGET_POS` on y -- past `SUCCESS_POS_TOLERANCE_M` (0.1) as
+designed. All three ran a full 60 s/3000-frame recorded episode plus
+~170 s total wall time with a clean log (no NaN/depenetration/exception)
+and a clean GPU teardown afterward.

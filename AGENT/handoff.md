@@ -1,88 +1,93 @@
 # Handoff
 
-State as of 2026-09-14 (late evening). **Phase A + Phase B both complete.**
-Phase C in progress (scene half done, mission-logic half not started).
-Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F39).
+State as of 2026-09-15. **Phase A + Phase B complete. Phase C mission-logic
+(execution_plan §6.4) implemented + live-verified this session.**
+Task list: `todo.md`. Findings: `docs/research_findings.md` (F1–F40).
 
 ## Where things stand
 
-openral `master` and SRB `main` both have the full Phase B2 stack merged
-(9 numbered items + 2 cross-cutting reliability fixes + B3's reasoning-level
-pass), all local commits, **not pushed to origin**. No open feature branches
-— everything gets a fresh branch/worktree off `master`/`main` from here.
-`space_robotics_bench` `main` also has `panel_remount_v2`'s scene merged
-(Phase C).
+openral `master` unchanged this session. SRB `main` and this repo's `main`
+both need `feat/panel-remount-v2-mission-logic` merged (this session's work:
+scene changes in `panel_remount_v2/task.py`, `mission_verifier` updates,
+`docs/panel_remount_v2_mission_logic_plan.md`, F40). No other open feature
+branches — everything gets a fresh branch/worktree off `master`/`main`.
 
-## Next — Phase C mission-logic (design done 2026-09-15, not yet coded)
+## Next — Phase C remainder
 
-`panel_remount_v2`'s SCENE is done and live-verified (F39): 2 decoy
-pedestals, ~3.5 m real approach, terrain-safe. Full mission-logic spec
-now written: `docs/panel_remount_v2_mission_logic_plan.md`. User decided
-(2026-09-15): (1) covered-case discrimination needs a real inspect step
-(add a decoy `SolarPanel` near the 25cm decoy pedestal — mount-size
-compatibility is the real discriminator, not object presence); (2)
-held-out categories = movable-object access block (manipulation-level,
-new `MoonRock`) + semantically-inconsistent state (panel starts
-near-but-not-at target pose, needs closer/second observation — no new
-verifier code needed, existing tolerance check already fails it
-correctly). Capability-substitution held-out case not adopted.
+Mission-logic mechanism (scenario_variant switch, covered discrimination
+signal, both held-out perturbations) is done and live-verified — see
+`docs/panel_remount_v2_mission_logic_plan.md` (status: implemented) and
+`docs/research_findings.md` F40. What's NOT done:
 
-8-step ordered checklist is in the plan doc. First step, independent of
-the design: `openral_ext/mission_verifier/panel_remount_logic.py` still
-has v1's target constants (`(1.5,0,0.5)`, should be v2's `(3.5,0,0.5)`) —
-fix before any live verification against v2.
+- §5's open question (mount-compatibility query capability) — deferred to
+  Phase E's baseline-adapter work, not required for the mechanism itself.
+- Covered-case route obstruction (plan doc §1, optional) — not started.
+- Full end-to-end reasoner run through the held-out variants — gated on
+  F37 (Nav2 lifecycle wedge / sensor-bridge launch wiring), not attempted
+  this session; the verification done was scene-level only (`srb agent
+  rand`/`zero`, no kernel/reasoner graph).
+- Mission B — explicitly after Mission A's orchestration needs are clear
+  (§6.5).
 
-Open question flagged in the plan (§5): whether "mount compatibility
-between a panel and a pedestal" is already expressible via the existing
-scene-query/object-localization output, or needs a small mission-generic
-metadata addition — check before assuming.
+## F40, briefly (full writeup in research_findings.md)
 
-Do not start Mission B until this is done and Mission A's real
-orchestration needs are clear (§6.5, explicit ordering).
+The panel's spawn position had silently drifted ~2.8 m from its documented
+offset since v1: Isaac Lab's `reset_root_state_uniform` **adds**
+`pose_range` to the asset's default root state, it is not an absolute
+pose — v1's `EventCfg` was written as if it were absolute. Fixed; also
+moved `_ROCK_BLOCKING_POS` (held-out A) since the corrected panel jitter
+range is now closer to it than before. Caught via a temporary debug print
+of simulator ground truth in `_reset_idx` (removed after use) — pixel-
+level video inspection alone did not catch this; the camera framing in
+`panel_remount_v2_visual`'s recordings does not clearly resolve which
+on-screen shape is which scene object at this zoom level, so treat that
+video as a stability/crash check, not a precise-position check. For exact
+poses, read simulator state directly (a temporary print, removed after).
 
 ## Environment reference (reusable, don't rediscover)
 
 - Both ROS setup.bash files (`/opt/ros/humble/setup.bash` +
   `install/setup.bash`) + `ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=
-  LOCALHOST` needed in *every* shell that touches this graph — a fresh Bash
-  call starts with none of it.
+  LOCALHOST` needed in *every* shell that touches the openral/ROS graph —
+  a fresh Bash call starts with none of it. Pure-`srb` scene checks
+  (`agent rand`/`agent zero`, no `--interface ros`) don't need this.
 - `openral deploy sim --config scenes/deploy/srb_panel_remount.yaml` brings
   up kernel+HAL+SRB+Nav2+reasoner. **Sensor bridge is a separate process**
-  (`python3 install/lib/openral_hal_lunar_bot/sensor_bridge_node.py
-  --ros-args -p robot_yaml:=... -p use_sim_time:=true` — not `ros2 run`,
-  lacks structlog) and **must start within seconds of the graph coming up**
-  or Nav2's `bt_navigator` lifecycle wedges waiting on `/odom` (F37, real,
-  root-caused, deferred — fix is wiring the bridge into
-  `deploy_e2e.launch.py`, not yet done).
-- A reasoner started standalone (bypassing its normal launch tree, e.g. to
-  inject an env var fix) comes up `unconfigured` — drive it through
-  `configure` (id=1) then `activate` (id=3) via `lifecycle_msgs/srv/
-  ChangeState` before it will tick (F38). `ros2 lifecycle`/`node list`
-  don't enumerate by name on this host — use the service calls directly
-  (F14).
-- Readiness is **not** `ros2 topic list | grep <topic>` — false-positives
-  right after a teardown/relaunch. Use a real functional check (an actual
-  TF lookup, an actual dispatch, `ros2 topic hz` actually reporting a rate).
-- **Never `pkill -f`** on this host — it has silently failed to signal real
-  processes more than once this session (explicit-PID `kill -9` always
-  worked). Re-`pgrep`/`ps` for the exact current PID before signaling —
-  don't reuse one echoed by an earlier command.
-- `srb agent rand --help`'s env-choices list is generated pre-boot and does
-  **not** reflect a newly-added task — real registration only happens once
-  Isaac Sim initializes (`srb/tasks/__init__.py` gates on
-  `is_isaacsim_initialized()`). Don't chase this as a bug (F39) — just
-  launch the real env by name and check the boot log for spawn errors.
-- `srb`'s CLI resolves through Isaac Sim's own Python (`~/.local/bin/srb`
-  → `isaac-sim/python.sh`), which is an editable install pointed at the
-  **main checkout**, not whatever worktree you're sitting in — merge before
-  live-testing a worktree's SRB task changes, not after.
-- For a quick visual check of a scene: `srb agent rand -e <task>_visual
-  env.robot=lunar_bot --headless --video`; the video lands under
-  `logs/<task>/rand/<ts>/videos/.../episode-0.mp4` (gitignored) even if the
-  process has to be force-killed rather than SIGINT'd cleanly. Extract
-  frames with `ffmpeg -i <mp4> -vf "select=eq(n\,N)" -vframes 1 out.png`.
-- GPU is a shared, singleton resource on this host — one live Isaac Sim
-  instance at a time, always `nvidia-smi`/`ps aux` before launching, always
-  verify clean teardown after (the wrapper's own SIGINT/SIGTERM often
-  doesn't reach the actual `kit/python` child — check for it explicitly and
-  `kill -9` directly if it's still there).
+  and **must start within seconds of the graph coming up** or Nav2's
+  `bt_navigator` lifecycle wedges waiting on `/odom` (F37, deferred).
+- A reasoner started standalone comes up `unconfigured` — drive it through
+  `configure`(id=1)/`activate`(id=3) via `lifecycle_msgs/srv/ChangeState`
+  (F38). `ros2 lifecycle`/`node list` don't enumerate by name on this host.
+- Readiness is **not** `ros2 topic list | grep <topic>` — use a real
+  functional check.
+- **Process hygiene, hard-won this session**: never `pkill -f`. But also
+  don't fully trust `pgrep -f <pattern>` right after backgrounding a
+  `srb`/Isaac Sim launch — it can match a short-lived transient helper
+  fork instead of the real `kit/python` process, and killing that "PID"
+  is a silent no-op while the real instance keeps running. This session
+  leaked 4 orphaned instances this way before catching it via `nvidia-smi`
+  showing load with no tracked PID left. Correct pattern: capture `$!`
+  from the backgrounded wrapper, `ps --ppid $!` a few seconds later for
+  the real child, and always `ps aux | grep kit/python` + `nvidia-smi`
+  before AND after every launch/kill to confirm exactly one (or zero)
+  instance — don't trust a `kill`'s silence as proof it worked.
+- `srb agent rand --video` / `agent zero` **never stop on their own** —
+  no duration flag. `SIGINT` after a bounded wait (~150-170s wall time
+  for a 60s-episode video: boot + episode + mux margin), poll for exit,
+  `kill -9` if still alive after ~60s more. Waiting for natural exit
+  hangs indefinitely.
+- `srb agent rand --help`'s env-choices list is generated pre-boot and
+  does **not** reflect a newly-added task (`srb/tasks/__init__.py` gates
+  registration on `is_isaacsim_initialized()`) — not a bug, just launch
+  the real env by name.
+- `srb`'s CLI resolves through Isaac Sim's own Python, an editable
+  install pointed at the **main checkout**, not whatever worktree/branch
+  you're sitting in if that's a separate directory — a same-directory
+  `git checkout -b` (no `git worktree add`) does not have this problem.
+- Quick scene check: `srb agent rand -e <task>_visual env.robot=lunar_bot
+  --headless --video`; video lands under `logs/<task>/rand/<ts>/videos/
+  .../episode-0.mp4` (gitignored). `ffprobe`/`ffmpeg -vf "select=eq(n\,N)"
+  -vframes 1` to extract frames — but see F40: this camera framing does
+  not clearly resolve object identity/position, only stability/crashes.
+- GPU is a shared, singleton resource — one live Isaac Sim instance at a
+  time, always verify before AND after.

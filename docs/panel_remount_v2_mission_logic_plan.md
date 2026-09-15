@@ -1,7 +1,16 @@
 # `panel_remount_v2` mission-logic plan (Phase C, execution_plan.md §6.4)
 
-**Status:** design proposal, not yet implemented. Written after the scene
-half (F39) shipped, per two decisions the user made 2026-09-15:
+**Status: implemented and live-verified, 2026-09-15.** Items 1-6 of the
+checklist (§6) are done; item 7 (full reasoner/kernel graph run) stays
+gated on F37 as planned; item 8 (covered-case route obstruction, Mission B)
+is follow-on work, not started. See `docs/research_findings.md` F40 for a
+real spawn-position bug found and fixed while implementing this (the
+panel's documented spawn offset had silently doubled since v1 due to an
+Isaac Lab `pose_range` semantics mismatch) and F39/F40 for the live
+verification trail (all three `scenario_variant` values, numeric spawn
+poses read from simulator state, clean 60 s/3000-frame recorded runs).
+
+Original design decisions (2026-09-15):
 
 1. The covered case's true/decoy discrimination must require a real
    inspection/observation step, not just "which pedestal has an object
@@ -9,9 +18,6 @@ half (F39) shipped, per two decisions the user made 2026-09-15:
 2. Of the three held-out categories in research_content.md §5.5, implement
    **movable-object access block** + **semantically inconsistent state**
    (not capability-substitution). → **adopted**.
-
-Nothing below has been coded or live-tested yet. This is the concrete
-spec to implement against; adjust before starting if any part is wrong.
 
 ## 0. Prerequisite fix (unrelated to the design questions, do regardless)
 
@@ -120,18 +126,30 @@ for *any* object/pedestal pair, not a `panel_decoy`-specific rule).
 
 ## 6. Ordered implementation checklist
 
-1. Fix mission_verifier's stale v1 constants (§0).
-2. Scene: add `panel_decoy` near `pedestal_decoy_a` (§1).
-3. Scene: `scenario_variant` field + conditional rock / panel-pose family (§4).
-4. mission_verifier: add the rock-displacement effect predicate (§2).
-5. Resolve §5's open question; add metadata only if genuinely missing.
-6. Live-verify each variant the cheap way first (`srb agent rand -e
-   panel_remount_v2_visual env.robot=lunar_bot env.scenario_variant=...
-   --headless --video`, per F39's pattern) before touching the full
-   kernel/reasoner graph.
-7. Full end-to-end reasoner run is separately gated on F37 (Nav2
+1. [x] Fix mission_verifier's stale v1 constants (§0).
+2. [x] Scene: add `panel_decoy` near `pedestal_decoy_a` (§1).
+3. [x] Scene: `scenario_variant` field + conditional rock / panel-pose family (§4).
+4. [x] mission_verifier: add the rock-displacement effect predicate (§2) --
+   reused the existing generic `panel_displaced` function as-is, no new
+   predicate code needed; `node.py` now also looks up `srb/env0/rock`.
+5. [~] §5's open question (mount-compatibility query capability) not
+   resolved -- deferred to the perception/capability-registry work that
+   Phase E's baseline adapters will need anyway; not required to
+   live-verify the scene/harness mechanism itself.
+6. [x] Live-verified all three `scenario_variant` values two ways: (a)
+   numeric -- a temporary debug print of simulator ground truth in
+   `_reset_idx`, confirming exact spawn poses match design intent, removed
+   after use; (b) full-episode video (`srb agent rand -e
+   panel_remount_v2_visual ... --headless --video`, ~170 s wall time each,
+   F39's SIGINT-to-mux pattern) with clean logs (no NaN/depenetration/
+   exception) and clean GPU teardown. Found+fixed F40 (stale pose_range
+   semantics, see `docs/research_findings.md`) along the way and
+   re-verified after the fix, including moving `_ROCK_BLOCKING_POS` to
+   keep clearance from the panel's corrected jitter range.
+7. [ ] Full end-to-end reasoner run is separately gated on F37 (Nav2
    lifecycle wedge / sensor-bridge launch wiring) if the held-out cases
    are to be exercised through the complete live path rather than the
-   scene check alone.
-8. Covered-case route obstruction (§1's optional item) and Mission B
+   scene check alone. Not attempted this session -- out of scope for the
+   scene/harness-mechanism verification above.
+8. [ ] Covered-case route obstruction (§1's optional item) and Mission B
    stay after this, in that order, per handoff.md.
