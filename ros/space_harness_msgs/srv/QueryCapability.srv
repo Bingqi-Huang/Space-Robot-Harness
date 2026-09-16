@@ -1,0 +1,7 @@
+# Read one observable quantity through the shared boundary (PLEXIL Lookups, Ours' query tools).
+string query             # contract name, e.g. "base_pose", "tcp_pose", "jaw", "locate_feature"
+string args_json
+---
+bool success
+string failure_reason
+string value_json

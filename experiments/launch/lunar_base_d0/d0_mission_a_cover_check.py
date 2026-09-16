@@ -45,7 +45,12 @@ run("nav approach", lambda: {**nav(stage_xy, stage_yaw), **base_err(stage_xy, st
 run("dock panel", lambda: {**dock(wp, yaw_w), **base_err(wp, yaw_w)})
 run("release (open)", lambda: dispatch("release", {"mode": "open", "timeout_s": 8.0}, deadline=20))
 run("move_joints READY", lambda: dispatch("joints", {"joint_targets": READY, "timeout_s": 20.0}, deadline=40))
-run("moveit cover pre", lambda: {**moveit(h + n3 * 0.12, R_t), "cover_moved_m": round(float(np.linalg.norm(cover_handle() - h)), 3)})
+# D0_COVER_NO_MOVEIT=1: reach the cover pre-pose with the servo alone (as the C4 oracle did). MoveIt knows only the
+# rover, and its plan knocked the cover 0.21 m off the panel (F51, run ac1).
+if os.environ.get("D0_COVER_NO_MOVEIT"):
+    run("servo cover high", lambda: ee(cover_handle() + n3 * 0.25 + np.array([0.0, 0.0, 0.10]), R_t, tol=0.03, timeout=40.0))
+else:
+    run("moveit cover pre", lambda: {**moveit(h + n3 * 0.12, R_t), "cover_moved_m": round(float(np.linalg.norm(cover_handle() - h)), 3)})
 # targets re-perceived at step time: a MoveIt plan that knows only the rover can nudge the object it reaches for (F51)
 run("servo cover pre", lambda: ee(cover_handle() + n3 * 0.12, R_t, tol=0.02))
 run("servo cover approach", lambda: ee(cover_handle() - n3 * 0.035, R_t, tol=0.012, max_linear_speed_m_s=0.05))

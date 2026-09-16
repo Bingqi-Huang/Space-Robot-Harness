@@ -1,0 +1,15 @@
+# Invoke one effectful capability of the shared LunarBot capability set (execution_plan §21.4, §8.2).
+# Every method -- Ours, PLEXIL (Commands), EUROPA->PLEXIL (activities) -- calls this same action; the server lowers it
+# to one ExecuteRskill dispatch through the OpenRAL runner -> safety kernel -> HAL -> simulator.
+string capability        # contract name, e.g. "navigate_to_pose" (see openral_ext/capability_server/contracts.yaml)
+string args_json         # JSON object matching the contract's inputs
+float64 deadline_s       # 0 = the contract's default, measured on the graph clock
+---
+bool success
+uint8 failure_kind       # openral_msgs/ExecuteRskill failure_kind codes; 20 = rejected by the boundary (bad args/unknown)
+string failure_reason
+string evidence_json     # robot-observable evidence after the call (estimated base pose, TCP in the base frame, jaw)
+                         # -- never evaluator-only state such as the mission verifier
+---
+string state             # "dispatched" | "executing"
+float32 elapsed_s

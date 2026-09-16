@@ -2507,6 +2507,18 @@ The base meets the ≲0.10–0.15 m the arm needs; AMCL, not odometry, carries i
    runners mid-script (bash reads scripts incrementally); runs now execute a frozen copy and tear
    down by a run tag.
 
+9. **A base velocity command opened the gripper.** SRB's `cmd_vel`/`event` callbacks rebuild the
+   whole action row with the teleop mapping, whose gripper slot comes from the `event` topic the HAL
+   never publishes. Grasp → lift worked; the first base motion after it opened the jaws, and Mission B's
+   ORU rode to PDU-1 hooked on open fingers (b6: every step "succeeded", `release` was already done at
+   0.0 s, the ORU hung at 72°/−53° after retreat). The handle–TCP distance could not tell a clamp from a
+   hook; the D0 trace now logs the jaw joint. SRB now latches binary joint commands over rebuilt rows.
+10. **MoveIt plans without the world.** The self-model knows the rover only (no octomap, no perceived
+    collision objects in these runs), so a plan to a pre-grasp pose can sweep through the object it
+    reaches for: it nudged the ORU 5 cm (b5, jaws then closed on nothing) and knocked the service cover
+    0.21 m off the panel (ac1). The checks now re-read targets at step time (what relative perception
+    would do); the D0 capability gap stays open: a world-aware planning scene before Experiment I.
+
 **4. F50 §5 corrected.** The ros_action wait was *not* on the sim clock in the deploy graph (defect 2),
 and the parallel GPU-1 graph did *not* work: its start/exit reaps killed the sibling (defect 8).
 

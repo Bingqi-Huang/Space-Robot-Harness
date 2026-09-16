@@ -68,6 +68,10 @@ n.create_subscription(Twist, "/cmd_vel", lambda m: vel["cmd"].append((round(m.li
 n.create_subscription(Twist, "/srb/env0/action/cmd_vel", lambda m: vel["srb"].append((round(m.linear.x, 3), round(m.angular.z, 3))), 50)
 n.create_subscription(Odometry, "/odom", lambda m: vel["odom"].append((round(m.twist.twist.linear.x, 3), round(m.twist.twist.angular.z, 3))), 50)
 truth = {}  # latest /openral/pose_truth: evaluator-only
+from sensor_msgs.msg import JointState
+jaw = {}  # EG2 jaw joint (rad): 0.10 closed on nothing, 0.82 open -- "clamped, not hanging" is measured, not inferred
+n.create_subscription(JointState, "/srb/env0/robot/joint_states",
+                      lambda m: jaw.update(q=m.position[m.name.index("eg2_joint1")]) if "eg2_joint1" in m.name else None, 10)
 n.create_subscription(Odometry, "/openral/pose_truth", lambda m: truth.update(p=m.pose.pose.position, q=m.pose.pose.orientation), 10)
 T0 = time.time()
 sim = dict(t=0.0)  # SRB's /clock: a rendering graph runs at a fraction of real time, and every skill
@@ -212,12 +216,14 @@ def dispatch(key, params, deadline=120.0, prompt=""):
             tc = buf.lookup_transform("chassis_base_link", "tcp_frame", Time()).transform
             pt, _, Rt = truth_pose()
             tw = pt + Rt @ np.array([tc.translation.x, tc.translation.y, tc.translation.z])
-            obj.append((round(sim["t"] - sim0, 1), round(float(hp[2]), 3), round(float(np.linalg.norm(hp - tw)), 3), round(float(pt[0]), 2), round(float(pt[1]), 2)))
+            obj.append((round(sim["t"] - sim0, 1), round(float(hp[2]), 3), round(float(np.linalg.norm(hp - tw)), 3), round(float(pt[0]), 2), round(float(pt[1]), 2),
+                        round(float(jaw.get("q", -1.0)), 3)))
             last_obj = time.time()
     out = dict(wall_s=round(time.time() - t, 1), sim_s=round(sim["t"] - sim0, 1),
                sim_rate=round((sim["t"] - sim0) / max(time.time() - t, 1e-6), 2))
     if obj:
-        out["obj_track"] = obj  # (sim s, handle z, handle-TCP distance, base x, base y)
+        out["obj_track"] = obj  # (sim s, handle z, handle-TCP distance, base x, base y, jaw rad)
+    out["jaw_rad"] = round(float(jaw.get("q", -1.0)), 3)
     if key in ("nav", "dock"):
         out["track"] = track
         for src in ("cmd", "srb", "odom"):

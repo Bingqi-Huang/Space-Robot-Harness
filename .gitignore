@@ -32,3 +32,6 @@ AGENT/VLM_provider.md
 # §19 run artifacts (openral_ext/run_manifest) -- reproducible on demand,
 # not meant to bloat git history (large logs/traces per run).
 experiments/manifests/
+/ros/build/
+/ros/install/
+/ros/log/

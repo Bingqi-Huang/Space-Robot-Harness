@@ -58,6 +58,11 @@ sleep 30
 # session kill on $DEPLOY reaches (stale launch trees survived runs 3-7 that way)
 LAUNCH=$(pgrep -P "$DEPLOY" | head -1)
 echo "LAUNCH_PID $LAUNCH sid $(ps -o sid= -p "$LAUNCH")" >> "$LOG/deploy.pid"
+if [ -n "$D0_CAPABILITY_SERVER" ]; then
+  # the common capability boundary (§21.4) for boundary-driven checks; tagged so the teardown takes it down too
+  source ../ros/install/setup.bash
+  D0_RUN_TAG="$LOG" setsid .venv/bin/python ../openral_ext/capability_server/node.py > "$LOG/capability_server.log" 2>&1 &
+fi
 timeout 3000 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
 echo "CHECK_EXIT $?" >> "$LOG/check.log"
 # Teardown by run tag: the CLI, its `ros2 launch` and SRB's Isaac process each sit in their own session, and

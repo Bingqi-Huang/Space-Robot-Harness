@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""The common capability boundary (execution_plan §21.4): one server every method calls identically.
+
+    /space/capability/execute  space_harness_msgs/ExecuteCapability  (effects: PLEXIL Commands, Ours' effect tools)
+    /space/capability/query    space_harness_msgs/QueryCapability    (queries: PLEXIL Lookups, Ours' query tools)
+
+The contracts (names, typed inputs, meaning) are `contracts.yaml`. An effect is checked against its contract and lowered
+to exactly one `openral_msgs/ExecuteRskill` dispatch on `/openral/execute_rskill`, so every route -- Ours, PLEXIL,
+EUROPA->PLEXIL -- passes through the same OpenRAL runner, safety kernel, HAL and simulator. The result carries only
+robot-observable evidence (estimated base pose, TCP in the rover frame, jaw); the mission verifier is evaluator-only and
+never crosses this boundary. No mission logic lives here: one call, one skill, no retries, no orderings.
+
+The lowering parameters are the ones the D0 checks used when they dispatched rSkills directly (research repo F51), so a
+mission driven through this boundary exercises the same skills with the same settings.
+
+Run inside a sourced graph (ROS Humble + openral install + ros/install):
+    python3 openral_ext/capability_server/node.py
+"""
+
+import json
+import math
+import threading
+import time
+from pathlib import Path
+
+import numpy as np
+import rclpy
+import yaml
+from nav_msgs.msg import Odometry
+from openral_msgs.action import ExecuteRskill
+from rclpy.action import ActionClient, ActionServer
+from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rclpy.time import Time
+from rosgraph_msgs.msg import Clock
+from sensor_msgs.msg import JointState
+from space_harness_msgs.action import ExecuteCapability
+from space_harness_msgs.srv import QueryCapability
+from tf2_ros import Buffer, TransformListener
+
+HERE = Path(__file__).resolve().parent
+CONTRACTS = yaml.safe_load((HERE / "contracts.yaml").read_text())
+IX = json.loads((HERE / "../../space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json").resolve().read_text())
+REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
+JAW_JOINT = "eg2_joint1"
+
+
+def quat_to_mat(x, y, z, w):
+    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+                     [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+                     [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
+
+
+def check_args(contract: dict, args: dict) -> str:
+    """'' when `args` matches the contract's inputs, else the reason."""
+    inputs = contract.get("inputs") or {}
+    for key in args:
+        if key not in inputs:
+            return f"unknown input {key!r} (contract inputs: {sorted(inputs)})"
+    for key, (typ, required, _) in inputs.items():
+        if key not in args:
+            if required:
+                return f"missing required input {key!r}"
+            continue
+        v = args[key]
+        if typ == "number" and not isinstance(v, (int, float)):
+            return f"{key!r} must be a number"
+        if typ.startswith("number[") and not (isinstance(v, list) and len(v) == int(typ[7:-1]) and all(isinstance(e, (int, float)) for e in v)):
+            return f"{key!r} must be {typ}"
+        if typ == "string" and not isinstance(v, str):
+            return f"{key!r} must be a string"
+    return ""
+
+
+def lower(capability: str, a: dict) -> dict:
+    """Contract arguments -> the rSkill's goal_params (the D0 checks' settings, F51)."""
+    if capability == "navigate_to_pose":
+        return {"pose": {"header": {"frame_id": "map"}, "pose": {
+            "position": {"x": float(a["x"]), "y": float(a["y"]), "z": 0.0},
+            "orientation": {"x": 0.0, "y": 0.0, "z": math.sin(a["yaw"] / 2), "w": math.cos(a["yaw"] / 2)}}}}
+    if capability == "dock_to_pose":
+        p = dict(frame_id="map", position=[float(a["x"]), float(a["y"])], yaw=float(a["yaw"]),
+                 max_angular_speed_rad_s=0.45, stall_timeout_s=20.0, timeout_s=180.0)
+        if "approach_m" in a:
+            p["approach_m"] = float(a["approach_m"])
+        return p
+    if capability == "move_joints":
+        return {"joint_targets": a["joint_targets"], "tolerance_rad": a.get("tolerance_rad", 0.05), "timeout_s": 30.0}
+    if capability == "stow":
+        return {"tolerance_rad": a.get("tolerance_rad", 0.1), "timeout_s": 30.0}
+    if capability == "plan_ee_pose":
+        return {"pose": {"frame_id": "chassis_base_link", "link_name": "tcp_frame", "position": a["position"],
+                         "orientation": a["orientation_xyzw"], "quaternion_order": "xyzw",
+                         "position_tolerance_m": a.get("tolerance_m", 0.01), "orientation_tolerance_rad": 0.05},
+                # posture preference of this arm (shoulder on its working branch, wrist unspun) -- robot, not mission
+                "joint_constraints": [{"joint": "joint1", "position": 0.0, "tolerance_above": 1.5, "tolerance_below": 1.5},
+                                      {"joint": "joint7", "position": 0.0, "tolerance_above": 3.0, "tolerance_below": 3.0}],
+                "request": {"group_name": "rm_group", "allowed_planning_time": 10.0, "num_planning_attempts": 10}}
+    if capability == "move_ee_to_pose":
+        p = dict(frame_id="chassis_base_link", position=a["position"], quaternion_xyzw=a["orientation_xyzw"],
+                 pos_tolerance_m=a.get("tolerance_m", 0.015), timeout_s=a.get("timeout_s", 25.0))
+        if "max_linear_speed_m_s" in a:
+            p["max_linear_speed_m_s"] = a["max_linear_speed_m_s"]
+        return p
+    if capability == "grasp":
+        return {"mode": "close", "timeout_s": 8.0}
+    if capability == "release":
+        return {"mode": "open", "timeout_s": 8.0}
+    raise KeyError(capability)
+
+
+class CapabilityServer(Node):
+    def __init__(self):
+        super().__init__("space_capability_server", parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, True)])
+        cb = ReentrantCallbackGroup()
+        self.buf = Buffer()
+        TransformListener(self.buf, self)
+        self.truth, self.jaw, self.sim_t = {}, None, 0.0
+        self.create_subscription(Odometry, "/openral/pose_truth", lambda m: self.truth.update(p=m.pose.pose.position, q=m.pose.pose.orientation), 10, callback_group=cb)
+        self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
+        self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
+        self.rskill = ActionClient(self, ExecuteRskill, "/openral/execute_rskill", callback_group=cb)
+        ActionServer(self, ExecuteCapability, "/space/capability/execute", self._execute, callback_group=cb)
+        self.create_service(QueryCapability, "/space/capability/query", self._query, callback_group=cb)
+        self.get_logger().info(f"capability boundary up: effects {sorted(CONTRACTS['effects'])}, queries {sorted(CONTRACTS['queries'])}")
+
+    def _on_joints(self, m):
+        if JAW_JOINT in m.name:
+            self.jaw = float(m.position[m.name.index(JAW_JOINT)])
+
+    # ---- queries ------------------------------------------------------------------------------------------------
+    def _tf(self, target, source):
+        tr = self.buf.lookup_transform(target, source, Time()).transform
+        return np.array([tr.translation.x, tr.translation.y, tr.translation.z]), quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w)
+
+    def base_pose(self):
+        p, R = self._tf("map", "chassis_base_link")
+        return {"frame": "map", "x": round(float(p[0]), 4), "y": round(float(p[1]), 4), "yaw": round(math.atan2(R[1, 0], R[0, 0]), 4)}
+
+    def tcp_pose(self):
+        p, R = self._tf("chassis_base_link", "tcp_frame")
+        return {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in p]}
+
+    def locate_feature(self, name):
+        # STAND-IN for Phase E relative perception: simulator truth (contracts.yaml `stand_in: truth`)
+        if name in IX["points"]:
+            pw, nw = np.array(IX["points"][name]["xyz"], float), np.array(IX["points"][name]["normal"], float)
+        elif name in IX["objects"] and "handle" in IX["objects"][name]:
+            po, Ro = self._tf("srb/world", f"srb/env0/lb_{name}")
+            pw, nw = po + Ro @ np.array(IX["objects"][name]["handle"]["xyz"]), None
+        else:
+            raise KeyError(f"unknown feature {name!r}")
+        q = self.truth["q"]
+        Rb = quat_to_mat(q.x, q.y, q.z, q.w)
+        pb = np.array([self.truth["p"].x, self.truth["p"].y, self.truth["p"].z])
+        out = {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in Rb.T @ (pw - pb)], "stand_in": "truth"}
+        if nw is not None:
+            out["normal"] = [round(float(v), 4) for v in Rb.T @ nw]
+        return out
+
+    def _query(self, req, res):
+        try:
+            args = json.loads(req.args_json or "{}")
+            if req.query not in CONTRACTS["queries"]:
+                raise KeyError(f"unknown query {req.query!r}")
+            reason = check_args(CONTRACTS["queries"][req.query], args)
+            if reason:
+                raise ValueError(reason)
+            value = {"base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
+                     "locate_feature": lambda: self.locate_feature(args["name"])}[req.query]()
+            res.success, res.value_json = True, json.dumps(value)
+        except Exception as exc:  # reason: every failure is a typed answer to the caller, not a dead service
+            res.success, res.failure_reason = False, f"{type(exc).__name__}: {exc}"
+        return res
+
+    # ---- effects ------------------------------------------------------------------------------------------------
+    def _execute(self, handle):
+        g, res = handle.request, ExecuteCapability.Result()
+        contract = CONTRACTS["effects"].get(g.capability)
+        try:
+            args = json.loads(g.args_json or "{}")
+        except json.JSONDecodeError as exc:
+            args, contract_reason = {}, f"args_json is not JSON: {exc}"
+        else:
+            contract_reason = "" if contract is None else check_args(contract, args)
+        if contract is None or contract_reason:
+            handle.succeed()
+            res.success, res.failure_kind = False, REJECTED
+            res.failure_reason = contract_reason or f"unknown capability {g.capability!r} (effects: {sorted(CONTRACTS['effects'])})"
+            return res
+        deadline = g.deadline_s or float(contract["default_deadline_s"])
+        goal = ExecuteRskill.Goal(rskill_id=contract["lowers_to"], prompt=f"capability {g.capability}",
+                                  goal_params_json=json.dumps(lower(g.capability, args)), deadline_s=deadline)
+        sim0 = self.sim_t
+        handle.publish_feedback(ExecuteCapability.Feedback(state="dispatched", elapsed_s=0.0))
+        sent = self.rskill.send_goal_async(goal)
+        while not sent.done():
+            time.sleep(0.05)
+        gh = sent.result()
+        if gh is None or not gh.accepted:
+            handle.succeed()
+            res.success, res.failure_kind, res.failure_reason = False, 255, "rskill runner rejected the goal"
+            return res
+        rf = gh.get_result_async()
+        last = 0.0
+        while not rf.done():
+            time.sleep(0.1)
+            if time.time() - last > 2.0:
+                handle.publish_feedback(ExecuteCapability.Feedback(state="executing", elapsed_s=float(self.sim_t - sim0)))
+                last = time.time()
+        r = rf.result().result
+        evidence = {"sim_s": round(self.sim_t - sim0, 2), "rskill": contract["lowers_to"]}
+        for key, fn in (("base_pose", self.base_pose), ("tcp_pose", self.tcp_pose)):
+            try:
+                evidence[key] = fn()
+            except Exception as exc:  # reason: evidence is best-effort; a missing TF must not hide the skill result
+                evidence[key] = f"unavailable: {exc}"
+        evidence["jaw_rad"] = self.jaw
+        handle.succeed()
+        res.success, res.failure_kind, res.failure_reason = bool(r.success), int(r.failure_kind), r.failure_reason
+        res.evidence_json = json.dumps(evidence)
+        return res
+
+
+def main():
+    rclpy.init()
+    node = CapabilityServer()
+    ex = MultiThreadedExecutor(num_threads=8)
+    ex.add_node(node)
+    t = threading.Thread(target=ex.spin, daemon=True)
+    t.start()
+    try:
+        while t.is_alive():
+            t.join(1.0)
+    except KeyboardInterrupt:
+        pass
+    rclpy.try_shutdown()
+
+
+if __name__ == "__main__":
+    main()
