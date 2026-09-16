@@ -7,7 +7,8 @@
 # Forbidden here (§8.2): mission logic -- orderings, recoveries, "after X do Y". A contract says what one call means.
 #
 # Frames: `map` is the robot's own localization (AMCL on the surveyed base map); `chassis_base_link` is the rover.
-# Inputs: {name: [type, required, description]}; types: number, number[N], string.
+# Inputs: {name: [type, required, description]}; types: number, number[N], string, string(a|b).
+# Arguments come as a JSON object, or as a JSON array in the declared input order (typed PLEXIL Commands).
 
 effects:
   navigate_to_pose:
@@ -69,6 +70,58 @@ effects:
       orientation_xyzw: ["number[4]", true, "TCP orientation quaternion"]
       tolerance_m: [number, false, "position tolerance (default 0.015)"]
       max_linear_speed_m_s: [number, false, "speed cap (default the skill's)"]
+      timeout_s: [number, false, "servo timeout on the graph clock (default 25)"]
+    default_deadline_s: 60
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+
+  navigate_to_feature:
+    description: >-
+      Drive the base (Nav2) to the approach point of a site feature: `standoff_m` out along the feature's surface
+      normal beyond the pose from which the arm reaches it, already facing along that axis.
+    inputs:
+      feature: [string, true, "site interaction point, e.g. pdu_2_panel/press"]
+      standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 1.5)"]
+    default_deadline_s: 400
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-nav2-mobile_base-navigate_to_pose
+
+  dock_at_feature:
+    description: >-
+      Close onto the pose from which the arm reaches a site feature (hull + arm reach out along its normal), or
+      `standoff_m` further out on that axis (to back away). Entered along the axis.
+    inputs:
+      feature: [string, true, "site interaction point"]
+      standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 0)"]
+      approach_m: [number, false, "entry corridor length, m (default 1.5)"]
+    default_deadline_s: 240
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-mobile_base-move_base_to_pose
+
+  plan_ee_to_feature:
+    description: >-
+      Plan and execute (MoveIt) the TCP to `offset_m` in front of a site feature along its normal, tool into the
+      surface; `orientation` press = jaw axis vertical, grip = horizontal.
+    inputs:
+      feature: [string, true, "site interaction point"]
+      offset_m: [number, true, "distance in front of the feature along its normal, m (negative = into it)"]
+      orientation: ["string(press|grip)", false, "tool orientation (default press)"]
+      tolerance_m: [number, false, "position tolerance (default 0.01)"]
+    default_deadline_s: 120
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
+
+  move_ee_to_feature:
+    description: >-
+      Servo the TCP in a straight line to `offset_m` in front of a site feature along its normal (plus `lift_m`
+      vertically) and hold; tool into the surface.
+    inputs:
+      feature: [string, true, "site interaction point"]
+      offset_m: [number, true, "distance in front of the feature along its normal, m (negative = into it)"]
+      lift_m: [number, false, "vertical offset, m (default 0)"]
+      orientation: ["string(press|grip)", false, "tool orientation (default press)"]
+      tolerance_m: [number, false, "position tolerance (default 0.015)"]
+      max_linear_speed_m_s: [number, false, "speed cap"]
       timeout_s: [number, false, "servo timeout on the graph clock (default 25)"]
     default_deadline_s: 60
     authority_class: routine

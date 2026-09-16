@@ -45,6 +45,43 @@ CONTRACTS = yaml.safe_load((HERE / "contracts.yaml").read_text())
 IX = json.loads((HERE / "../../space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json").resolve().read_text())
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
+HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]["press"]  # arm reach past the hull (C3)
+
+
+def feature_frame(name: str):
+    """A site interaction point (surveyed site knowledge, `map`): position and horizontal outward normal."""
+    pt = IX["points"][name]
+    n = np.array(pt["normal"][:2], float)
+    return np.array(pt["xyz"], float), n / np.linalg.norm(n)
+
+
+def work_pose(name: str, standoff_m: float):
+    """Base pose from which the arm reaches `name`: hull + reach out along the normal, facing along it; `standoff_m`
+    further out on the same axis (the docking corridor's entry)."""
+    p, n = feature_frame(name)
+    xy = p[:2] + n * (HULL_M + REACH_M + standoff_m)
+    return float(xy[0]), float(xy[1]), math.atan2(n[1], n[0])
+
+
+def tool_rotation(n: np.ndarray, orientation: str) -> np.ndarray:
+    """Tool +Z into the surface; jaw axis vertical ("press") or horizontal ("grip") -- d0_common / lunar_oracle."""
+    z = np.array([-n[0], -n[1], 0.0])
+    x = np.array([0.0, 0.0, 1.0]) if orientation == "press" else np.cross([0.0, 0.0, 1.0], z)
+    x /= np.linalg.norm(x)
+    return np.stack([x, np.cross(z, x), z], axis=1)
+
+
+def mat_to_quat(R):
+    t = np.trace(R)
+    if t > 0:
+        s = math.sqrt(t + 1.0) * 2
+        return [(R[2, 1] - R[1, 2]) / s, (R[0, 2] - R[2, 0]) / s, (R[1, 0] - R[0, 1]) / s, 0.25 * s]
+    i = int(np.argmax(np.diag(R)))
+    j, k = (i + 1) % 3, (i + 2) % 3
+    s = math.sqrt(1.0 + R[i, i] - R[j, j] - R[k, k]) * 2
+    q = [0.0, 0.0, 0.0, 0.0]
+    q[i], q[j], q[k], q[3] = 0.25 * s, (R[j, i] + R[i, j]) / s, (R[k, i] + R[i, k]) / s, (R[k, j] - R[j, k]) / s
+    return q
 
 
 def quat_to_mat(x, y, z, w):
@@ -71,6 +108,10 @@ def check_args(contract: dict, args: dict) -> str:
             return f"{key!r} must be {typ}"
         if typ == "string" and not isinstance(v, str):
             return f"{key!r} must be a string"
+        if typ.startswith("string(") and v not in typ[7:-1].split("|"):
+            return f"{key!r} must be one of {typ[7:-1].split('|')}"
+        if key == "feature" and v not in IX["points"]:
+            return f"unknown feature {v!r}"
     return ""
 
 
@@ -104,6 +145,12 @@ def lower(capability: str, a: dict) -> dict:
         if "max_linear_speed_m_s" in a:
             p["max_linear_speed_m_s"] = a["max_linear_speed_m_s"]
         return p
+    if capability == "navigate_to_feature":
+        x, y, yaw = work_pose(a["feature"], a.get("standoff_m", 1.5))
+        return lower("navigate_to_pose", dict(x=x, y=y, yaw=yaw))
+    if capability == "dock_at_feature":
+        x, y, yaw = work_pose(a["feature"], a.get("standoff_m", 0.0))
+        return lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, **({"approach_m": a["approach_m"]} if "approach_m" in a else {})))
     if capability == "grasp":
         return {"mode": "close", "timeout_s": 8.0}
     if capability == "release":
@@ -160,6 +207,24 @@ class CapabilityServer(Node):
             out["normal"] = [round(float(v), 4) for v in Rb.T @ nw]
         return out
 
+    def feature_target(self, a: dict) -> dict:
+        """TCP target for a feature capability, in the rover frame (through the locate_feature stand-in)."""
+        p, n = feature_frame(a["feature"])
+        pw = p + np.array([n[0], n[1], 0.0]) * a["offset_m"] + np.array([0.0, 0.0, a.get("lift_m", 0.0)])
+        q = self.truth["q"]
+        Rb = quat_to_mat(q.x, q.y, q.z, q.w)
+        pb = np.array([self.truth["p"].x, self.truth["p"].y, self.truth["p"].z])
+        return {"position": (Rb.T @ (pw - pb)).tolist(),
+                "orientation_xyzw": mat_to_quat(Rb.T @ tool_rotation(n, a.get("orientation", "press")))}
+
+    def lower_effect(self, capability: str, a: dict) -> dict:
+        if capability == "plan_ee_to_feature":
+            return lower("plan_ee_pose", {**self.feature_target(a), **({"tolerance_m": a["tolerance_m"]} if "tolerance_m" in a else {})})
+        if capability == "move_ee_to_feature":
+            extra = {k: a[k] for k in ("tolerance_m", "max_linear_speed_m_s", "timeout_s") if k in a}
+            return lower("move_ee_to_pose", {**self.feature_target(a), **extra})
+        return lower(capability, a)
+
     def _query(self, req, res):
         try:
             args = json.loads(req.args_json or "{}")
@@ -184,6 +249,10 @@ class CapabilityServer(Node):
         except json.JSONDecodeError as exc:
             args, contract_reason = {}, f"args_json is not JSON: {exc}"
         else:
+            if isinstance(args, list) and contract is not None:
+                # positional form (typed PLEXIL Commands): values in the contract's declared input order
+                keys = list(contract.get("inputs") or {})
+                args = dict(zip(keys, args)) if len(args) <= len(keys) else {"_too_many_arguments": args}
             contract_reason = "" if contract is None else check_args(contract, args)
         if contract is None or contract_reason:
             handle.succeed()
@@ -192,7 +261,7 @@ class CapabilityServer(Node):
             return res
         deadline = g.deadline_s or float(contract["default_deadline_s"])
         goal = ExecuteRskill.Goal(rskill_id=contract["lowers_to"], prompt=f"capability {g.capability}",
-                                  goal_params_json=json.dumps(lower(g.capability, args)), deadline_s=deadline)
+                                  goal_params_json=json.dumps(self.lower_effect(g.capability, args)), deadline_s=deadline)
         sim0 = self.sim_t
         handle.publish_feedback(ExecuteCapability.Feedback(state="dispatched", elapsed_s=0.0))
         sent = self.rskill.send_goal_async(goal)
@@ -221,6 +290,10 @@ class CapabilityServer(Node):
         handle.succeed()
         res.success, res.failure_kind, res.failure_reason = bool(r.success), int(r.failure_kind), r.failure_reason
         res.evidence_json = json.dumps(evidence)
+        # the call trace (§4.6): one line per effect, whoever called it
+        self.get_logger().info("CAPABILITY " + json.dumps(dict(capability=g.capability, args=args, success=res.success,
+                                                               failure_kind=res.failure_kind, failure_reason=res.failure_reason,
+                                                               evidence=evidence)))
         return res
 
 

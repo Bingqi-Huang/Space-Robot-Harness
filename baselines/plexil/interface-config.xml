@@ -1,0 +1,7 @@
+<!-- universalExec -c interface-config.xml -p plan.plx
+     LibPath: the colcon install's lib directory (ros/install/lib/libCapabilityAdapter.so). -->
+<Interfaces>
+  <Adapter AdapterType="CapabilityAdapter" LibPath="libCapabilityAdapter.so"/>
+  <Adapter AdapterType="Time"/>
+  <Adapter AdapterType="Utility"/>
+</Interfaces>

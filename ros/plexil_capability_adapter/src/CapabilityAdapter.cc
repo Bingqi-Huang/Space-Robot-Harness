@@ -1,18 +1,20 @@
 // PLEXIL Release 6 interface adapter onto the common capability boundary (execution_plan §11.1, §21.4-21.5).
 //
 // PLEXIL sees exactly the interface Ours sees, and nothing else:
+//   Command <capability>(args...)                                   -> Boolean success
+//     every Command without its own handler is a capability of contracts.yaml, its arguments positional in the
+//     contract's declared input order (e.g. Boolean Command dock_at_feature(String, Real, Real);)
 //   Command ExecuteCapability(String capability, String args_json)  -> Boolean success
 //     -> space_harness_msgs/ExecuteCapability on /space/capability/execute (one ExecuteRskill through the runner,
 //        safety kernel, HAL; the contract is checked by the server)
 //   Lookup  QueryCapability(String query, String args_json)          -> String value_json (UNKNOWN on failure)
 //     -> space_harness_msgs/QueryCapability on /space/capability/query
+//   Lookup  jaw()                                                     -> Real jaw angle, rad
 //   Lookup  LastCapabilityResult()                                   -> String {capability, success, failure_kind,
 //                                                                       failure_reason, evidence}
 // No mission logic: no orderings, retries or recoveries -- those belong in the PLEXIL plan library (the baseline's
 // pre-engineered knowledge), never in the adapter.
 //
-// SKELETON (§21.5 start): builds and loads; per-capability typed Commands (e.g. NavigateToPose(Real x, Real y,
-// Real yaw)) and the plan library are the next step.
 
 #include "AdapterConfiguration.hh"
 #include "AdapterExecInterface.hh"
@@ -23,6 +25,9 @@
 #include "LookupReceiver.hh"
 #include "State.hh"
 #include "Value.hh"
+#include "Array.hh"
+
+#include <cstdio>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -39,6 +44,41 @@ using QueryCapability = space_harness_msgs::srv::QueryCapability;
 
 namespace
 {
+std::string json_escape(std::string const &s);
+
+// One PLEXIL value as JSON (scalars and Real/Integer/Boolean/String arrays); empty on an unsupported/unknown value.
+std::string value_json(PLEXIL::Value const &v)
+{
+  switch (v.valueType()) {
+    case PLEXIL::BOOLEAN_TYPE: { bool b; return v.getValue(b) ? (b ? "true" : "false") : ""; }
+    case PLEXIL::INTEGER_TYPE: { PLEXIL::Integer i; return v.getValue(i) ? std::to_string(i) : ""; }
+    case PLEXIL::REAL_TYPE: {
+      PLEXIL::Real r;
+      if (!v.getValue(r)) return "";
+      char buf[64];
+      std::snprintf(buf, sizeof(buf), "%.9g", r);
+      return buf;
+    }
+    case PLEXIL::STRING_TYPE: { PLEXIL::String str; return v.getValue(str) ? "\"" + json_escape(str) + "\"" : ""; }
+    case PLEXIL::BOOLEAN_ARRAY_TYPE:
+    case PLEXIL::INTEGER_ARRAY_TYPE:
+    case PLEXIL::REAL_ARRAY_TYPE:
+    case PLEXIL::STRING_ARRAY_TYPE: {
+      PLEXIL::Array const *arr;
+      if (!v.getValuePointer(arr)) return "";
+      std::string out = "[";
+      for (size_t i = 0; i < arr->size(); ++i) {
+        std::string e = value_json(arr->getElementValue(i));
+        if (e.empty()) return "";
+        out += (i ? ", " : "") + e;
+      }
+      return out + "]";
+    }
+    default:
+      return "";
+  }
+}
+
 std::string json_escape(std::string const &s)
 {
   std::string out;
@@ -66,7 +106,41 @@ public:
     query_ = node_->create_client<QueryCapability>("/space/capability/query");
     config->registerCommandHandlerFunction(
       "ExecuteCapability",
-      [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) { executeCapability(cmd, intf); });
+      [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) {
+        std::vector<PLEXIL::Value> const &args = cmd->getArgValues();
+        std::string capability, args_json = "{}";
+        if (args.size() < 1 || !args[0].getValue(capability) || (args.size() > 1 && !args[1].getValue(args_json))) {
+          intf->handleCommandAck(cmd, PLEXIL::COMMAND_FAILED);
+          intf->notifyOfExternalEvent();
+          return;
+        }
+        send(cmd, intf, capability, args_json);
+      });
+    // every other Command is a capability with positional arguments (the Utility adapter's print/pprint keep theirs)
+    config->setDefaultCommandHandlerFunction(
+      [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) {
+        std::string args_json = "[";
+        std::vector<PLEXIL::Value> const &args = cmd->getArgValues();
+        for (size_t i = 0; i < args.size(); ++i) {
+          std::string e = value_json(args[i]);
+          if (e.empty()) {
+            intf->handleCommandAck(cmd, PLEXIL::COMMAND_FAILED);
+            intf->notifyOfExternalEvent();
+            return;
+          }
+          args_json += (i ? ", " : "") + e;
+        }
+        send(cmd, intf, cmd->getName(), args_json + "]");
+      });
+    config->registerLookupHandlerFunction(
+      "jaw",
+      [this](PLEXIL::State const &, PLEXIL::LookupReceiver *rcvr) {
+        std::string value;
+        if (!query("jaw", "{}", value)) { rcvr->setUnknown(); return; }
+        auto pos = value.find(':');
+        if (pos == std::string::npos || value.find("null") != std::string::npos) { rcvr->setUnknown(); return; }
+        rcvr->update(static_cast<PLEXIL::Real>(std::stod(value.substr(pos + 1))));
+      });
     config->registerLookupHandlerFunction(
       "QueryCapability",
       [this](PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr) { queryCapability(state, rcvr); });
@@ -97,15 +171,9 @@ public:
   }
 
 private:
-  void executeCapability(PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf)
+  void send(PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf, std::string const &capability,
+            std::string const &args_json)
   {
-    std::vector<PLEXIL::Value> const &args = cmd->getArgValues();
-    std::string capability, args_json = "{}";
-    if (args.size() < 1 || !args[0].getValue(capability) || (args.size() > 1 && !args[1].getValue(args_json))) {
-      intf->handleCommandAck(cmd, PLEXIL::COMMAND_FAILED);
-      intf->notifyOfExternalEvent();
-      return;
-    }
     ExecuteCapability::Goal goal;
     goal.capability = capability;
     goal.args_json = args_json;
@@ -133,21 +201,28 @@ private:
 
   void queryCapability(PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr)
   {
-    std::string query, args_json = "{}";
-    if (state.parameters().size() < 1 || !state.parameter(0).getValue(query) ||
+    std::string q, args_json = "{}";
+    if (state.parameters().size() < 1 || !state.parameter(0).getValue(q) ||
         (state.parameters().size() > 1 && !state.parameter(1).getValue(args_json))) {
       rcvr->setUnknown();
       return;
     }
+    std::string value;
+    if (query(q, args_json, value)) rcvr->update(value); else rcvr->setUnknown();
+  }
+
+  // Humble's async_send_request returns a std::future: get() exactly once (a second get() threw inside the exec
+  // thread and stalled the plan).
+  bool query(std::string const &q, std::string const &args_json, std::string &value)
+  {
     auto req = std::make_shared<QueryCapability::Request>();
-    req->query = query;
+    req->query = q;
     req->args_json = args_json;
-    auto future = query_->async_send_request(req);
-    if (future.wait_for(std::chrono::seconds(5)) != std::future_status::ready || !future.get()->success) {
-      rcvr->setUnknown();
-      return;
-    }
-    rcvr->update(future.get()->value_json);
+    auto pending = query_->async_send_request(req);
+    if (pending.future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) return false;
+    auto response = pending.future.get();
+    value = response->value_json;
+    return response->success;
   }
 
   rclcpp::Node::SharedPtr node_;

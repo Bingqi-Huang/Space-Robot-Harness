@@ -1,0 +1,53 @@
+// PLEXIL baseline -- Mission A, model-covered case (execution_plan §11.1, §21.5).
+//
+// "PDU-2 reported a fault: restore it, verify, return the rover to the dock with the arm stowed." In the covered case
+// the reported unit is the faulted one and its reset button is free, so the pre-engineered procedure is:
+// drive to the unit, dock at its panel, press the reset button with closed jaws, back away, stow, return to the dock.
+// Predefined recovery: one retry of each base leg. Every Command is a capability of the common boundary
+// (openral_ext/capability_server/contracts.yaml), positional arguments in the contract's input order; the adapter
+// (ros/plexil_capability_adapter) adds no logic.
+
+Boolean Command navigate_to_feature(String, Real);
+Boolean Command dock_at_feature(String, Real, Real);
+Boolean Command navigate_to_pose(Real, Real, Real);
+Boolean Command grasp();
+Boolean Command move_joints(Real[7], Real);
+Boolean Command stow(Real);
+Boolean Command plan_ee_to_feature(String, Real, String, Real);
+Boolean Command move_ee_to_feature(String, Real, Real, String, Real, Real, Real);
+String Lookup LastCapabilityResult();
+Command pprint(...);
+
+MissionA_Covered: Sequence
+{
+  String Button = "pdu_2_panel/press";
+  Real Ready[7] = #(0.0 -1.0 0.0 -1.4 0.0 1.2 0.0);
+
+  DriveToUnit: Try
+  {
+    DriveToUnit1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(Button, 1.5); }
+    DriveToUnit2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(Button, 1.5); }
+  }
+  DockAtPanel: Try
+  {
+    DockAtPanel1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 0.0, 1.5); }
+    DockAtPanel2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 0.0, 1.5); }
+  }
+  // pressing is done with closed jaws: "nothing grasped" is the expected result, so no post-condition
+  CloseJaws: { Boolean ok; EndCondition isKnown(ok); ok = grasp(); }
+  ArmReady: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_joints(Ready, 0.05); }
+  PlanPrePress: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = plan_ee_to_feature(Button, 0.12, "press", 0.01); }
+  ServoPrePress: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.12, 0.0, "press", 0.015, 0.15, 25.0); }
+  Approach: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.04, 0.0, "press", 0.01, 0.05, 25.0); }
+  Press: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, -0.01, 0.0, "press", 0.01, 0.03, 15.0); }
+  Retract: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.12, 0.0, "press", 0.02, 0.08, 25.0); }
+  ArmReadyAgain: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_joints(Ready, 0.1); }
+  StowArm: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = stow(0.1); }
+  BackAway: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 1.5, 0.8); }
+  ReturnToDock: Try
+  {
+    ReturnToDock1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(0.0, 0.0, 0.0); }
+    ReturnToDock2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(0.0, 0.0, 0.0); }
+  }
+  Done: { pprint("MissionA_Covered complete; last:", Lookup(LastCapabilityResult())); }
+}
