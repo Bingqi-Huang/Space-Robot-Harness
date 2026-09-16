@@ -32,13 +32,14 @@ if [ -n "$D0_VIDEO$D0_GPU$D0_SCENERY$D0_SCENARIO" ]; then
   #   D0_SCENERY=<name>    another SRB scenery for the same task (e.g. lunar_base_route_block).
   #   D0_SCENARIO=<name>   the task's env.scenario (e.g. heldout_cover_obstruction).
   .venv/bin/python - "$SCENE" "$LOG/scene_run.yaml" "$D0_VIDEO" "$D0_GPU" "$D0_SCENERY" "$D0_SCENARIO" <<'PY'
-import sys, yaml
+import os, sys, yaml
 src, dst, video, gpu, scenery, scenario = sys.argv[1:]
 d = yaml.safe_load(open(src))
 argv = d["simulator"]["argv"]
 if video:
     argv.insert(argv.index("--env"), "--video")
-    d["simulator"].setdefault("env_set", {}).update(SRB_VIDEO_PATH=video, SRB_VIDEO_FOLLOW="robot")
+    d["simulator"].setdefault("env_set", {}).update(SRB_VIDEO_PATH=video, SRB_VIDEO_FOLLOW="robot",
+                                                   SRB_VIDEO_STRIDE=os.environ.get("D0_VIDEO_STRIDE", "5"))
     d["simulator"]["boot_timeout_s"] = 1800.0
 if gpu:
     argv[argv.index("--env"):argv.index("--env")] = ["--kit_args", f"--/renderer/activeGpu={gpu} --/physics/cudaDevice={gpu}"]
@@ -63,7 +64,9 @@ if [ -n "$D0_CAPABILITY_SERVER" ]; then
   source ../ros/install/setup.bash
   D0_RUN_TAG="$LOG" setsid .venv/bin/python ../openral_ext/capability_server/node.py > "$LOG/capability_server.log" 2>&1 &
 fi
-timeout 3000 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
+# wall-clock cap only against a hung check: every skill and check deadline is on the sim clock, and a rendering
+# Mission B at 0.06x needs more than 50 min of wall time (run bv1 was cut at 3000 s)
+timeout 14400 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
 echo "CHECK_EXIT $?" >> "$LOG/check.log"
 # Teardown by run tag: the CLI, its `ros2 launch` and SRB's Isaac process each sit in their own session, and
 # `setsid` from a group leader forks, so neither a group kill nor a walk of $DEPLOY's children reaches the whole

@@ -2442,7 +2442,7 @@ the runner fix (the timeout message now reports both clocks). A parallel second 
 `CUDA_VISIBLE_DEVICES`) — the "no goal response" failure attributed to it was stale nodes from an
 earlier run.
 
-### F51 — D0 with realistic localization: wheel-inertial odometry + AMCL on a lidar-surveyed map; Mission A `covered` passes end to end; the "sim clock" fix had never reached the deploy graph
+### F51 — D0 core passes with realistic localization (wheel-inertial odometry + AMCL on a lidar-surveyed map): Mission A and B `covered` end to end, `route_block` held-out passes; the §21.4 capability boundary reproduces Mission A; a base velocity command had been opening the gripper
 
 2026-09-16/17, `execution_plan` §21.4 / §13.2, user decision in F50 §4. openral `feat/d0-localization`,
 SRB `feat/d0-nav-map`, research repo `feat/d0-localization`.
@@ -2476,6 +2476,17 @@ servo 1.5 → 0.13 cm after hold, approach 0.96 cm, press clears PDU-2's fault (
 1.1 cm, READY → stow. **Verifier: `success: true`** (fault cleared, rover at the dock, arm stowed).
 The base meets the ≲0.10–0.15 m the arm needs; AMCL, not odometry, carries it (odometry drifts
 0.4 m over 34 m).
+
+**2b. Mission B `covered` (run b7, after defect 9's fix).** Road point 0.20 m, depot staging 0.11 m, depot dock
+**0.017 m** (AMCL 0.003 m); grasp stops the jaw at 0.172 rad (clamped), lift to handle z 1.099 m; the jaw stays
+0.17–0.18 rad through dock-out, two Nav2 legs and the PDU-1 dock (0.061 m); lower, release (jaw 0.79 in 1.1 s),
+ORU upright on PDU-1's shelf 2.3 cm from the shelf point; stow; dock 0.028 m. **Verifier: `delivered`,
+`success: true`.** The handle sagged 4.5 cm under the 1 kg load during the carry (arm hold in twist mode); in the
+video run at 0.06× (bv1) it sagged 15 cm and "servo over shelf" stalled — not isolated (render vs rate).
+
+**2c. Held-out `route_block`** (`d0_route_block_check.py`, scenery `lunar_base_route_block`, AMCL map without the
+parked rover): Nav2 detoured west (x 3.07 at y −2.11) round the rover at (5.0, −2.25) and reached (6, −6) 0.20 m
+from goal; AMCL 0.074 m with the unmapped obstacle in view.
 
 **3. Defects found, in order.** (each a thing that had never run in this graph)
 1. AMCL was brought up last by the Nav2 lifecycle driver; `planner_server`'s configure blocks until
@@ -2519,9 +2530,34 @@ The base meets the ≲0.10–0.15 m the arm needs; AMCL, not odometry, carries i
     0.21 m off the panel (ac1). The checks now re-read targets at step time (what relative perception
     would do); the D0 capability gap stays open: a world-aware planning scene before Experiment I.
 
-**4. F50 §5 corrected.** The ros_action wait was *not* on the sim clock in the deploy graph (defect 2),
+**4. Closed-capability inventory (execution_plan §13.2).** What a valid solution of each situation needs, and
+whether it has run through this stack with realistic localization:
+
+| capability | A cov | B cov | A cover_obstruction | A status_mismatch | B destination_occupied | B spare_swapped | route_block | D0 |
+|---|---|---|---|---|---|---|---|---|
+| navigate (Nav2, AMCL map) | x | x | x | x (2 PDUs) | x | x | x (detour) | **measured** |
+| dock to work pose (map) | x | x | x (+ shelf) | x | x (shelf, stand) | x | | **measured** |
+| arm: READY/stow, MoveIt, servo | x | x | x | x | x | x | | **measured** |
+| press with closed jaws | x | | x | x | | | | **measured** |
+| clamp a handle, carry under Nav2, place, release | | ORU | cover bar | | crate + ORU | ORU (slot 1) | | **ORU measured**; crate not run |
+| grasp the service cover's bar | | | x | | | | | **blocked**: MoveIt knocks it off (ac1), servo cannot reach from READY (ac4) |
+| observe state from a view pose (camera + semantic query) | | | cover over button | lamp colours | shelf occupied | which object is the ORU | | **not in D0**: Phase E |
+| relative target pose for the arm | x | x | x | x | x | x | | **truth stand-in** — replace before freeze |
+
+So Experiment I's held-out set is not yet admissible: `status_mismatch`, `destination_occupied` and
+`spare_swapped` need Phase E observation; `cover_obstruction` needs a world-aware planning scene.
+
+**5. §21.4 common capability boundary (live proof, run cm2).** `ros/space_harness_msgs` +
+`openral_ext/capability_server`: effects on `/space/capability/execute` (ExecuteCapability), queries on
+`/space/capability/query`; `contracts.yaml` declares 8 effects and 4 queries; each effect is checked against its
+contract and lowered to exactly one ExecuteRskill (same runner/kernel/HAL path); evidence is robot-observable only.
+Mission A `covered` driven only through it (`d0_capability_mission_a_check.py`): dock 0.064 m, press clears PDU-2
+(1 press, TCP 1.44 cm), stow, dock 0.041 m, **verifier success** — the same outcome as the direct dispatch (a5:
+0.090 / 1 press / 0.077 m). An off-contract call (`dock_to_pose` without `yaw`) is refused with failure_kind 20.
+
+**6. F50 §5 corrected.** The ros_action wait was *not* on the sim clock in the deploy graph (defect 2),
 and the parallel GPU-1 graph did *not* work: its start/exit reaps killed the sibling (defect 8).
 
-**5. Video.** `srb/utils/video_stream.py`: `--video` under `srb agent ros` streams a viewer camera
+**7. Video.** `srb/utils/video_stream.py`: `--video` under `srb agent ros` streams a viewer camera
 following the robot root into ffmpeg (fragmented MP4). Hydra `env.viewer.*` overrides did not reach
 the viewport controller; the wrapper drives it directly.
