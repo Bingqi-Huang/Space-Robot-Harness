@@ -24,14 +24,16 @@ export ROS_DOMAIN_ID=${D0_DOMAIN:-77} ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  #
 # Fast-DDS SHM purge, would kill or silence the sibling (research repo F51). This script's own teardown is by run tag.
 export OPENRAL_SKIP_ORPHAN_REAP=1
 SCENE=${D0_SCENE:-scenes/deploy/srb_lunar_base_mission_b.yaml}
-if [ -n "$D0_VIDEO$D0_GPU" ]; then
+if [ -n "$D0_VIDEO$D0_GPU$D0_SCENERY$D0_SCENARIO" ]; then
   # A copy of the scene, adjusted for this run:
   #   D0_VIDEO=<file.mp4>  SRB streams a robot-following viewer camera to that file (srb/utils/video_stream.py);
   #                        rendering costs wall time, so only for runs already known to pass.
   #   D0_GPU=1             SRB on the second GPU (a parallel graph; pair with D0_DOMAIN=78).
-  .venv/bin/python - "$SCENE" "$LOG/scene_run.yaml" "$D0_VIDEO" "$D0_GPU" <<'PY'
+  #   D0_SCENERY=<name>    another SRB scenery for the same task (e.g. lunar_base_route_block).
+  #   D0_SCENARIO=<name>   the task's env.scenario (e.g. heldout_cover_obstruction).
+  .venv/bin/python - "$SCENE" "$LOG/scene_run.yaml" "$D0_VIDEO" "$D0_GPU" "$D0_SCENERY" "$D0_SCENARIO" <<'PY'
 import sys, yaml
-src, dst, video, gpu = sys.argv[1:]
+src, dst, video, gpu, scenery, scenario = sys.argv[1:]
 d = yaml.safe_load(open(src))
 argv = d["simulator"]["argv"]
 if video:
@@ -40,6 +42,10 @@ if video:
     d["simulator"]["boot_timeout_s"] = 1800.0
 if gpu:
     argv[argv.index("--env"):argv.index("--env")] = ["--kit_args", f"--/renderer/activeGpu={gpu} --/physics/cudaDevice={gpu}"]
+if scenario:
+    argv[:] = [f"env.scenario={scenario}" if a.startswith("env.scenario=") else a for a in argv]
+if scenery:
+    argv.insert(argv.index("--headless"), f"env.scenery={scenery}")
 yaml.safe_dump(d, open(dst, "w"), sort_keys=False)
 PY
   SCENE="$LOG/scene_run.yaml"
@@ -65,4 +71,8 @@ echo "TREE $(echo $TREE | wc -w) pids" >> "$LOG/deploy.pid"
 kill -INT $TREE 2>/dev/null; sleep 45; kill -TERM $(tagged) 2>/dev/null; sleep 15
 kill -9 $(tagged) 2>/dev/null; sleep 2
 echo "LEFT $(tagged | wc -l) tagged processes still alive" >> "$LOG/deploy.pid"
+if [ -n "$D0_VIDEO" ]; then
+  # the teardown's SIGINT reaches ffmpeg mid-fragment: keep every complete fragment in a clean MP4
+  ffmpeg -loglevel quiet -y -err_detect ignore_err -i "$D0_VIDEO" -c copy "$LOG/video_clean.mp4" && mv -f "$LOG/video_clean.mp4" "$D0_VIDEO"
+fi
 echo done > "$LOG/done"

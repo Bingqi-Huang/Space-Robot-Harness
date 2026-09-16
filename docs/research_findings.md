@@ -2441,3 +2441,75 @@ the runner fix (the timeout message now reports both clocks). A parallel second 
 (`--kit_args "--/renderer/activeGpu=1 --/physics/cudaDevice=1"`, `D0_DOMAIN=78`; never combine with
 `CUDA_VISIBLE_DEVICES`) — the "no goal response" failure attributed to it was stale nodes from an
 earlier run.
+
+### F51 — D0 with realistic localization: wheel-inertial odometry + AMCL on a lidar-surveyed map; Mission A `covered` passes end to end; the "sim clock" fix had never reached the deploy graph
+
+2026-09-16/17, `execution_plan` §21.4 / §13.2, user decision in F50 §4. openral `feat/d0-localization`,
+SRB `feat/d0-nav-map`, research repo `feat/d0-localization`.
+
+**1. What changed in the stack.**
+- `/odom` is wheel-inertial: the bridge solves (vx, vy, ω) by least squares over the four 4WIS
+  wheels (the old solve had no lateral unknown, wrong once the base crabs), heading rate from the
+  IMU, twist covariance from the residual plus a slip floor. `/openral/pose_truth` is evaluator-only.
+- The prebuilt map is surveyed with the rover's own lidar inside SRB
+  (`assets/lunar_base/scene/srb_nav_map_survey.py`): 439 poses on every road, route, work and
+  staging pose; keep only returns `pointcloud_to_laserscan` keeps (chassis-frame 0.05–0.6 m,
+  0.1–40 m); a cell is occupied when ≥3 poses hit it. The unfiltered survey had 90 k occupied
+  cells, most of them ground arcs that move with the rover; the filtered map has 17 k, structures
+  only.
+- SLAM off; `nav2_amcl` (omni motion model) on `nav2_map_server`, selected by the deploy scene's new
+  `runtime.localization: amcl`; the bridge's static identity `map -> odom` is off
+  (`publish_map_to_odom`), since two publishers of one TF edge make tf2 flip.
+- Navigation and docking close on `map`; errors are measured against truth and split into
+  physical (`pos_err`), AMCL (`loc_err`) and wheel odometry (`odom_err`).
+
+**2. Measured (run a5, Mission A `covered`, camera-free, GPU 0 alone).**
+
+| leg | truth error to goal | AMCL error | wheel-odom error |
+|---|---|---|---|
+| Nav2 dock → PDU-2 staging (≈17 m) | 0.174 m | 0.147 m | 0.167 m |
+| dock into the work pose (`map`) | **0.090 m** | 0.078 m | 0.166 m |
+| Nav2 back to the dock (≈17 m) | **0.077 m** | 0.074 m | 0.406 m |
+
+Arm on top of that base error, target via the truth-relative stand-in: MoveIt pre-press 2.35 cm,
+servo 1.5 → 0.13 cm after hold, approach 0.96 cm, press clears PDU-2's fault (1 press), retract
+1.1 cm, READY → stow. **Verifier: `success: true`** (fault cleared, rover at the dock, arm stowed).
+The base meets the ≲0.10–0.15 m the arm needs; AMCL, not odometry, carries it (odometry drifts
+0.4 m over 34 m).
+
+**3. Defects found, in order.** (each a thing that had never run in this graph)
+1. AMCL was brought up last by the Nav2 lifecycle driver; `planner_server`'s configure blocks until
+   `map -> base` resolves, which only an active AMCL provides. AMCL first.
+2. **Every skill in `openral deploy sim` still timed out on `time.monotonic`.** `runtime_node` builds
+   its own resolver through `skill_resolver_factory` and never passed the clock; F50's fix covered
+   only the runner's internal fallback. Nav2 lost its 300 s budget after 28 s of sim time at 0.09×.
+   (F50 §5 had flagged this as unobserved.)
+3. Once on the sim clock, `move_base_to_pose` read speed between fixes with equal sim stamps (the
+   runner steps faster than `/clock` advances) as inf, never counted the base as settled, and failed
+   a dock sitting at dist 0.000 on the stall timer. The gripper's stopped window had the same
+   exposure — identical same-frame readings mid-stroke could pass for a grasp. Both sample ≥50 ms of
+   clock now; closing empty jaws now correctly reads "nothing grasped".
+4. A stalled combined turn+translate made the wheels report 0.7 m that did not happen and AMCL
+   followed it (loc_err 0.62 m). AMCL alpha1 0.05 → 0.3. Open: a rover wedged with spinning wheels
+   still defeats AMCL (Mission B b1: 4.5 m) — see 5.
+5. `terminate_on_success` auto-reset the episode the moment the rover reached the dock, teleporting it
+   (AMCL then 160° off). Deploy scenes set it false; success is observed, not acted on.
+6. Nav2's omni caps bound vx and vy separately (0.57 each); the kernel bounds the planar speed (0.6).
+   A diagonal crab at 0.606 E-stopped the graph. New `nav2_max_lateral_speed_m_s` (0.25) derives
+   vx_max = 0.512. Nav2's cruise envelope only; other callers crab at the full bound.
+7. A direct Nav2 goal to the depot cut the charging station's corner: footprint 0.2 m into the
+   station, rover wedged, odometry ran away. Mission B's check now goes via the depot loop's east
+   leg. Open: MPPI/costmap tuning near structures.
+8. Host: `openral deploy sim` SIGKILLs every openral-graph-looking process at start and exit and
+   purges Fast-DDS SHM — it killed the sibling graph on the other GPU each time a run started or
+   tore down (F50's "parallel graph works" was timing luck). `OPENRAL_SKIP_ORPHAN_REAP=1` now also
+   covers the exit sweep and the purge. And editing `run_d0.sh` under a live run killed three
+   runners mid-script (bash reads scripts incrementally); runs now execute a frozen copy and tear
+   down by a run tag.
+
+**4. F50 §5 corrected.** The ros_action wait was *not* on the sim clock in the deploy graph (defect 2),
+and the parallel GPU-1 graph did *not* work: its start/exit reaps killed the sibling (defect 8).
+
+**5. Video.** `srb/utils/video_stream.py`: `--video` under `srb agent ros` streams a viewer camera
+following the robot root into ffmpeg (fragmented MP4). Hydra `env.viewer.*` overrides did not reach
+the viewport controller; the wrapper drives it directly.

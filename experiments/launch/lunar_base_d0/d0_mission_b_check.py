@@ -33,13 +33,13 @@ run("release (open)", lambda: dispatch("release", {"mode": "open"}, deadline=20)
 run("move_joints READY", lambda: dispatch("joints", {"joint_targets": READY, "timeout_s": 20.0}, deadline=40))
 R_g = grip_frame(n_pick)
 oru = handle_pos("spare_oru")
-pre = oru + n3 * 0.18
-run("moveit pre-grasp", lambda: moveit(pre, R_g))
-run("servo pre-grasp", lambda: ee(pre, R_g))
-run("servo approach", lambda: ee(oru - n3 * 0.015, R_g, tol=0.01, max_linear_speed_m_s=0.05))
+run("moveit pre-grasp", lambda: {**moveit(oru + n3 * 0.18, R_g), "oru_moved_m": round(float(np.linalg.norm(handle_pos("spare_oru") - oru)), 3)})
+# targets re-perceived at step time: a MoveIt plan that knows only the rover nudged the ORU 5 cm and the jaws closed on
+# nothing (F51, run b5); relative perception would see the handle where it is
+run("servo pre-grasp", lambda: ee(handle_pos("spare_oru") + n3 * 0.18, R_g))
+run("servo approach", lambda: ee(handle_pos("spare_oru") - n3 * 0.015, R_g, tol=0.01, max_linear_speed_m_s=0.05))
 run("grasp", lambda: dispatch("grasp", {"mode": "close", "timeout_s": 8.0}, deadline=20))
-lifted = oru - n3 * 0.015 + np.array([0.0, 0.0, 0.10])
-run("servo lift", lambda: {**ee(lifted, R_g, tol=0.015, max_linear_speed_m_s=0.05), "oru_handle_z": round(float(handle_pos("spare_oru")[2]), 3)})
+run("servo lift", lambda: {**ee(tcp_pose()[0] + np.array([0.0, 0.0, 0.10]), R_g, tol=0.015, max_linear_speed_m_s=0.05), "oru_handle_z": round(float(handle_pos("spare_oru")[2]), 3)})
 # 8-10 carry: back out to the approach point, Nav2 to PDU-1, dock
 run("dock leave pick", lambda: {**dock(stage_pick, stage_pick_yaw, approach_m=0.8), "held": round(float(np.linalg.norm(handle_pos("spare_oru") - tcp_pose()[0])), 3)})
 run("nav road east leg (carry)", lambda: {**nav(ROAD_EAST_LEG, leg_yaw + math.pi), **base_err(ROAD_EAST_LEG, leg_yaw + math.pi),

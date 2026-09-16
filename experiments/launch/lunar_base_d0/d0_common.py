@@ -52,6 +52,7 @@ SKILL = dict(
     grasp="OpenRAL/rskill-procedural-lunar_bot-grasp",
     release="OpenRAL/rskill-procedural-lunar_bot-release",
 )
+TRACE_OBJ = os.environ.get("D0_TRACE_OBJECT")  # e.g. spare_oru: sample its handle against the TCP during every step
 STEPS = {int(s) for s in os.environ.get("D0_STEPS", "").split(",") if s.strip()} or set(range(1, 30))
 
 rclpy.init()
@@ -192,8 +193,10 @@ def dispatch(key, params, deadline=120.0, prompt=""):
     if h is None or not h.accepted:
         return dict(success=False, failure_reason="goal rejected" if h is not None else "no goal response", wall_s=round(time.time() - t, 1))
     rf = h.get_result_async()
-    track, last = [], 0.0
-    while not rf.done() and time.time() - t < deadline + 60:
+    track, last, obj, last_obj = [], 0.0, [], 0.0
+    # the hard deadline is on the sim clock like the skill's own budget: a rendering graph at 0.06x gave a 400 s
+    # Nav2 goal 28 s of sim time on the wall and abandoned a rover still driving correctly (F51, run av1)
+    while not rf.done() and sim["t"] - sim0 < deadline + 60:
         rclpy.spin_once(n, timeout_sec=0.1)
         if time.time() - last > 3.0 and truth and buf.can_transform("map", "chassis_base_link", Time()):  # sparse track: truth | map estimate
             tr = buf.lookup_transform("map", "chassis_base_link", Time()).transform
@@ -201,8 +204,20 @@ def dispatch(key, params, deadline=120.0, prompt=""):
             track.append((round(float(pt[0]), 2), round(float(pt[1]), 2), round(math.degrees(yt)),
                           round(tr.translation.x, 2), round(tr.translation.y, 2), round(math.degrees(2 * math.atan2(tr.rotation.z, tr.rotation.w)))))
             last = time.time()
+        if TRACE_OBJ and time.time() - last_obj > 0.5 and truth and buf.can_transform("srb/world", f"srb/env0/lb_{TRACE_OBJ}", Time()) \
+                and buf.can_transform("chassis_base_link", "tcp_frame", Time()):
+            tr = buf.lookup_transform("srb/world", f"srb/env0/lb_{TRACE_OBJ}", Time()).transform
+            Ro = quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w)
+            hp = np.array([tr.translation.x, tr.translation.y, tr.translation.z]) + Ro @ np.array(IX["objects"][TRACE_OBJ]["handle"]["xyz"])
+            tc = buf.lookup_transform("chassis_base_link", "tcp_frame", Time()).transform
+            pt, _, Rt = truth_pose()
+            tw = pt + Rt @ np.array([tc.translation.x, tc.translation.y, tc.translation.z])
+            obj.append((round(sim["t"] - sim0, 1), round(float(hp[2]), 3), round(float(np.linalg.norm(hp - tw)), 3), round(float(pt[0]), 2), round(float(pt[1]), 2)))
+            last_obj = time.time()
     out = dict(wall_s=round(time.time() - t, 1), sim_s=round(sim["t"] - sim0, 1),
                sim_rate=round((sim["t"] - sim0) / max(time.time() - t, 1e-6), 2))
+    if obj:
+        out["obj_track"] = obj  # (sim s, handle z, handle-TCP distance, base x, base y)
     if key in ("nav", "dock"):
         out["track"] = track
         for src in ("cmd", "srb", "odom"):
