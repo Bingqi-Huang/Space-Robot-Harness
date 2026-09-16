@@ -26,7 +26,14 @@ stage_xy, stage_yaw = staging(wp, yaw_w)
 run("nav approach", lambda: {**nav(stage_xy, stage_yaw), **base_err(stage_xy, stage_yaw)})
 run("dock", lambda: {**dock(wp, yaw_w), **base_err(wp, yaw_w)})
 # 3-7 arm: close the jaws (pressing with the closed gripper), READY, pre-press via MoveIt, approach, press, retract
-run("grasp (close jaws)", lambda: dispatch("grasp", {"mode": "close", "timeout_s": 8.0}, deadline=20))
+def close_jaws():
+    """Pressing is done with closed jaws, so the grasp skill's "fully-closed stroke -- nothing grasped" is the
+    wanted outcome here (a3's "success" was the same-frame settle bug fixed in F51)."""
+    r = dispatch("grasp", {"mode": "close", "timeout_s": 8.0}, deadline=20)
+    return {**r, "success": r["success"] or "fully-closed stroke" in r["failure_reason"]}
+
+
+run("grasp (close jaws)", close_jaws)
 run("move_joints READY", lambda: dispatch("joints", {"joint_targets": READY, "timeout_s": 20.0}, deadline=40))
 run("moveit pre-press", lambda: moveit(p_press + n3 * 0.12, R_t))
 run("servo pre-press", lambda: ee(p_press + n3 * 0.12, R_t, tol=0.015))

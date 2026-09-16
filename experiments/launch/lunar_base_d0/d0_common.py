@@ -2,9 +2,15 @@
 
 Every motion is an `ExecuteRskill` dispatch through the OpenRAL runner -> kernel -> HAL -> SRB
 (no oracle, no direct simulator commands): Nav2 navigate_to_pose, move_base_to_pose (dock into
-the work pose), move_joints / move_ee_to_pose / MoveIt eef_pose (arm), grasp / release. Object
-and robot poses come from TF (SRB truth for objects, since the semantic-query capability is
-Phase E); success is the task's own verifier (`/srb/env0/mission_state`).
+the work pose), move_joints / move_ee_to_pose / MoveIt eef_pose (arm), grasp / release. Success is
+the task's own verifier (`/srb/env0/mission_state`).
+
+Localization is realistic (F50 §4): `/odom` is wheel-inertial odometry and AMCL on the surveyed
+map authors `map -> odom`. The base is driven and docked in `map` -- the robot's own estimate. The
+simulator pose (`/openral/pose_truth`) is used for two things only: measuring errors, and the arm's
+target relative to the rover, which stands in for the relative perception of Phase E (the arm owns
+the terminal centimetres, user decision) -- objects' world poses are site knowledge, where the rover
+is relative to them is not.
 
 Importing this module connects to the graph and waits until Nav2, the rskill runner and TF are
 ready. Each `run()` step prints one `STEP` JSON line with the dispatch result and the measured
@@ -60,6 +66,8 @@ vel = dict(cmd=[], srb=[], odom=[])  # Nav2's /cmd_vel, what the HAL hands SRB, 
 n.create_subscription(Twist, "/cmd_vel", lambda m: vel["cmd"].append((round(m.linear.x, 3), round(m.angular.z, 3))), 50)
 n.create_subscription(Twist, "/srb/env0/action/cmd_vel", lambda m: vel["srb"].append((round(m.linear.x, 3), round(m.angular.z, 3))), 50)
 n.create_subscription(Odometry, "/odom", lambda m: vel["odom"].append((round(m.twist.twist.linear.x, 3), round(m.twist.twist.angular.z, 3))), 50)
+truth = {}  # latest /openral/pose_truth: evaluator-only
+n.create_subscription(Odometry, "/openral/pose_truth", lambda m: truth.update(p=m.pose.pose.position, q=m.pose.pose.orientation), 10)
 T0 = time.time()
 sim = dict(t=0.0)  # SRB's /clock: a rendering graph runs at a fraction of real time, and every skill
 n.create_subscription(Clock, "/clock", lambda m: sim.update(t=m.clock.sec + m.clock.nanosec * 1e-9), 10)  # timeout is measured on it (F50)
@@ -124,13 +132,31 @@ def grip_frame(n_xy):
     return np.stack([x, np.cross(z, x), z], axis=1)
 
 
-def robot_pose():
-    p, R = tf("odom", "chassis_base_link")
+def truth_pose():
+    """The simulator's base pose (world = map by construction). Evaluation and the Phase-E relative-perception stand-in only."""
+    rclpy.spin_once(n, timeout_sec=0.05)
+    p, q = truth["p"], truth["q"]
+    R = quat_to_mat(q.x, q.y, q.z, q.w)
+    return np.array([p.x, p.y, p.z]), math.atan2(R[1, 0], R[0, 0]), R
+
+
+def est_pose(frame="map"):
+    """The robot's own estimate of its base pose: `map` (AMCL) or `odom` (wheel-inertial)."""
+    p, R = tf(frame, "chassis_base_link")
     return p, math.atan2(R[1, 0], R[0, 0]), R
 
 
 def tcp_pose():
-    return tf("odom", "tcp_frame")
+    """TCP in the world, through the true base pose (evaluation)."""
+    pb, _, Rb = truth_pose()
+    pc, Rc = tf("chassis_base_link", "tcp_frame")
+    return pb + Rb @ pc, Rb @ Rc
+
+
+def to_rover(p_w, R_w):
+    """A world target in chassis_base_link, as relative perception would report it (Phase E stand-in)."""
+    pb, _, Rb = truth_pose()
+    return Rb.T @ (np.asarray(p_w) - pb), Rb.T @ R_w
 
 
 def handle_pos(name):
@@ -169,9 +195,11 @@ def dispatch(key, params, deadline=120.0, prompt=""):
     track, last = [], 0.0
     while not rf.done() and time.time() - t < deadline + 60:
         rclpy.spin_once(n, timeout_sec=0.1)
-        if time.time() - last > 3.0 and buf.can_transform("odom", "chassis_base_link", Time()):  # sparse base track
-            tr = buf.lookup_transform("odom", "chassis_base_link", Time()).transform
-            track.append((round(tr.translation.x, 2), round(tr.translation.y, 2), round(math.degrees(2 * math.atan2(tr.rotation.z, tr.rotation.w)))))
+        if time.time() - last > 3.0 and truth and buf.can_transform("map", "chassis_base_link", Time()):  # sparse track: truth | map estimate
+            tr = buf.lookup_transform("map", "chassis_base_link", Time()).transform
+            pt, yt, _ = truth_pose()
+            track.append((round(float(pt[0]), 2), round(float(pt[1]), 2), round(math.degrees(yt)),
+                          round(tr.translation.x, 2), round(tr.translation.y, 2), round(math.degrees(2 * math.atan2(tr.rotation.z, tr.rotation.w)))))
             last = time.time()
     out = dict(wall_s=round(time.time() - t, 1), sim_s=round(sim["t"] - sim0, 1),
                sim_rate=round((sim["t"] - sim0) / max(time.time() - t, 1e-6), 2))
@@ -190,21 +218,10 @@ def dispatch(key, params, deadline=120.0, prompt=""):
 
 
 def nav(xy, yaw):
-    """Drive to a world (odom) pose with Nav2.
-
-    The site's coordinates are world coordinates, but Nav2 plans in `map` -- and slam_toolbox's map
-    drifts from the world as the rover crosses the base (1.5 m over 18 m, research repo F50). So the
-    goal is transformed into `map` at dispatch time: Nav2 then drives to the physical place, not to
-    where the map thought it was when the mission was written.
-    """
-    pm, Rm = tf("map", "odom")
-    g = pm + Rm @ np.array([float(xy[0]), float(xy[1]), 0.0])
-    yaw_m = yaw + math.atan2(Rm[1, 0], Rm[0, 0])
-    res = dispatch("nav", {"pose": {"header": {"frame_id": "map"}, "pose": {
-        "position": {"x": float(g[0]), "y": float(g[1]), "z": 0.0},
-        "orientation": {"x": 0.0, "y": 0.0, "z": math.sin(yaw_m / 2), "w": math.cos(yaw_m / 2)}}}}, deadline=400)
-    res["goal_map"] = [round(float(g[0]), 3), round(float(g[1]), 3), round(math.degrees(yaw_m))]
-    return res
+    """Drive to a site pose with Nav2. The surveyed map is in site coordinates, so the goal goes to `map` as is."""
+    return dispatch("nav", {"pose": {"header": {"frame_id": "map"}, "pose": {
+        "position": {"x": float(xy[0]), "y": float(xy[1]), "z": 0.0},
+        "orientation": {"x": 0.0, "y": 0.0, "z": math.sin(yaw / 2), "w": math.cos(yaw / 2)}}}}, deadline=400)
 
 
 def staging(xy, yaw, approach_m=1.5):
@@ -216,19 +233,18 @@ def staging(xy, yaw, approach_m=1.5):
 
 
 def dock(xy, yaw, **kw):
-    """Close the last metre on the world (odom) pose. The kernel bounds the base at 0.5 rad/s and the
+    """Close the last metre on the site pose, in `map` (AMCL). The kernel bounds the base at 0.5 rad/s and the
     4WIS chassis realises ~2/3 of a commanded in-place turn (F43), so a 180 deg turn-in-place needs
     ~15 s -- hence the wide stall/overall timeouts."""
-    params = dict(frame_id="odom", position=[float(xy[0]), float(xy[1])], yaw=float(yaw),
+    params = dict(frame_id="map", position=[float(xy[0]), float(xy[1])], yaw=float(yaw),
                   max_angular_speed_rad_s=0.45, stall_timeout_s=20.0, timeout_s=180.0)
     params.update(kw)
     return dispatch("dock", params, deadline=240)
 
 
 def ee(p_w, R_w, tol=0.015, timeout=25.0, hold_s=3.0, **kw):
-    """Servo the TCP to a world (odom) pose via move_ee_to_pose; target expressed in chassis_base_link."""
-    pb, _, Rb = robot_pose()
-    p_c, R_c = Rb.T @ (np.asarray(p_w) - pb), Rb.T @ R_w
+    """Servo the TCP to a world pose via move_ee_to_pose; target expressed in chassis_base_link (to_rover)."""
+    p_c, R_c = to_rover(p_w, R_w)
     res = dispatch("ee", dict(frame_id="chassis_base_link", position=p_c.tolist(), quaternion_xyzw=mat_to_quat(R_c),
                               pos_tolerance_m=tol, timeout_s=timeout, **kw), deadline=timeout + 20)
     p1, _ = tcp_pose()
@@ -240,14 +256,13 @@ def ee(p_w, R_w, tol=0.015, timeout=25.0, hold_s=3.0, **kw):
 
 
 def moveit(p_w, R_w, tol=0.01):
-    """Plan with MoveIt to a world (odom) TCP pose.
+    """Plan with MoveIt to a world TCP pose.
 
     The LunarBot self-model (`rm_75_config/config/lunarbot_body.xacro`) makes `chassis_base_link` the
     planning frame and carries `tcp_frame` as a link, so the goal is the TCP pose in the rover frame --
     no TF re-expression and no hand-applied tool offset.
     """
-    pb, _, Rb = robot_pose()
-    p_c, R_c = Rb.T @ (np.asarray(p_w) - pb), Rb.T @ R_w
+    p_c, R_c = to_rover(p_w, R_w)
     # posture preference: keep the shoulder on the working branch (joint1 near 0) and the wrist unspun
     res = dispatch("moveit", {"pose": {"frame_id": "chassis_base_link", "link_name": "tcp_frame", "position": p_c.tolist(), "orientation": mat_to_quat(R_c),
                                        "quaternion_order": "xyzw", "position_tolerance_m": tol, "orientation_tolerance_rad": 0.05},
@@ -260,17 +275,23 @@ def moveit(p_w, R_w, tol=0.01):
     return res
 
 
+def _yaw_deg(a, b):
+    return round(math.degrees((a - b + math.pi) % (2 * math.pi) - math.pi), 1)
+
+
 def base_err(xy, yaw):
-    """Error of the base against (xy, yaw) in odom (SRB truth) and, for Nav2 legs, in the SLAM map frame it plans in."""
-    p, y, _ = robot_pose()
-    out = dict(pos_err_m=round(float(np.linalg.norm(p[:2] - np.asarray(xy))), 3), yaw_err_deg=round(math.degrees((y - yaw + math.pi) % (2 * math.pi) - math.pi), 1), at=[round(float(p[0]), 3), round(float(p[1]), 3)])
-    try:
-        pm, Rm = tf("map", "chassis_base_link", timeout=2.0)
-        ym = math.atan2(Rm[1, 0], Rm[0, 0])
-        out.update(map_pos_err_m=round(float(np.linalg.norm(pm[:2] - np.asarray(xy))), 3), map_yaw_err_deg=round(math.degrees((ym - yaw + math.pi) % (2 * math.pi) - math.pi), 1), map_at=[round(float(pm[0]), 3), round(float(pm[1]), 3)])
-    except RuntimeError:
-        pass
-    return out
+    """Where the base is against (xy, yaw): physically (pos_err, truth), in the robot's belief (map_pos_err, AMCL),
+    and how wrong each estimate is (loc_err: AMCL vs truth; odom_err: wheel-inertial odometry vs truth -- odom
+    starts at the dock, the map origin, so the two frames coincide at t=0)."""
+    pt, yt, _ = truth_pose()
+    pm, ym, _ = est_pose("map")
+    po, yo, _ = est_pose("odom")
+    goal = np.asarray(xy, float)
+    return dict(pos_err_m=round(float(np.linalg.norm(pt[:2] - goal)), 3), yaw_err_deg=_yaw_deg(yt, yaw),
+                map_pos_err_m=round(float(np.linalg.norm(pm[:2] - goal)), 3), map_yaw_err_deg=_yaw_deg(ym, yaw),
+                loc_err_m=round(float(np.linalg.norm(pm[:2] - pt[:2])), 3), loc_yaw_err_deg=_yaw_deg(ym, yt),
+                odom_err_m=round(float(np.linalg.norm(po[:2] - pt[:2])), 3), odom_yaw_err_deg=_yaw_deg(yo, yt),
+                at=[round(float(pt[0]), 3), round(float(pt[1]), 3)], map_at=[round(float(pm[0]), 3), round(float(pm[1]), 3)])
 
 
 # ---- readiness ---------------------------------------------------------------------------------------------------
@@ -294,6 +315,8 @@ else:
 log("READY", after_s=round(time.time() - t), bt_navigator="active")
 tf("map", "chassis_base_link", timeout=600)
 tf("odom", "tcp_frame", timeout=60)
+while "p" not in truth:
+    spin(0.5)
 try:
     tf("chassis_base_link", "base_link", timeout=20)
     log("TF", arm_root="ok")

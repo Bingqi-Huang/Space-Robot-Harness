@@ -9,12 +9,42 @@
 # around Isaac Sim (F46 §8). (no `set -u`: ROS setup.bash reads unset variables)
 LOG=${1:?log dir}
 mkdir -p "$LOG"
-HERE=$(cd "$(dirname "$0")" && pwd)
+# bash reads a script as it runs: editing this file under a live run made three runners die mid-run on a syntax
+# error and skip their teardown (research repo F51). Every run executes its own frozen copy.
+if [ -z "$D0_HERE" ]; then
+  D0_HERE=$(cd "$(dirname "$0")" && pwd) && export D0_HERE
+  cp "$0" "$LOG/run_d0.sh" && exec bash "$LOG/run_d0.sh" "$@"
+fi
+HERE=$D0_HERE
 cd "$HERE/../../../openral"
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=${D0_DOMAIN:-77} ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  # D0_DOMAIN=78 for a second graph on GPU 1
-setsid .venv/bin/openral deploy sim --config "${D0_SCENE:-scenes/deploy/srb_lunar_base_mission_b.yaml}" --no-enable-octomap --no-object-detector > "$LOG/deploy.log" 2>&1 &
+# Two graphs share this host (GPU 0 / GPU 1): the deploy CLI's argv-signature reaps at start and exit, and its
+# Fast-DDS SHM purge, would kill or silence the sibling (research repo F51). This script's own teardown is by run tag.
+export OPENRAL_SKIP_ORPHAN_REAP=1
+SCENE=${D0_SCENE:-scenes/deploy/srb_lunar_base_mission_b.yaml}
+if [ -n "$D0_VIDEO$D0_GPU" ]; then
+  # A copy of the scene, adjusted for this run:
+  #   D0_VIDEO=<file.mp4>  SRB streams a robot-following viewer camera to that file (srb/utils/video_stream.py);
+  #                        rendering costs wall time, so only for runs already known to pass.
+  #   D0_GPU=1             SRB on the second GPU (a parallel graph; pair with D0_DOMAIN=78).
+  .venv/bin/python - "$SCENE" "$LOG/scene_run.yaml" "$D0_VIDEO" "$D0_GPU" <<'PY'
+import sys, yaml
+src, dst, video, gpu = sys.argv[1:]
+d = yaml.safe_load(open(src))
+argv = d["simulator"]["argv"]
+if video:
+    argv.insert(argv.index("--env"), "--video")
+    d["simulator"].setdefault("env_set", {}).update(SRB_VIDEO_PATH=video, SRB_VIDEO_FOLLOW="robot")
+    d["simulator"]["boot_timeout_s"] = 1800.0
+if gpu:
+    argv[argv.index("--env"):argv.index("--env")] = ["--kit_args", f"--/renderer/activeGpu={gpu} --/physics/cudaDevice={gpu}"]
+yaml.safe_dump(d, open(dst, "w"), sort_keys=False)
+PY
+  SCENE="$LOG/scene_run.yaml"
+fi
+D0_RUN_TAG="$LOG" setsid .venv/bin/openral deploy sim --config "$SCENE" --no-enable-octomap --no-object-detector > "$LOG/deploy.log" 2>&1 &
 DEPLOY=$!
 echo "DEPLOY_PID $DEPLOY sid $(ps -o sid= -p $DEPLOY)" > "$LOG/deploy.pid"
 sleep 30
@@ -24,14 +54,15 @@ LAUNCH=$(pgrep -P "$DEPLOY" | head -1)
 echo "LAUNCH_PID $LAUNCH sid $(ps -o sid= -p "$LAUNCH")" >> "$LOG/deploy.pid"
 timeout 3000 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
 echo "CHECK_EXIT $?" >> "$LOG/check.log"
-# every descendant of the deploy CLI, collected while the tree is intact: the CLI, its `ros2 launch`
-# and SRB's Isaac process each sit in their own session, so neither a group nor a session kill reaches
-# the whole tree (run 8's Isaac outlived its teardown by 10 min). Never kill by name pattern: another
-# graph may be running on the other GPU.
-descendants() { for c in $(ps -o pid= --ppid "$1"); do echo "$c"; descendants "$c"; done; }
-TREE=$(descendants "$DEPLOY")
+# Teardown by run tag: the CLI, its `ros2 launch` and SRB's Isaac process each sit in their own session, and
+# `setsid` from a group leader forks, so neither a group kill nor a walk of $DEPLOY's children reaches the whole
+# graph (run a3 left Isaac alive). Every process of the deploy carries D0_RUN_TAG=$LOG in its environment (set on that command only, so
+# this script and its subshells do not); a graph
+# on the other GPU carries its own. Never kill by name pattern.
+tagged() { for e in /proc/[0-9]*/environ; do grep -qzx "D0_RUN_TAG=$LOG" "$e" 2>/dev/null && p=${e#/proc/} && echo "${p%/environ}"; done; }
+TREE=$(tagged)
 echo "TREE $(echo $TREE | wc -w) pids" >> "$LOG/deploy.pid"
-kill -INT -- -$DEPLOY; sleep 45; kill -TERM -- -$DEPLOY 2>/dev/null; sleep 15
-kill -9 $DEPLOY $TREE 2>/dev/null; sleep 2
-echo "LEFT $(for p in $TREE; do [ -d /proc/$p ] && echo $p; done | wc -l) of the tree still alive" >> "$LOG/deploy.pid"
+kill -INT $TREE 2>/dev/null; sleep 45; kill -TERM $(tagged) 2>/dev/null; sleep 15
+kill -9 $(tagged) 2>/dev/null; sleep 2
+echo "LEFT $(tagged | wc -l) tagged processes still alive" >> "$LOG/deploy.pid"
 echo done > "$LOG/done"
