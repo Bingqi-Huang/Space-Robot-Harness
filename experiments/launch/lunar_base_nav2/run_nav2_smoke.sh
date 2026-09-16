@@ -17,6 +17,8 @@ cd "$HERE/../../../openral"
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
+# reasoner LLM gateway; NAV2_NO_REASONER=1 skips it (Nav2 does not need the reasoner)
+[ -n "${NAV2_NO_REASONER:-}" ] || source "$HERE/../reasoner_env.sh"
 setsid .venv/bin/openral deploy sim --config "${NAV2_SCENE:-scenes/deploy/srb_lunar_base.yaml}" --no-enable-octomap --no-object-detector > "$LOG/deploy.log" 2>&1 &
 DEPLOY=$!
 sleep 30

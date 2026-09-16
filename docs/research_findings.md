@@ -2221,3 +2221,70 @@ only showed up once the previous one was fixed, on live runs of the full graph
     `lifecycle_autostart` for `/openral_reasoner` exits after 300 s.
   - Isaac warns "A prim already exists at /World/envs/env_0/scenery".
   - Neither affects Nav2, the HAL or the kernel.
+
+### F49 — The EG2 really clamps now (PhysX mimic joints), the deck transfer does not, and the oracle has been taken past its purpose
+
+Session of 2026-09-16, after C6. Two engineering results, one process
+correction. The process correction is the important part.
+
+1. **The EG2 gripper clamps with both pads, by mechanism, not by tuning.**
+   F46 recorded that only two of the six gripper joints moved and that a
+   pinch on a 1 kg spare always slipped. Root cause: the six EG2 joints are
+   an unconstrained kinematic tree, each with its own PD drive, so under
+   load one side closed fully while the other was levered open — the two
+   pads were never mechanically coupled the way the real EG2-4C2's linkage
+   couples them. Fix: `PhysxMimicJointAPI` on `eg2_joint2..6` referencing
+   `eg2_joint1` (constraint `q_j + gearing·q_ref + offset = 0`, gearing ±1),
+   authored by `assets/lunar_base/process/add_gripper_mimic.py` into
+   `lunarbot.usdc`; the SRB actuator now drives all six joints with
+   `effort_limit` 4.0 N·m (~65 N at the pads, inside the EG2-4C2 band —
+   0.9 N·m ≈ 15 N could not hold 1 kg), and `robots/lunar_bot/robot.yaml`
+   carries the same limit. Measured: all six joints at 0.296 rad, every
+   torque saturated, the 1 kg ORU held. SRB 8ccf1db, openral 3ef3220.
+2. **The payload interface had to give form closure, not friction.** A
+   round bar rolls out of flat pads; a flat flange jams in the four-bar
+   linkage at 50 mm depth and squeezes out at 28 mm. What works is a
+   **T-handle lifting eye**: 12 mm neck across the jaws, 55 mm free height,
+   90×45×14 mm head — the jaws hold the neck and the head rests on them, so
+   a lift is held by geometry. `blender_process.py` `top_handle`.
+3. **Deck transfer: nine runs, not working, stopped.** The user asked for
+   the payload to ride on the rover deck instead of hanging from the arm.
+   Each failure was root-caused from the traces rather than guessed
+   (joint-space jump threw the payload 1.9 m → joint-rate limiting; lifting
+   the handle to 1.39 m drove the payload into the arm's own links, z
+   0.92–1.29 → bounded transfer height; swinging at handle z 1.05 put the
+   payload base below the deck top and scraped the chassis corner → tuck to
+   radius 0.40 then arc at seat height). The last run reached deck height
+   still clamped and dropped the payload during the swing. **Stopped there.**
+   The user's own message had already given the cheaper option — "运输过程中
+   一直让机械臂夹持着把手最好", carry it clamped — and the mission only
+   requires transport, not a deck.
+4. **Process correction: the oracle was taken past its purpose.** Per
+   `execution_plan` §13.1 (validate mission success conditions independently
+   of all methods) and §13.2 (a valid solution exists using only capabilities
+   present before freeze), the scripted oracle is a required instrument, and
+   C4/C5 discharged the first of those: six cases, verifier success, three
+   real verifier defects found. It does **not** discharge the second — F45
+   said so at the time: the oracle drives with pure pursuit on hand-set
+   waypoints and commands SRB actions directly, so it proves the *embodiment*
+   can do the mission, not that the *shared capability set* can. Continuing
+   to improve the oracle's manipulation realism cannot change that sentence.
+   Two facts were in the record and went unused for a day: the five
+   procedural manipulation rSkills are built and live-verified (F30) and
+   MoveIt for the RM-75 works through the kernel (F36, chunk 8, success,
+   0.03 rad). The next physical work belongs on that path, not in the oracle.
+5. **The real risk to Experiment I**, now stated plainly: all three methods
+   share one capability stack, and its measured precision does not obviously
+   meet the missions' geometry — Nav2 leaves ~0.8 m of along-track overshoot
+   (F47) against work poses with 0.198 m clearance, and `move_ee_to_pose`
+   reaches 1.3–2.5 cm and then drifts back out because SRB's `arm_ik` term
+   re-syncs every step with no holding stiffness (F30). If the shared stack
+   cannot execute Mission A/B, every method fails for the same physical
+   reason and the experiment measures nothing. Settling this is the next
+   task, and it is the one the oracle work was displacing.
+6. **Isaac Sim ships a usable motion planner** (`isaacsim.robot_motion.lula`:
+   `RRT`, `RmpFlow`, `LulaKinematicsSolver`, `LulaCSpaceTrajectoryGenerator`;
+   the `lula` C++ API takes obstacles directly, so no USD prims are needed).
+   cuRobo is not installed. This was looked up while considering an in-sim
+   planner for the oracle; it is recorded because it may be useful later, but
+   MoveIt — already integrated — is the planner for the capability path.

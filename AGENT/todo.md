@@ -61,8 +61,37 @@ MoveIt (`move_group.launch.py` still standalone), mission verifier, run manifest
 - [x] C6 wrap-up (F47–F48): settle re-check PASS; Nav2 drives LunarBot on the lunar
       base through `openral deploy sim`; route-block variant detoured; `panel_remount_v2`
       retired. Open (tuning): ~0.8 m along-track Nav2 overshoot.
-- Carried over, still open: mount/semantic query capability for perception
-  (Phase E); full reasoner run through held-out cases gated on F37.
+- [x] Gripper mechanism (F49): PhysX mimic joints couple all six EG2 joints, both pads
+      clamp together, 4.0 N·m holds 1 kg; payloads got a T-handle lifting eye.
+- [ ] Mission B transport — **one bounded attempt**: pinch grasp + carry clamped (no rover
+      deck; the deck path failed nine times, F49). Fall back to SRB `83f5636` if it doesn't
+      land in one pass. Then stop oracle work.
+- Carried over, still open: mount/semantic query capability for perception (Phase E).
+
+**Oracle status (read before touching it):** C4/C5 discharged `execution_plan` §13.1
+(mission conditions validated independently of any method). It does **not** discharge §13.2
+(a solution using only the shared capability set) because it bypasses OpenRAL — that is what
+D0 below is for. Improving the oracle's realism cannot change this.
+
+---
+
+## Phase D0: does the shared capability stack survive Mission A/B? — NEXT, blocks everything
+
+`execution_plan` §21.4 + §13.2. All three methods share one capability stack (§5.3); its measured
+precision has never been checked against the missions' geometry, and if it fails, every method
+fails for the same physical reason and Experiment I measures nothing.
+
+- [ ] Drive Mission A `covered` through the real graph: `openral deploy sim --config
+      scenes/deploy/srb_lunar_base.yaml`, env `lunar_base_mission_a_visual`,
+      `env.scenario=covered`, using Nav2 + `moveit-eef-pose` / procedural rSkills through
+      the kernel. Verify with the task's own `mission_state()`.
+- [ ] Record the gaps that appear: Nav2 ~0.8 m overshoot vs 0.198 m work-pose clearance;
+      `move_ee_to_pose` 1.3–2.5 cm with drift (SRB `arm_ik` has no holding stiffness, F30);
+      `moveit-eef-pose` never run on the lunar base; `grasp` never driven from an rSkill here.
+- [ ] Only then: the common capability-server boundary callable identically by Ours and PLEXIL.
+
+Already in tree and unexercised live: MoveIt inside the deploy graph, gripper effort 4.0 N·m,
+SIGTERM handlers on two Nav2 helpers (openral `3ef3220`).
 
 ---
 
