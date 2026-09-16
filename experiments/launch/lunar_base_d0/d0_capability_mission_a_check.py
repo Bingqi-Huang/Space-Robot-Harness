@@ -29,8 +29,8 @@ def cap(name, deadline=0.0, **args):
                 evidence=json.loads(r.evidence_json or "{}"), wall_s=round(time.time() - t, 1), sim_s=round(sim["t"] - sim0, 1))
 
 
-def query(name, **args):
-    f = query_client.call_async(QueryCapability.Request(query=name, args_json=json.dumps(args)))
+def query(query_name, **args):
+    f = query_client.call_async(QueryCapability.Request(query=query_name, args_json=json.dumps(args)))
     rclpy.spin_until_future_complete(n, f, timeout_sec=10)
     r = f.result()
     assert r.success, r.failure_reason

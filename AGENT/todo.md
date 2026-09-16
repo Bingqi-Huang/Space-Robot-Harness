@@ -14,7 +14,7 @@ map (SLAM off), navigation and docking in `map`, errors against `/openral/pose_t
 
 - [x] Localization: base 0.02–0.09 m from work poses (truth), AMCL 0.01–0.15 m, odom drift 0.4 m / 34 m.
 - [x] **Mission A `covered` end to end** (a5, av2): verifier success.
-- [x] **Mission B `covered` end to end** (b7, bv1): ORU clamped (jaw 0.17 rad) the whole carry, on PDU-1's
+- [x] **Mission B `covered` end to end** (b7, bv2): ORU clamped (jaw 0.17 rad) the whole carry, on PDU-1's
       shelf upright, rover docked, verifier success.
 - [x] Held-out `route_block`: Nav2 detours round the unmapped rover, AMCL 0.074 m.
 - [x] Videos (success runs av2, bv2): `artifacts/videos/mission_{a,b}_covered.mp4`.
