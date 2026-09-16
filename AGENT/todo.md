@@ -17,7 +17,9 @@ map (SLAM off), navigation and docking in `map`, errors against `/openral/pose_t
 - [x] **Mission B `covered` end to end** (b7, bv1): ORU clamped (jaw 0.17 rad) the whole carry, on PDU-1's
       shelf upright, rover docked, verifier success.
 - [x] Held-out `route_block`: Nav2 detours round the unmapped rover, AMCL 0.074 m.
-- [x] Videos: `artifacts/videos/mission_{a,b}_covered.mp4`.
+- [x] Videos (success runs av2, bv2): `artifacts/videos/mission_{a,b}_covered.mp4`.
+- [ ] Payload sag while carrying: handle drops 4.5 cm over the Nav2 carry at 0.2× (b7) but 15 cm in a rendering run
+      at 0.06× (bv1, "servo over shelf" stalled; bv2 passed). Arm zero-twist hold under 1 kg — isolate render vs rate.
 - [ ] **World-aware arm planning** (blocks `heldout_cover_obstruction` and makes every grasp fragile): MoveIt
       knows only the rover; plans nudged the ORU 5 cm (b5) and knocked the service cover 0.21 m (ac1); the servo
       alone cannot reach the cover from READY (ac4). Needs perceived collision objects / octomap in the planning
@@ -37,19 +39,21 @@ evaluator-only state reaching a method (§13.2) and must be replaced before any 
 
 ---
 
-## §21.4 common capability boundary — IN PROGRESS
+## §21.4 common capability boundary — DONE (F51 §5)
 
 - [x] `space_harness_msgs` (ExecuteCapability action, QueryCapability service), `openral_ext/capability_server`
       (contracts.yaml: 8 effects, 4 queries; one call → one ExecuteRskill; off-contract refused; verifier never
       crosses). Offline refusals verified.
-- [ ] Live proof: Mission A `covered` through the boundary only matches the direct run (cm2).
+- [x] Live proof (cm2): Mission A `covered` through the boundary only — verifier success, same as direct (a5).
 - [ ] Mission B through the boundary.
 - [ ] Ours' tool palette rendered from contracts.yaml (same names/args).
 
 ## After §21.4 (execution_plan §21, in order)
 
-- [ ] §21.5 PLEXIL Release 6 (pin, build, examples) + LunarBot adapter over the boundary (Commands = effects,
-      Lookups = queries); one covered Mission A instance end to end.
+- [x] §21.5 start: PLEXIL 6.1.3 pinned and built (`docs/baselines/plexil.md`), SafeDrive example runs;
+      `ros/plexil_capability_adapter` skeleton: ExecuteCapability command path verified through universalExec.
+- [ ] §21.5: fix the QueryCapability lookup stall; typed Commands per capability; Mission A covered plan library;
+      one covered Mission A instance end to end through PLEXIL on the live graph.
 - [ ] §21.6 EUROPA → PLEXIL bridge; replanning inside the encoded domain on the same case.
 - [ ] §21.7 scenario manifests, evaluator-only annotations, freeze manifest, closed-capability validator.
 - [ ] §21.8 thin `space_runtime` for Mission A (facts/evidence, context, guard, playbook audit).

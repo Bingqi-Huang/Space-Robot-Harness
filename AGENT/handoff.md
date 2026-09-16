@@ -2,7 +2,7 @@
 
 State as of 2026-09-17 (early morning). **Phase D0's core has passed: Mission A and Mission B `covered` run end
 to end through the shared capability stack with realistic localization. §21.4's common capability boundary is
-built and being proven live.** Findings: `docs/research_findings.md` F1–F51 — **read F51 first**. Tasks: `todo.md`.
+proven live (Mission A through the boundary = direct run). PLEXIL 6.1.3 is built with an adapter skeleton.** Findings: `docs/research_findings.md` F1–F51 — **read F51 first**. Tasks: `todo.md`.
 
 ## What D0 established (F51)
 
@@ -33,7 +33,9 @@ built and being proven live.** Findings: `docs/research_findings.md` F1–F51 �
   `/space/capability/query` (QueryCapability). One call → one ExecuteRskill; off-contract → failure_kind 20;
   evidence is robot-observable only (verifier stays evaluator-side).
 - Proof: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_capability_mission_a_check.py` (Mission A through the boundary only).
-- Next: PLEXIL Release 6 adapter maps Commands → effects, Lookups → queries on exactly this interface.
+- PLEXIL: `docs/baselines/plexil.md` (6.1.3, `~/Programs/plexil`; ant and gperf under `~/Programs`, no apt).
+  `ros/plexil_capability_adapter` → `libCapabilityAdapter.so`: Command `ExecuteCapability(capability, args_json)`,
+  Lookups `QueryCapability`, `LastCapabilityResult`. Command path verified via universalExec; lookup stalls (next).
 
 ## How to run (don't rediscover)
 
