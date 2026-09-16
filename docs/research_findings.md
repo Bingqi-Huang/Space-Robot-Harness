@@ -2288,3 +2288,156 @@ correction. The process correction is the important part.
    cuRobo is not installed. This was looked up while considering an in-sim
    planner for the oracle; it is recorded because it may be useful later, but
    MoveIt — already integrated — is the planner for the capability path.
+
+### F50 — Phase D0: the shared capability stack on the real graph. Eleven defects, two physics measurements (wheel slip, sim-vs-wall time), and what the four capabilities actually deliver
+
+2026-09-16, `execution_plan` §21.4 / §13.2. Ten live runs of Mission A/B through
+`openral deploy sim` (`experiments/launch/lunar_base_d0/`: `run_d0.sh`, `d0_common.py`,
+`d0_mission_{a,b}_check.py`), plus three simulator-only measurements
+(`assets/lunar_base/scene/srb_{brake,turn,traction}_check.py`). Every motion is an
+`ExecuteRskill` dispatch through runner → kernel → HAL → SRB; the oracle is not involved.
+
+**1. Two physical measurements that govern every number below.**
+
+*Braking* (`srb_brake_check.py`, 208 kg rover): a step to zero from 0.55 m/s slides
+0.49 m, body speed decaying with τ ≈ 1.0 s while the wheel rims are already slower —
+traction-limited, ≈0.5 m/s² at best. A 0.3 m/s² command ramp still needs 1.12 m.
+
+*Slip* (`srb_traction_check.py`, three sites, 6 s holds). The user's prediction, confirmed:
+the no-slip 4WIS kinematics is not what the vehicle does.
+
+| manoeuvre | commanded | achieved | rim speed → slip | peak wheel torque |
+|---|---|---|---|---|
+| straight | 0.50 m/s | 0.40–0.41 (81 %) | 0.50 → 0.40, **18–19 %** | 5–6 N·m |
+| straight | 0.15 m/s | 0.114–0.117 (76–78 %) | 0.17 → 0.12, **25–32 %** | 3.4–3.9 N·m |
+| reverse | 0.30 m/s | 0.18–0.25 (61–83 %) | **16–38 %** | 4 N·m |
+| **in-place turn** | 0.45 rad/s | 0.24 (**54 %**) | pure lateral scrub | **19–24 N·m** |
+| **in-place turn** | 0.20 rad/s | 0.084 (**42 %**) | pure lateral scrub | **14–16 N·m** |
+
+Low speed slips *more* (static friction unbroken), and an in-place turn — every wheel
+scrubbing sideways — costs 4× the drive torque to realise half the commanded rate. Road and
+work-pose sites differ little, so this is the manoeuvre, not the terrain. Design consequences:
+never plan a manoeuvre that needs an in-place turn in a tight spot, and never trust
+open-loop integration of commanded velocity.
+
+*Sim vs wall clock.* A rendering deploy graph (two 640×480 cameras + lidar + SLAM + Nav2 +
+MoveIt) advances SRB at a fraction of real time. Every rSkill timeout, the runner's execution
+budget and the MoveIt replay pacing used `time.monotonic()`, so they fired while the robot was
+still moving correctly: the docking servo "achieved" 9 % of a commanded 0.45 rad/s measured on
+the wall, against 54 % measured in sim time. Fixed: the runner injects a `clock` callable
+(`self.get_clock()`, i.e. the sim clock under `use_sim_time`) into every procedural skill and
+into `ROSActionRskill`, and its own `_deadline_lapsed` uses it too.
+
+**2. Defects found live, each one a thing that had never run in this graph.**
+
+1. `deploy_e2e.launch.py` dies at launch with `No module named 'lxml'` — MoveIt's
+   `moveit_configs_utils` → `urdf_parser_py` needs it and the venv had it only transitively.
+   (openral `pyproject.toml`.) MoveIt had never been launched *inside* the graph before (F49).
+2. `lunar_base_mission_{a,b}`'s `mission_brief` was a `@property`; Isaac Lab's `configclass`
+   copies every attribute on init, so the `_visual` task variants could not be constructed at
+   all ("property has no setter"). The mission tasks had only ever been run as the non-visual
+   variant by the oracle.
+3. Nav2's `behavior_server` Spin recovery publishes straight to `/cmd_vel` at the shared file's
+   1.0 rad/s, over the kernel's 0.5 rad/s envelope → `safety.envelope_violation` → E-stop →
+   the whole graph stops accepting commands. The first plan failure killed the run.
+   `nav2_param_overrides()` now derives `max_rotational_vel`/`min_rotational_vel`/
+   `rotational_acc_lim` from the robot's declared caps.
+4. The shared 20 m rolling global costmap does not contain a site 14 m away: "the goal is off
+   the global costmap. Planning will always fail." → `nav2_global_costmap_size_m: 60`.
+5. `RewrittenYaml` rewrites *every* key of a name anywhere in the file, so a global-costmap
+   `width` also resized the local costmap. Added `_apply_path_overrides` (dotted
+   `node.node.ros__parameters.key` paths) — and it must preserve the base file's declared type,
+   or `rclcpp` refuses (`parameter 'height' … integer … setting it to double is not allowed`).
+6. The local costmap's `VoxelLayer` column started at `origin_z: 0.0`; on a real DEM the base
+   frame dips below 0 and every scan was rejected ("Sensor origin … out of map bounds … cannot
+   raytrace"), so the local costmap never formed. LunarBot now has its own Nav2 base file
+   (`config/nav2_lunar_bot.yaml`, selected by `robot.yaml`'s new `nav2_params_file`) with the
+   column starting at −0.5 m; the shared panda file is untouched.
+7. **Teardown left nodes alive across runs.** `openral deploy sim` `setsid()`s its `ros2 launch`
+   child, so neither the process-group kill nor a session kill reaches the tree; a stale
+   `runtime_node` and `move_group` from an earlier run then shared the ROS domain with the new
+   one, and every `ExecuteRskill` goal went to the dead server: three dispatches, 90 s each, no
+   response, rover motionless. `run_d0.sh` now walks the descendant tree before the kill and
+   reports `LEFT 0 of the tree still alive`; the check script opens with a functional dispatch
+   probe rather than `server_is_ready()`.
+8. **MoveIt planned the arm in isolation.** `rm_75_config` is the RM-75 alone: `rm_group`
+   rooted at the arm's `base_link`, nothing else in the world, so a "collision-free" plan could
+   sweep the deck, the wheels or the gripper through the rover, and a goal had to be
+   re-expressed into the arm's frame by hand. Added `config/lunarbot_body.xacro`: the chassis
+   deck and wheel boxes from `lunarbot.usdc`'s own collision bounds, the EG2 box, `tcp_frame`,
+   and `chassis_base_link` as the URDF root (hence MoveIt's planning frame). Offline
+   (`moveit_selfmodel_check.py`, standalone `move_group`): zero/stow/READY valid, pre-grasp and
+   press poses plan in ~0.01 s, and a goal over the rover's own deck is correctly refused
+   ("Unable to sample any valid states").
+9. The same model logged one ERROR *per unknown joint per `/joint_states` message* — 14 joints
+   × 30 Hz ≈ 600 lines/s into the deploy log. The self-model now carries the 4 steering, 4 wheel
+   and 6 gripper joints as geometry-free passive joints.
+10. **The MoveIt replay outran the arm.** `ROSActionRskill` emitted all 41 waypoints of a 6 s
+    plan in 1.4 s and declared success; the arm was 0.6 m away. It now paces waypoints by their
+    `time_from_start` (on the sim clock), holds when the measured joints lag by >0.05 rad, and
+    only reports success once the *last* waypoint is reached. Offline against a first-order arm:
+    legacy "succeeded" 0.27 rad short at τ=0.8 s; paced finishes within 0.049 rad.
+11. **SRB's arm twist mode had no holding stiffness and realised 1.5–4 % of a command.**
+    `SwitchableArmAction` recomputed its IK target from the *measured* pose every step
+    (relative mode), so the drives only ever tracked a fraction of one 20 ms delta and a
+    converged pose drifted straight back out (F30's open tuning gap). Rewritten as a Cartesian
+    velocity controller with a persistent desired pose: the twist is integrated once per control
+    step onto a desired pose leashed to the measured one, and absolute-mode differential IK
+    drives to it — so a zero twist *holds*. Scales fixed to physical units (`ik_scale` 0.01 m,
+    `ik_scale_angular` 0.012 rad per raw unit per step, matching the HAL's calibration).
+
+**3. Where the four capabilities stand (run a8, Mission A `covered`, camera-free scene).**
+
+| step | result | measured |
+|---|---|---|
+| Nav2 to the docking staging pose | success | 0.10–0.39 m in `map`; **1.0–2.3 m from truth** (SLAM drift, see 4) |
+| `move_base_to_pose` into the work pose | success | closes on `odom` — which is still truth, see 4 |
+| `grasp` (close jaws) / `move_joints` READY | success | |
+| **MoveIt** pre-press (self-model, posture constraints, paced replay) | success | TCP **1.11 cm** |
+| `move_ee_to_pose` pre-press, 3 s hold | success | 0.82 → 0.77 cm; hold drift <0.7 cm (F30's drift is gone) |
+| `move_ee_to_pose` approach / press | success | 0.34 cm after hold; **verifier: PDU-2 fault cleared, 1 press** |
+| retract | success | 0.98 cm |
+| stow | **fail** | 0.086 rad short in 15 s (skill tol 0.05; the mission counts 0.35) — script now stows via READY, 0.1 rad / 30 s, not yet re-run |
+
+Not yet reached: Mission A's return to the dock; **Mission B** (carry) has not run on the new
+stack at all — `grasp` has never held a payload through an rSkill. Sim advances at 0.13–0.18×
+real time with or without cameras: physics + SLAM + Nav2 + MoveIt, not rendering, set the pace
+(the `_fast` scenes save little). A Mission A run is ~10 min wall.
+
+Docking design, after the user's correction: LunarBot's in-place turning and crabbing are design
+features and are not to be traded away to reduce slip. `move_base_to_pose` uses `(vx, vy, wz)`
+together and rotates in place freely. (An earlier claim that the rover "cannot rotate at the work
+pose" was an arithmetic error — the sweep radius, 0.88 m, is inside the 1.12 m from the rotation
+centre to the structure; the stall was the wall-clock timeout.)
+
+**4. Localization is the dominant error, and `/odom` is ground truth.** Nav2 reaches its goal in
+`map` to 0.10–0.39 m, but slam_toolbox's map drifts 1.0–2.3 m from the world over an 18 m drive,
+so the rover arrives physically that far off. It only docks correctly because `odom` is SRB's own
+pose. With the arm compensating the last centimetres (user decision: terminal precision is a
+manipulation rSkill's job, visual servoing belongs there), the base needs ≲0.10–0.15 m at the work
+site (F45's reach margin). A literature survey (Sonnet subagent: Apollo LRV, MER/MSL/M2020, Yutu-2,
+CADRE, VIPER, OSIRIS-REx; terrestrial loose-terrain practice) found: no flown rover closes
+centimetres on global pose — it is always meters-level global localization, periodically
+re-anchored (Perseverance's orbital-map matching: ~25 cm, 264/264 stops), plus relative sensing at
+the target; slip is corrected in the estimator (JPL TANav), never by banning manoeuvres; the 2D
+projection of the 3D lidar plus the indoor 12 m range are the likely cause of the drift; no lunar
+GNSS/RTK exists (LunaNet/LCRNS/Moonlight target 1–10 m, 2026–2030).
+
+**Decision (user, 2026-09-16):** do (i) wheel-inertial odometry and (ii) localization against a
+prebuilt map; skip third-party LIO integration unless (ii) proves insufficient. Status:
+- Sensor bridge `odom_source: wheel` implemented (4WIS least squares for v, IMU for yaw rate),
+  truth on `/openral/pose_truth` — **not enabled**. `robot_localization` is not installed; the
+  user prefers our own implementation, so a slip-aware covariance (from the least-squares
+  residual) goes in the bridge rather than an external EKF.
+- `slam_toolbox_lunar_bot.yaml` (35 m range, site-scale loop search) installed, not selected.
+- Prebuilt-map localization: the deploy launch already seeds `nav2_map_server` from `map_path`
+  when SLAM is off, and `nav2_amcl` is installed. Preferred route: render the occupancy grid from
+  the scene's own static geometry (`/lunar_base/lidar` mesh, F41 — exact by construction, the
+  "surveyed base map") and localize with AMCL; alternative: a slam_toolbox survey + localization
+  mode. Mission scripts then measure against `/openral/pose_truth` and dock in `map`.
+
+**5. Open.** Whether the ros_action result wait now runs on the sim clock was not re-observed after
+the runner fix (the timeout message now reports both clocks). A parallel second graph on GPU 1 works
+(`--kit_args "--/renderer/activeGpu=1 --/physics/cudaDevice=1"`, `D0_DOMAIN=78`; never combine with
+`CUDA_VISIBLE_DEVICES`) — the "no goal response" failure attributed to it was stale nodes from an
+earlier run.
