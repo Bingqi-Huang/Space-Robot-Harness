@@ -80,5 +80,5 @@ failures get mission-generic changes only, never a situation-specific hint. Free
 
 - openral: `master` ee6dec8, 6 commits ahead of `origin/master`, not pushed.
 - SRB: `feat/lunar-base-scene` b436599, 5 commits ahead of its origin, not pushed (`main` unchanged).
-- Research repo: `main` (no remote); plan change on branch `docs/plan-reorder-literature-tasks`. PLEXIL 6.1.3, Ant, gperf under `~/Programs` (outside git, `docs/baselines/plexil.md`).
+- Research repo: `main` (no remote). PLEXIL 6.1.3, Ant, gperf under `~/Programs` (outside git, `docs/baselines/plexil.md`).
 - Videos (not in git): `artifacts/videos/mission_{a,b}_covered.mp4`.
