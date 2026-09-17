@@ -68,7 +68,7 @@ run("dock slot_0", lambda: cap("dock_at_feature", feature="depot_stand/slot_0"))
 run("open jaws", lambda: cap("release"))
 run("arm ready (depot)", lambda: cap("arm_ready"))
 run("moveit above slot", lambda: cap("plan_ee_to_feature", feature="depot_stand/slot_0", offset_m=0.18, lift_m=0.47, orientation="grip"))  # F51 b7's reachable pre-grasp
-HANDLE = "the black T-shaped carry handle on top of the gold box"
+HANDLE = "the narrow vertical neck of the grey T-shaped carry handle on top of the gold box, just below its crossbar"
 run("locate handle", lambda: ask("locate_in_view", camera="wrist", target=HANDLE))
 res = run("approach handle", lambda: cap("approach_target", target=HANDLE, standoff_m=0.12, orientation="grip"))
 log("TARGET", what="oru handle", **target_error(res, handle_pos("spare_oru")))

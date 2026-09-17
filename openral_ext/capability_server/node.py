@@ -62,7 +62,7 @@ VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "DeepSeek-V4.1-Flash")  # the shar
 VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com/v1")
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
-VLM_LOCATE_ASKS, VLM_AGREE_PX = 3, 15  # localisation answers must agree within this many pixels
+VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 5, 3  # concurrent localisation asks; how many must find the target
 DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
@@ -187,7 +187,7 @@ class CapabilityServer(Node):
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         from openai import OpenAI
         self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=120)
-        self.vlm_pool = ThreadPoolExecutor(4)
+        self.vlm_pool = ThreadPoolExecutor(8)
         self.rskill = ActionClient(self, ExecuteRskill, "/openral/execute_rskill", callback_group=cb)
         ActionServer(self, ExecuteCapability, "/space/capability/execute", self._execute, callback_group=cb)
         self.create_service(QueryCapability, "/space/capability/query", self._query, callback_group=cb)
@@ -258,30 +258,26 @@ class CapabilityServer(Node):
         """Where a target described in words is in the current image of a camera: pixel, and its 3-D point in `odom` from the
         registered depth."""
         f = self.frame(camera)
-        # A single VLM answer is not stable (the same frame gave the button once and a point on the rail below it the next
-        # time, research repo F53): ask until two answers agree, at most three times, and use the agreeing pair.
+        # A single VLM answer is not stable: the same frame gave the button once and a rail point below it the next time,
+        # and pointing at an elongated part wanders along it by tens of pixels (research repo F53). Ask several times
+        # concurrently and take the per-axis median of the answers that found the target.
         prompt = LOCATE_PROMPT.format(target=target, w=f["uw"], h=f["uh"])
-        replies = list(self.vlm_pool.map(lambda _: self.ask_vlm(f["path"], prompt), range(2)))  # the first two concurrently
-        answers = []
-        for k in range(VLM_LOCATE_ASKS):
-            reply = replies[k] if k < len(replies) else self.ask_vlm(f["path"], prompt)
+        centres, boxes = [], []
+        for reply in self.vlm_pool.map(lambda _: self.ask_vlm(f["path"], prompt), range(VLM_LOCATE_ASKS)):
             found = re.search(r"\{.*\}", reply, re.S)
             j = json.loads(found.group(0)) if found else {"found": False}
             if j.get("found"):
                 box = j.get("box")
-                c = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2] if box and len(box) == 4 else j["center"]
-                answers.append((np.array(c, float), box))
-            else:
-                answers.append(None)
-            pair = [(a1, a2) for i, a1 in enumerate(answers) for a2 in answers[i + 1:]
-                    if a1 is not None and a2 is not None and np.linalg.norm(a1[0] - a2[0]) <= VLM_AGREE_PX]
-            if pair or answers.count(None) >= 2:
-                break
-        out = dict(camera=camera, image=str(f["path"]), frame_stamp_s=round(f["stamp"], 2), found=bool(pair), vlm_answers=len(answers))
+                centres.append(j["center"] if not (box and len(box) == 4) else [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2])
+                boxes.append(box)
+        out = dict(camera=camera, image=str(f["path"]), frame_stamp_s=round(f["stamp"], 2), found=len(centres) >= VLM_LOCATE_MIN_FOUND,
+                   vlm_found=f"{len(centres)}/{VLM_LOCATE_ASKS}")
         if out["found"]:
-            (c1, box), (c2, _) = pair[0]
-            j = {"box": box}
-            x, y = (c1 + c2) / 2  # upright image -> raw image pixel
+            c = np.array(centres, float)
+            med = np.median(c, axis=0)
+            out["pixel_spread"] = [round(float(v), 1) for v in np.median(np.abs(c - med), axis=0)]
+            j = {"box": boxes[int(np.argmin(np.linalg.norm(c - med, axis=1)))]}
+            x, y = med  # upright image -> raw image pixel
             w, h = f["w"], f["h"]
             u, v = {None: (x, y), cv2.ROTATE_90_COUNTERCLOCKWISE: (w - 1 - y, x), cv2.ROTATE_180: (w - 1 - x, h - 1 - y),
                     cv2.ROTATE_90_CLOCKWISE: (y, h - 1 - x)}[f["turn"]]
@@ -291,7 +287,7 @@ class CapabilityServer(Node):
             t, R = f["pose_odom"]
             out.update(pixel=[ui, vi], box=j.get("box"), origin=t)
             if patch.size:
-                z = float(np.median(patch))
+                z = float(np.percentile(patch, 25))  # the target is the foreground at its pixel, not what is behind a thin part
                 p_cam = np.linalg.inv(f["K"]) @ np.array([u, v, 1.0]) * z
                 out.update(depth_m=round(z, 4), point=R @ p_cam + t)
             else:
