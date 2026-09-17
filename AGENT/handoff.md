@@ -2,7 +2,8 @@
 
 State as of 2026-09-17 (early morning). **Phase D0's core has passed: Mission A and Mission B `covered` run end
 to end through the shared capability stack with realistic localization. §21.4's common capability boundary is
-proven live (Mission A through the boundary = direct run). PLEXIL 6.1.3 is built with an adapter skeleton.** Findings: `docs/research_findings.md` F1–F51 — **read F51 first**. Tasks: `todo.md`.
+proven live (Mission A through the boundary = direct run), and the PLEXIL baseline runs Mission A through it
+(F52). World-aware MoveIt + fixed arm hold: `heldout_cover_obstruction` capabilities pass.** Findings: `docs/research_findings.md` F1–F51 — **read F51 first**. Tasks: `todo.md`.
 
 ## What D0 established (F51)
 
@@ -19,10 +20,9 @@ proven live (Mission A through the boundary = direct run). PLEXIL 6.1.3 is built
 
 ## Open D0 gaps (not blocking §21.4, blocking Experiment I)
 
-1. **Arm planning is world-blind**: MoveIt's scene is the rover only → it nudged the ORU and knocked the service
-   cover off the panel; `heldout_cover_obstruction` cannot be exercised until the planning scene has the worksite.
+1. (closed, F52) world-blind MoveIt → `openral_ext/planning_scene` (site boxes + truth-posed movable objects).
 2. **Perception held-out primitives** (lamp state, occupied shelf, which object is the ORU) need Phase E.
-3. **Truth stand-in for arm targets** (`locate_feature`, `to_rover`) — must be replaced before the freeze.
+3. **Truth stand-ins** (`locate_feature`, feature targets, movable objects in the planning scene) — replace before the freeze.
 4. Stuck rover with spinning wheels defeats AMCL; MPPI cuts structure corners.
 
 ## §21.4: the common capability boundary
@@ -35,7 +35,9 @@ proven live (Mission A through the boundary = direct run). PLEXIL 6.1.3 is built
 - Proof: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_capability_mission_a_check.py` (Mission A through the boundary only).
 - PLEXIL: `docs/baselines/plexil.md` (6.1.3, `~/Programs/plexil`; ant and gperf under `~/Programs`, no apt).
   `ros/plexil_capability_adapter` → `libCapabilityAdapter.so`: Command `ExecuteCapability(capability, args_json)`,
-  Lookups `QueryCapability`, `LastCapabilityResult`. Command path verified via universalExec; lookup stalls (next).
+  every other Command = a capability with positional args; Lookups `QueryCapability`, `jaw`, `LastCapabilityResult`.
+  Plan `baselines/plexil/plans/MissionA_Covered.ple`; live: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_a_check.py`
+  (success, p1). Adapter build: as msgs, plus `PLEXIL_HOME=$HOME/Programs/plexil`.
 
 ## How to run (don't rediscover)
 
@@ -44,9 +46,10 @@ proven live (Mission A through the boundary = direct run). PLEXIL 6.1.3 is built
   — one run per launch command, nothing after it in the same call. Output: `STEP` JSON in `<logdir>/check.log`.
 - Options: `D0_GPU=1 D0_DOMAIN=78` (parallel graph), `D0_VIDEO=<mp4>`, `D0_SCENARIO=<heldout_…>`,
   `D0_SCENERY=lunar_base_route_block`, `D0_TRACE_OBJECT=spare_oru` (object/TCP/jaw every 0.5 s),
-  `D0_CAPABILITY_SERVER=1`, `D0_STEPS=1,2,…`.
+  `D0_CAPABILITY_SERVER=1`, `D0_STEPS=1,2,…`; planning scene on by default (`D0_PLANNING_SCENE=0` off).
 - Checks: `d0_mission_a_check.py`, `d0_mission_b_check.py`, `d0_route_block_check.py`,
-  `d0_mission_a_cover_check.py` (blocked, see gap 1), `d0_capability_mission_a_check.py`.
+  `d0_mission_a_cover_check.py` (passes with the planning scene, ac5), `d0_capability_mission_a_check.py`,
+  `d0_plexil_mission_a_check.py`.
 - Runs: ~15 min wall (Mission A), ~35 min (Mission B), ×3 with video. Sim 0.2× alone, 0.06× beside a render.
 - Teardown is by run tag (`D0_RUN_TAG` in the deploy's env); `LEFT 0 tagged processes` in `deploy.pid`.
 
@@ -62,6 +65,8 @@ proven live (Mission A through the boundary = direct run). PLEXIL 6.1.3 is built
   "Held" (handle–TCP distance) cannot tell a clamp from a hook — read the jaw.
 - `terminate_on_success` teleports the rover to the dock at success; deploy scenes set it false.
 - Nav2 omni caps must keep the planar speed norm inside the kernel bound (`nav2_max_lateral_speed_m_s`).
+- SRB arm hold: never persist a leashed/clamped command into held state — transients became permanent sag.
+- Humble `async_send_request` returns a `std::future`: `get()` once.
 
 ## Where things are
 

@@ -67,8 +67,9 @@ if [ -n "$D0_CAPABILITY_SERVER" ]; then
 fi
 # wall-clock cap only against a hung check: every skill and check deadline is on the sim clock, and a rendering
 # Mission B at 0.06x needs more than 50 min of wall time (run bv1 was cut at 3000 s)
-if [ -n "$D0_PLANNING_SCENE" ]; then
-  # the worksite in MoveIt's planning scene (openral_ext/planning_scene), tagged for the teardown
+if [ "${D0_PLANNING_SCENE:-1}" != 0 ]; then
+  # the worksite in MoveIt's planning scene (openral_ext/planning_scene) -- part of the shared stack every method
+  # plans in, on by default (D0_PLANNING_SCENE=0 turns it off); tagged for the teardown
   D0_RUN_TAG="$LOG" setsid .venv/bin/python ../openral_ext/planning_scene/node.py > "$LOG/planning_scene.log" 2>&1 &
 fi
 timeout 14400 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1

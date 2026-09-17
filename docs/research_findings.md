@@ -2561,3 +2561,44 @@ and the parallel GPU-1 graph did *not* work: its start/exit reaps killed the sib
 **7. Video.** `srb/utils/video_stream.py`: `--video` under `srb agent ros` streams a viewer camera
 following the robot root into ffmpeg (fragmented MP4). Hydra `env.viewer.*` overrides did not reach
 the viewport controller; the wrapper drives it directly.
+
+### F52 — The PLEXIL baseline runs Mission A through the common boundary; a world-aware planning scene and a non-ratcheting arm hold make `heldout_cover_obstruction`'s capabilities and a clean Mission B carry work
+
+2026-09-17, execution_plan §21.5, D0 gaps 1 and payload sag (F51).
+
+**1. PLEXIL on the live graph (run p1).** `baselines/plexil/plans/MissionA_Covered.ple` (PLEXIL 6.1.3, standard
+constructs: Sequence, Try-retry per base leg, PostCondition per effect) executed by `universalExec` with
+`ros/plexil_capability_adapter`. Every Command is a capability of `contracts.yaml` with positional arguments — the
+adapter holds no mission logic. 13 capability calls, all as planned (navigate_to_feature 43.9 s sim, dock_at_feature,
+grasp → nothing grasped, READY, plan_ee_to_feature 30.4 s, four move_ee_to_feature, READY, stow, dock_at_feature
+back-away, navigate_to_pose home); **verifier success** (PDU-2 cleared, 1 press), dock 0.127 m (AMCL 0.12 m).
+"Plan complete, Exec exited without errors". So Ours (cm2) and PLEXIL (p1) now reach the robot through one
+interface with the same outcome on the covered case.
+
+To make that possible the boundary gained generic feature-addressed effects (`navigate_to_feature`,
+`dock_at_feature`, `plan_ee_to_feature`, `move_ee_to_feature`: work pose = hull + arm reach along a site feature's
+normal; TCP offset along the normal, press/grip orientation) — the geometry PLEXIL cannot do on JSON, identical for
+every method — and a positional argument form. Adapter defects fixed on the way: a second `get()` on Humble's
+`std::future` threw inside the exec thread and stalled every lookup; the rclcpp executor was constructed before
+`rclcpp::init`; the adapter now waits for the boundary before the plan starts.
+
+**2. World-aware arm planning (runs ac5, b8).** `openral_ext/planning_scene/node.py` publishes the surveyed site
+structures (`site_structures.json`, 30 boxes — the same structures the lidar map contains; site knowledge) and the
+movable ORU / crate / service cover (simulator-truth poses — Phase E perception stand-in) as `CollisionObject`s in
+`map`. Default in `run_d0.sh`.
+- `heldout_cover_obstruction` (ac5, MoveIt on): plan to the cover pre-pose **cover_moved 0.0 m** (0.21 m without the
+  scene, ac1); servo approach, grasp the bar (jaw 0.313 rad), lift, pull (button uncovered), dock out and to the
+  shelf with the cover clamped (0.029 m), place, release, re-dock the panel (0.049 m), MoveIt pre-press 0.5 cm, press:
+  **PDU-2 cleared, blocked_presses 0**. 24/24 steps. Every capability the held-out solution needs now runs through the
+  stack.
+- Mission B (b8): MoveIt pre-grasp moves the ORU 1 mm; **verifier success**.
+
+**3. Payload sag was a leash ratchet (SRB `SwitchableArmAction`).** The twist controller wrote the 5 cm-leashed desired
+pose back every substep, so any transient beyond 5 cm under a held 1 kg ORU (Nav2 accelerations) became the new held
+pose: over the carry leg the handle dropped 3.5 cm (b7), 10.4 cm (bv1), 9.0 cm (bv2) — not render- or rate-dependent
+(bv2 ran at 0.21×), and not terrain (the road is level to 1.5 cm). The leash now persists only while the arm is being
+moved. b8: 3.1 cm transient on the carry leg, **recovered to the held height (1.106 m)** on the next leg; place clean.
+
+**Still open.** Perception held-out primitives (status_mismatch, destination_occupied, spare_swapped) need Phase E; the
+truth stand-ins (`locate_feature`, arm feature targets, movable objects in the planning scene) must be replaced
+before the freeze; a wedged rover defeats AMCL; PLEXIL plan library for Mission B and the held-out-relevant recovery.

@@ -18,15 +18,12 @@ map (SLAM off), navigation and docking in `map`, errors against `/openral/pose_t
       shelf upright, rover docked, verifier success.
 - [x] Held-out `route_block`: Nav2 detours round the unmapped rover, AMCL 0.074 m.
 - [x] Videos (success runs av2, bv2): `artifacts/videos/mission_{a,b}_covered.mp4`.
-- [ ] Payload sag while carrying: handle drops 4.5 cm over the Nav2 carry at 0.2× (b7) but 15 cm in a rendering run
-      at 0.06× (bv1, "servo over shelf" stalled; bv2 passed). Arm zero-twist hold under 1 kg — isolate render vs rate.
-- [ ] **World-aware arm planning** (blocks `heldout_cover_obstruction` and makes every grasp fragile): MoveIt
-      knows only the rover; plans nudged the ORU 5 cm (b5) and knocked the service cover 0.21 m (ac1); the servo
-      alone cannot reach the cover from READY (ac4). Needs perceived collision objects / octomap in the planning
-      scene, through the shared stack (same for all methods).
-- [ ] Held-out primitives not yet run through D0 (closed-capability rule, F51 §6): observe a component's state
-      from a view pose (status_mismatch lamps, destination_occupied shelf, spare_swapped identity) — Phase E
-      perception; crate grasp/carry/place onto a stand slot (destination_occupied); cover grasp/carry/place.
+- [x] Payload sag = leash ratchet in SRB's arm hold (F52 §3); fixed, b8 carry transient recovers.
+- [x] **World-aware arm planning** (F52 §2): site structures + movable objects in MoveIt's scene (default in
+      run_d0.sh); `heldout_cover_obstruction` capabilities pass end to end (ac5), Mission B success (b8).
+- [ ] Held-out primitives not yet run through D0: observe a component's state from a view pose (status_mismatch
+      lamps, destination_occupied shelf, spare_swapped identity) — Phase E perception; crate grasp/carry/place onto a
+      stand slot (destination_occupied).
 - [ ] Wedged-with-spinning-wheels localization: AMCL follows odometry when the rover is physically stuck
       (b1: 4.5 m). Slip detection in the estimator (not by restricting manoeuvres).
 - [ ] Nav2/MPPI cut the charging station's corner (b1); Mission B uses the east-leg road point. Tune costmap /
@@ -35,7 +32,8 @@ map (SLAM off), navigation and docking in `map`, errors against `/openral/pose_t
 
 **BLOCKER BEFORE THE EXPERIMENT-I FREEZE:** arm targets come from simulator truth — `locate_feature` in the
 capability boundary (and `to_rover` in `d0_common.py`) is a stand-in for Phase E relative perception. It is
-evaluator-only state reaching a method (§13.2) and must be replaced before any campaign run.
+evaluator-only state reaching a method (§13.2) and must be replaced before any campaign run. Same for the feature
+targets of `plan_ee_to_feature`/`move_ee_to_feature` and the movable objects in the planning scene.
 
 ---
 
@@ -52,8 +50,10 @@ evaluator-only state reaching a method (§13.2) and must be replaced before any 
 
 - [x] §21.5 start: PLEXIL 6.1.3 pinned and built (`docs/baselines/plexil.md`), SafeDrive example runs;
       `ros/plexil_capability_adapter` skeleton: ExecuteCapability command path verified through universalExec.
-- [ ] §21.5: fix the QueryCapability lookup stall; typed Commands per capability; Mission A covered plan library;
-      one covered Mission A instance end to end through PLEXIL on the live graph.
+- [x] §21.5: lookup stall fixed; typed Commands = capabilities (positional args); `MissionA_Covered.ple`
+      end to end on the live graph — verifier success (F52 §1, run p1).
+- [ ] §21.5: PLEXIL Mission B covered plan; Mission B through the boundary for Ours; plan-library structure
+      (library nodes) and the predefined recovery set per `execution_plan` §11.1.
 - [ ] §21.6 EUROPA → PLEXIL bridge; replanning inside the encoded domain on the same case.
 - [ ] §21.7 scenario manifests, evaluator-only annotations, freeze manifest, closed-capability validator.
 - [ ] §21.8 thin `space_runtime` for Mission A (facts/evidence, context, guard, playbook audit).

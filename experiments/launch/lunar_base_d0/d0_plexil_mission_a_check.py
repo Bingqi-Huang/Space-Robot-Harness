@@ -7,6 +7,7 @@ then reports each capability call from the boundary's trace, the base error at t
 Run with D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_a_check.py.
 """
 import subprocess
+import threading
 
 from d0_common import *  # noqa: F401,F403
 from space_harness_msgs.action import ExecuteCapability
@@ -24,12 +25,11 @@ exec_proc = subprocess.Popen([str(PLEXIL_HOME / "bin/universalExec"), "-c", str(
                               "-p", str(PLAN_DIR / "plans/MissionA_Covered.plx")],
                              cwd=PLAN_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 exec_out = []
+# read the exec's output on a thread: a blocking readline here stopped the spin, and with it the sim clock
+threading.Thread(target=lambda: exec_out.extend(l.rstrip() for l in exec_proc.stdout), daemon=True).start()
 while exec_proc.poll() is None:
     rclpy.spin_once(n, timeout_sec=0.2)
-    line = exec_proc.stdout.readline()
-    if line:
-        exec_out.append(line.rstrip())
-exec_out += [l.rstrip() for l in exec_proc.stdout.read().splitlines()]
+spin(1.0)
 log("EXEC", exit=exec_proc.returncode, wall_s=round(time.time() - t0, 1), sim_s=round(sim["t"] - sim0, 1),
     tail=[l for l in exec_out if l.strip()][-4:])
 
