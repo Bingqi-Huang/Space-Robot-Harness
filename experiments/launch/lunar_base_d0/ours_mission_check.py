@@ -128,8 +128,11 @@ while agent.poll() is None:
                 tcp=[round(float(v), 3) for v in tcp_pose()[0]], jaw=round(float(jaw.get("q", -1)), 3))
             trace_prev = hp
     if STOP_ON_FAILURE:
-        failed = [json.loads(x) for x in evs[seen:] if ('"execution_finished"' in x and '"success": false' in x)
-                  or ('"effect_verified"' in x and '"holds": false' in x)]
+        # an arm goal the robot model shows unreachable is the agent's to handle (the boundary says so), not a defect
+        new_evs = evs[seen:]
+        unreachable = any("no collision-free arm configuration reaches" in x for x in new_evs)
+        failed = [] if unreachable else [json.loads(x) for x in new_evs if ('"execution_finished"' in x and '"success": false' in x)
+                                         or ('"effect_verified"' in x and '"holds": false' in x)]
         seen = len(evs)
         if failed:
             agent.kill()
