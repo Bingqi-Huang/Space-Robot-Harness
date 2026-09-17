@@ -45,8 +45,9 @@ effects:
 
   arm_ready:
     description: >-
-      Raise the arm from its travel pose (or any pose) into the ready posture in front of the rover, from which
-      end-effector motions start.
+      Raise the arm from its travel pose (or any pose) into the ready posture off the rover's rear, from which
+      end-effector motions start: TCP about (-1.07, 0, 1.05) in `chassis_base_link`, tool pointing rearward and
+      slightly up, so the wrist camera looks out over the work area towards the horizon, not down onto it.
     inputs:
       tolerance_rad: [number, false, "per-joint tolerance (default 0.05)"]
     default_deadline_s: 60
@@ -116,7 +117,8 @@ effects:
       Plan and execute (MoveIt) the TCP to `offset_m` in front of a surveyed site feature along its normal, tool into
       the surface; `orientation` press = jaw axis vertical, grip = horizontal. The feature is placed by the rover's
       localization, so expect several centimetres of error: good for bringing the tool and wrist camera near, not for
-      contact.
+      contact. The arm (working radius 0.61 m) is mounted at about (-0.45, 0, 0.73) in `chassis_base_link` and works off
+      the rover's rear: the target must lie within that radius of the mount and clear of the rover's hull.
     inputs:
       feature: [string, true, "site interaction point"]
       offset_m: [number, true, "distance in front of the feature along its normal, m (negative = into it)"]

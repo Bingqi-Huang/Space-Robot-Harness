@@ -65,7 +65,8 @@ VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
 VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; how many must find the target
-DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
+ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
+DEPTH_WINDOW_PX = 3 # half-width of the depth patch around the located pixel (median of the valid depths)
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
 HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]["press"]  # arm reach past the hull (C3)
@@ -452,6 +453,10 @@ class CapabilityServer(Node):
             params = self.lower_effect(g.capability, args)
             r = self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
+            if not r.success and "position" in params:  # a planner's error code does not say where the goal was
+                mount, _ = self._tf("chassis_base_link", "base_link")
+                d = float(np.linalg.norm(np.array(params["position"]) - mount))
+                r.failure_reason += f" (TCP goal {d:.2f} m from the arm mount; working radius {ARM_WORKING_RADIUS_M} m)"
         evidence["sim_s"] = round(self.sim_t - sim0, 2)
         for key, fn in (("base_pose", self.base_pose), ("tcp_pose", self.tcp_pose)):
             try:
