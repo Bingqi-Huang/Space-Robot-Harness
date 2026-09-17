@@ -39,8 +39,8 @@ def target_error(res, world_point):
     ev = res["evidence"]
     if "target_rover" not in ev:
         return {}
-    t, R = tf("srb/world", "chassis_base_link")
-    p = R @ np.array(ev["target_rover"]) + t
+    pb, _, Rb = truth_pose()  # the rover's true pose: the target error must not include the localization error
+    p = Rb @ np.array(ev["target_rover"]) + pb
     return {"target_err_m": round(float(np.linalg.norm(p - np.array(world_point))), 4), "depths_m": [v.get("depth_m") for v in ev.get("views", []) if "depth_m" in v],
             "correction_m": ev.get("correction_m"), "views": ev.get("views")}
 
