@@ -2731,3 +2731,32 @@ queries as perception/world-state services; a thin method-neutral capability con
 perception sources, raw evidence, low-level safety and the external evaluator; Ours' authoritative facts, context
 reconstruction, guard, internal effect verification and traces are the proposed method, attributed by Ours-internal
 ablations. Details: `docs/semantic_to_metric_manipulation_plan.md` §2.
+
+### F56 — Plan v4: the pick is one skill; the model composes operations, not stages
+
+2026-09-17, user decision after reviewing plan v3 (`docs/semantic_to_metric_manipulation_plan.md`).
+
+**1. What was wrong in v3.** Its internals were right (no object models, VLM chooses among image grasp candidates,
+on-board tracking + IBVS, image/encoder checks, harness facts and verification), but it made the agent call seven
+tools in a fixed order to pick one object (`grasp_candidates → choose_candidate → lock_target → servo_to_target →
+approach_guarded → grasp → hold_check`). That order is fixed by physics, not a mission decision: seven reasoner
+steps (DeepSeek-V4-Pro, 162 s median each, F55 §4) per pick with no scientific content, and seven chances to
+mis-parameterise (the pattern of F55 §3's three reasoner errors, all where the interface made the model do
+geometry). The operating picture is Claude Code for a lunar robot: the model gets `Edit`, not keystrokes.
+
+**2. v4.** `pick(target, part)`, `place(support)` and (when Mission A's contact code is next touched) `press(target)`
+are single OpenRAL procedural rSkills with mission-level arguments only; the v3 stage tools become internal functions
+and perception services, not model tools and not baseline Commands. Locality rule: same-target retries inside the
+call (re-lock, back off and re-centre, next candidate, re-check); changing target, base motion, another operation or
+the operator return control with the stage reached and its evidence. The harness verifies `held` / `placed`
+automatically from the shared queries. Hardware-protecting limits while driving or holding go to the shared
+low-level safety; the v3 guard rule "no base motion while holding" contradicted Mission B's carry and is withdrawn
+(F53 §1 removed the same rule once). Gates: G0 data, G1 classical candidates (learned only if needed), G2 VLM
+selection, G3 one-call pick under unknown placement, G4 Mission B covered, G5 held-out; the generality gate and the
+generator ablation are dropped. Granularity rule recorded in `execution_plan` §8.2.
+
+**3. Effect on earlier work.** Nothing built is discarded: the VLM detection, servo and depth code in
+`capability_server` and F54's vision-guided contact become the internals of `press`/`pick`; `verification.py`
+gains the held/placed checks; `guard.py` and its config are unchanged (invariants already empty); the PLEXIL adapter
+gets simpler (one Command per operation); F55's reverted patches stay reverted; the snapshot workflow is the
+development loop for G3–G5. Expected Mission B step count falls from 60+ to roughly 15–25.

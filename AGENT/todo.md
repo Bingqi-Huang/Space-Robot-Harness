@@ -9,35 +9,41 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
 - Ours runtime (facts, context, guard, verification, trace, restart/switch) and Mission A `covered` with vision-only
   contact (F53–F54). Tasks grounded in `docs/lunar_task_catalog.md`.
 - Mission B pick analysis, step-wise snapshot workflow, reasoner/VLM choice, patches reverted (F55).
-- Manipulation + architecture design: `docs/semantic_to_metric_manipulation_plan.md` v3.
+- Manipulation design **v4** (`docs/semantic_to_metric_manipulation_plan.md`): `pick` / `place` / `press` are single
+  skills; the model composes operations, never stages (F56).
 
-## Now: manipulation capabilities (plan v3, gates G0–G7)
+## Now: manipulation skills (plan v4, gates G0–G5)
 
 - [ ] G0: wrist RGB-D recorder, ~30 viewpoints of the ORU and crate on the depot stand (truth only for scoring).
-- [ ] G1: grasp candidates offline — classical (OpenCV + depth) first, then Contact-GraspNet / GraspNet baseline.
-- [ ] G2: candidate rendering + VLM set-of-mark selection offline; swapped-item flag.
-- [ ] Tools per plan v3 §2–§3: effects as OpenRAL rSkills (`servo_to_target`, `approach_guarded`, camera moves);
-      perception control / queries as services (`grasp_candidates`, `choose_candidate`, `lock_target`,
-      `target_status`, `hold_check`); thin contracts in the boundary.
-- [ ] Ours side (plan v3 §5): object facts, reconciliation with provenance, attempt record in the context, budgets.
-- [ ] G3–G5 live (servo, pick with unknown placement, generality), G6 ablation.
+- [ ] G1: grasp candidates offline, classical (OpenCV + depth); learned generator only if classical fails.
+- [ ] G2: candidate rendering + VLM set-of-mark selection offline; wrong-item flag.
+- [ ] `pick(target, part)` as an OpenRAL procedural rSkill in the fork (find → select → approach → grasp → hold as
+      internal stages; tracking as a perception service; same-target local retries only; staged failure + evidence);
+      one contract line in the boundary. Then `place(support)` the same way.
+- [ ] Ours side (plan v4 §5): object facts, automatic verification after pick/place, reconciliation with provenance,
+      attempt record in the context. Guard keeps only mission/authority rules (no posture/payload rules).
+- [ ] G3: `pick` live, unknown placement, one call per trial; every failure returns a stage.
 
-## Architecture follow-ups (plan v3 §2, when touched — no big refactor)
+## Architecture follow-ups (plan v4 §2, when touched — no big refactor)
 
-- [ ] Move `approach_target`, VLM `observe` / `locate_in_view`, feature-pose lowering out of `capability_server`;
-      fixed-infrastructure places into OpenRAL world state; regression: Mission A `covered`.
+- [ ] `press(target)` folds `approach_target` + `move_tool` + `grasp`; then `approach_target`, `move_tool`,
+      `plan_ee_*`, `move_ee_*`, `move_joints`, `grasp` leave the model palette; regression: Mission A `covered`.
+- [ ] Move VLM `observe` / `locate_in_view` and feature-pose lowering out of `capability_server`; fixed-infrastructure
+      places into OpenRAL world state.
+- [ ] Hardware-protecting limits while driving/holding (arm posture, base speed) into the kernel envelope / Nav2
+      parameters, shared by all methods.
 - [ ] PLEXIL adapter Lookups expose the same raw evidence (capability results, jaw, poses, availability) — not Ours'
       verified facts. Evaluator counts constraint violations and false success declarations for all methods.
 - [ ] `requires_remote_service` availability metadata for VLM-backed capabilities.
 
 ## Then
 
-- [ ] G7: Mission B `covered` with the agent (snapshot workflow), then held-out: destination_occupied, spare_swapped,
+- [ ] G4: Mission B `covered` with the agent (snapshot workflow); G5 held-out: destination_occupied, spare_swapped,
       cover_obstruction, status_mismatch, route_block. Failures → mission-generic changes only.
 - [ ] Space context variables only if the chosen scenarios exercise them.
 - [ ] 1x video run + `experiments/video/overlay.py`.
-- [ ] Baselines (§21 items 5–6), scenario manifests and freeze, Experiment I, Ours-internal ablations
-      (research_content §5.7), Experiment II.
+- [ ] Baselines (§21 items 5–6: PLEXIL Mission B with `pick`/`place` as Commands, EUROPA→PLEXIL), scenario manifests
+      and freeze, Experiment I, Ours-internal ablations (research_content §5.7), Experiment II.
 
 ## Known stack issues (fix only when a run fails on them)
 
@@ -54,6 +60,7 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
 - No pytest beyond upstream suites; offline checks before one decisive live run.
 - No defensive coding, no corner-case guards, no hash checks, no ad-hoc patches (AGENT.md §4, F55 §5).
 - Ours gets generic improvements only; never a situation-specific solution hint (§13.1).
+- Model-facing tools are operations, not stages; no mechanical parameters in contracts (execution_plan §8.2).
 - Never rerun a whole mission after a failure: restore the snapshot before the failed step, fix, rerun that step.
 - One simulation at a time. Never navigate on truth. Measure motion in sim time.
 - Kill only your own run's processes by explicit PID. Never edit a script a live run executes.

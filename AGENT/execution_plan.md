@@ -946,6 +946,16 @@ Examples of **forbidden mission logic**: “after inspection call X”, “if pa
 
 If OpenRAL exposes a clean extensible field mechanism, use it; otherwise keep metadata in the research runtime. The capability registry should behave like a coding-agent tool registry: it tells the model **what can be done and what the call means**, not how to solve the mission.
 
+**Granularity rule (2026-09-17, user decision; `docs/semantic_to_metric_manipulation_plan.md` v4).** A model-facing
+capability is one physical operation an operator would name as one action -- navigate, dock, pick, place, press,
+observe, look at, stow -- with mission-level arguments only (which target, which part, where). Its internal stages
+(grasp candidates, selection, tracking, servo, close-in, hold check) and its mechanical parameters (stand-offs,
+speeds, tolerances, retry counts) belong to the skill, like a coding agent's `Edit` tool rather than keystrokes.
+Inside one call a skill may retry on the same target; changing the target, moving the base, choosing a different
+operation or asking the operator returns control to the model with the stage reached and its evidence. The harness
+verifies the effect automatically after the call. Hardware-protecting limits (posture while driving, speed while
+holding) live in the shared low-level safety, not in Ours' guard.
+
 # 9. Foundation-model reasoning and semantic-observation work package
 
 This work package implements the functions that distinguish the proposed method. The model must genuinely own mission strategy; generic OpenRAL remains a development diagnostic, not a paper baseline.

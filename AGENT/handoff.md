@@ -1,15 +1,20 @@
 # Handoff
 
 State as of 2026-09-17 night. Research goal and plan: `AGENT/research_content.md`, `AGENT/execution_plan.md` (§21 order:
-the proposed method before the baselines). Findings F1–F55 in `docs/research_findings.md` — **read F53, F54, F55**.
-Tasks: `AGENT/todo.md`. Current design work: **`docs/semantic_to_metric_manipulation_plan.md` (v3)**.
+the proposed method before the baselines; §8.2 granularity rule). Findings F1–F56 in `docs/research_findings.md` —
+**read F53–F56**. Tasks: `AGENT/todo.md`. Current design: **`docs/semantic_to_metric_manipulation_plan.md` (v4)**.
+
+**The picture in one line:** Claude Code for a lunar robot. The model owns the mission (what to observe, where to go,
+what to pick, what to try after a failure); tools are whole operations (`navigate`, `dock`, `pick`, `place`, `press`,
+`observe`), never stages; the harness runs them, keeps the record, verifies effects automatically and holds the
+boundaries; OpenRAL is the borrowed tool runner / skill format.
 
 ## Where the research stands
 
 - Ours (`space_runtime/`, on OpenRAL `ReasonerCore`) runs Mission A `covered` end to end with vision-only contact (oa2,
   verifier success). Restart/model switch on the same record works (rs1).
 - Mission B (fetch the spare ORU, deliver to PDU-1) is blocked at the **pick**: 12 failures analysed (F55). The
-  VLM-point + open-loop approach is replaced by the plan v3 manipulation design; nothing of v3 is implemented yet.
+  VLM-point + open-loop approach is replaced by plan v4 (`pick` as one skill); nothing of v4 is implemented yet.
 - Baselines: PLEXIL runs Mission A through the common boundary (F52); PLEXIL Mission B, EUROPA→PLEXIL, Experiments I/II
   not started.
 
@@ -22,13 +27,19 @@ Tasks: `AGENT/todo.md`. Current design work: **`docs/semantic_to_metric_manipula
 - **Method boundary (research_content §3.2/§5.2–5.3/§5.7, revised):** baselines share robot, capabilities,
   perception sources, raw evidence, low-level safety and the external evaluator — not Ours' mechanisms. Ours' facts,
   context reconstruction, guard, internal effect verification and traces are the method; attribution by Ours-internal
-  ablations. **Architecture (plan v3 §2):** physical-effect capabilities = OpenRAL rSkills; perception control and
-  read-only queries = perception / world-state services; thin method-neutral capability contract. Fixed infrastructure may use surveyed named places; movable objects
-  only via perception → tracking → visual servo. rSkills adapt locally but never change target/strategy/recovery mode.
+  ablations. **Architecture (plan v4 §2):** physical-effect capabilities = OpenRAL rSkills; perception control and
+  read-only queries = perception / world-state services; thin method-neutral capability contract. Fixed infrastructure
+  may use surveyed named places; movable objects only via perception → tracking → visual servo inside the skill.
   No playbook-style decision rSkills. No big refactor: move logic out of `capability_server` when new work touches it.
-- **Manipulation (plan v3):** no object models, no world-coordinate targets; grasp candidates from the wrist RGB-D view,
-  VLM chooses among them, KLT/depth tracking + IBVS, guarded close-in, image checks; small tools the agent composes.
-  Isaac ROS FoundationPose rejected (needs meshes, ROS 2 Jazzy).
+- **Granularity (plan v4, 2026-09-17):** model-facing tools are whole operations with mission-level arguments
+  (`pick(target, part)`, `place(support)`, `press(target)`); stages (candidates, VLM selection, tracking, servo,
+  close-in, hold check) and mechanical parameters live inside the skill. A skill retries only on the same target;
+  changing target, moving the base, another operation or asking the operator returns to the model with the stage and
+  evidence. Harness verifies `held` / `placed` automatically. Hardware-protecting limits while driving/holding go to
+  the shared low-level safety; the v3 guard rule "no base motion while holding" is withdrawn (Mission B carries).
+- **Manipulation internals (kept from v3):** no object models, no world-coordinate targets; grasp candidates from the
+  wrist RGB-D view (classical first), VLM set-of-mark choice, KLT/depth tracking + IBVS, guarded close-in, image
+  checks. Isaac ROS FoundationPose rejected (needs meshes, ROS 2 Jazzy).
 - Ad-hoc patches are not acceptable; fix causes or redesign (F55 §5 lists what was reverted).
 - **Step-wise development:** never rerun a mission from scratch after a failure; restore the snapshot before the failed
   step, fix, rerun that step. One simulation at a time.
