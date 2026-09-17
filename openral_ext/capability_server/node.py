@@ -67,6 +67,7 @@ VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
 VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; how many must find the target
+APPROACH_MAX_CORRECTION_M = 0.04  # stand-off re-detection beyond this disagrees with the first view
 ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
 DEPTH_WINDOW_PX = 3 # half-width of the depth patch around the located pixel (median of the valid depths)
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
@@ -409,7 +410,11 @@ class CapabilityServer(Node):
         d1 = view("stand-off")  # closer, the target is seen larger and its depth better: correct once
         if d1["found"]:
             ev["correction_m"] = round(float(np.linalg.norm(d1["point"] - X)), 4)
-            if ev["correction_m"] > 0.004:
+            # A re-detection farther off than the localisation error is another object: close up, the gripper hid the
+            # T-bail's crossbar and the model marked the box edge 0.126 m below (ob6_s19b). Keep the first estimate.
+            if ev["correction_m"] > APPROACH_MAX_CORRECTION_M:
+                ev["correction_rejected"] = f"the stand-off view put the target {ev['correction_m']:.3f} m from the first view; kept the first"
+            elif ev["correction_m"] > 0.004:
                 X = d1["point"]
                 ok, why = servo(X, "corrected stand-off")
                 if not ok:
