@@ -46,6 +46,7 @@ from space_runtime.tools import DECOMPOSE, REPORT_TOPIC, SET_TASK_STATUS, Harnes
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
+QUERY_RESEND_S = 180.0  # wall seconds before a query is sent again (a VLM localisation takes up to a minute)
 
 
 def wait(future):
@@ -86,7 +87,17 @@ class Agent:
 
     # ---- the boundary ------------------------------------------------------------------------------------------------
     def query(self, name: str, args: dict) -> dict:
-        r = wait(self.qry.call_async(QueryCapability.Request(query=name, args_json=json.dumps(args))))
+        # queries are read-only: a request whose response is lost (Humble's first call right after discovery can drop it,
+        # run ob1 hung 30 min on site_map) is simply sent again
+        req = QueryCapability.Request(query=name, args_json=json.dumps(args))
+        future = self.qry.call_async(req)
+        while not future.done():
+            t = time.time()
+            while not future.done() and time.time() - t < QUERY_RESEND_S:
+                time.sleep(0.05)
+            if not future.done():
+                future = self.qry.call_async(req)
+        r = future.result()
         return dict(success=r.success, value=json.loads(r.value_json) if r.success else None, failure_reason=r.failure_reason)
 
     def execute(self, name: str, args: dict) -> dict:
