@@ -3,7 +3,7 @@
 State as of 2026-09-17 (early morning). **Phase D0's core has passed: Mission A and Mission B `covered` run end
 to end through the shared capability stack with realistic localization. §21.4's common capability boundary is
 proven live (Mission A through the boundary = direct run), and the PLEXIL baseline runs Mission A through it
-(F52). World-aware MoveIt + fixed arm hold: `heldout_cover_obstruction` capabilities pass.** Findings: `docs/research_findings.md` F1–F51 — **read F51 first**. Tasks: `todo.md`.
+(F52). World-aware MoveIt + fixed arm hold: `heldout_cover_obstruction` capabilities pass.** Findings: `docs/research_findings.md` F1–F52 — **read F51, then F52**. Tasks: `todo.md`.
 
 ## What D0 established (F51)
 
@@ -70,6 +70,7 @@ proven live (Mission A through the boundary = direct run), and the PLEXIL baseli
 
 ## Where things are
 
-- openral: `master` (merged from `feat/d0-localization`), not pushed.
-- SRB: `feat/lunar-base-scene` (merged from `feat/d0-nav-map`), not pushed.
-- Research repo: `main` (merged from `feat/d0-localization`), not pushed.
+- openral: `master` ee6dec8, 6 commits ahead of `origin/master`, not pushed.
+- SRB: `feat/lunar-base-scene` b436599, 5 commits ahead of its origin, not pushed (`main` unchanged).
+- Research repo: `main` (no remote). PLEXIL 6.1.3, Ant, gperf under `~/Programs` (outside git, `docs/baselines/plexil.md`).
+- Videos (not in git): `artifacts/videos/mission_{a,b}_covered.mp4`.
