@@ -32,6 +32,8 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rosgraph_msgs.msg import Clock
+from openral_msgs.msg import SafetyStatus
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
 
@@ -60,9 +62,13 @@ class Agent:
         self.node.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10)
         self.cap = ActionClient(self.node, ExecuteCapability, "/space/capability/execute")
         self.qry = self.node.create_client(QueryCapability, "/space/capability/query")
-        ex = SingleThreadedExecutor()
-        ex.add_node(self.node)
-        threading.Thread(target=ex.spin, daemon=True).start()
+        # FDIR facts (§10.3): the safety kernel's latched state; folded into the record between steps
+        self.fdir_inbox = []
+        self.node.create_subscription(SafetyStatus, "/openral/safety_status", self.fdir_inbox.append,
+                                      QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
+        self.executor = SingleThreadedExecutor()
+        self.executor.add_node(self.node)
+        threading.Thread(target=self.executor.spin, daemon=True).start()
         assert self.cap.wait_for_server(timeout_sec=300) and self.qry.wait_for_service(timeout_sec=60), "capability boundary not up"
         rc = cfg["reasoner"]
         self.cfg, self.max_steps = cfg, rc["max_steps"]
@@ -159,6 +165,10 @@ class Agent:
             if step >= self.max_steps:
                 self.event("budget_exhausted", steps=step)
                 break
+            while self.fdir_inbox:
+                m = self.fdir_inbox.pop(0)
+                if bool(m.latched) != bool(f["fdir"].get("estop", {}).get("active", False)):
+                    self.event("fdir_changed", fault="estop", active=bool(m.latched), detail=m.detail)
             step += 1
             self.renderer.step = step
             t = time.time()
@@ -185,7 +195,9 @@ def main():
     cfg = yaml.safe_load(a.config.read_text())
     a.run_dir.mkdir(parents=True, exist_ok=True)
     assert a.resume == (a.run_dir / "events.jsonl").exists(), "--resume needs an existing record; a new run needs an empty run dir"
-    Agent(cfg, a.run_dir, a.model or cfg["reasoner"]["model"]).run(a.mission)
+    agent = Agent(cfg, a.run_dir, a.model or cfg["reasoner"]["model"])
+    agent.run(a.mission)
+    agent.executor.shutdown()
     rclpy.try_shutdown()
 
 
