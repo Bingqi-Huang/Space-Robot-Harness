@@ -27,6 +27,8 @@ def empty_facts() -> dict:
         "ledger": None,  # agent working plan (MissionState state dict) -- NOT mission truth
         "recent": [],  # last RECENT tool steps: proposal, guard outcome, result
         "reasoner": None,  # {"model", "endpoint"} currently attached
+        "reasoner_history": [],  # every attach: {"seq", "model", "endpoint"}
+        "active_execution": None,  # {"seq", "capability", "args"} between execution_started and _finished
         "reports": [],  # operator-facing reports/requests the agent emitted
         "terminal": None,  # {"kind": report|request|budget, "seq"}
     }
@@ -41,13 +43,22 @@ def apply(f: dict, ev: dict) -> None:
         f["site"] = ev["site"]
     elif k == "reasoner_attached":
         f["reasoner"] = {"model": ev["model"], "endpoint": ev["endpoint"]}
+        f["reasoner_history"].append({"seq": ev["seq"], "model": ev["model"], "endpoint": ev["endpoint"]})
+        if f["active_execution"] is not None:  # the previous reasoner stopped while an effect was running
+            a = f["active_execution"]
+            f["anomalies"].append({"seq": ev["seq"], "capability": a["capability"],
+                                   "reason": f"was executing (record #{a['seq']}) when the previous reasoner stopped; its outcome was never recorded"})
+            f["active_execution"] = None
     elif k == "tool_proposed":
         f["recent"].append({"seq": ev["seq"], "tool": ev["tool"], "args": ev["args"], "rationale": ev["rationale"]})
     elif k == "guard_decision":
         f["recent"][-1]["guard"] = {"outcome": ev["outcome"], "reason": ev["reason"]}
         if ev["outcome"] != "allow":
             f["anomalies"].append({"seq": ev["seq"], "capability": ev["tool"], "reason": f"guard {ev['outcome']}: {ev['reason']}"})
+    elif k == "execution_started":
+        f["active_execution"] = {"seq": ev["seq"], "capability": ev["capability"], "args": ev["args"]}
     elif k == "execution_finished":
+        f["active_execution"] = None
         evd = ev["evidence"]
         f["recent"][-1]["result"] = {"success": ev["success"], "failure_reason": ev["failure_reason"],
                                      "sim_s": evd.get("sim_s"), "goal": evd.get("goal")}

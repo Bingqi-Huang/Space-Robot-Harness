@@ -38,6 +38,9 @@ def render(facts: dict, step: int, max_steps: int) -> str:
     out.append("## OBSERVATIONS (query answers; latest last)\n" + ("\n".join(obs) or "(none yet)"))
     anomalies = [f"- [{a['seq']}] {a['capability']}: {a['reason']}" for a in f["anomalies"]]
     out.append("## UNRESOLVED ANOMALIES\n" + ("\n".join(anomalies) or "(none)"))
+    if len(f["reasoner_history"]) > 1:
+        out.append("## REASONER CONTINUITY\nthis record was continued by another reasoner session: "
+                   + " -> ".join(f"{r['model']} (from record #{r['seq']})" for r in f["reasoner_history"]))
     status = [f"unavailable capabilities: {_j(f['unavailable']) if f['unavailable'] else 'none'}",
               f"active faults: {_j({k: v for k, v in f['fdir'].items() if v['active']}) or 'none'}",
               "authority: " + ", ".join(sorted({c['authority_class'] for c in CONTRACTS['effects'].values()})) + " operations are autonomous"

@@ -25,15 +25,35 @@ run_dir.mkdir(parents=True, exist_ok=True)
 env = dict(os.environ, PYTHONPATH=f"{REPO}:{os.environ.get('PYTHONPATH', '')}")
 log("PLAN", method="ours", brief=BRIEF, run_dir=str(run_dir))
 t0, sim0 = time.time(), sim["t"]
-with (run_dir / "agent.log").open("w") as out:
-    agent = subprocess.Popen([sys.executable, "-m", "space_runtime.agent", "--run-dir", str(run_dir), "--mission", BRIEF],
-                             cwd=REPO, env=env, stdout=out, stderr=subprocess.STDOUT)
-    last = time.time()
-    while agent.poll() is None:
-        rclpy.spin_once(n, timeout_sec=0.2)
-        if time.time() - last > 120:
-            log("PROGRESS", wall_s=round(time.time() - t0), sim_s=round(sim["t"] - sim0, 1), mission=dict(mission))
-            last = time.time()
+# Continuity probe (Phase E exit 1): OURS_RESTART_AT_STEP=N kills the agent process (SIGKILL, no goodbye) once its record
+# holds N steps and restarts it on the same record with --resume, optionally on another model (OURS_RESTART_MODEL).
+RESTART_AT = int(os.environ.get("OURS_RESTART_AT_STEP", "0"))
+
+
+def steps():
+    p = run_dir / "events.jsonl"
+    return sum('"kind": "tool_proposed"' in line for line in p.read_text().splitlines()) if p.exists() else 0
+
+
+def start(extra):
+    return subprocess.Popen([sys.executable, "-m", "space_runtime.agent", "--run-dir", str(run_dir), *extra], cwd=REPO, env=env,
+                            stdout=(run_dir / "agent.log").open("a"), stderr=subprocess.STDOUT)
+
+
+agent = start(["--mission", BRIEF])
+last = time.time()
+while agent.poll() is None:
+    rclpy.spin_once(n, timeout_sec=0.2)
+    if RESTART_AT and steps() >= RESTART_AT:
+        agent.kill()
+        agent.wait()
+        model = os.environ.get("OURS_RESTART_MODEL")
+        log("RESTART", at_steps=steps(), model=model or "same", sim_s=round(sim["t"] - sim0, 1))
+        RESTART_AT = 0
+        agent = start(["--resume", *(["--model", model] if model else [])])
+    if time.time() - last > 120:
+        log("PROGRESS", wall_s=round(time.time() - t0), sim_s=round(sim["t"] - sim0, 1), mission=dict(mission))
+        last = time.time()
 spin(3.0)
 log("AGENT", exit=agent.returncode, wall_s=round(time.time() - t0, 1), sim_s=round(sim["t"] - sim0, 1))
 log("DOCK", **base_err([0.0, 0.0], 0.0))

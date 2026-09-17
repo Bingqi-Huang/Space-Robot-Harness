@@ -28,7 +28,6 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rclpy
-from nav_msgs.msg import Odometry
 from openral_msgs.action import ExecuteRskill
 from rclpy.action import ActionClient, ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -38,12 +37,16 @@ from rclpy.parameter import Parameter
 from rclpy.time import Time
 from rosgraph_msgs.msg import Clock
 from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from sensor_msgs.msg import Image, JointState
+from std_msgs.msg import String
 from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
 from tf2_ros import Buffer, TransformListener
 
-from contracts import CONTRACTS, IX, check_args
+import yaml
+
+from contracts import CONTRACTS, HERE, IX, check_args
 READY = [0.0, -1.0, 0.0, -1.4, 0.0, 1.2, 0.0]  # the arm's ready posture (robot, not mission)
 STOW = [0.0, -0.6, 0.0, 1.2, 0.0, 0.6, 0.0]  # rskill-procedural-stow's travel pose
 ARM_JOINTS = [f"joint{i}" for i in range(1, 8)]
@@ -60,19 +63,26 @@ JAW_JOINT = "eg2_joint1"
 HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]["press"]  # arm reach past the hull (C3)
 
 
-def feature_frame(name: str):
-    """A site interaction point (surveyed site knowledge, `map`): position and horizontal outward normal."""
-    pt = IX["points"][name]
-    n = np.array(pt["normal"][:2], float)
-    return np.array(pt["xyz"], float), n / np.linalg.norm(n)
+FIDUCIALS = yaml.safe_load((HERE / "../perception/fiducials.yaml").read_text())
+INSTANCE_TYPE = {inst: kind for kind, insts in FIDUCIALS["static_carriers"].items() for inst in insts}
+AUTHORED = HERE / "../../space_robotics_bench/assets/lunar_base/authored"
+MOVABLE = FIDUCIALS["movable_carriers"]
 
 
-def work_pose(name: str, standoff_m: float):
-    """Base pose from which the arm reaches `name`: hull + reach out along the normal, facing along it; `standoff_m`
+def carrier_frame(kind: str, key: str) -> dict:
+    return json.loads((AUTHORED / kind / "frames.json").resolve().read_text())[key]
+
+
+def horizontal(v) -> np.ndarray:
+    v = np.array([v[0], v[1], 0.0])
+    return v / np.linalg.norm(v)
+
+
+def work_pose_from(p_map: np.ndarray, n_map: np.ndarray, standoff_m: float):
+    """Base pose from which the arm reaches a point: hull + reach out along its normal, heading along it; `standoff_m`
     further out on the same axis (the docking corridor's entry)."""
-    p, n = feature_frame(name)
-    xy = p[:2] + n * (HULL_M + REACH_M + standoff_m)
-    return float(xy[0]), float(xy[1]), math.atan2(n[1], n[0])
+    xy = p_map[:2] + n_map[:2] * (HULL_M + REACH_M + standoff_m)
+    return float(xy[0]), float(xy[1]), math.atan2(n_map[1], n_map[0])
 
 
 def tool_rotation(n: np.ndarray, orientation: str) -> np.ndarray:
@@ -134,12 +144,6 @@ def lower(capability: str, a: dict) -> dict:
         if "max_linear_speed_m_s" in a:
             p["max_linear_speed_m_s"] = a["max_linear_speed_m_s"]
         return p
-    if capability == "navigate_to_feature":
-        x, y, yaw = work_pose(a["feature"], a.get("standoff_m", 1.5))
-        return lower("navigate_to_pose", dict(x=x, y=y, yaw=yaw))
-    if capability == "dock_at_feature":
-        x, y, yaw = work_pose(a["feature"], a.get("standoff_m", 0.0))
-        return lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, **({"approach_m": a["approach_m"]} if "approach_m" in a else {})))
     if capability == "grasp":
         return {"mode": "close", "timeout_s": 8.0}
     if capability == "release":
@@ -170,8 +174,10 @@ class CapabilityServer(Node):
         cb = ReentrantCallbackGroup()
         self.buf = Buffer()
         TransformListener(self.buf, self)
-        self.truth, self.jaw, self.arm_q, self.sim_t = {}, None, None, 0.0
-        self.create_subscription(Odometry, "/openral/pose_truth", lambda m: self.truth.update(p=m.pose.pose.position, q=m.pose.pose.orientation), 10, callback_group=cb)
+        self.perceived, self.jaw, self.arm_q, self.sim_t = {}, None, None, 0.0
+        # relative perception (openral_ext/perception/fiducial_node.py): carrier poses in `odom`
+        self.create_subscription(String, "/space/perception/instances", lambda m: setattr(self, "perceived", json.loads(m.data)),
+                                 QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL), callback_group=cb)
         self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
         self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
         self.images = {}
@@ -235,34 +241,68 @@ class CapabilityServer(Node):
         p, R = self._tf("chassis_base_link", "tcp_frame")
         return {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in p]}
 
+    def feature_geometry(self, name: str) -> dict:
+        """Where a feature is: point, horizontal outward normal (the side the arm works from) and the frame they are in.
+
+        Static equipment: the carrier pose the cameras last measured (`odom`), else the surveyed site point (`map`,
+        placed by the rover's localization). Movable objects: measured only -- an object never seen is not locatable.
+        """
+        head, key = (name.split("/") + [""])[:2]
+        seen = self.perceived.get(head)
+        if head in MOVABLE:
+            if seen is None:
+                raise LookupError(f"{head} has not been seen by the rover's cameras; look at it first")
+            T = np.eye(4)
+            T[:3, :3], T[:3, 3] = quat_to_mat(*seen["quat_xyzw"]), seen["position"]
+            if head == "service_cover":
+                h = carrier_frame("service_cover", "handle")
+                n = horizontal(T[:3, :3] @ np.array(h["normal"], float))
+            else:
+                h = IX["objects"][head]["handle"]
+                axis = horizontal(T[:3, :3] @ np.array({"X": [1.0, 0, 0], "Y": [0, 1.0, 0]}[h["axis"]]))
+                n = np.array([-axis[1], axis[0], 0.0])  # the jaws straddle the bail: approach across its axis ...
+                rover, _ = self._tf("odom", "chassis_base_link")
+                n = n if n @ (rover - T[:3, 3]) >= 0 else -n  # ... from the rover's side
+            return dict(frame="odom", p=T[:3, :3] @ np.array(h["xyz"], float) + T[:3, 3], n=n, source="fiducial",
+                        age_s=round(self.sim_t - seen["stamp"], 1), object=IX["objects"][head])
+        pt = IX["points"][name]
+        if seen is not None:
+            f = carrier_frame(INSTANCE_TYPE[head], key)
+            T = np.eye(4)
+            T[:3, :3], T[:3, 3] = quat_to_mat(*seen["quat_xyzw"]), seen["position"]
+            return dict(frame="odom", p=T[:3, :3] @ np.array(f["xyz"], float) + T[:3, 3], n=horizontal(T[:3, :3] @ np.array(f["normal"], float)),
+                        source="fiducial", age_s=round(self.sim_t - seen["stamp"], 1))
+        return dict(frame="map", p=np.array(pt["xyz"], float), n=horizontal(pt["normal"]), source="survey")
+
+    def in_frame(self, g: dict, target: str):
+        t, R = self._tf(target, g["frame"])
+        return R @ g["p"] + t, R @ g["n"]
+
     def locate_feature(self, name):
-        # STAND-IN for Phase E relative perception: simulator truth (contracts.yaml `stand_in: truth`)
-        if name in IX["points"]:
-            pw, nw = np.array(IX["points"][name]["xyz"], float), np.array(IX["points"][name]["normal"], float)
-        elif name in IX["objects"] and "handle" in IX["objects"][name]:
-            po, Ro = self._tf("srb/world", f"srb/env0/lb_{name}")
-            pw, nw = po + Ro @ np.array(IX["objects"][name]["handle"]["xyz"]), None
-        else:
-            raise KeyError(f"unknown feature {name!r}")
-        q = self.truth["q"]
-        Rb = quat_to_mat(q.x, q.y, q.z, q.w)
-        pb = np.array([self.truth["p"].x, self.truth["p"].y, self.truth["p"].z])
-        out = {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in Rb.T @ (pw - pb)], "stand_in": "truth"}
-        if nw is not None:
-            out["normal"] = [round(float(v), 4) for v in Rb.T @ nw]
+        g = self.feature_geometry(name)
+        p, n = self.in_frame(g, "chassis_base_link")
+        out = {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in p], "normal": [round(float(v), 4) for v in n],
+               "source": g["source"]}
+        if "age_s" in g:
+            out["measured_s_ago"] = g["age_s"]
+        if "object" in g:
+            o = g["object"]
+            out["object"] = {"size_m": o["size_m"], "handle_height_above_base_m": o.get("handle", {}).get("xyz", [0, 0, None])[2]}
         return out
 
     def feature_target(self, a: dict) -> dict:
-        """TCP target for a feature capability, in the rover frame (through the locate_feature stand-in)."""
-        p, n = feature_frame(a["feature"])
-        pw = p + np.array([n[0], n[1], 0.0]) * a["offset_m"] + np.array([0.0, 0.0, a.get("lift_m", 0.0)])
-        q = self.truth["q"]
-        Rb = quat_to_mat(q.x, q.y, q.z, q.w)
-        pb = np.array([self.truth["p"].x, self.truth["p"].y, self.truth["p"].z])
-        return {"position": (Rb.T @ (pw - pb)).tolist(),
-                "orientation_xyzw": mat_to_quat(Rb.T @ tool_rotation(n, a.get("orientation", "press")))}
+        """TCP target for a feature capability, in the rover frame, from the feature's measured or surveyed geometry."""
+        p, n = self.in_frame(self.feature_geometry(a["feature"]), "chassis_base_link")
+        p = p + n * a["offset_m"] + np.array([0.0, 0.0, a.get("lift_m", 0.0)])
+        return {"position": p.tolist(), "orientation_xyzw": mat_to_quat(tool_rotation(n, a.get("orientation", "press")))}
 
     def lower_effect(self, capability: str, a: dict) -> dict:
+        if capability in ("navigate_to_feature", "dock_at_feature"):
+            p, n = self.in_frame(self.feature_geometry(a["feature"]), "map")
+            x, y, yaw = work_pose_from(p, n, a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0))
+            if capability == "navigate_to_feature":
+                return lower("navigate_to_pose", dict(x=x, y=y, yaw=yaw))
+            return lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, **({"approach_m": a["approach_m"]} if "approach_m" in a else {})))
         if capability == "plan_ee_to_feature":
             return lower("plan_ee_pose", {**self.feature_target(a), **({"tolerance_m": a["tolerance_m"]} if "tolerance_m" in a else {})})
         if capability == "move_ee_to_feature":
@@ -305,7 +345,12 @@ class CapabilityServer(Node):
             res.failure_reason = contract_reason or f"unknown capability {g.capability!r} (effects: {sorted(CONTRACTS['effects'])})"
             return res
         deadline = g.deadline_s or float(contract["default_deadline_s"])
-        params = self.lower_effect(g.capability, args)
+        try:
+            params = self.lower_effect(g.capability, args)
+        except LookupError as exc:  # the target cannot be located (an object not yet seen): a typed refusal, not a crash
+            handle.succeed()
+            res.success, res.failure_kind, res.failure_reason = False, REJECTED, str(exc)
+            return res
         goal = ExecuteRskill.Goal(rskill_id=contract["lowers_to"], prompt=f"capability {g.capability}",
                                   goal_params_json=json.dumps(params), deadline_s=deadline)
         sim0 = self.sim_t

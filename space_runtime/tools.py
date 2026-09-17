@@ -8,13 +8,18 @@ help). Every model output is decoded into OpenRAL's typed `ReasonerToolCall` uni
 
   capability effect/query  -> ExecuteRskillTool(rskill_id=<capability>, goal_params_json=<args>)
   set_task_status          -> ExecuteRskillTool(rskill_id="local/set_task_status", ...)
-  decompose_mission        -> DecomposeMissionTool
+  decompose_mission        -> ExecuteRskillTool(rskill_id="local/decompose_mission", ...)
+
+The plan tool keeps OpenRAL's `MissionState` ledger and `decompose_mission` modes (replace the open tasks, or split the
+active task in place) but takes plain task strings: OpenRAL's `DecomposeMissionTool` requires every subtask to
+name one tabletop object (`GroundedSubtask`), which rejects mission-level tasks such as "return to the dock"
+(research repo F53).
   report_to_operator       -> EmitPromptTool(target_topic=REPORT_TOPIC)
   request_operator         -> EmitPromptTool(target_topic=REQUEST_TOPIC)
 """
 import json
 
-from openral_core import DecomposeMissionTool, EmitPromptTool, ExecuteRskillTool
+from openral_core import EmitPromptTool, ExecuteRskillTool
 from openral_core.exceptions import ROSPlanningError, ROSReasonerInvalidPlan
 from pydantic import ValidationError
 
@@ -23,6 +28,7 @@ from openral_ext.capability_server.contracts import CONTRACTS
 REPORT_TOPIC = "/space/operator/report"
 REQUEST_TOPIC = "/space/operator/request"
 SET_TASK_STATUS = "local/set_task_status"
+DECOMPOSE = "local/decompose_mission"
 RATIONALE = {"type": "string", "description": "one sentence: why this call now"}
 
 
@@ -55,13 +61,13 @@ def capability_tools() -> list[dict]:
 
 
 def local_tools() -> list[dict]:
-    decompose = DecomposeMissionTool.model_json_schema()
     return [
-        {"type": "function", "function": {"name": "decompose_mission", "description": (
-            "WORKING PLAN. Write your ordered task list. Empty target_task_id replaces the whole list (only before any "
-            "task has been worked on); target_task_id = the active task's id splits that task in place into finer "
-            "subtasks. Each subtask names the one thing it acts on (object_ref) and its text must contain that name. "
-            "The plan is yours to revise; it is not a record of what happened."), "parameters": decompose}},
+        _function("decompose_mission", (
+            "WORKING PLAN. Write your ordered task list. Empty target_task_id replaces every open task (closed tasks "
+            "stay as history); target_task_id = the active task's id splits that task in place into finer subtasks. "
+            "The plan is yours to revise whenever the evidence changes; it is not a record of what happened."),
+            {"subtasks": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+             "target_task_id": {"type": "string", "description": "empty = whole plan; else the active task's id"}}, ["subtasks"]),
         _function("set_task_status", (
             "WORKING PLAN. Close the active task of your plan: done (you judge it achieved from the evidence) or "
             "abandoned (it cannot or need not be achieved); the next task becomes active."),
@@ -84,7 +90,7 @@ def decode(name: str, args: dict):
         if name == "set_task_status":
             return ExecuteRskillTool(rskill_id=SET_TASK_STATUS, goal_params_json=json.dumps(args), rationale=rationale)
         if name == "decompose_mission":
-            return DecomposeMissionTool(**args, rationale=rationale)
+            return ExecuteRskillTool(rskill_id=DECOMPOSE, goal_params_json=json.dumps(args), rationale=rationale)
         if name in ("report_to_operator", "request_operator"):
             return EmitPromptTool(target_topic=REPORT_TOPIC if name == "report_to_operator" else REQUEST_TOPIC,
                                   text=args["text"], rationale=rationale)

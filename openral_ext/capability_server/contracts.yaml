@@ -89,7 +89,7 @@ effects:
   navigate_to_feature:
     description: >-
       Drive the base (Nav2) to the approach point of a site feature: `standoff_m` out along the feature's surface
-      normal beyond the pose from which the arm reaches it, already facing along that axis.
+      normal beyond the pose from which the arm reaches it, heading along the normal (rear towards the feature).
     inputs:
       feature: [string, true, "site interaction point, e.g. pdu_2_panel/press"]
       standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 1.5)"]
@@ -100,7 +100,9 @@ effects:
   dock_at_feature:
     description: >-
       Close onto the pose from which the arm reaches a site feature (hull + arm reach out along its normal), or
-      `standoff_m` further out on that axis (to back away). Entered along the axis.
+      `standoff_m` further out on that axis (to back away). Entered along the axis. The arm works off the rover's
+      rear, so at this pose the rear faces the feature: the front camera looks away from it and the wrist camera can
+      see the work area.
     inputs:
       feature: [string, true, "site interaction point"]
       standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 0)"]
@@ -164,7 +166,9 @@ queries:
     description: >-
       Look through one of the rover's cameras and answer a question about what it sees right now (vision-language
       model on the current frame). `front` is the mast RGB-D camera looking ahead and slightly down; `wrist` is on the
-      gripper, looking along the tool. The answer is an observation, not ground truth; the frame is kept as evidence.
+      gripper, looking along the tool. The camera sees what its pose frames (move the rover or the arm to frame
+      something); equipment carries no readable name labels, so describe the target by appearance and position. The
+      answer is an observation, not ground truth; the frame is kept as evidence.
     inputs:
       camera: ["string(front|wrist)", true, "which camera"]
       question: [string, true, "what to look for, e.g. the colour of a status lamp or whether a place is occupied"]
@@ -182,11 +186,10 @@ queries:
     inputs: {}
   locate_feature:
     description: >-
-      Where a named worksite feature is relative to the rover: position (and the feature's surface normal) in
-      `chassis_base_link`. Names are the site's interaction points (e.g. pdu_2_panel/press) and object handles
-      (e.g. spare_oru).
+      Where a named feature is relative to the rover: position and outward normal in `chassis_base_link`, with its
+      source. Site interaction points come from the rover's cameras when their equipment's visual targets have been
+      seen, else from the survey placed by the rover's localization. Movable objects (spare_oru, spare_crate,
+      service_cover) are known only once the cameras have seen them; the answer then includes the object's size and
+      handle height.
     inputs:
-      name: [string, true, "interaction point or object name"]
-    # STAND-IN: answered from simulator truth until Phase E relative perception exists. Must be replaced before the
-    # Experiment I freeze (evaluator-only state must not reach a method, execution_plan §13.2).
-    stand_in: truth
+      name: [string, true, "interaction point (e.g. pdu_2_panel/press) or movable object (e.g. spare_oru)"]

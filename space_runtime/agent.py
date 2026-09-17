@@ -23,7 +23,7 @@ from pathlib import Path
 
 import rclpy
 import yaml
-from openral_core import DecomposeMissionTool, EmitPromptTool
+from openral_core import EmitPromptTool
 from openral_reasoner.core import ReasonerCore
 from openral_reasoner.mission import MissionState
 from openral_reasoner.palette import ToolPalette
@@ -40,7 +40,7 @@ from space_runtime.context import HarnessRenderer
 from space_runtime.facts import FactStore
 from space_runtime.guard import Guard
 from space_runtime.report import write_report
-from space_runtime.tools import REPORT_TOPIC, SET_TASK_STATUS, HarnessToolClient
+from space_runtime.tools import DECOMPOSE, REPORT_TOPIC, SET_TASK_STATUS, HarnessToolClient
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
@@ -73,7 +73,7 @@ class Agent:
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())
         self.renderer = HarnessRenderer(self.store, self.max_steps)
-        self.palette = ToolPalette(execute_rskill_ids=frozenset([*CONTRACTS["effects"], *CONTRACTS["queries"], SET_TASK_STATUS]))
+        self.palette = ToolPalette(execute_rskill_ids=frozenset([*CONTRACTS["effects"], *CONTRACTS["queries"], SET_TASK_STATUS, DECOMPOSE]))
 
     def event(self, kind: str, **data) -> dict:
         return self.store.append(kind, sim_t=round(self.sim_t, 2), **data)
@@ -95,29 +95,31 @@ class Agent:
         return MissionState.from_state_dict(state) if state else None
 
     def dispatch(self, call) -> None:
-        if isinstance(call, DecomposeMissionTool):
-            subtasks = call.rendered_subtasks()
-            self.event("tool_proposed", tool="decompose_mission", args={"target_task_id": call.target_task_id, "subtasks": subtasks},
-                       rationale=call.rationale)
-            ledger = self.ledger()
-            if not call.target_task_id:
-                ok = ledger is None or not ledger.has_started()
-                detail = "plan written" if ok else "the plan has already been worked on: split the active task instead"
-                ledger = MissionState(subtasks) if ok else ledger
-            else:
-                active = ledger.active() if ledger else None
-                ok = active is not None and active.task_id == call.target_task_id and ledger.subdivide_active(subtasks) is not None
-                detail = "active task split" if ok else f"cannot split {call.target_task_id!r}: not the active task, or split too deep"
-            self.event("local_tool", success=ok, detail=detail)
-            if ok:
-                self.event("ledger_changed", ledger=ledger.to_state_dict())
-            return
         if isinstance(call, EmitPromptTool):
             tool = "report_to_operator" if call.target_topic == REPORT_TOPIC else "request_operator"
             self.event("tool_proposed", tool=tool, args={"text": call.text}, rationale=call.rationale)
             self.event("operator_report" if tool == "report_to_operator" else "operator_request", text=call.text)
             return
         name, args = call.rskill_id, json.loads(call.goal_params_json or "{}")
+        if name == DECOMPOSE:
+            subtasks, target = [t for t in args["subtasks"] if t.strip()], args.get("target_task_id", "")
+            self.event("tool_proposed", tool="decompose_mission", args={"target_task_id": target, "subtasks": subtasks}, rationale=call.rationale)
+            ledger = self.ledger()
+            if not target:
+                # replan: closed tasks stay as history, every open task is replaced by the new list
+                closed = [t for t in (ledger.to_state_dict()["tasks"] if ledger else []) if t["status"] in ("done", "abandoned")]
+                fresh = MissionState(subtasks).to_state_dict()["tasks"]
+                for i, t in enumerate(fresh):
+                    t["task_id"] = f"t{len(closed) + i + 1}"
+                ok, detail, ledger = True, "plan written", MissionState.from_state_dict({"tasks": closed + fresh})
+            else:
+                active = ledger.active() if ledger else None
+                ok = active is not None and active.task_id == target and ledger.subdivide_active(subtasks) is not None
+                detail = "active task split" if ok else f"cannot split {target!r}: not the active task, or split too deep"
+            self.event("local_tool", success=ok, detail=detail)
+            if ok:
+                self.event("ledger_changed", ledger=ledger.to_state_dict())
+            return
         self.event("tool_proposed", tool=name, args=args, rationale=call.rationale)
         if name == SET_TASK_STATUS:
             ledger = self.ledger()

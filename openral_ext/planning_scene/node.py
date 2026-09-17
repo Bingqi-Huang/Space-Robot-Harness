@@ -7,8 +7,8 @@ all in `map` so they land where the robot's own localization puts them:
 
 - static structures: the surveyed site boxes (`site_structures.json`, the same structures the lidar map shows) --
   site knowledge, like the navigation map;
-- movable objects (spare ORU, cargo crate, service cover): posed from simulator truth. STAND-IN for Phase E
-  perception (execution_plan §13.2: replace before the Experiment-I freeze).
+- movable objects (spare ORU, cargo crate, service cover): where the rover's cameras last measured them
+  (openral_ext/perception/fiducial_node.py, in `odom`); an object not yet seen is not in the scene.
 
 Part of the shared stack: every method's MoveIt calls see the same scene. Run inside a sourced graph:
     python3 openral_ext/planning_scene/node.py
@@ -24,9 +24,9 @@ from geometry_msgs.msg import Pose
 from moveit_msgs.msg import CollisionObject
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.time import Time
+from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from shape_msgs.msg import SolidPrimitive
-from tf2_ros import Buffer, TransformListener
+from std_msgs.msg import String
 
 SITE = Path(__file__).resolve().parent / "../../space_robotics_bench/assets/lunar_base/usd/scene/lunar_base"
 STRUCTURES = json.loads((SITE / "site_structures.json").read_text())["structures"]
@@ -37,9 +37,9 @@ MOVABLE = {name: [IX["objects"][name]["size_m"][0] / 2 if name == "service_cover
            for name in ("spare_oru", "spare_crate", "service_cover") if name in IX["objects"]}
 
 
-def box(obj_id: str, size, x, y, z, qx, qy, qz, qw) -> CollisionObject:
+def box(obj_id: str, size, x, y, z, qx, qy, qz, qw, frame="map") -> CollisionObject:
     o = CollisionObject()
-    o.header.frame_id = "map"
+    o.header.frame_id = frame
     o.id = obj_id
     o.operation = CollisionObject.ADD
     o.primitives.append(SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[float(v) for v in size]))
@@ -60,14 +60,15 @@ class PlanningSceneNode(Node):
     def __init__(self):
         super().__init__("space_planning_scene", parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, True)])
         self.pub = self.create_publisher(CollisionObject, "/collision_object", 50)
-        self.buf = Buffer()
-        TransformListener(self.buf, self)
+        self.perceived = {}
+        self.create_subscription(String, "/space/perception/instances", lambda m: setattr(self, "perceived", json.loads(m.data)),
+                                 QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
         self.static = [box(f"site/{s['name']}", [s["size_xy"][0], s["size_xy"][1], s["z1"] - s["z0"]],
                            s["center"][0], s["center"][1], (s["z0"] + s["z1"]) / 2, 0.0, 0.0, math.sin(s["yaw"] / 2), math.cos(s["yaw"] / 2))
                        for s in STRUCTURES]
         self.last_static = 0.0
         self.create_timer(0.5, self.tick)
-        self.get_logger().info(f"planning scene: {len(self.static)} site structures, movable {sorted(MOVABLE)} (truth stand-in)")
+        self.get_logger().info(f"planning scene: {len(self.static)} site structures, movable {sorted(MOVABLE)} (perceived)")
 
     def tick(self):
         if time.time() - self.last_static > 5.0:
@@ -75,13 +76,12 @@ class PlanningSceneNode(Node):
                 self.pub.publish(o)
             self.last_static = time.time()
         for name, centre in MOVABLE.items():
-            if not self.buf.can_transform("srb/world", f"srb/env0/lb_{name}", Time()):
+            seen = self.perceived.get(name)
+            if seen is None:
                 continue
-            tr = self.buf.lookup_transform("srb/world", f"srb/env0/lb_{name}", Time()).transform
-            q = (tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w)
+            q, p = seen["quat_xyzw"], seen["position"]
             c = rotate(q, centre)
-            self.pub.publish(box(f"object/{name}", IX["objects"][name]["size_m"], tr.translation.x + c[0], tr.translation.y + c[1],
-                                 tr.translation.z + c[2], *q))
+            self.pub.publish(box(f"object/{name}", IX["objects"][name]["size_m"], p[0] + c[0], p[1] + c[1], p[2] + c[2], *q, frame="odom"))
 
 
 def main():
