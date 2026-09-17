@@ -28,6 +28,7 @@ import math
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -186,6 +187,7 @@ class CapabilityServer(Node):
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         from openai import OpenAI
         self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=120)
+        self.vlm_pool = ThreadPoolExecutor(4)
         self.rskill = ActionClient(self, ExecuteRskill, "/openral/execute_rskill", callback_group=cb)
         ActionServer(self, ExecuteCapability, "/space/capability/execute", self._execute, callback_group=cb)
         self.create_service(QueryCapability, "/space/capability/query", self._query, callback_group=cb)
@@ -258,9 +260,12 @@ class CapabilityServer(Node):
         f = self.frame(camera)
         # A single VLM answer is not stable (the same frame gave the button once and a point on the rail below it the next
         # time, research repo F53): ask until two answers agree, at most three times, and use the agreeing pair.
+        prompt = LOCATE_PROMPT.format(target=target, w=f["uw"], h=f["uh"])
+        replies = list(self.vlm_pool.map(lambda _: self.ask_vlm(f["path"], prompt), range(2)))  # the first two concurrently
         answers = []
-        for _ in range(VLM_LOCATE_ASKS):
-            found = re.search(r"\{.*\}", self.ask_vlm(f["path"], LOCATE_PROMPT.format(target=target, w=f["uw"], h=f["uh"])), re.S)
+        for k in range(VLM_LOCATE_ASKS):
+            reply = replies[k] if k < len(replies) else self.ask_vlm(f["path"], prompt)
+            found = re.search(r"\{.*\}", reply, re.S)
             j = json.loads(found.group(0)) if found else {"found": False}
             if j.get("found"):
                 box = j.get("box")
