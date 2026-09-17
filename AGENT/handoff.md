@@ -1,17 +1,27 @@
 # Handoff
 
-State as of 2026-09-17. **Phase D0's core has passed: Mission A and Mission B `covered` run end
-to end through the shared capability stack with realistic localization. §21.4's common capability boundary is
-proven live (Mission A through the boundary = direct run), and the PLEXIL baseline runs Mission A through it
-(F52). World-aware MoveIt + fixed arm hold: `heldout_cover_obstruction` capabilities pass.** Findings: `docs/research_findings.md` F1–F52 — **read F51, then F52**. Tasks: `todo.md`.
+State as of 2026-09-17 afternoon. **Ours (`space_runtime/`) completed Mission A `covered` autonomously (run oa1,
+verifier success, 43 steps, DeepSeek-V4.1-Flash)** -- arm targets then still the truth stand-in. Since then the stand-in
+is gone: contact targets come from wrist-camera vision (VLM locate + D435i depth + servo, `approach_target`), being
+validated by `vision_check.py` (vc3/vc4). Findings: `docs/research_findings.md` F1–F53 — **read F53**. Tasks: `todo.md`.
 
-## Plan change (2026-09-17, user decision)
+## Plan change (2026-09-17, user decisions)
 
-`execution_plan` §21 reordered: **Ours before the baselines** (matches §18, Phase E before F). Next, in order:
-ground tasks in lunar mission literature (`docs/lunar_task_catalog.md`, choose from it, no re-survey) → Ours
-(`space_runtime` + LLM/VLM) and shared perception → Ours on covered then held-out situations → PLEXIL Mission B +
-library → EUROPA → framework → freeze → Experiment I. §13.1: Ours may meet held-out situations before the freeze;
-failures get mission-generic changes only, never a situation-specific hint. Freeze = git commits/tags.
+- `execution_plan` §21 reordered: **Ours before the baselines**; tasks from `docs/lunar_task_catalog.md`; Ours may meet
+  held-out situations before the freeze (generic changes only); freeze = git commits/tags, no hashes.
+- Precise contact = **visual servoing with targets described in words** (fiducials tried and dropped): robustness to
+  target changes is what the baselines cannot do.
+- Both cameras are RealSense D435i (RGB-D). View with `orientation: grip` (wrist image level; `press` rolls it 90°).
+
+## Ours: how to run
+
+- `D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_CHECK=ours_mission_check.py D0_CAPABILITY_SERVER=1
+  OURS_MISSION=a|b` (cameras needed: the non-`_fast` scenes). Record: `<log>/ours/{events.jsonl,report.md,agent.log}`.
+- Continuity probe: `OURS_RESTART_AT_STEP=N [OURS_RESTART_MODEL=GLM-5.2]`.
+- Vision contact check: `D0_CHECK=vision_check.py D0_CAPABILITY_SERVER=1`.
+- LLM/VLM gateway key comes from `AGENT/VLM_provider.md` (run_d0.sh exports it and unsets the host proxy).
+- Video: `D0_VIDEO=<mp4>` + `SRB_VIDEO_SPEEDUP=1` → `<mp4>.times`; then `python3 experiments/video/overlay.py`.
+- Wall time: ~0.15x sim with cameras; LLM 25 s/step mean. Mission A with Ours ≈ 1 h.
 
 ## What D0 established (F51)
 
@@ -80,5 +90,6 @@ failures get mission-generic changes only, never a situation-specific hint. Free
 
 - openral: `master` ee6dec8, 6 commits ahead of `origin/master`, not pushed.
 - SRB: `feat/lunar-base-scene` b436599, 5 commits ahead of its origin, not pushed (`main` unchanged).
-- Research repo: `main` (no remote). PLEXIL 6.1.3, Ant, gperf under `~/Programs` (outside git, `docs/baselines/plexil.md`).
+- Research repo: `feat/ours-space-runtime` (not merged); openral `feat/wrist-depth-relay` (camera extrinsics, wrist
+  depth); SRB `feat/fiducials-video-times` (only the video `.times` sidecar, uncommitted). PLEXIL 6.1.3, Ant, gperf under `~/Programs` (outside git, `docs/baselines/plexil.md`).
 - Videos (not in git): `artifacts/videos/mission_{a,b}_covered.mp4`.
