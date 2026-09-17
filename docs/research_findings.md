@@ -2602,3 +2602,54 @@ moved. b8: 3.1 cm transient on the carry leg, **recovered to the held height (1.
 **Still open.** Perception held-out primitives (status_mismatch, destination_occupied, spare_swapped) need Phase E; the
 truth stand-ins (`locate_feature`, arm feature targets, movable objects in the planning scene) must be replaced
 before the freeze; a wedged rover defeats AMCL; PLEXIL plan library for Mission B and the held-out-relevant recovery.
+
+### F53 — Ours runs Mission A `covered` end to end (verifier success, 43 agent steps); the simulator's camera TF was frozen at spawn; contact targets move from truth to wrist-camera vision
+
+2026-09-17, execution_plan §21 items 2–4 (reordered: Ours before the baselines), Phase E. Research repo branch
+`feat/ours-space-runtime`.
+
+**1. Ours' runtime (`space_runtime/`).** OpenRAL's `ReasonerCore` runs the loop unchanged (one typed tool call per step,
+identical-call cap, tick spans); the harness supplies what OpenRAL lacks for this paper:
+- `facts.py`: append-only `events.jsonl` + reducer = authoritative facts (mission, robot evidence, verified effects,
+  observations, anomalies, availability/FDIR/approvals, working plan, recent steps, reasoner history). A restarted or
+  switched reasoner replays it (`--resume`); an effect in flight when a reasoner died becomes an anomaly.
+- `context.py`: the snapshot is rebuilt from the facts every step (no chat history).
+- `tools.py`: the palette is rendered from `contracts.yaml` (same names/args as PLEXIL) + plan tools + operator report /
+  request; decoded into OpenRAL's `ReasonerToolCall` union.
+- `guard.py` + `configs/space_runtime.yaml`: contract/arguments, hard availability, active-fault prohibition (the
+  safety kernel's latched `/openral/safety_status` → `estop` fact), authority class. No mission rule; the one invariant
+  first written ("arm stowed for base motion") was wrong -- Mission B carries clamped payloads under Nav2 -- and removed.
+- `verification.py`: effects from robot-observable evidence vs the commanded goal (AMCL base, arm kinematics, jaw and
+  joint encoders), never the skill flag or truth.
+- `report.py`: the report is generated from the record; the agent's own text is quoted.
+- OpenRAL's `DecomposeMissionTool` requires each subtask to name one tabletop object (`GroundedSubtask`): it rejected
+  "return to the dock" three models out of four. The plan tool keeps `MissionState` but takes plain strings, replacing
+  only open tasks.
+
+**2. Run oa1 (Mission A `covered`, DeepSeek-V4.1-Flash, cameras on, arm targets still the truth stand-in).**
+Verifier **success**: PDU-2 cleared with 1 press, rover at the dock (truth 0.10 m, AMCL 0.09 m), arm stowed. 43 steps,
+598 s sim, 63 min wall. The agent's own strategy: plan (after one OpenRAL grounding rejection), inspect PDU-1 (front
+camera from the view pose gave an ambiguous answer -- the cabinet carries decorative red lamps -- so it docked and read
+the lamp with the wrist camera 12 cm away: green), PDU-2 (red), press (close jaws, MoveIt to the button, 1 cm past its
+face), re-observe (green), inspect PDU-3 (green), stow, return, dock, report. The report matches the record.
+Wall time: 68 % robot execution at 0.15× real time (two 640×480 cameras rendering), 30 % LLM (25 s/step mean,
+2–99 s), 1 % VLM.
+
+**3. VLM.** DeepSeek-V4.1-Flash reads lamp colours reliably from the wrist camera at 12 cm; answers "cannot be seen"
+when a question names an unlabelled unit. Pointing (pixel JSON): lamp boxes within ~5 px on real frames (Qwen3.6-Plus
+and GLM-4.6V equally, but in 0–1000 normalised coordinates). All three confuse the red push button with the glowing red
+lamp when the wrist camera is rolled 90° -- "the lower dome" means nothing in a sideways image. The boundary now
+rotates frames gravity-upright (quarter turns from the camera's TF) before the VLM and maps pixels back.
+
+**4. Fiducials tried and dropped (user decision: visual servoing).** AprilTags on equipment would pre-engineer what can
+be perceived (only tagged things exist) and address targets by registry name, against the paper's claim; the pilot also
+detected nothing. Contact targets now come from `approach_target`: the VLM locates a target described in words in the
+wrist image, the arm shifts 6 cm sideways, the two rays are triangulated (≈1–3 mm/px at 20 cm), the tool servos to a
+stand-off and corrects once from a third view; `move_tool` does the last centimetres. Site points remain the survey
+placed by AMCL (several cm), used to bring the camera near. Shared by every method; no simulator truth left in
+`openral_ext` or `space_runtime`.
+
+**5. Defect: camera TF frozen at spawn.** IsaacLab `CameraCfg.update_latest_camera_pose` defaults to False, so
+`data.pos_w`/`quat_w_ros` keep the spawn pose and SRB's ROS interface broadcast it: `odom -> wrist_camera_optical_frame`
+was constant at (-0.30, 0.06, 1.61) while the arm moved. First vision run (vc1) triangulated a button 17.8 m away.
+Fixed in SRB `ground_manipulation/visual_ext.py` (True for all three cameras).
