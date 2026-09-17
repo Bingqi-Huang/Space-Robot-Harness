@@ -22,7 +22,9 @@ else:
              "then return the rover to the dock with the arm stowed.")
 run_dir = Path(os.environ["D0_LOG"]) / "ours"
 run_dir.mkdir(parents=True, exist_ok=True)
-env = dict(os.environ, PYTHONPATH=f"{REPO}:{os.environ.get('PYTHONPATH', '')}")
+# the run tag puts the agent under the run's teardown: an agent blocked in rclpy ignores SIGTERM, and two left over from
+# stopped runs were still alive in the next run's ROS domain (2026-09-17)
+env = dict(os.environ, PYTHONPATH=f"{REPO}:{os.environ.get('PYTHONPATH', '')}", D0_RUN_TAG=os.environ["D0_LOG"])
 log("PLAN", method="ours", brief=BRIEF, run_dir=str(run_dir))
 t0, sim0 = time.time(), sim["t"]
 # Continuity probe (Phase E exit 1): OURS_RESTART_AT_STEP=N kills the agent process (SIGKILL, no goodbye) once its record
