@@ -48,15 +48,12 @@ Current goal: all six steps of Ours, then a 1x-sim-time video with the agent's p
       verification band for MoveIt plans too tight (measured 0.9–3 cm execution error);
       AMCL re-seed after a restore lost (publisher not matched);
       a VLM gateway timeout crashed `approach_target` with no reason.
-- [x] Interface gaps (generic, shared by every method): arm mount / working radius / ready posture in the contracts;
-      a failed arm goal reports distance from the mount + MoveIt IK reachability + how far along the mount line it
-      becomes reachable; docking warns that a raised arm sweeps; **`look_at_feature`** (camera aiming from a reachable
-      viewing pose) — first use framed ORU + handle, both located.
+- [x] Ad-hoc pick patches tried and reverted (user decision); kept: arm-goal failure explanation, MoveIt execution band.
 - [x] Reasoner → DeepSeek-V4-Pro (offline replay); VLM → GLM-5.3-Flash (Kimi-K3 latency).
-- [x] ob6_s19d: first vision grasp in the agent loop clamped the ORU neck (jaw 0.175); lift blocked by joint3 at its stop.
-- [ ] ob6_s15e (running): look_at → approach → grasp → lift with joint3 constrained; then carry, place, return.
-- [ ] Design (user direction): on-board CAD-model pose tracking (FoundationPose / ViSP) + PBVS + pre-grasp visual check;
-      offline test on saved wrist frames first.
+- [x] ob6_s19d: vision grasp in the agent loop clamped the ORU neck (jaw 0.175); lift blocked by joint3 at its stop.
+- [ ] **Grasping rSkills** (user direction): on-board CAD-model pose tracking (FoundationPose / ViSP) + PBVS + MoveIt
+      coarse move + pre-grasp/post-lift visual checks; VLM only for semantic selection. Offline test on saved frames first.
+- [ ] Then Mission B covered from the depot step (snapshot workflow), place, return.
 - [ ] Analysis for the paper: failures were mostly interface granularity/feedback, not reasoner IQ; offline replay of
       the bad decision points on stronger reasoners to confirm.
 - [ ] Guard invariant candidate: no base motion while the arm is out past the hull (generic safety rule).

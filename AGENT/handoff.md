@@ -41,19 +41,18 @@ situations, then the 1x video. Findings: `docs/research_findings.md` F1–F54 �
 ## Mission B with Ours so far
 
 - ob1–ob4: lost query response; grasp missed (TCP semantics); ORU knocked; wrist camera could not frame the handle.
-- ob5/ob6 (step-wise): arm creep after every servo (fixed in openral), too-tight plan verification band, opaque MoveIt
-  failures (now explained with IK reachability + direction hint), agent re-docking with the arm raised pushed the ORU
-  (docking contract warns), AMCL re-seed lost after restore (fixed), no camera-aiming capability → `look_at_feature`.
-- Latest (ob6_s19d): look_at_feature framed ORU+handle; approach_target to 10 cm; slide 12 cm; **grasp clamped the neck
-  (jaw 0.175)**; lift stalled at 1.3 cm: joint3 parked at -3.06 rad (stop 3.107) by look_at's MoveIt plan → plans now
-  constrain joint3. Resumed before step 15 (look_at) as `ob6_s15e`, graph `artifacts/runs/ob6` held.
-- Reasoner switched to **DeepSeek-V4-Pro** (offline replay `experiments/reasoner_replay/replay.py`, 5 decision points x2:
-  V4-Pro 7/10, Kimi-K3 / Qwen3.8-Max / local qwen3.8 27B 3/10, GLM-5.3 2/10 mostly timeouts, V4.1-Flash 1/10 text,
-  3/10 with image). Shared VLM switched to **GLM-5.3-Flash** (Kimi-K3 95-150 s with timeouts on the gateway).
-- Other fixes this round: stand-off re-detection > 4 cm from the first view rejected (gripper hides the T crossbar
-  close up → box edge marked); VLM ask errors are unanswered asks; TF wait at the frame stamp.
-- Open design direction (user): classical visual servoing — CAD-model 6-DoF pose tracking on board (FoundationPose /
-  ViSP MBT) + PBVS through the arm kinematics + pre-grasp visual check; VLM only for semantic selection. Not started.
+- ob5/ob6 (step-wise): real defects fixed (servo creep after every move_ee_to_pose, AMCL re-seed after restore, VLM
+  timeouts crashing approach_target, TF one tick behind the camera frame). Ad-hoc pick patches were tried and
+  **reverted** (joint3 constraint, 4 cm re-detection rejection, coordinates/hints in contracts, look_at_feature grid
+  search, dev-check string/push stops). Kept: arm-goal failure explanation (distance from mount, MoveIt IK
+  reachability, joints at stops) and the measured MoveIt execution band in verification.
+- Best so far (ob6_s19d, with the reverted patches): vision grasp clamped the ORU neck (jaw 0.175); lift stalled
+  (joint3 at its stop). Graph torn down.
+- Reasoner **DeepSeek-V4-Pro** (offline replay `experiments/reasoner_replay/replay.py`: V4-Pro 7/10, Kimi-K3 /
+  Qwen3.8-Max / local qwen3.8 27B 3/10, GLM-5.3 2/10, V4.1-Flash 1/10 text, 3/10 with image). VLM **GLM-5.3-Flash**.
+- **Next (user decision): rebuild grasping as on-board rSkills** -- VLM semantic selection only; CAD-model 6-DoF pose
+  tracking (FoundationPose / ViSP MBT); PBVS through the arm kinematics with MoveIt for the coarse move; pre-grasp and
+  post-lift visual checks. Offline test on saved wrist frames first.
 - Timing (ob6_s15d): reasoner thinking ~55 %, arm motion ~25 %, VLM ~20 % of wall time; reasoner 40–255 s per step.
 - Analysis: 12 failures = 4 stack defects, 5 interface gaps, 3 reasoner judgement errors (all where the interface made
   it do 3-D kinematics in coordinates).
