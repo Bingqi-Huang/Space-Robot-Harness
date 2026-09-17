@@ -37,6 +37,7 @@ import rclpy
 from moveit_msgs.srv import GetPositionIK
 from openral_msgs.action import ExecuteRskill
 from rclpy.action import ActionClient, ActionServer
+from rclpy.duration import Duration
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -246,7 +247,8 @@ class CapabilityServer(Node):
         img = np.frombuffer(m.data, np.uint8).reshape(m.height, m.width, -1)
         bgr = cv2.cvtColor(img, {"rgb8": cv2.COLOR_RGB2BGR, "rgba8": cv2.COLOR_RGBA2BGR, "bgra8": cv2.COLOR_BGRA2BGR}[m.encoding]) if m.encoding != "bgr8" else img
         stamp = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
-        tr = self.buf.lookup_transform("odom", m.header.frame_id, Time.from_msg(m.header.stamp)).transform
+        # the frame can be a tick newer than the latest TF (ob6_s19c: 20 ms): wait for the pose at its stamp
+        tr = self.buf.lookup_transform("odom", m.header.frame_id, Time.from_msg(m.header.stamp), timeout=Duration(seconds=1.0)).transform
         pose = (np.array([tr.translation.x, tr.translation.y, tr.translation.z]), quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w))
         # gravity-upright image for the VLM: "above"/"below" in a description then mean what they mean on the equipment,
         # whatever the wrist's roll (quarter turns; pixels are mapped back to the raw image)
