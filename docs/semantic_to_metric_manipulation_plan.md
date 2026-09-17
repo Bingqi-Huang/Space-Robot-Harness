@@ -14,7 +14,9 @@ No code yet.
    trusted. The target lives in the eye-in-hand camera image (pixels + local depth) and is servoed there. The only
    geometry used is the robot's own: the fixed camera-to-tool mount and the arm's Cartesian velocity interface.
 4. **Closed loop at camera rate; verification from images and encoders.** Every contact step is guarded and checked.
-5. **Recovery stays with the agent.** Skills make one attempt and report a typed outcome.
+5. **Failures are bridged by the harness** (§5a): skills keep bounded control reflexes and report typed outcomes; the
+   harness safes the robot, keeps the attempt memory, exposes the recovery options and budgets, and verifies the
+   recovery; the agent chooses the recovery. No scenario-specific recovery graph anywhere.
 
 ## 2. Pipeline
 
@@ -73,6 +75,19 @@ space-mission layer below.
 - **Latency layering:** cloud reasoning (tens of seconds) never sits inside the 15 Hz loop.
 - **Evidence:** every outcome links its frames and tracks.
 
+## 5a. Failure bridging (harness-centred)
+
+| Layer | Who | What happens on a failure | Bounded by |
+|---|---|---|---|
+| A. Control reflexes | skill | re-acquire a lost track by feature match; on a stall back off to the pre-grasp and re-centre; each reflex logged | seconds, no goal change |
+| B. Safing | harness (invariants) | stop; retreat along the recorded path to the last safe stand-off; if the hold is uncertain the object fact becomes `unknown` and contact effects are blocked until a fresh observation; base stays locked while the arm is out | always, automatic |
+| C. Recovery context | harness | diagnosis fact (outcome, measured cause e.g. "misaligned 2.1 cm left of the jaw gap", candidate id, view id, evidence); per-target attempt ledger (candidates / viewpoints / base poses tried and their outcomes, failed candidates marked on the next selection image); the recovery options the capability metadata offers (other candidate, other viewpoint, reposition base, other grasp part, release and retreat, ask operator); attempt and time budgets | budget exhaustion → operator request with the evidence package |
+| D. Recovery choice | agent | picks an option or revises the plan (e.g. use the other spare, report) | harness guard + verification |
+| E. Verification | harness | a recovery counts only when the independent verifier confirms it | — |
+
+Provider failures are bridged the same way: VLM or reasoner no-answer → provider failover recorded as a fact.
+Measured in the experiments as recovered-failure rate, attempts per success, operator requests.
+
 ## 6. Capability boundary
 
 Effects `grasp_object(description, intent)` and `place_object(description_of_place)`; query `grasp_candidates` (the
@@ -93,6 +108,9 @@ annotated candidate image and the VLM's pick, for transparency). Same contracts 
 
 ## 8. Risks
 
+- Isaac ROS FoundationPose (Isaac ROS 4.6, 2026-08) is not a drop-in: it requires the object mesh (against principle
+  1), current packages target ROS 2 Jazzy (our stack is Humble, Ubuntu 22.04), and estimation runs at 0.5–6 fps. Kept
+  only as a possible comparator (e.g. with a mesh reconstructed on the fly from wrist RGB-D), not in the pipeline.
 - Learned generators are trained on tabletop objects; a handle on a large box should be graspable, the crate's lid
   handle likewise — G1 decides. Build of their CUDA ops against host CUDA 13 / torch cu128 → separate env if needed.
 - Fingers occlude the handle close in → KLT patch + stop the servo at pre-grasp, then a guarded straight close-in.
