@@ -68,10 +68,19 @@ if RESUME_FROM:
     ip.pose.pose.orientation.z, ip.pose.pose.orientation.w = math.sin(est["yaw"] / 2), math.cos(est["yaw"] / 2)
     ip.pose.covariance[0] = ip.pose.covariance[7] = 0.02 ** 2
     ip.pose.covariance[35] = 0.02 ** 2
-    n.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10).publish(ip)
-    t_restore = sim["t"]
-    while sim["t"] - t_restore < 5.0:
+    # published before AMCL has matched the new publisher, the message is lost (ob6_s15b kept a 0.16 m stale estimate):
+    # wait for the match, and re-send until the estimate is the saved one
+    ip_pub = n.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
+    while ip_pub.get_subscription_count() == 0:
         spin(0.2)
+    while True:
+        ip_pub.publish(ip)
+        t_restore = sim["t"]
+        while sim["t"] - t_restore < 3.0:
+            spin(0.2)
+        p_est, yaw_est, _ = est_pose()
+        if math.hypot(p_est[0] - est["x"], p_est[1] - est["y"]) < 0.03:
+            break
     log("RESTORED", snapshot=str(snap), estimate=est, truth_error=base_err([est["x"], est["y"]], est["yaw"]))
 STOP_ON_FAILURE = bool(os.environ.get("OURS_STOP_ON_FAILURE"))
 log("PLAN", method="ours", brief=BRIEF, run_dir=str(run_dir))
