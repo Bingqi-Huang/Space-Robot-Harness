@@ -8,8 +8,8 @@ import math
 
 BASE_NAV = {"navigate_to_pose", "navigate_to_feature"}
 BASE_DOCK = {"dock_to_pose", "dock_at_feature"}
-TCP = {"plan_ee_pose", "move_ee_to_pose", "plan_ee_to_feature", "move_ee_to_feature"}
-TCP_DEFAULT_TOL = {"plan_ee_pose": 0.01, "plan_ee_to_feature": 0.01, "move_ee_to_pose": 0.015, "move_ee_to_feature": 0.015}
+TCP = {"plan_ee_pose", "move_ee_to_pose", "plan_ee_to_feature", "move_ee_to_feature", "move_tool"}
+TCP_DEFAULT_TOL = {"plan_ee_pose": 0.01, "plan_ee_to_feature": 0.01, "move_ee_to_pose": 0.015, "move_ee_to_feature": 0.015, "move_tool": 0.015}
 
 
 def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]:
@@ -27,6 +27,11 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]
         d = math.dist(evidence["tcp_pose"]["position"], goal["position"])
         out.append(dict(effect="tool_at_commanded_position", holds=d <= tol, position_error_m=round(d, 4), band_m=round(tol, 4),
                         source="arm forward kinematics vs commanded TCP target (rover frame)"))
+    if capability == "approach_target" and "target_rover" in evidence and isinstance(evidence.get("tcp_pose"), dict):
+        standoff = args.get("standoff_m", 0.10)
+        d = math.dist(evidence["tcp_pose"]["position"], evidence["target_rover"])
+        out.append(dict(effect="tool_at_standoff_from_seen_target", holds=abs(d - standoff) <= cfg["tcp"]["approach_band_m"],
+                        tool_to_target_m=round(d, 4), standoff_m=standoff, source="arm kinematics vs wrist-camera triangulated target"))
     arm = evidence.get("arm")
     if capability in ("grasp", "release") and isinstance(arm, dict):
         jaw = arm["jaw_rad"]

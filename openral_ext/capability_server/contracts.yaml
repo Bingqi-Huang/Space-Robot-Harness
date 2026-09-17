@@ -113,8 +113,10 @@ effects:
 
   plan_ee_to_feature:
     description: >-
-      Plan and execute (MoveIt) the TCP to `offset_m` in front of a site feature along its normal, tool into the
-      surface; `orientation` press = jaw axis vertical, grip = horizontal.
+      Plan and execute (MoveIt) the TCP to `offset_m` in front of a surveyed site feature along its normal, tool into
+      the surface; `orientation` press = jaw axis vertical, grip = horizontal. The feature is placed by the rover's
+      localization, so expect several centimetres of error: good for bringing the tool and wrist camera near, not for
+      contact.
     inputs:
       feature: [string, true, "site interaction point"]
       offset_m: [number, true, "distance in front of the feature along its normal, m (negative = into it)"]
@@ -126,8 +128,8 @@ effects:
 
   move_ee_to_feature:
     description: >-
-      Servo the TCP in a straight line to `offset_m` in front of a site feature along its normal (plus `lift_m`
-      vertically) and hold; tool into the surface.
+      Servo the TCP in a straight line to `offset_m` in front of a surveyed site feature along its normal (plus
+      `lift_m` vertically) and hold; tool into the surface. Same localization error as plan_ee_to_feature.
     inputs:
       feature: [string, true, "site interaction point"]
       offset_m: [number, true, "distance in front of the feature along its normal, m (negative = into it)"]
@@ -135,6 +137,38 @@ effects:
       orientation: ["string(press|grip)", false, "tool orientation (default press)"]
       tolerance_m: [number, false, "position tolerance (default 0.015)"]
       max_linear_speed_m_s: [number, false, "speed cap"]
+      timeout_s: [number, false, "servo timeout on the graph clock (default 25)"]
+    default_deadline_s: 60
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+
+  approach_target:
+    description: >-
+      Bring the tool to `standoff_m` in front of a target described in words, facing it, guided by the wrist camera:
+      a vision-language model finds the target in the image, the arm shifts sideways for a second view, the two views
+      are triangulated, the tool servos to the stand-off and the camera re-checks and corrects. The target must be in
+      the wrist camera's view when called (use locate_in_view / observe to check). Describe it unambiguously by
+      appearance and position (e.g. "the red mushroom-shaped push button, not the glowing round lamp"). Ends aligned
+      with the target; finish contact with move_tool.
+    inputs:
+      target: [string, true, "what to approach, described by appearance and position"]
+      standoff_m: [number, false, "distance in front of the target to stop at, m (default 0.10)"]
+      orientation: ["string(press|grip)", false, "tool orientation: press = jaw axis vertical, grip = horizontal (default press)"]
+    default_deadline_s: 300
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+
+  move_tool:
+    description: >-
+      Move the tool in a straight line relative to where it is: `forward_m` along the tool axis (positive = the way
+      the tool points), `up_m` vertically, `left_m` horizontally across the tool axis; orientation unchanged. For the
+      last centimetres of contact (pushing a button, sliding the jaws over a handle) and for lifting or retreating.
+    inputs:
+      forward_m: [number, false, "along the tool axis, m (default 0)"]
+      up_m: [number, false, "vertical, m (default 0)"]
+      left_m: [number, false, "horizontal across the tool axis, m (default 0)"]
+      max_linear_speed_m_s: [number, false, "speed cap (default the skill's)"]
+      tolerance_m: [number, false, "position tolerance (default 0.015)"]
       timeout_s: [number, false, "servo timeout on the graph clock (default 25)"]
     default_deadline_s: 60
     authority_class: routine
@@ -172,6 +206,14 @@ queries:
     inputs:
       camera: ["string(front|wrist)", true, "which camera"]
       question: [string, true, "what to look for, e.g. the colour of a status lamp or whether a place is occupied"]
+  locate_in_view:
+    description: >-
+      Find a target described in words in one camera's current image (vision-language model): whether it is visible,
+      its pixel position and box, and the viewing ray to it in `chassis_base_link` (no range; approach_target
+      triangulates). The frame is kept as evidence.
+    inputs:
+      camera: ["string(front|wrist)", true, "which camera"]
+      target: [string, true, "what to find, described by appearance and position"]
   arm_state:
     description: Arm posture from the joint encoders (stowed / ready / other), joint angles and the jaw angle.
     inputs: {}
@@ -186,10 +228,8 @@ queries:
     inputs: {}
   locate_feature:
     description: >-
-      Where a named feature is relative to the rover: position and outward normal in `chassis_base_link`, with its
-      source. Site interaction points come from the rover's cameras when their equipment's visual targets have been
-      seen, else from the survey placed by the rover's localization. Movable objects (spare_oru, spare_crate,
-      service_cover) are known only once the cameras have seen them; the answer then includes the object's size and
-      handle height.
+      Where a surveyed site interaction point is relative to the rover: position and outward normal in
+      `chassis_base_link`, from the site survey placed by the rover's localization (expect several centimetres of
+      error; use vision for contact).
     inputs:
-      name: [string, true, "interaction point (e.g. pdu_2_panel/press) or movable object (e.g. spare_oru)"]
+      name: [string, true, "site interaction point, e.g. pdu_2_panel/press"]

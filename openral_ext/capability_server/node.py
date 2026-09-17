@@ -5,13 +5,17 @@
     /space/capability/query    space_harness_msgs/QueryCapability    (queries: PLEXIL Lookups, Ours' query tools)
 
 The contracts (names, typed inputs, meaning) are `contracts.yaml`. An effect is checked against its contract and lowered
-to exactly one `openral_msgs/ExecuteRskill` dispatch on `/openral/execute_rskill`, so every route -- Ours, PLEXIL,
-EUROPA->PLEXIL -- passes through the same OpenRAL runner, safety kernel, HAL and simulator. The result carries only
-robot-observable evidence (estimated base pose, TCP in the rover frame, jaw); the mission verifier is evaluator-only and
-never crosses this boundary. No mission logic lives here: one call, one skill, no retries, no orderings.
+to `openral_msgs/ExecuteRskill` dispatches on `/openral/execute_rskill`, so every route -- Ours, PLEXIL,
+EUROPA->PLEXIL -- passes through the same OpenRAL runner, safety kernel, HAL and simulator. Most effects are one
+dispatch; `approach_target` is the camera-in-the-loop controller (detect the named target in the wrist camera, move
+sideways, detect again, triangulate, servo to a stand-off, detect and correct), i.e. several TCP servo dispatches
+closed over vision -- a controller, not a mission step. The result carries only robot-observable evidence; the mission
+verifier is evaluator-only and never crosses this boundary. No mission logic lives here: no orderings, no retries.
 
-The lowering parameters are the ones the D0 checks used when they dispatched rSkills directly (research repo F51), so a
-mission driven through this boundary exercises the same skills with the same settings.
+Targets come from the robot's own sensing: site interaction points from the survey placed by the rover's
+localization (AMCL, errors of several centimetres), precise contact targets from vision (`approach_target`,
+`locate_in_view`: a vision-language model locates a target described in words in the camera image). No simulator
+truth.
 
 Run inside a sourced graph (ROS Humble + openral install + ros/install):
     python3 openral_ext/capability_server/node.py
@@ -19,6 +23,7 @@ Run inside a sourced graph (ROS Humble + openral install + ros/install):
 
 import base64
 import json
+import re
 import math
 import os
 import threading
@@ -37,16 +42,12 @@ from rclpy.parameter import Parameter
 from rclpy.time import Time
 from rosgraph_msgs.msg import Clock
 from rclpy.qos import qos_profile_sensor_data
-from rclpy.qos import QoSDurabilityPolicy, QoSProfile
-from sensor_msgs.msg import Image, JointState
-from std_msgs.msg import String
+from sensor_msgs.msg import CameraInfo, Image, JointState
 from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
 from tf2_ros import Buffer, TransformListener
 
-import yaml
-
-from contracts import CONTRACTS, HERE, IX, check_args
+from contracts import CONTRACTS, IX, check_args
 READY = [0.0, -1.0, 0.0, -1.4, 0.0, 1.2, 0.0]  # the arm's ready posture (robot, not mission)
 STOW = [0.0, -0.6, 0.0, 1.2, 0.0, 0.6, 0.0]  # rskill-procedural-stow's travel pose
 ARM_JOINTS = [f"joint{i}" for i in range(1, 8)]
@@ -58,19 +59,13 @@ POINT_TYPES = {
 }
 VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "DeepSeek-V4.1-Flash")  # the shared scene VLM (same for every method)
 VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com/v1")
+LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
+                 '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
+BASELINE_M = 0.06  # sideways camera shift between the two views approach_target triangulates from
+TRIANGULATION_GAP_M = 0.03  # two views whose rays pass further apart than this did not see the same point
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
 HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]["press"]  # arm reach past the hull (C3)
-
-
-FIDUCIALS = yaml.safe_load((HERE / "../perception/fiducials.yaml").read_text())
-INSTANCE_TYPE = {inst: kind for kind, insts in FIDUCIALS["static_carriers"].items() for inst in insts}
-AUTHORED = HERE / "../../space_robotics_bench/assets/lunar_base/authored"
-MOVABLE = FIDUCIALS["movable_carriers"]
-
-
-def carrier_frame(kind: str, key: str) -> dict:
-    return json.loads((AUTHORED / kind / "frames.json").resolve().read_text())[key]
 
 
 def horizontal(v) -> np.ndarray:
@@ -174,15 +169,15 @@ class CapabilityServer(Node):
         cb = ReentrantCallbackGroup()
         self.buf = Buffer()
         TransformListener(self.buf, self)
-        self.perceived, self.jaw, self.arm_q, self.sim_t = {}, None, None, 0.0
-        # relative perception (openral_ext/perception/fiducial_node.py): carrier poses in `odom`
-        self.create_subscription(String, "/space/perception/instances", lambda m: setattr(self, "perceived", json.loads(m.data)),
-                                 QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL), callback_group=cb)
+        self.jaw, self.arm_q, self.sim_t = None, None, 0.0
+        self.infos = {}
         self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
         self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
         self.images = {}
         for cam in ("front", "wrist"):
             self.create_subscription(Image, f"/openral/cameras/{cam}/image", lambda m, cam=cam: self.images.__setitem__(cam, m),
+                                     qos_profile_sensor_data, callback_group=cb)
+            self.create_subscription(CameraInfo, f"/openral/cameras/{cam}/camera_info", lambda m, cam=cam: self.infos.__setitem__(cam, m),
                                      qos_profile_sensor_data, callback_group=cb)
         self.evidence_dir = Path(os.environ.get("SPACE_EVIDENCE_DIR", os.environ.get("D0_LOG", "/tmp"))) / "evidence"
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -223,82 +218,88 @@ class CapabilityServer(Node):
                                for k, v in IX["view_poses"].items()},
                 "dock": {"x": 0.0, "y": 0.0, "yaw": 0.0}}
 
-    def observe(self, camera: str, question: str):
-        m = self.images[camera]
+    def frame(self, camera: str):
+        """The latest image of a camera, saved as evidence, with the camera's pose in `odom` at its stamp."""
+        m, info = self.images[camera], self.infos[camera]
         img = np.frombuffer(m.data, np.uint8).reshape(m.height, m.width, -1)
         bgr = cv2.cvtColor(img, {"rgb8": cv2.COLOR_RGB2BGR, "rgba8": cv2.COLOR_RGBA2BGR, "bgra8": cv2.COLOR_BGRA2BGR}[m.encoding]) if m.encoding != "bgr8" else img
         stamp = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
         path = self.evidence_dir / f"{camera}_{stamp:010.2f}.jpg"
         cv2.imwrite(str(path), bgr)
+        tr = self.buf.lookup_transform("odom", m.header.frame_id, Time.from_msg(m.header.stamp)).transform
+        pose = (np.array([tr.translation.x, tr.translation.y, tr.translation.z]), quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w))
+        return dict(camera=camera, path=path, stamp=stamp, K=np.array(info.k).reshape(3, 3), w=m.width, h=m.height, pose_odom=pose)
+
+    def ask_vlm(self, path: Path, text: str) -> str:
         b64 = base64.b64encode(path.read_bytes()).decode()
         r = self.vlm.chat.completions.create(model=VLM_MODEL, messages=[{"role": "user", "content": [
-            {"type": "text", "text": f"{question}\nAnswer from this camera image only, briefly. If it cannot be seen clearly, say so."},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}])
-        return {"camera": camera, "answer": (r.choices[0].message.content or "").strip(), "frame_stamp_s": round(stamp, 2),
-                "image": str(path), "model": VLM_MODEL}
+            {"type": "text", "text": text}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}}]}])
+        return (r.choices[0].message.content or "").strip()
+
+    def observe(self, camera: str, question: str):
+        f = self.frame(camera)
+        answer = self.ask_vlm(f["path"], f"{question}\nAnswer from this camera image only, briefly. If it cannot be seen clearly, say so.")
+        return {"camera": camera, "answer": answer, "frame_stamp_s": round(f["stamp"], 2), "image": str(f["path"]), "model": VLM_MODEL}
+
+    def detect(self, camera: str, target: str) -> dict:
+        """Where a target described in words is in the current image of a camera, and the viewing ray to it in `odom`."""
+        f = self.frame(camera)
+        reply = self.ask_vlm(f["path"], LOCATE_PROMPT.format(target=target, w=f["w"], h=f["h"]))
+        found = re.search(r"\{.*\}", reply, re.S)
+        j = json.loads(found.group(0)) if found else {"found": False}
+        out = dict(camera=camera, image=str(f["path"]), frame_stamp_s=round(f["stamp"], 2), found=bool(j.get("found")))
+        if out["found"]:
+            u, v = map(float, j["center"])
+            ray_cam = np.linalg.inv(f["K"]) @ np.array([u, v, 1.0])
+            t, R = f["pose_odom"]
+            out.update(pixel=[round(u), round(v)], box=j.get("box"), origin=t, direction=R @ (ray_cam / np.linalg.norm(ray_cam)))
+        return out
+
+    def locate_in_view(self, camera: str, target: str):
+        d = self.detect(camera, target)
+        out = {k: d[k] for k in ("camera", "found", "image", "frame_stamp_s")}
+        if d["found"]:
+            t, R = self._tf("chassis_base_link", "odom")
+            out.update(pixel=d["pixel"], box=d["box"], ray_frame="chassis_base_link", ray_origin=[round(float(v), 4) for v in R @ d["origin"] + t],
+                       ray_direction=[round(float(v), 4) for v in R @ d["direction"]])
+        return out
 
     def tcp_pose(self):
         p, R = self._tf("chassis_base_link", "tcp_frame")
         return {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in p]}
 
-    def feature_geometry(self, name: str) -> dict:
-        """Where a feature is: point, horizontal outward normal (the side the arm works from) and the frame they are in.
-
-        Static equipment: the carrier pose the cameras last measured (`odom`), else the surveyed site point (`map`,
-        placed by the rover's localization). Movable objects: measured only -- an object never seen is not locatable.
-        """
-        head, key = (name.split("/") + [""])[:2]
-        seen = self.perceived.get(head)
-        if head in MOVABLE:
-            if seen is None:
-                raise LookupError(f"{head} has not been seen by the rover's cameras; look at it first")
-            T = np.eye(4)
-            T[:3, :3], T[:3, 3] = quat_to_mat(*seen["quat_xyzw"]), seen["position"]
-            if head == "service_cover":
-                h = carrier_frame("service_cover", "handle")
-                n = horizontal(T[:3, :3] @ np.array(h["normal"], float))
-            else:
-                h = IX["objects"][head]["handle"]
-                axis = horizontal(T[:3, :3] @ np.array({"X": [1.0, 0, 0], "Y": [0, 1.0, 0]}[h["axis"]]))
-                n = np.array([-axis[1], axis[0], 0.0])  # the jaws straddle the bail: approach across its axis ...
-                rover, _ = self._tf("odom", "chassis_base_link")
-                n = n if n @ (rover - T[:3, 3]) >= 0 else -n  # ... from the rover's side
-            return dict(frame="odom", p=T[:3, :3] @ np.array(h["xyz"], float) + T[:3, 3], n=n, source="fiducial",
-                        age_s=round(self.sim_t - seen["stamp"], 1), object=IX["objects"][head])
+    def feature_geometry(self, name: str):
+        """A surveyed site interaction point in `map` (placed by the rover's localization) and its horizontal outward normal."""
         pt = IX["points"][name]
-        if seen is not None:
-            f = carrier_frame(INSTANCE_TYPE[head], key)
-            T = np.eye(4)
-            T[:3, :3], T[:3, 3] = quat_to_mat(*seen["quat_xyzw"]), seen["position"]
-            return dict(frame="odom", p=T[:3, :3] @ np.array(f["xyz"], float) + T[:3, 3], n=horizontal(T[:3, :3] @ np.array(f["normal"], float)),
-                        source="fiducial", age_s=round(self.sim_t - seen["stamp"], 1))
-        return dict(frame="map", p=np.array(pt["xyz"], float), n=horizontal(pt["normal"]), source="survey")
+        return np.array(pt["xyz"], float), horizontal(pt["normal"])
 
-    def in_frame(self, g: dict, target: str):
-        t, R = self._tf(target, g["frame"])
-        return R @ g["p"] + t, R @ g["n"]
+    def to_rover(self, p_map, n_map):
+        t, R = self._tf("chassis_base_link", "map")
+        return R @ p_map + t, R @ n_map
 
     def locate_feature(self, name):
-        g = self.feature_geometry(name)
-        p, n = self.in_frame(g, "chassis_base_link")
-        out = {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in p], "normal": [round(float(v), 4) for v in n],
-               "source": g["source"]}
-        if "age_s" in g:
-            out["measured_s_ago"] = g["age_s"]
-        if "object" in g:
-            o = g["object"]
-            out["object"] = {"size_m": o["size_m"], "handle_height_above_base_m": o.get("handle", {}).get("xyz", [0, 0, None])[2]}
-        return out
+        p, n = self.to_rover(*self.feature_geometry(name))
+        return {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in p], "normal": [round(float(v), 4) for v in n],
+                "source": "site survey placed by the rover's localization (expect several cm of error)"}
 
     def feature_target(self, a: dict) -> dict:
-        """TCP target for a feature capability, in the rover frame, from the feature's measured or surveyed geometry."""
-        p, n = self.in_frame(self.feature_geometry(a["feature"]), "chassis_base_link")
+        """TCP target for a feature capability, in the rover frame, from the surveyed feature and the rover's localization."""
+        p, n = self.to_rover(*self.feature_geometry(a["feature"]))
         p = p + n * a["offset_m"] + np.array([0.0, 0.0, a.get("lift_m", 0.0)])
         return {"position": p.tolist(), "orientation_xyzw": mat_to_quat(tool_rotation(n, a.get("orientation", "press")))}
 
+    def move_tool_target(self, a: dict) -> dict:
+        """A straight-line TCP displacement: `forward_m` along the tool axis, `up_m` vertical, `left_m` horizontal across."""
+        p, R = self._tf("chassis_base_link", "tcp_frame")
+        fwd = R[:, 2]
+        left = np.cross([0.0, 0.0, 1.0], fwd)
+        left = left / np.linalg.norm(left) if np.linalg.norm(left) > 1e-6 else R[:, 0]
+        goal = p + fwd * a.get("forward_m", 0.0) + np.array([0.0, 0.0, a.get("up_m", 0.0)]) + left * a.get("left_m", 0.0)
+        return {"position": goal.tolist(), "orientation_xyzw": mat_to_quat(R)}
+
     def lower_effect(self, capability: str, a: dict) -> dict:
         if capability in ("navigate_to_feature", "dock_at_feature"):
-            p, n = self.in_frame(self.feature_geometry(a["feature"]), "map")
+            p, n = self.feature_geometry(a["feature"])
             x, y, yaw = work_pose_from(p, n, a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0))
             if capability == "navigate_to_feature":
                 return lower("navigate_to_pose", dict(x=x, y=y, yaw=yaw))
@@ -308,7 +309,75 @@ class CapabilityServer(Node):
         if capability == "move_ee_to_feature":
             extra = {k: a[k] for k in ("tolerance_m", "max_linear_speed_m_s", "timeout_s") if k in a}
             return lower("move_ee_to_pose", {**self.feature_target(a), **extra})
+        if capability == "move_tool":
+            extra = {k: a[k] for k in ("tolerance_m", "max_linear_speed_m_s", "timeout_s") if k in a}
+            return lower("move_ee_to_pose", {**self.move_tool_target(a), **extra})
         return lower(capability, a)
+
+    # ---- the camera-in-the-loop controller ------------------------------------------------------------------------
+    def approach_target(self, a: dict, handle) -> tuple[bool, str, dict]:
+        """Bring the tool to `standoff_m` in front of a target described in words, facing it, from wrist-camera vision."""
+        target, standoff, orientation = a["target"], a.get("standoff_m", 0.10), a.get("orientation", "press")
+        ev = {"target": target, "views": []}
+
+        def view(tag):
+            d = self.detect("wrist", target)
+            ev["views"].append({"at": tag, "found": d["found"], "pixel": d.get("pixel"), "image": d["image"]})
+            return d
+
+        d0 = view("start")
+        if not d0["found"]:
+            return False, f"target not found in the wrist camera image: {target!r}", ev
+        cam_x_odom = self.buf.lookup_transform("odom", "wrist_camera_optical_frame", Time()).transform
+        Rc = quat_to_mat(cam_x_odom.rotation.x, cam_x_odom.rotation.y, cam_x_odom.rotation.z, cam_x_odom.rotation.w)
+        t_ro, R_ro = self._tf("chassis_base_link", "odom")
+        shift = self.move_tool_target({})
+        shift["position"] = (np.array(shift["position"]) + R_ro @ Rc[:, 0] * BASELINE_M).tolist()  # sideways along the image x axis
+        ok, why = self.run_rskill(handle, "move_ee_to_pose", {**shift, "tolerance_m": 0.005, "max_linear_speed_m_s": 0.05})
+        if not ok:
+            return False, f"sideways move for the second view failed: {why}", ev
+        d1 = view("shifted")
+        if not d1["found"]:
+            return False, f"target lost in the second view: {target!r}", ev
+        # closest points of the two rays
+        o0, u0, o1, u1 = d0["origin"], d0["direction"], d1["origin"], d1["direction"]
+        w, b = o0 - o1, u0 @ u1
+        s0 = (b * (u1 @ w) - (u0 @ w)) / (1 - b * b)
+        s1 = ((u1 @ w) - b * (u0 @ w)) / (1 - b * b)
+        p0, p1 = o0 + s0 * u0, o1 + s1 * u1
+        gap = float(np.linalg.norm(p0 - p1))
+        X = (p0 + p1) / 2
+        ev.update(triangulation_gap_m=round(gap, 4), range_m=round(float(s0), 3))
+        if gap > TRIANGULATION_GAP_M or s0 <= 0:
+            return False, f"the two views do not agree on one point (ray gap {gap:.3f} m): the description may match several things", ev
+        n_odom = horizontal(o1 - X)  # approach from the camera's side, horizontally
+
+        def servo(Xo, tag):
+            p, n = R_ro @ Xo + t_ro, R_ro @ n_odom
+            goal = {"position": (p + n * standoff).tolist(), "orientation_xyzw": mat_to_quat(tool_rotation(n, orientation))}
+            ok, why = self.run_rskill(handle, "move_ee_to_pose", {**goal, "tolerance_m": 0.008, "max_linear_speed_m_s": 0.06, "timeout_s": 30.0})
+            ev["views"].append({"at": tag, "servo_ok": ok, "goal_rover": [round(v, 4) for v in goal["position"]]})
+            return ok, why
+
+        ok, why = servo(X, "stand-off")
+        if not ok:
+            return False, f"servo to the stand-off failed: {why}", ev
+        d2 = view("stand-off")
+        if d2["found"]:  # correct the point along the new ray: keep its depth, move it onto what the camera now sees
+            X2 = d2["origin"] + d2["direction"] * float((X - d2["origin"]) @ d2["direction"])
+            ev["correction_m"] = round(float(np.linalg.norm(X2 - X)), 4)
+            if ev["correction_m"] > 0.004:
+                X = X2
+                ok, why = servo(X, "corrected stand-off")
+                if not ok:
+                    return False, f"corrective servo failed: {why}", ev
+        p = R_ro @ X + t_ro
+        ev["target_rover"] = [round(float(v), 4) for v in p]
+        return True, "", ev
+
+    def run_rskill(self, handle, capability: str, a: dict, deadline: float = 60.0) -> tuple[bool, str]:
+        r = self.dispatch(handle, CONTRACTS["effects"]["move_ee_to_pose"]["lowers_to"], lower(capability, a), deadline)
+        return bool(r.success), r.failure_reason
 
     def _query(self, req, res):
         try:
@@ -318,7 +387,8 @@ class CapabilityServer(Node):
             reason = check_args(CONTRACTS["queries"][req.query], args)
             if reason:
                 raise ValueError(reason)
-            value = {"observe": lambda: self.observe(args["camera"], args["question"]), "site_map": self.site_map, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
+            value = {"observe": lambda: self.observe(args["camera"], args["question"]),
+                     "locate_in_view": lambda: self.locate_in_view(args["camera"], args["target"]), "site_map": self.site_map, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
                      "locate_feature": lambda: self.locate_feature(args["name"])}[req.query]()
             res.success, res.value_json = True, json.dumps(value)
         except Exception as exc:  # reason: every failure is a typed answer to the caller, not a dead service
@@ -345,33 +415,15 @@ class CapabilityServer(Node):
             res.failure_reason = contract_reason or f"unknown capability {g.capability!r} (effects: {sorted(CONTRACTS['effects'])})"
             return res
         deadline = g.deadline_s or float(contract["default_deadline_s"])
-        try:
-            params = self.lower_effect(g.capability, args)
-        except LookupError as exc:  # the target cannot be located (an object not yet seen): a typed refusal, not a crash
-            handle.succeed()
-            res.success, res.failure_kind, res.failure_reason = False, REJECTED, str(exc)
-            return res
-        goal = ExecuteRskill.Goal(rskill_id=contract["lowers_to"], prompt=f"capability {g.capability}",
-                                  goal_params_json=json.dumps(params), deadline_s=deadline)
         sim0 = self.sim_t
-        handle.publish_feedback(ExecuteCapability.Feedback(state="dispatched", elapsed_s=0.0))
-        sent = self.rskill.send_goal_async(goal)
-        while not sent.done():
-            time.sleep(0.05)
-        gh = sent.result()
-        if gh is None or not gh.accepted:
-            handle.succeed()
-            res.success, res.failure_kind, res.failure_reason = False, 255, "rskill runner rejected the goal"
-            return res
-        rf = gh.get_result_async()
-        last = 0.0
-        while not rf.done():
-            time.sleep(0.1)
-            if time.time() - last > 2.0:
-                handle.publish_feedback(ExecuteCapability.Feedback(state="executing", elapsed_s=float(self.sim_t - sim0)))
-                last = time.time()
-        r = rf.result().result
-        evidence = {"sim_s": round(self.sim_t - sim0, 2), "rskill": contract["lowers_to"], "goal": goal_summary(params)}
+        if g.capability == "approach_target":
+            ok, reason, evidence = self.approach_target(args, handle)
+            r = ExecuteRskill.Result(success=ok, failure_kind=0 if ok else 3, failure_reason=reason)
+        else:
+            params = self.lower_effect(g.capability, args)
+            r = self.dispatch(handle, contract["lowers_to"], params, deadline)
+            evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
+        evidence["sim_s"] = round(self.sim_t - sim0, 2)
         for key, fn in (("base_pose", self.base_pose), ("tcp_pose", self.tcp_pose)):
             try:
                 evidence[key] = fn()
@@ -386,6 +438,26 @@ class CapabilityServer(Node):
                                                                failure_kind=res.failure_kind, failure_reason=res.failure_reason,
                                                                evidence=evidence)))
         return res
+
+    def dispatch(self, handle, rskill_id: str, params: dict, deadline: float):
+        """One ExecuteRskill goal through the OpenRAL runner, waited for; feedback keeps the caller informed."""
+        goal = ExecuteRskill.Goal(rskill_id=rskill_id, prompt="capability boundary", goal_params_json=json.dumps(params), deadline_s=deadline)
+        sim0 = self.sim_t
+        handle.publish_feedback(ExecuteCapability.Feedback(state="dispatched", elapsed_s=0.0))
+        sent = self.rskill.send_goal_async(goal)
+        while not sent.done():
+            time.sleep(0.05)
+        gh = sent.result()
+        if gh is None or not gh.accepted:
+            return ExecuteRskill.Result(success=False, failure_kind=255, failure_reason="rskill runner rejected the goal")
+        rf = gh.get_result_async()
+        last = 0.0
+        while not rf.done():
+            time.sleep(0.1)
+            if time.time() - last > 2.0:
+                handle.publish_feedback(ExecuteCapability.Feedback(state="executing", elapsed_s=float(self.sim_t - sim0)))
+                last = time.time()
+        return rf.result().result
 
 
 def main():

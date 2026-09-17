@@ -30,6 +30,6 @@ def check_args(contract: dict, args: dict) -> str:
             return f"{key!r} must be a string"
         if typ.startswith("string(") and v not in typ[7:-1].split("|"):
             return f"{key!r} must be one of {typ[7:-1].split('|')}"
-        if key == "feature" and v not in IX["points"]:
+        if key == "feature" and (v not in IX["points"] or "object" in IX["points"][v]):
             return f"unknown feature {v!r}"
     return ""
