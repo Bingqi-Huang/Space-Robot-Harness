@@ -34,6 +34,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rclpy
+from moveit_msgs.srv import GetPositionIK
 from openral_msgs.action import ExecuteRskill
 from rclpy.action import ActionClient, ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -192,6 +193,7 @@ class CapabilityServer(Node):
         self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=120)
         self.vlm_pool = ThreadPoolExecutor(8)
         self.rskill = ActionClient(self, ExecuteRskill, "/openral/execute_rskill", callback_group=cb)
+        self.ik = self.create_client(GetPositionIK, "/compute_ik", callback_group=cb)
         ActionServer(self, ExecuteCapability, "/space/capability/execute", self._execute, callback_group=cb)
         self.create_service(QueryCapability, "/space/capability/query", self._query, callback_group=cb)
         self.get_logger().info(f"capability boundary up: effects {sorted(CONTRACTS['effects'])}, queries {sorted(CONTRACTS['queries'])}")
@@ -404,6 +406,26 @@ class CapabilityServer(Node):
         ev["target_rover"] = [round(float(v), 4) for v in R_ro @ X + t_ro]
         return True, "", ev
 
+    def explain_arm_goal(self, params: dict) -> str:
+        """Why an arm goal may have failed, from the robot model: its distance from the arm mount, and whether any
+        collision-free arm configuration puts the TCP there (MoveIt IK against the current planning scene)."""
+        pose = params["pose"] if "pose" in params else {"position": params["position"], "orientation": params["quaternion_xyzw"]}
+        mount, _ = self._tf("chassis_base_link", "base_link")
+        d = float(np.linalg.norm(np.array(pose["position"]) - mount))
+        req = GetPositionIK.Request()
+        req.ik_request.group_name, req.ik_request.ik_link_name, req.ik_request.avoid_collisions = "rm_group", "tcp_frame", True
+        req.ik_request.pose_stamped.header.frame_id = "chassis_base_link"
+        req.ik_request.pose_stamped.pose.position.x, req.ik_request.pose_stamped.pose.position.y, req.ik_request.pose_stamped.pose.position.z = pose["position"]
+        o = req.ik_request.pose_stamped.pose.orientation
+        o.x, o.y, o.z, o.w = pose["orientation"]
+        req.ik_request.timeout.sec = 2
+        f = self.ik.call_async(req)
+        while not f.done():
+            time.sleep(0.05)
+        ik = "some collision-free arm configuration reaches that TCP pose" if f.result().error_code.val == 1 else \
+            "no collision-free arm configuration reaches that TCP pose (position with that tool orientation)"
+        return f"TCP goal {d:.2f} m from the arm mount, working radius {ARM_WORKING_RADIUS_M} m; {ik}"
+
     def run_rskill(self, handle, capability: str, a: dict, deadline: float = 60.0) -> tuple[bool, str]:
         r = self.dispatch(handle, CONTRACTS["effects"]["move_ee_to_pose"]["lowers_to"], lower(capability, a), deadline)
         return bool(r.success), r.failure_reason
@@ -453,10 +475,8 @@ class CapabilityServer(Node):
             params = self.lower_effect(g.capability, args)
             r = self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
-            if not r.success and "position" in params:  # a planner's error code does not say where the goal was
-                mount, _ = self._tf("chassis_base_link", "base_link")
-                d = float(np.linalg.norm(np.array(params["position"]) - mount))
-                r.failure_reason += f" (TCP goal {d:.2f} m from the arm mount; working radius {ARM_WORKING_RADIUS_M} m)"
+            if not r.success and "position" in evidence["goal"]:  # a planner's error code does not say what was wrong
+                r.failure_reason += " (" + self.explain_arm_goal(params) + ")"
         evidence["sim_s"] = round(self.sim_t - sim0, 2)
         for key, fn in (("base_pose", self.base_pose), ("tcp_pose", self.tcp_pose)):
             try:
