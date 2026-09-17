@@ -44,7 +44,8 @@ def target_error(res, world_point):
         return {}
     pb, _, Rb = truth_pose()  # the rover's true pose: the target error must not include the localization error
     p = Rb @ np.array(ev["target_rover"]) + pb
-    return {"target_err_m": round(float(np.linalg.norm(p - np.array(world_point))), 4), "depths_m": [v.get("depth_m") for v in ev.get("views", []) if "depth_m" in v],
+    err = Rb.T @ (p - np.array(world_point))  # rover axes: x forward, y left, z up
+    return {"target_err_m": round(float(np.linalg.norm(err)), 4), "target_err_rover_xyz_m": [round(float(v), 4) for v in err], "depths_m": [v.get("depth_m") for v in ev.get("views", []) if "depth_m" in v],
             "correction_m": ev.get("correction_m"), "views": ev.get("views")}
 
 
@@ -72,7 +73,13 @@ HANDLE = "the narrow vertical neck of the grey T-shaped carry handle on top of t
 run("locate handle", lambda: ask("locate_in_view", camera="wrist", target=HANDLE))
 res = run("approach handle", lambda: cap("approach_target", target=HANDLE, standoff_m=0.12, orientation="grip"))
 log("TARGET", what="oru handle", **target_error(res, handle_pos("spare_oru")))
-run("slide in", lambda: cap("move_tool", forward_m=0.135, max_linear_speed_m_s=0.04, timeout_s=25.0))
-run("grasp", lambda: {**cap("grasp"), "jaw_rad": round(float(jaw.get("q", -1)), 3)})
+def tcp_minus_handle():
+    """Evaluator: TCP relative to the ORU handle point (neck centre), in rover axes."""
+    pb, _, Rb = truth_pose()
+    return {"tcp_minus_handle_rover_xyz_m": [round(float(v), 4) for v in Rb.T @ (tcp_pose()[0] - handle_pos("spare_oru"))]}
+
+
+run("slide in", lambda: {**cap("move_tool", forward_m=0.135, max_linear_speed_m_s=0.04, timeout_s=25.0), **tcp_minus_handle()})
+run("grasp", lambda: {**cap("grasp"), "jaw_rad": round(float(jaw.get("q", -1)), 3), **tcp_minus_handle()})
 run("lift", lambda: {**cap("move_tool", up_m=0.10, max_linear_speed_m_s=0.05), "oru_handle_z": round(float(handle_pos("spare_oru")[2]), 3)})
 log("RESULT", mission=dict(mission), oru_handle=[round(float(v), 3) for v in handle_pos("spare_oru")])
