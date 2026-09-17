@@ -1,95 +1,90 @@
 # Handoff
 
-State as of 2026-09-17 afternoon. **Ours (`space_runtime/`) completed Mission A `covered` autonomously (run oa1,
-verifier success, 43 steps, DeepSeek-V4.1-Flash)** -- arm targets then still the truth stand-in. Since then the stand-in
-is gone: contact targets come from wrist-camera vision (VLM locate + D435i depth + servo, `approach_target`), being
-validated by `vision_check.py` (vc3/vc4). Findings: `docs/research_findings.md` F1–F53 — **read F53**. Tasks: `todo.md`.
+State as of 2026-09-17 evening. **Ours (`space_runtime/`) completes Mission A `covered` with vision-only contact (oa2,
+verifier success, 33 steps, 30 min).** Now: Mission B `covered` with Ours (runs ob1–ob5), then the held-out
+situations, then the 1x video. Findings: `docs/research_findings.md` F1–F54 — **read F53, F54**. Tasks: `todo.md`.
 
-## Plan change (2026-09-17, user decisions)
+## User decisions (keep)
 
-- `execution_plan` §21 reordered: **Ours before the baselines**; tasks from `docs/lunar_task_catalog.md`; Ours may meet
-  held-out situations before the freeze (generic changes only); freeze = git commits/tags, no hashes.
-- Precise contact = **visual servoing with targets described in words** (fiducials tried and dropped): robustness to
-  target changes is what the baselines cannot do.
-- Both cameras are RealSense D435i (RGB-D). View with `orientation: grip` (wrist image level; `press` rolls it 90°).
+- `execution_plan` §21: **Ours before the baselines**; tasks from `docs/lunar_task_catalog.md`; Ours may meet held-out
+  situations before the freeze (generic changes only); freeze = git commits/tags, **no hash checks anywhere**.
+- Contact = **visual servoing on targets described in words** (fiducials dropped). Both cameras RealSense D435i, 15 Hz.
+  View with `orientation: grip` (wrist image level).
+- VLM = **Kimi-K3** (boundary `observe`/`locate_in_view`/`approach_target`, 3 concurrent asks, median).
+  Reasoner = DeepSeek-V4.1-Flash, **thinking ON**. Task success matters most (handle grasp must work).
+- **Step-wise development**: never rerun a mission from scratch after a failure. Restore the sim to before the failed
+  step, fix, rerun only that step; continue on success, stop and fix on failure.
+- One simulation at a time.
 
 ## Ours: how to run
 
-- `D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_CHECK=ours_mission_check.py D0_CAPABILITY_SERVER=1
-  OURS_MISSION=a|b` (cameras needed: the non-`_fast` scenes). Record: `<log>/ours/{events.jsonl,report.md,agent.log}`.
-- Continuity probe: `OURS_RESTART_AT_STEP=N [OURS_RESTART_MODEL=GLM-5.2]`.
-- Vision contact check: `D0_CHECK=vision_check.py D0_CAPABILITY_SERVER=1`.
-- LLM/VLM gateway key comes from `AGENT/VLM_provider.md` (run_d0.sh exports it and unsets the host proxy).
+- New Mission B dev run (from `openral/`), graph held after the check:
+  `D0_HOLD=1 OURS_STOP_ON_FAILURE=1 D0_TRACE_OBJECT=spare_oru D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml
+  D0_CHECK=ours_mission_check.py D0_CAPABILITY_SERVER=1 OURS_MISSION=b setsid nohup
+  ../experiments/launch/lunar_base_d0/run_d0.sh <log> > <log>/runner.out 2>&1 < /dev/null &`
+- Every agent step: `<log>/snapshots/before_step_<n>.pt` (SRB `envs/snapshot`: articulations, rigid objects, held
+  actions) + `.json` (the rover's AMCL estimate then). On first failed capability/effect: `STOPPED` in check.log,
+  agent killed, graph stays up (`<log>/held`).
+- After the fix: `[D0_RESTART_BOUNDARY=1] OURS_MISSION=b OURS_STOP_ON_FAILURE=1 OURS_RESUME_FROM=<log>
+  OURS_RESUME_BEFORE_STEP=<n> setsid nohup experiments/launch/lunar_base_d0/attach_d0.sh <graph log> <new log> &`
+  → restores the snapshot, re-seeds AMCL (`/initialpose` from the saved estimate), truncates the record before step n,
+  resumes the agent (`RESTORED` line logs truth-vs-estimate error). Next failure: resume from `<new log>`.
+- Take a held graph down: `experiments/launch/lunar_base_d0/teardown_d0.sh <graph log>`.
+- Record: `<log>/ours/{events.jsonl,report.md,agent.log}`; boundary log `capability_server.log`, frames `evidence/`.
+- Continuity probe: `OURS_RESTART_AT_STEP=N [OURS_RESTART_MODEL=GLM-5.2]` (rs1 passed).
+- Vision contact check: `D0_CHECK=vision_check.py D0_CAPABILITY_SERVER=1` (vc4 press, vc10 grasp).
+- Gateway key from `AGENT/VLM_provider.md` (run_d0.sh / attach_d0.sh export it and unset the host proxy).
 - Video: `D0_VIDEO=<mp4>` + `SRB_VIDEO_SPEEDUP=1` → `<mp4>.times`; then `python3 experiments/video/overlay.py`.
-- Wall time: ~0.15x sim with cameras; LLM 25 s/step mean. Mission A with Ours ≈ 1 h.
+- Speed: sim ≈ 0.375× wall with cameras (after lidar 10 Hz + publish-on-new-frame); physics ~24 ms/tick remains.
+  `D0_PROFILE=1` prints per-bucket step cost. GPU PhysX (`D0_GPU_PHYSICS=1`) crashes in SRB — do not use.
 
-## What D0 established (F51)
+## Mission B with Ours so far
 
-- `/odom` is wheel-inertial (bridge least squares over the 4WIS wheels for vx, vy + IMU yaw rate). AMCL
-  (omni model) localizes against a 2D map surveyed inside SRB with the rover's own lidar slice
-  (`space_robotics_bench/assets/lunar_base/scene/srb_nav_map_survey.py`, cells hit from ≥3 poses →
-  `usd/scene/lunar_base/nav_map/`). SLAM off. Nav2 goals and docking are in `map`; truth only measures.
-- Mission A `covered` (a5): dock 0.090 m, press clears PDU-2, return to dock 0.077 m, verifier success.
-- Mission B `covered` (b7): depot dock 0.017 m, ORU clamped (jaw 0.17 rad) through Nav2 carry, placed upright on
-  PDU-1's shelf, dock 0.028 m, verifier success.
-- Held-out `route_block` passes (Nav2 detour, AMCL 0.074 m with an unmapped obstacle).
-- Videos (robot-following camera, 4× playback): `artifacts/videos/mission_a_covered.mp4`,
-  `artifacts/videos/mission_b_covered.mp4`.
+- ob1: hung on a lost service response (Humble race) → queries resent after 180 s.
+- ob2: slid jaws exactly to the handle's visible surface, missed → contracts document TCP = between fingertips.
+- ob3: ORU knocked off slot_0 between sim 45–91 s (dock_at_feature / arm_ready); cause not caught.
+- ob4 (Kimi-K3 first live): ORU not knocked; after `arm_ready` the wrist camera did not see the handle and the agent
+  backed off to look with the front camera. Stopped to switch to snapshot runs.
+- ob5: running, first run with snapshots / stop-on-failure. First thing to verify: restore really works.
 
-## Open D0 gaps (not blocking §21.4, blocking Experiment I)
+## Boundary (openral_ext/capability_server)
 
-1. (closed, F52) world-blind MoveIt → `openral_ext/planning_scene` (site boxes + truth-posed movable objects).
-2. **Perception held-out primitives** (lamp state, occupied shelf, which object is the ORU) need Phase E.
-3. **Truth stand-ins** (`locate_feature`, feature targets, movable objects in the planning scene) — replace before the freeze.
-4. Stuck rover with spinning wheels defeats AMCL; MPPI cuts structure corners.
+- `contracts.yaml` effects: navigate_to_pose, dock_to_pose, move_joints, arm_ready, stow, plan_ee_pose,
+  move_ee_to_pose, navigate_to_feature, dock_at_feature, plan_ee_to_feature, move_ee_to_feature, approach_target,
+  move_tool, grasp, release; queries: site_map, observe, locate_in_view, manifest, arm_state, base_pose, tcp_pose, jaw,
+  locate_feature. Evidence robot-observable only; no simulator truth.
+- `openral_ext/planning_scene`: surveyed site structures only (movable objects removed with truth).
+- PLEXIL baseline: `docs/baselines/plexil.md`; `ros/plexil_capability_adapter`; Mission A plan passes (p1).
 
-## §21.4: the common capability boundary
+## What D0 established (F51–F52)
 
-- `ros/space_harness_msgs` (build: `cd ros && colcon build --merge-install --packages-select space_harness_msgs
-  --cmake-args -DPYTHON_EXECUTABLE=/usr/bin/python3 -DPython3_EXECUTABLE=/usr/bin/python3`, PATH without conda).
-- `openral_ext/capability_server/{contracts.yaml,node.py}`: `/space/capability/execute` (ExecuteCapability),
-  `/space/capability/query` (QueryCapability). One call → one ExecuteRskill; off-contract → failure_kind 20;
-  evidence is robot-observable only (verifier stays evaluator-side).
-- Proof: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_capability_mission_a_check.py` (Mission A through the boundary only).
-- PLEXIL: `docs/baselines/plexil.md` (6.1.3, `~/Programs/plexil`; ant and gperf under `~/Programs`, no apt).
-  `ros/plexil_capability_adapter` → `libCapabilityAdapter.so`: Command `ExecuteCapability(capability, args_json)`,
-  every other Command = a capability with positional args; Lookups `QueryCapability`, `jaw`, `LastCapabilityResult`.
-  Plan `baselines/plexil/plans/MissionA_Covered.ple`; live: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_a_check.py`
-  (success, p1). Adapter build: as msgs, plus `PLEXIL_HOME=$HOME/Programs/plexil`.
+- `/odom` wheel-inertial; AMCL on a lidar-surveyed map; SLAM off; Nav2 goals in `map`; truth only measures.
+- Scripted Mission A (a5) / B (b7) `covered` succeed; held-out `route_block` passes (Nav2 detour).
 
-## How to run (don't rediscover)
+## How to run scripted D0 checks (don't rediscover)
 
-- One run (from `openral/`): `D0_SCENE=scenes/deploy/srb_lunar_base_mission_{a,b}_fast.yaml
-  D0_CHECK=d0_mission_{a,b}_check.py D0_CONTINUE_ON_FAIL=1 setsid nohup ../experiments/launch/lunar_base_d0/run_d0.sh <logdir> > <logdir>/runner.out 2>&1 < /dev/null &`
-  — one run per launch command, nothing after it in the same call. Output: `STEP` JSON in `<logdir>/check.log`.
-- Options: `D0_GPU=1 D0_DOMAIN=78` (parallel graph), `D0_VIDEO=<mp4>`, `D0_SCENARIO=<heldout_…>`,
-  `D0_SCENERY=lunar_base_route_block`, `D0_TRACE_OBJECT=spare_oru` (object/TCP/jaw every 0.5 s),
-  `D0_CAPABILITY_SERVER=1`, `D0_STEPS=1,2,…`; planning scene on by default (`D0_PLANNING_SCENE=0` off).
-- Checks: `d0_mission_a_check.py`, `d0_mission_b_check.py`, `d0_route_block_check.py`,
-  `d0_mission_a_cover_check.py` (passes with the planning scene, ac5), `d0_capability_mission_a_check.py`,
-  `d0_plexil_mission_a_check.py`.
-- Runs: ~15 min wall (Mission A), ~35 min (Mission B), ×3 with video. Sim 0.2× alone, 0.06× beside a render.
-- Teardown is by run tag (`D0_RUN_TAG` in the deploy's env); `LEFT 0 tagged processes` in `deploy.pid`.
+- From `openral/`: `D0_SCENE=scenes/deploy/srb_lunar_base_mission_{a,b}[_fast].yaml D0_CHECK=<check>.py
+  setsid nohup ../experiments/launch/lunar_base_d0/run_d0.sh <logdir> > <logdir>/runner.out 2>&1 < /dev/null &`
+- Options: `D0_VIDEO`, `D0_SCENARIO=<heldout_…>`, `D0_SCENERY=lunar_base_route_block`, `D0_TRACE_OBJECT`,
+  `D0_CAPABILITY_SERVER=1`, `D0_STEPS=1,2,…`, `D0_PLANNING_SCENE=0`, `D0_HOLD=1`.
+- Teardown by run tag (`D0_RUN_TAG`); `LEFT 0 tagged processes` in `deploy.pid`. The agent carries the tag too.
 
-## Things that bit this session (keep)
+## Things that bit (keep)
 
-- `openral deploy sim` reaps every openral-graph process at start AND exit and purges Fast-DDS SHM: a sibling
-  graph dies. `run_d0.sh` exports `OPENRAL_SKIP_ORPHAN_REAP=1` (now covers all three).
-- bash reads scripts incrementally: editing `run_d0.sh` under a live run killed runners mid-script. Runs now
-  exec a frozen copy. Check scripts load at start — editing them is safe once a check has begun.
-- Skills in the deploy graph ran on `time.monotonic` (runtime_node's resolver lacked the clock); same-stamp
-  sim ticks then broke settle/speed logic; check-script deadlines were wall-clock. All sim-clock now.
-- SRB's `cmd_vel` callback rebuilt the whole action row and opened the gripper; binary commands are latched now.
-  "Held" (handle–TCP distance) cannot tell a clamp from a hook — read the jaw.
-- `terminate_on_success` teleports the rover to the dock at success; deploy scenes set it false.
-- Nav2 omni caps must keep the planar speed norm inside the kernel bound (`nav2_max_lateral_speed_m_s`).
-- SRB arm hold: never persist a leashed/clamped command into held state — transients became permanent sag.
-- Humble `async_send_request` returns a `std::future`: `get()` once.
+- `openral deploy sim` reaps openral processes at start/exit → `OPENRAL_SKIP_ORPHAN_REAP=1` in run_d0.sh.
+- bash reads scripts incrementally: runs exec a frozen copy of `run_d0.sh`. Checks load at start.
+- `pgrep -f`/`pkill -f` loops once killed the calling shell: kill explicit PIDs only.
+- Stale agents ignore SIGTERM (blocked in rclpy) → kill -9; check ROS domain clean before a run.
+- Parallel sims → 0.05×. Run one.
+- Camera TF was frozen at spawn in SRB → bridge chains cameras through Link7 / rgbd_camera_frame.
+- SRB `cmd_vel` callback used to open the gripper; binary commands latched. Read the jaw, not handle distance.
+- `terminate_on_success` teleports the rover at success; deploy scenes set it false.
+- Verifier `oru_on: ""` can mean knocked off, not grasped — check jaw and handle height.
 
 ## Where things are
 
-- openral: `master` ee6dec8, 6 commits ahead of `origin/master`, not pushed.
-- SRB: `feat/lunar-base-scene` b436599, 5 commits ahead of its origin, not pushed (`main` unchanged).
-- Research repo: `feat/ours-space-runtime` (not merged); openral `feat/wrist-depth-relay` (camera extrinsics, wrist
-  depth); SRB `feat/fiducials-video-times` (only the video `.times` sidecar, uncommitted). PLEXIL 6.1.3, Ant, gperf under `~/Programs` (outside git, `docs/baselines/plexil.md`).
-- Videos (not in git): `artifacts/videos/mission_{a,b}_covered.mp4`.
+- Research repo: `feat/ours-space-runtime` (not merged).
+- openral: `feat/wrist-depth-relay` 53b5ab0 (camera mounts, wrist depth relay).
+- SRB: `feat/camera-budget-video-times` 0d4a416 (15 Hz cameras, work lights, lidar 10 Hz, publish-on-new, video
+  `.times`, `envs/snapshot`).
+- Videos (not in git): `artifacts/videos/mission_{a,b}_covered.mp4` (scripted D0, 4×).
