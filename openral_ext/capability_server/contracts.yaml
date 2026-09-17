@@ -215,6 +215,12 @@ queries:
     inputs:
       camera: ["string(front|wrist)", true, "which camera"]
       target: [string, true, "what to find, described by appearance and position"]
+  manifest:
+    description: >-
+      Mission control's logistics manifest: what each depot staging slot is recorded to hold, and the catalogue data of
+      the standard items (size, mass, carry handle and its height above the item's base). It is the record, not an
+      observation: it can be out of date.
+    inputs: {}
   arm_state:
     description: Arm posture from the joint encoders (stowed / ready / other), joint angles and the jaw angle.
     inputs: {}

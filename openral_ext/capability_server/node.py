@@ -214,6 +214,15 @@ class CapabilityServer(Node):
         p, R = self._tf("map", "chassis_base_link")
         return {"frame": "map", "x": round(float(p[0]), 4), "y": round(float(p[1]), 4), "yaw": round(math.atan2(R[1, 0], R[0, 0]), 4)}
 
+    def manifest(self):
+        """The logistics record as mission control holds it: the depot slots as staged, the items' catalogue data."""
+        names = {"spare_oru": "spare ORU (orbital replacement unit, gold MLI-covered box)", "spare_crate": "cargo crate (white case)"}
+        slots = {IX["objects"][k]["support"].split("/")[1]: names[k] for k in names}
+        items = {names[k]: {"size_m": IX["objects"][k]["size_m"], "mass_kg": IX["objects"][k]["mass_kg"],
+                            "carry_handle": "T-shaped bail on top", "handle_height_above_base_m": round(IX["objects"][k]["handle"]["xyz"][2], 3)}
+                 for k in names}
+        return {"depot_stand": slots, "items": items}
+
     def site_map(self):
         fixed = {k: v for k, v in IX["points"].items() if "object" not in v}
         return {"frame": "map", "point_types": POINT_TYPES,
@@ -405,7 +414,8 @@ class CapabilityServer(Node):
             if reason:
                 raise ValueError(reason)
             value = {"observe": lambda: self.observe(args["camera"], args["question"]),
-                     "locate_in_view": lambda: self.locate_in_view(args["camera"], args["target"]), "site_map": self.site_map, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
+                     "locate_in_view": lambda: self.locate_in_view(args["camera"], args["target"]), "site_map": self.site_map,
+                     "manifest": self.manifest, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
                      "locate_feature": lambda: self.locate_feature(args["name"])}[req.query]()
             res.success, res.value_json = True, json.dumps(value)
         except Exception as exc:  # reason: every failure is a typed answer to the caller, not a dead service

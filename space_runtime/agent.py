@@ -66,9 +66,9 @@ class Agent:
         self.fdir_inbox = []
         self.node.create_subscription(SafetyStatus, "/openral/safety_status", self.fdir_inbox.append,
                                       QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
-        self.executor = SingleThreadedExecutor()
-        self.executor.add_node(self.node)
-        threading.Thread(target=self.executor.spin, daemon=True).start()
+        ex = SingleThreadedExecutor()
+        ex.add_node(self.node)
+        threading.Thread(target=ex.spin, daemon=True).start()
         assert self.cap.wait_for_server(timeout_sec=300) and self.qry.wait_for_service(timeout_sec=60), "capability boundary not up"
         rc = cfg["reasoner"]
         self.cfg, self.max_steps = cfg, rc["max_steps"]
@@ -195,10 +195,9 @@ def main():
     cfg = yaml.safe_load(a.config.read_text())
     a.run_dir.mkdir(parents=True, exist_ok=True)
     assert a.resume == (a.run_dir / "events.jsonl").exists(), "--resume needs an existing record; a new run needs an empty run dir"
-    agent = Agent(cfg, a.run_dir, a.model or cfg["reasoner"]["model"])
-    agent.run(a.mission)
-    agent.executor.shutdown()
-    rclpy.try_shutdown()
+    Agent(cfg, a.run_dir, a.model or cfg["reasoner"]["model"]).run(a.mission)
+    # the record and the report are flushed; leave without tearing down rclpy under its spinning thread (that aborted)
+    os._exit(0)
 
 
 if __name__ == "__main__":
