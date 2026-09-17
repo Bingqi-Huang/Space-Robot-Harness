@@ -36,7 +36,7 @@ verification:
 
 # ---- reasoner -----------------------------------------------------------------------------------------------------
 reasoner:
-  model: DeepSeek-V4.1-Flash
+  model: DeepSeek-V4-Pro
   endpoint: https://llmapi.paratera.com/v1
   timeout_s: 180
   # DeepSeek's thinking mode stays on (user decision): offline A/B over run oa1's 42 decision points, off = 3.9 s median
