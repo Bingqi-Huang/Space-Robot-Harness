@@ -69,7 +69,8 @@ LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON 
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
 VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; how many must find the target
 APPROACH_MAX_CORRECTION_M = 0.04  # stand-off re-detection beyond this disagrees with the first view
-ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
+ARM_WORKING_RADIUS_M = 0.61
+ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # RM-75 datasheet, joint1..7  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
 DEPTH_WINDOW_PX = 3 # half-width of the depth patch around the located pixel (median of the valid depths)
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
@@ -138,7 +139,9 @@ def lower(capability: str, a: dict) -> dict:
                          "orientation": a["orientation_xyzw"], "quaternion_order": "xyzw",
                          "position_tolerance_m": a.get("tolerance_m", 0.01), "orientation_tolerance_rad": 0.05},
                 # posture preference of this arm (shoulder on its working branch, wrist unspun) -- robot, not mission
+                # elbow roll away from its +-3.107 rad stop: a plan that parked joint3 at -3.06 left no lift after the grasp (ob6_s19d)
                 "joint_constraints": [{"joint": "joint1", "position": 0.0, "tolerance_above": 1.5, "tolerance_below": 1.5},
+                                      {"joint": "joint3", "position": 0.0, "tolerance_above": 2.0, "tolerance_below": 2.0},
                                       {"joint": "joint7", "position": 0.0, "tolerance_above": 3.0, "tolerance_below": 3.0}],
                 "request": {"group_name": "rm_group", "allowed_planning_time": 10.0, "num_planning_attempts": 10}}
     if capability == "move_ee_to_pose":
@@ -468,8 +471,12 @@ class CapabilityServer(Node):
             return self.reachable(p, pose["orientation"])
 
         out = f"TCP goal {d:.2f} m from the arm mount, working radius {ARM_WORKING_RADIUS_M} m"
+        q = self.arm_state()["joints_rad"]
+        at_stop = [f"joint{i + 1} {v:+.2f} rad (limit +-{lim})" for i, (v, lim) in enumerate(zip(q, ARM_JOINT_LIMITS_RAD)) if abs(v) > lim - 0.08]
+        if at_stop:
+            out += "; now at a joint stop: " + ", ".join(at_stop)
         if reachable(goal):
-            return out + "; a collision-free arm configuration reaches that TCP pose (the planner found no path to it)"
+            return out + "; a collision-free arm configuration reaches that TCP pose, but not along this motion from the current posture"
         out += "; no collision-free arm configuration reaches that TCP pose with that tool orientation"
         for delta in (0.03, -0.03, 0.06, -0.06, 0.10, -0.10, 0.15, -0.15):
             if reachable(goal + u * delta):
