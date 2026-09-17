@@ -150,7 +150,8 @@ effects:
       to the stand-off, and the camera re-checks from there and corrects. The target must be in
       the wrist camera's view when called (use locate_in_view / observe to check). Describe it unambiguously by
       appearance and position (e.g. "the red mushroom-shaped push button, not the glowing round lamp"). Ends aligned
-      with the target; finish contact with move_tool.
+      with the target; finish contact with move_tool. The stand-off is measured from the target's visible surface
+      point, and the tool centre point is midway between the fingertips.
     inputs:
       target: [string, true, "what to approach, described by appearance and position"]
       standoff_m: [number, false, "distance in front of the target to stop at, m (default 0.10)"]
@@ -164,6 +165,8 @@ effects:
       Move the tool in a straight line relative to where it is: `forward_m` along the tool axis (positive = the way
       the tool points), `up_m` vertically, `left_m` horizontally across the tool axis; orientation unchanged. For the
       last centimetres of contact (pushing a button, sliding the jaws over a handle) and for lifting or retreating.
+      The tool centre point is midway between the fingertips: to have a part between the jaws, move it past the
+      part's visible surface by about half the part's depth plus a centimetre or two.
     inputs:
       forward_m: [number, false, "along the tool axis, m (default 0)"]
       up_m: [number, false, "vertical, m (default 0)"]
