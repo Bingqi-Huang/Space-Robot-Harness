@@ -120,7 +120,8 @@ effects:
     inputs:
       feature: [string, true, "site interaction point"]
       offset_m: [number, true, "distance in front of the feature along its normal, m (negative = into it)"]
-      orientation: ["string(press|grip)", false, "tool orientation (default press)"]
+      lift_m: [number, false, "vertical offset, m (default 0)"]
+      orientation: ["string(press|grip)", false, "tool orientation (default press); the wrist camera's image is level in grip and turned 90 degrees in press"]
       tolerance_m: [number, false, "position tolerance (default 0.01)"]
     default_deadline_s: 120
     authority_class: routine
@@ -153,7 +154,7 @@ effects:
     inputs:
       target: [string, true, "what to approach, described by appearance and position"]
       standoff_m: [number, false, "distance in front of the target to stop at, m (default 0.10)"]
-      orientation: ["string(press|grip)", false, "tool orientation: press = jaw axis vertical, grip = horizontal (default press)"]
+      orientation: ["string(press|grip)", false, "tool orientation: press = jaw axis vertical, grip = horizontal (default press); the wrist camera's image is level in grip"]
     default_deadline_s: 300
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose

@@ -61,6 +61,7 @@ VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "DeepSeek-V4.1-Flash")  # the shar
 VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com/v1")
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
+VLM_LOCATE_ASKS, VLM_AGREE_PX = 3, 15  # localisation answers must agree within this many pixels
 DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
@@ -255,12 +256,27 @@ class CapabilityServer(Node):
         """Where a target described in words is in the current image of a camera: pixel, and its 3-D point in `odom` from the
         registered depth."""
         f = self.frame(camera)
-        reply = self.ask_vlm(f["path"], LOCATE_PROMPT.format(target=target, w=f["uw"], h=f["uh"]))
-        found = re.search(r"\{.*\}", reply, re.S)
-        j = json.loads(found.group(0)) if found else {"found": False}
-        out = dict(camera=camera, image=str(f["path"]), frame_stamp_s=round(f["stamp"], 2), found=bool(j.get("found")))
+        # A single VLM answer is not stable (the same frame gave the button once and a point on the rail below it the next
+        # time, research repo F53): ask until two answers agree, at most three times, and use the agreeing pair.
+        answers = []
+        for _ in range(VLM_LOCATE_ASKS):
+            found = re.search(r"\{.*\}", self.ask_vlm(f["path"], LOCATE_PROMPT.format(target=target, w=f["uw"], h=f["uh"])), re.S)
+            j = json.loads(found.group(0)) if found else {"found": False}
+            if j.get("found"):
+                box = j.get("box")
+                c = [(box[0] + box[2]) / 2, (box[1] + box[3]) / 2] if box and len(box) == 4 else j["center"]
+                answers.append((np.array(c, float), box))
+            else:
+                answers.append(None)
+            pair = [(a1, a2) for i, a1 in enumerate(answers) for a2 in answers[i + 1:]
+                    if a1 is not None and a2 is not None and np.linalg.norm(a1[0] - a2[0]) <= VLM_AGREE_PX]
+            if pair or answers.count(None) >= 2:
+                break
+        out = dict(camera=camera, image=str(f["path"]), frame_stamp_s=round(f["stamp"], 2), found=bool(pair), vlm_answers=len(answers))
         if out["found"]:
-            x, y = map(float, j["center"])  # upright image -> raw image pixel
+            (c1, box), (c2, _) = pair[0]
+            j = {"box": box}
+            x, y = (c1 + c2) / 2  # upright image -> raw image pixel
             w, h = f["w"], f["h"]
             u, v = {None: (x, y), cv2.ROTATE_90_COUNTERCLOCKWISE: (w - 1 - y, x), cv2.ROTATE_180: (w - 1 - x, h - 1 - y),
                     cv2.ROTATE_90_CLOCKWISE: (y, h - 1 - x)}[f["turn"]]

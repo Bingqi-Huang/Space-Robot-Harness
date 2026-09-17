@@ -50,9 +50,9 @@ run("navigate pdu_2", lambda: cap("navigate_to_feature", feature="pdu_2_panel/pr
 run("dock pdu_2", lambda: cap("dock_at_feature", feature="pdu_2_panel/press"))
 run("close jaws", lambda: {**cap("grasp"), "success": True})
 run("arm ready", lambda: cap("arm_ready"))
-run("moveit near button", lambda: cap("plan_ee_to_feature", feature="pdu_2_panel/press", offset_m=0.20))
+run("moveit near button", lambda: cap("plan_ee_to_feature", feature="pdu_2_panel/press", offset_m=0.20, orientation="grip"))  # camera level
 run("locate button", lambda: ask("locate_in_view", camera="wrist", target="the red push button: the lower of the two red domes on the yellow panel (the upper one is the glowing status lamp)"))
-res = run("approach button", lambda: cap("approach_target", target="the red push button: the lower of the two red domes on the yellow panel (the upper one is the glowing status lamp)", standoff_m=0.05))
+res = run("approach button", lambda: cap("approach_target", target="the red push button: the lower of the two red domes on the yellow panel (the upper one is the glowing status lamp)", standoff_m=0.05, orientation="grip"))
 log("TARGET", what="button", **target_error(res, BUTTON))
 run("push", lambda: {**cap("move_tool", forward_m=0.065, max_linear_speed_m_s=0.03, timeout_s=20.0), "mission": dict(mission)})
 run("retract", lambda: {**cap("move_tool", forward_m=-0.12, max_linear_speed_m_s=0.08), "mission": dict(mission)})
