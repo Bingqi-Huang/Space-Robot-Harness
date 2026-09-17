@@ -406,6 +406,36 @@ class CapabilityServer(Node):
         ev["target_rover"] = [round(float(v), 4) for v in R_ro @ X + t_ro]
         return True, "", ev
 
+    def reachable(self, position, quat_xyzw) -> bool:
+        """A collision-free arm configuration puts the TCP at this pose (MoveIt IK against the current planning scene)."""
+        req = GetPositionIK.Request()
+        req.ik_request.group_name, req.ik_request.ik_link_name, req.ik_request.avoid_collisions = "rm_group", "tcp_frame", True
+        req.ik_request.pose_stamped.header.frame_id = "chassis_base_link"
+        pp = req.ik_request.pose_stamped.pose
+        pp.position.x, pp.position.y, pp.position.z = (float(v) for v in position)
+        pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = (float(v) for v in quat_xyzw)
+        req.ik_request.timeout.sec = 1
+        f = self.ik.call_async(req)
+        while not f.done():
+            time.sleep(0.05)
+        return f.result().error_code.val == 1
+
+    def look_at_target(self, a: dict) -> dict | None:
+        """A reachable wrist-camera viewing pose for a surveyed feature: the TCP out along the feature's normal and above
+        it, the tool pointing at the look-at point with the jaw axis horizontal (level image). Nearest first."""
+        p, n = self.to_rover(*self.feature_geometry(a["feature"]))
+        target = p + np.array([0.0, 0.0, a.get("lift_m", 0.0)])
+        for dist in (0.25, 0.30, 0.35, 0.20, 0.40, 0.45):
+            for up in (0.15, 0.25, 0.05, 0.35):
+                c = target + n * dist + np.array([0.0, 0.0, up])
+                z = (target - c) / np.linalg.norm(target - c)
+                x = np.cross([0.0, 0.0, 1.0], z)
+                x /= np.linalg.norm(x)
+                q = mat_to_quat(np.stack([x, np.cross(z, x), z], axis=1))
+                if self.reachable(c, q):
+                    return {"position": c.tolist(), "orientation_xyzw": q, "tolerance_m": 0.02}
+        return None
+
     def explain_arm_goal(self, params: dict) -> str:
         """Why an arm goal may have failed, from the robot model: its distance from the arm mount, whether a
         collision-free arm configuration puts the TCP there with that tool orientation (MoveIt IK against the current
@@ -417,17 +447,7 @@ class CapabilityServer(Node):
         u = (goal - mount) / d
 
         def reachable(p):
-            req = GetPositionIK.Request()
-            req.ik_request.group_name, req.ik_request.ik_link_name, req.ik_request.avoid_collisions = "rm_group", "tcp_frame", True
-            req.ik_request.pose_stamped.header.frame_id = "chassis_base_link"
-            pp = req.ik_request.pose_stamped.pose
-            pp.position.x, pp.position.y, pp.position.z = (float(v) for v in p)
-            pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = pose["orientation"]
-            req.ik_request.timeout.sec = 1
-            f = self.ik.call_async(req)
-            while not f.done():
-                time.sleep(0.05)
-            return f.result().error_code.val == 1
+            return self.reachable(p, pose["orientation"])
 
         out = f"TCP goal {d:.2f} m from the arm mount, working radius {ARM_WORKING_RADIUS_M} m"
         if reachable(goal):
@@ -483,8 +503,13 @@ class CapabilityServer(Node):
         if g.capability == "approach_target":
             ok, reason, evidence = self.approach_target(args, handle)
             r = ExecuteRskill.Result(success=ok, failure_kind=0 if ok else 3, failure_reason=reason)
+        elif g.capability == "look_at_feature" and (view := self.look_at_target(args)) is None:
+            r = ExecuteRskill.Result(success=False, failure_kind=3, failure_reason=(
+                "no collision-free arm configuration views that point from 0.20-0.45 m out along the feature's normal "
+                "and 0.05-0.35 m above it (the rover may be too far from or too close to the feature)"))
+            evidence = {}
         else:
-            params = self.lower_effect(g.capability, args)
+            params = lower("plan_ee_pose", view) if g.capability == "look_at_feature" else self.lower_effect(g.capability, args)
             r = self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
             if not r.success and "position" in evidence["goal"]:  # a planner's error code does not say what was wrong

@@ -8,8 +8,8 @@ import math
 
 BASE_NAV = {"navigate_to_pose", "navigate_to_feature"}
 BASE_DOCK = {"dock_to_pose", "dock_at_feature"}
-TCP = {"plan_ee_pose", "move_ee_to_pose", "plan_ee_to_feature", "move_ee_to_feature", "move_tool"}
-TCP_DEFAULT_TOL = {"plan_ee_pose": 0.01, "plan_ee_to_feature": 0.01, "move_ee_to_pose": 0.015, "move_ee_to_feature": 0.015, "move_tool": 0.015}
+TCP = {"plan_ee_pose", "move_ee_to_pose", "plan_ee_to_feature", "move_ee_to_feature", "move_tool", "look_at_feature"}
+TCP_DEFAULT_TOL = {"plan_ee_pose": 0.01, "plan_ee_to_feature": 0.01, "move_ee_to_pose": 0.015, "move_ee_to_feature": 0.015, "move_tool": 0.015, "look_at_feature": 0.02}
 
 
 def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]:
@@ -24,7 +24,7 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]
                         source="rover localization estimate (AMCL) vs commanded goal"))
     if capability in TCP and isinstance(evidence.get("tcp_pose"), dict):
         tol = args.get("tolerance_m", TCP_DEFAULT_TOL[capability]) * cfg["tcp"]["tolerance_factor"]
-        if capability.startswith("plan_"):
+        if capability.startswith("plan_") or capability == "look_at_feature":
             tol += cfg["tcp"]["plan_execution_m"]
         d = math.dist(evidence["tcp_pose"]["position"], goal["position"])
         out.append(dict(effect="tool_at_commanded_position", holds=d <= tol, position_error_m=round(d, 4), band_m=round(tol, 4),

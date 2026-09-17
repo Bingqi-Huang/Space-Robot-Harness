@@ -129,6 +129,19 @@ effects:
     authority_class: routine
     lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
 
+  look_at_feature:
+    description: >-
+      Point the wrist camera at a surveyed site feature: the boundary picks a viewing pose the arm reaches without
+      collision (0.20-0.45 m out along the feature's normal, 0.05-0.35 m above the look-at point, nearest first), with
+      the tool aimed at the point and the image level, and plans the arm there (MoveIt). For finding what is at a
+      feature (then locate_in_view / approach_target); the survey placement carries the rover's localization error.
+    inputs:
+      feature: [string, true, "site interaction point"]
+      lift_m: [number, false, "look at this far above the feature point, m (default 0), e.g. the height of an item's handle"]
+    default_deadline_s: 120
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
+
   move_ee_to_feature:
     description: >-
       Servo the TCP in a straight line to `offset_m` in front of a surveyed site feature along its normal (plus
