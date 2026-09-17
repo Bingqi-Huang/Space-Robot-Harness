@@ -40,12 +40,16 @@ situations, then the 1x video. Findings: `docs/research_findings.md` F1–F54 �
 
 ## Mission B with Ours so far
 
-- ob1: hung on a lost service response (Humble race) → queries resent after 180 s.
-- ob2: slid jaws exactly to the handle's visible surface, missed → contracts document TCP = between fingertips.
-- ob3: ORU knocked off slot_0 between sim 45–91 s (dock_at_feature / arm_ready); cause not caught.
-- ob4 (Kimi-K3 first live): ORU not knocked; after `arm_ready` the wrist camera did not see the handle and the agent
-  backed off to look with the front camera. Stopped to switch to snapshot runs.
-- ob5: running, first run with snapshots / stop-on-failure. First thing to verify: restore really works.
+- ob1–ob4: lost query response; grasp missed (TCP semantics); ORU knocked; wrist camera could not frame the handle.
+- ob5/ob6 (step-wise): arm creep after every servo (fixed in openral), too-tight plan verification band, opaque MoveIt
+  failures (now explained with IK reachability + direction hint), agent re-docking with the arm raised pushed the ORU
+  (docking contract warns), AMCL re-seed lost after restore (fixed), no camera-aiming capability → `look_at_feature`.
+- Current: graph `artifacts/runs/ob6` held; latest record `ob6_s15d` stopped at step 19: `approach_target` crashed on a
+  Kimi-K3 gateway timeout (now an unanswered ask, reason reported). Resume: `OURS_RESUME_FROM=<...>/ob6_s15d
+  OURS_RESUME_BEFORE_STEP=19 D0_RESTART_BOUNDARY=1 attach_d0.sh <...>/ob6 <new log>`.
+- Timing (ob6_s15d): reasoner thinking ~55 %, arm motion ~25 %, VLM ~20 % of wall time; reasoner 40–255 s per step.
+- Analysis: 12 failures = 4 stack defects, 5 interface gaps, 3 reasoner judgement errors (all where the interface made
+  it do 3-D kinematics in coordinates).
 
 ## Boundary (openral_ext/capability_server)
 

@@ -276,8 +276,16 @@ class CapabilityServer(Node):
         # and pointing at an elongated part wanders along it by tens of pixels (research repo F53). Ask several times
         # concurrently and take the per-axis median of the answers that found the target.
         prompt = LOCATE_PROMPT.format(target=target, w=f["uw"], h=f["uh"])
-        centres, boxes = [], []
-        for reply in self.vlm_pool.map(lambda _: self.ask_vlm(f["path"], prompt), range(VLM_LOCATE_ASKS)):
+        centres, boxes, errors = [], [], []
+
+        def ask(_):  # the gateway times out now and then (ob6_s15d): an unanswered ask is not an answer
+            try:
+                return self.ask_vlm(f["path"], prompt)
+            except Exception as exc:  # reason: any transport/API error of the external model service
+                errors.append(f"{type(exc).__name__}: {exc}")
+                return ""
+
+        for reply in self.vlm_pool.map(ask, range(VLM_LOCATE_ASKS)):
             found = re.search(r"\{.*\}", reply, re.S)
             j = json.loads(found.group(0)) if found else {"found": False}
             if j.get("found"):
@@ -286,6 +294,8 @@ class CapabilityServer(Node):
                 boxes.append(box)
         out = dict(camera=camera, image=str(f["path"]), frame_stamp_s=round(f["stamp"], 2), found=len(centres) >= VLM_LOCATE_MIN_FOUND,
                    vlm_found=f"{len(centres)}/{VLM_LOCATE_ASKS}")
+        if len(errors) == VLM_LOCATE_ASKS:
+            out["why"] = f"the vision-language model did not answer ({errors[0][:120]})"
         if out["found"]:
             c = np.array(centres, float)
             med = np.median(c, axis=0)
@@ -310,7 +320,7 @@ class CapabilityServer(Node):
 
     def locate_in_view(self, camera: str, target: str):
         d = self.detect(camera, target)
-        out = {k: d[k] for k in ("camera", "found", "image", "frame_stamp_s")}
+        out = {k: d[k] for k in ("camera", "found", "image", "frame_stamp_s", "why") if k in d}
         if d["found"]:
             t, R = self._tf("chassis_base_link", "odom")
             out.update(pixel=d["pixel"], box=d["box"], depth_m=d["depth_m"], frame="chassis_base_link",

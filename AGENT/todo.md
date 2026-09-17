@@ -40,14 +40,24 @@ Current goal: all six steps of Ours, then a 1x-sim-time video with the agent's p
 
 ## Step 6: Mission B covered + held-out with Ours — IN PROGRESS
 
-- [x] ob1 hung (lost service response → query resend); ob2 grasp missed (TCP semantics → contracts doc);
-      ob3 ORU knocked off slot_0 during dock/arm_ready (cause not caught); ob4 ORU not knocked, but agent could not see
-      the handle after `arm_ready` and backed off to look with the front camera (stopped: no snapshot support).
-- [x] **Step-wise development** (user rule: never rerun from scratch): snapshot of the full sim state before every
-      agent step; stop at first failure; restore to before the failed step, fix, rerun only that step (handoff "How to run").
-- [ ] ob5 (running, first run with snapshots): verify save/restore works on the first failure; then continue to success.
+- [x] ob1–ob4 lessons (lost query response; TCP semantics; ORU knocked; wrist camera cannot frame the handle).
+- [x] **Step-wise development**: full-state snapshot before every agent step (SRB `envs/snapshot`), stop at the first
+      failure, restore to before the failed step (also into a fresh sim from disk), fix, rerun only that step.
+- [x] Stack defects found on the way (all fixed, committed):
+      servo completed on a nonzero twist → arm crept ~1.5 cm/s after every `move_ee_to_pose` (openral skill);
+      verification band for MoveIt plans too tight (measured 0.9–3 cm execution error);
+      AMCL re-seed after a restore lost (publisher not matched);
+      a VLM gateway timeout crashed `approach_target` with no reason.
+- [x] Interface gaps (generic, shared by every method): arm mount / working radius / ready posture in the contracts;
+      a failed arm goal reports distance from the mount + MoveIt IK reachability + how far along the mount line it
+      becomes reachable; docking warns that a raised arm sweeps; **`look_at_feature`** (camera aiming from a reachable
+      viewing pose) — first use framed ORU + handle, both located.
+- [ ] ob6 (graph held): resume before step 19 (`approach_target` on the handle) after the VLM-timeout fix; then grasp,
+      carry, place, return.
+- [ ] Analysis for the paper: failures were mostly interface granularity/feedback, not reasoner IQ; offline replay of
+      the bad decision points on stronger reasoners to confirm.
+- [ ] Guard invariant candidate: no base motion while the arm is out past the hull (generic safety rule).
 - [ ] Held-out: cover_obstruction, status_mismatch, destination_occupied, spare_swapped, route_block.
-- [ ] Failures → mission-generic changes only (§13.1).
 
 ## Final
 
