@@ -103,7 +103,7 @@ effects:
       Close onto the pose from which the arm reaches a site feature (hull + arm reach out along its normal), or
       `standoff_m` further out on that axis (to back away). Entered along the axis. The arm works off the rover's
       rear, so at this pose the rear faces the feature: the front camera looks away from it and the wrist camera can
-      see the work area.
+      see the work area. The base moves rear first: an arm held out off the rear sweeps into whatever is there.
     inputs:
       feature: [string, true, "site interaction point"]
       standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 0)"]

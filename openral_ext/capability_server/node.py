@@ -407,24 +407,36 @@ class CapabilityServer(Node):
         return True, "", ev
 
     def explain_arm_goal(self, params: dict) -> str:
-        """Why an arm goal may have failed, from the robot model: its distance from the arm mount, and whether any
-        collision-free arm configuration puts the TCP there (MoveIt IK against the current planning scene)."""
+        """Why an arm goal may have failed, from the robot model: its distance from the arm mount, whether a
+        collision-free arm configuration puts the TCP there with that tool orientation (MoveIt IK against the current
+        planning scene), and if not, how far along the mount-to-goal line one does."""
         pose = params["pose"] if "pose" in params else {"position": params["position"], "orientation": params["quaternion_xyzw"]}
         mount, _ = self._tf("chassis_base_link", "base_link")
-        d = float(np.linalg.norm(np.array(pose["position"]) - mount))
-        req = GetPositionIK.Request()
-        req.ik_request.group_name, req.ik_request.ik_link_name, req.ik_request.avoid_collisions = "rm_group", "tcp_frame", True
-        req.ik_request.pose_stamped.header.frame_id = "chassis_base_link"
-        req.ik_request.pose_stamped.pose.position.x, req.ik_request.pose_stamped.pose.position.y, req.ik_request.pose_stamped.pose.position.z = pose["position"]
-        o = req.ik_request.pose_stamped.pose.orientation
-        o.x, o.y, o.z, o.w = pose["orientation"]
-        req.ik_request.timeout.sec = 2
-        f = self.ik.call_async(req)
-        while not f.done():
-            time.sleep(0.05)
-        ik = "some collision-free arm configuration reaches that TCP pose" if f.result().error_code.val == 1 else \
-            "no collision-free arm configuration reaches that TCP pose (position with that tool orientation)"
-        return f"TCP goal {d:.2f} m from the arm mount, working radius {ARM_WORKING_RADIUS_M} m; {ik}"
+        goal = np.array(pose["position"], float)
+        d = float(np.linalg.norm(goal - mount))
+        u = (goal - mount) / d
+
+        def reachable(p):
+            req = GetPositionIK.Request()
+            req.ik_request.group_name, req.ik_request.ik_link_name, req.ik_request.avoid_collisions = "rm_group", "tcp_frame", True
+            req.ik_request.pose_stamped.header.frame_id = "chassis_base_link"
+            pp = req.ik_request.pose_stamped.pose
+            pp.position.x, pp.position.y, pp.position.z = (float(v) for v in p)
+            pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = pose["orientation"]
+            req.ik_request.timeout.sec = 1
+            f = self.ik.call_async(req)
+            while not f.done():
+                time.sleep(0.05)
+            return f.result().error_code.val == 1
+
+        out = f"TCP goal {d:.2f} m from the arm mount, working radius {ARM_WORKING_RADIUS_M} m"
+        if reachable(goal):
+            return out + "; a collision-free arm configuration reaches that TCP pose (the planner found no path to it)"
+        out += "; no collision-free arm configuration reaches that TCP pose with that tool orientation"
+        for delta in (0.03, -0.03, 0.06, -0.06, 0.10, -0.10, 0.15, -0.15):
+            if reachable(goal + u * delta):
+                return out + f" -- it does {abs(delta):.2f} m {'farther from' if delta > 0 else 'closer to'} the mount along the same line"
+        return out + " -- nor within 0.15 m of it along the mount-to-goal line"
 
     def run_rskill(self, handle, capability: str, a: dict, deadline: float = 60.0) -> tuple[bool, str]:
         r = self.dispatch(handle, CONTRACTS["effects"]["move_ee_to_pose"]["lowers_to"], lower(capability, a), deadline)
