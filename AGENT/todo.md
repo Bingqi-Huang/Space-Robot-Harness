@@ -51,8 +51,10 @@ Current goal: all six steps of Ours, then a 1x-sim-time video with the agent's p
 - [x] Ad-hoc pick patches tried and reverted (user decision); kept: arm-goal failure explanation, MoveIt execution band.
 - [x] Reasoner → DeepSeek-V4-Pro (offline replay); VLM → GLM-5.3-Flash (Kimi-K3 latency).
 - [x] ob6_s19d: vision grasp in the agent loop clamped the ORU neck (jaw 0.175); lift blocked by joint3 at its stop.
-- [ ] **Grasping rSkills** (user direction): on-board CAD-model pose tracking (FoundationPose / ViSP) + PBVS + MoveIt
-      coarse move + pre-grasp/post-lift visual checks; VLM only for semantic selection. Offline test on saved frames first.
+- [ ] **Semantic-to-metric manipulation** (user decision, new contribution): plan `docs/semantic_to_metric_manipulation_plan.md`
+      — part catalog; on-board candidates + VLM set-of-mark selection + CAD pose tracking (FoundationPose / ViSP);
+      `grasp_object` / `place_object` rSkills (MoveIt coarse, PBVS, pre-grasp/post-lift checks, outcome codes); harness
+      object facts, verifiers, reconciliation, invariants. Gates G0–G6.
 - [ ] Then Mission B covered from the depot step (snapshot workflow), place, return.
 - [ ] Analysis for the paper: failures were mostly interface granularity/feedback, not reasoner IQ; offline replay of
       the bad decision points on stronger reasoners to confirm.
