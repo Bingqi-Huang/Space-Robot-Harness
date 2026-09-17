@@ -2724,5 +2724,8 @@ string/push-based stops in the dev check. They papered over one failure each. Th
 OpenRAL rSkills (VLM chooses among image grasp candidates, IBVS, image checks, no object models, no world-coordinate
 target) with the harness bridging failures: `docs/semantic_to_metric_manipulation_plan.md` (v3).
 
-**6. Drift noted.** The capability boundary implements skills (`approach_target`, VLM perception, feature lowering);
-these belong in OpenRAL rSkills, the boundary should be a thin mapping shared by all methods.
+**6. Drift noted; architecture decision.** The capability boundary implements skills (`approach_target`, VLM
+perception, feature lowering). Decision: physical-effect capabilities as OpenRAL rSkills; perception control and
+queries as perception/world-state services; a thin method-neutral boundary; shared verifier, low-level safety, external
+hard constraints and evidence identical across methods (research_content §5.2–5.3); Ours contributes authoritative
+mission state, context reconstruction and agent-owned strategy. Details: `docs/semantic_to_metric_manipulation_plan.md` §2.

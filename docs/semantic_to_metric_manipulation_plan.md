@@ -1,4 +1,4 @@
-# Manipulation as composable OpenRAL rSkills: design and validation plan
+# Composable manipulation capabilities: design and validation plan
 
 Status: plan v3 (2026-09-17, user decisions). Supersedes v1 (CAD-model 6-DoF tracking: needs the part's 3-D model, no
 generality) and v2 (one grasp skill with internal outcomes). Replaces the VLM-point + open-loop pick that failed
@@ -16,28 +16,63 @@ repeatedly in Mission B (runs ob1–ob6, `docs/research_findings.md` F55). No co
 4. **Closed loop at camera rate; checks from images and encoders.**
 5. **Small tools, composed by the agent.** Each capability does one job and reports what it measured, like
    `navigate_to_pose`; none contains a recovery path. The agent composes them; when a step fails it re-composes with a
-   different tool or parameters. The harness supplies facts, the attempt record, independent verification,
-   invariants and budgets.
+   different tool or parameters. Ours supplies authoritative facts, the attempt record and budgets; physical
+   verification and hard constraints are the shared substrate (§2).
 
-## 2. Layering (where each thing lives)
+## 2. Architecture decision (user, 2026-09-17)
 
-| Layer | Lives in | Role |
-|---|---|---|
-| Robot skills | **OpenRAL rSkills** (the fork: `openral/rskills/<name>/rskill.yaml` + entrypoints in `openral/python/rskill`), run by OpenRAL's runner under its safety kernel | navigation, arm motion, gripper (exist); perception and servo tools of §3 (new) |
-| Common capability boundary | `openral_ext/capability_server` (`contracts.yaml`) | a **thin** 1:1 mapping of capability names/arguments to rSkills + robot-observable evidence, identical for Ours, PLEXIL and EUROPA→PLEXIL |
-| Harness (contribution) | `space_runtime/` | the agent loop: context, facts, verification, guard/invariants, attempt record, budgets, traces |
+Physical-effect capabilities are implemented as OpenRAL rSkills; stateful perception control and read-only
+perception/state queries are provided by perception/world-state services. The shared boundary remains thin and
+method-neutral. Shared physical verification, low-level safety, externally imposed hard constraints and observable
+evidence remain identical across methods (`research_content` §5.2–5.3); Ours' contribution is the authoritative mission
+state, dynamic context reconstruction and agent-owned mission strategy above that common substrate.
 
-**Correction to the current code (drift):** the boundary today also *implements* skills — `approach_target`
-(camera-in-the-loop controller), `locate_in_view` / `observe` (VLM calls), feature-geometry lowering. Those belong in
-rSkills. OpenRAL already has the right kinds: `procedural` (closed-loop controllers, e.g.
-`rskill-procedural-move_ee_to_pose`), detector/locator (`omdet-turbo-locator`, `find-object`), MoveIt
-(`rskill-moveit-look-at`). Part of this work is moving that logic down and leaving the boundary a mapping.
+```text
+Ours                                   PLEXIL / EUROPA→PLEXIL
+agent                                  plan / planner
+facts + context + mission reasoning    baseline execution semantics
+      |                                        |
+------------- each method's mission-level operating model -------------
+                           |
+======== shared capability / evidence boundary (thin, method-neutral) ========
+  contracts · argument checks · availability (incl. requires_remote_service) · external hard constraints
+                           |
+   physical effect      → OpenRAL rSkill (runner + safety kernel)
+   perception control   → perception module (start/stop tracking, set current target)
+   read-only query      → perception / world-state service
+                           |
+        shared verifier · FDIR signals · low-level safety
+                           |
+               Nav2 / MoveIt / controllers / HAL
+```
 
-## 3. Tools (new rSkills, exposed 1:1 as capabilities)
+Rules:
 
-Perception (read-only):
+- **Three interface classes**, used identically by all methods: physical effect, perception control, read-only query.
+- **Fixed infrastructure vs movable objects.** `*_to_named_location` capabilities (navigate, dock, arm pre-position)
+  use surveyed fixed-infrastructure places loaded into OpenRAL's world state (named places); rSkills do not parse the
+  lunar-base files. Movable objects (ORU, crate, cover, handles) never go through fixed geometry: only current
+  perception → tracking → visual servo.
+- **rSkill locality rule.** An rSkill may adapt execution locally while preserving the selected target and task
+  intent; any change of target, task strategy, information source or recovery mode returns control to the agent
+  (local re-acquisition or backing off to the pre-grasp and re-centring: yes; another candidate, another viewpoint,
+  moving the base, asking the operator: no).
+- **No decision-workflow (playbook) rSkills** in the method: search → alternative → ask-human sequences are mission
+  strategy.
+- **Availability metadata, not rules.** A cloud-dependent service carries `requires_remote_service`; when unavailable,
+  every method sees the capability unavailable; what to do is each method's own mission logic.
+- **Migration without a big refactor.** New capabilities follow these rules from the start; `approach_target`, the VLM
+  perception calls and the feature-pose lowering move out of `capability_server` when the new work touches them;
+  Mission A `covered` is the regression after each move.
+- **Consequence to schedule:** effect verification now lives in `space_runtime/verification.py` (Ours only) and the
+  guard's hard constraints (e.g. FDIR estop) are enforced there too; per §5.2–5.3 both belong to the shared substrate
+  (PLEXIL reads them as Lookups). Ours keeps authoritative facts, context and agent-facing authority reasoning.
 
-| Capability → rSkill | Does | Returns |
+## 3. Tools (exposed through the shared boundary)
+
+Perception (perception control: `lock_target`; the rest read-only queries):
+
+| Capability → implementation | Does | Returns |
 |---|---|---|
 | `observe(camera, question)` | VLM question on the current frame | answer + frame |
 | `grasp_candidates(camera, generator, max_n, exclude)` | class-agnostic grasp candidates on the current view (§4) | numbered annotated image; per candidate: pixel, image axis angle, depth, approach direction and jaw width in the camera frame, score |
@@ -52,7 +87,7 @@ Motion:
 |---|---|---|
 | `servo_to_target(track, standoff_m, max_speed)` | IBVS to the stand-off with the target in the jaw gap | converged / track_lost / stalled + last errors |
 | `approach_guarded(distance_m, max_speed)` | straight move along the tool axis | reached / contact / depth limit |
-| `look_at` (OpenRAL `rskill-moveit-look-at`) / relative camera move | change the viewpoint | reached / blocked |
+| `look_at` (OpenRAL `rskill-moveit-look-at`) / relative camera move (rSkills) | change the viewpoint | reached / blocked |
 | `move_tool`, `grasp`, `release`, `stow`, navigation, docking (exist) | as now | as now |
 
 A typical pick the agent may compose: observe → grasp_candidates → choose_candidate → lock_target → servo_to_target →
@@ -75,15 +110,15 @@ Related work (not claimed): VLM visual prompting over grasp candidates (OWG, Thi
 (GraspGPT family), iterative visual prompting (PIVOT); space heritage of pre-designated-target visual servoing
 (ETS-VII, Orbital Express ORU transfer, Dextre).
 
-## 5. Harness (contribution, `space_runtime/`)
+## 5. Ours above the shared substrate (contribution, `space_runtime/`)
 
 - **Object facts** (`on:<place> | in_gripper | unknown`), changed only by verified evidence.
-- **Independent verifiers** on the query tools: held = jaw range + `hold_check`; placed = jaws open + item at rest on
-  the support in view. Never a skill's own success flag.
+- **Verified facts from the shared verifier** (held = jaw range + `hold_check`; placed = jaws open + item at rest on
+  the support) folded into authoritative mission state. Never a skill's own success flag.
 - **Reconciliation with provenance:** manifest record vs VLM identity vs on-board measurement (extent of the point-cloud
   segment at the chosen candidate) → anomaly naming the sources (`spare_swapped`, `destination_occupied`).
-- **Invariants:** no base motion while holding or with the arm outside the hull; stop on a lost track during a contact
-  move; contact blocked after an uncertain hold until re-observed.
+- **Hard constraints (shared substrate, same for all methods):** no base motion while holding or with the arm outside
+  the hull; stop on a lost track during a contact move; contact blocked after an uncertain hold until re-observed.
 - **Attempt record in the context** per target: tools, parameters, candidates, viewpoints, base poses, outcomes; failed
   candidates handed back as `exclude`. Attempt/time budgets → operator request with the evidence.
 - **Provider failover** (VLM, reasoner) as recorded facts. **Latency layering:** cloud reasoning never inside a 15 Hz loop.
@@ -107,8 +142,8 @@ Related work (not claimed): VLM visual prompting over grasp candidates (OWG, Thi
 1. G0 recorder (`experiments/perception/record_rgbd.py`) on a held graph (snapshot workflow, `AGENT/handoff.md`).
 2. G1 classical generator first (no build risk), then Contact-GraspNet / GraspNet baseline.
 3. G2 candidate rendering + set-of-mark prompt.
-4. rSkills of §3 in the OpenRAL fork; boundary contracts as a thin mapping; move `approach_target` / `locate_in_view` /
-   `observe` logic out of the boundary.
+4. §3 tools per §2 (effects as rSkills in the OpenRAL fork, perception control/queries as perception services);
+   boundary contracts as a thin mapping; move `approach_target` / VLM perception / feature lowering out when touched.
 5. Harness pieces of §5.
 6. G3–G7.
 
