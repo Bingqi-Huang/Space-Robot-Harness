@@ -1,8 +1,7 @@
 """Offline reasoner comparison on recorded Mission B decision points (no simulator).
 
 Each decision point is an agent record cut before one step: the harness context is rebuilt from the record exactly as
-the live agent would render it, and every candidate model chooses one tool call from the same palette (the camera
-aiming capability `look_at_feature` withheld: the point is spatial reasoning with limited tools). Models that take
+the live agent would render it, and every candidate model chooses one tool call from the same palette. Models that take
 images also get the latest wrist-camera frame on record. A rubric fixed before the runs scores the call.
 
     python3 experiments/reasoner_replay/replay.py [--models A,B] [--repeats N]   (writes <out>/results.jsonl)
@@ -138,7 +137,7 @@ def main():
     ap.add_argument("--out", type=Path, default=REPO / "artifacts/reasoner_replay")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
-    tools = [t for t in capability_tools() + local_tools() if t["function"]["name"] != "look_at_feature"]
+    tools = capability_tools() + local_tools()
     system = (REPO / "space_runtime/playbook.md").read_text()
     jobs = [(m, p, k) for m in a.models.split(",") for p in POINTS for k in range(a.repeats)]
     contexts = {p[0]: cut(p[1], p[2]) for p in POINTS}

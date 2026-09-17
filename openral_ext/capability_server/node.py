@@ -68,10 +68,9 @@ VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
 VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; how many must find the target
-APPROACH_MAX_CORRECTION_M = 0.04  # stand-off re-detection beyond this disagrees with the first view
-ARM_WORKING_RADIUS_M = 0.61
-ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # RM-75 datasheet, joint1..7  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
-DEPTH_WINDOW_PX = 3 # half-width of the depth patch around the located pixel (median of the valid depths)
+DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
+ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
+ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # same datasheet, joint1..7
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
 HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]["press"]  # arm reach past the hull (C3)
@@ -139,9 +138,7 @@ def lower(capability: str, a: dict) -> dict:
                          "orientation": a["orientation_xyzw"], "quaternion_order": "xyzw",
                          "position_tolerance_m": a.get("tolerance_m", 0.01), "orientation_tolerance_rad": 0.05},
                 # posture preference of this arm (shoulder on its working branch, wrist unspun) -- robot, not mission
-                # elbow roll away from its +-3.107 rad stop: a plan that parked joint3 at -3.06 left no lift after the grasp (ob6_s19d)
                 "joint_constraints": [{"joint": "joint1", "position": 0.0, "tolerance_above": 1.5, "tolerance_below": 1.5},
-                                      {"joint": "joint3", "position": 0.0, "tolerance_above": 2.0, "tolerance_below": 2.0},
                                       {"joint": "joint7", "position": 0.0, "tolerance_above": 3.0, "tolerance_below": 3.0}],
                 "request": {"group_name": "rm_group", "allowed_planning_time": 10.0, "num_planning_attempts": 10}}
     if capability == "move_ee_to_pose":
@@ -415,11 +412,7 @@ class CapabilityServer(Node):
         d1 = view("stand-off")  # closer, the target is seen larger and its depth better: correct once
         if d1["found"]:
             ev["correction_m"] = round(float(np.linalg.norm(d1["point"] - X)), 4)
-            # A re-detection farther off than the localisation error is another object: close up, the gripper hid the
-            # T-bail's crossbar and the model marked the box edge 0.126 m below (ob6_s19b). Keep the first estimate.
-            if ev["correction_m"] > APPROACH_MAX_CORRECTION_M:
-                ev["correction_rejected"] = f"the stand-off view put the target {ev['correction_m']:.3f} m from the first view; kept the first"
-            elif ev["correction_m"] > 0.004:
+            if ev["correction_m"] > 0.004:
                 X = d1["point"]
                 ok, why = servo(X, "corrected stand-off")
                 if not ok:
@@ -427,61 +420,28 @@ class CapabilityServer(Node):
         ev["target_rover"] = [round(float(v), 4) for v in R_ro @ X + t_ro]
         return True, "", ev
 
-    def reachable(self, position, quat_xyzw) -> bool:
-        """A collision-free arm configuration puts the TCP at this pose (MoveIt IK against the current planning scene)."""
+    def explain_arm_goal(self, params: dict) -> str:
+        """Why an arm goal may have failed, from the robot model: the goal's distance from the arm mount, whether a
+        collision-free arm configuration puts the TCP there (MoveIt IK against the current planning scene), and which
+        joints are at their stops now."""
+        pose = params["pose"] if "pose" in params else {"position": params["position"], "orientation": params["quaternion_xyzw"]}
+        mount, _ = self._tf("chassis_base_link", "base_link")
+        out = f"TCP goal {np.linalg.norm(np.array(pose['position']) - mount):.2f} m from the arm mount, working radius {ARM_WORKING_RADIUS_M} m"
         req = GetPositionIK.Request()
         req.ik_request.group_name, req.ik_request.ik_link_name, req.ik_request.avoid_collisions = "rm_group", "tcp_frame", True
         req.ik_request.pose_stamped.header.frame_id = "chassis_base_link"
         pp = req.ik_request.pose_stamped.pose
-        pp.position.x, pp.position.y, pp.position.z = (float(v) for v in position)
-        pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = (float(v) for v in quat_xyzw)
+        pp.position.x, pp.position.y, pp.position.z = (float(v) for v in pose["position"])
+        pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = (float(v) for v in pose["orientation"])
         req.ik_request.timeout.sec = 1
         f = self.ik.call_async(req)
         while not f.done():
             time.sleep(0.05)
-        return f.result().error_code.val == 1
-
-    def look_at_target(self, a: dict) -> dict | None:
-        """A reachable wrist-camera viewing pose for a surveyed feature: the TCP out along the feature's normal and above
-        it, the tool pointing at the look-at point with the jaw axis horizontal (level image). Nearest first."""
-        p, n = self.to_rover(*self.feature_geometry(a["feature"]))
-        target = p + np.array([0.0, 0.0, a.get("lift_m", 0.0)])
-        for dist in (0.25, 0.30, 0.35, 0.20, 0.40, 0.45):
-            for up in (0.15, 0.25, 0.05, 0.35):
-                c = target + n * dist + np.array([0.0, 0.0, up])
-                z = (target - c) / np.linalg.norm(target - c)
-                x = np.cross([0.0, 0.0, 1.0], z)
-                x /= np.linalg.norm(x)
-                q = mat_to_quat(np.stack([x, np.cross(z, x), z], axis=1))
-                if self.reachable(c, q):
-                    return {"position": c.tolist(), "orientation_xyzw": q, "tolerance_m": 0.02}
-        return None
-
-    def explain_arm_goal(self, params: dict) -> str:
-        """Why an arm goal may have failed, from the robot model: its distance from the arm mount, whether a
-        collision-free arm configuration puts the TCP there with that tool orientation (MoveIt IK against the current
-        planning scene), and if not, how far along the mount-to-goal line one does."""
-        pose = params["pose"] if "pose" in params else {"position": params["position"], "orientation": params["quaternion_xyzw"]}
-        mount, _ = self._tf("chassis_base_link", "base_link")
-        goal = np.array(pose["position"], float)
-        d = float(np.linalg.norm(goal - mount))
-        u = (goal - mount) / d
-
-        def reachable(p):
-            return self.reachable(p, pose["orientation"])
-
-        out = f"TCP goal {d:.2f} m from the arm mount, working radius {ARM_WORKING_RADIUS_M} m"
-        q = self.arm_state()["joints_rad"]
-        at_stop = [f"joint{i + 1} {v:+.2f} rad (limit +-{lim})" for i, (v, lim) in enumerate(zip(q, ARM_JOINT_LIMITS_RAD)) if abs(v) > lim - 0.08]
-        if at_stop:
-            out += "; now at a joint stop: " + ", ".join(at_stop)
-        if reachable(goal):
-            return out + "; a collision-free arm configuration reaches that TCP pose, but not along this motion from the current posture"
-        out += "; no collision-free arm configuration reaches that TCP pose with that tool orientation"
-        for delta in (0.03, -0.03, 0.06, -0.06, 0.10, -0.10, 0.15, -0.15):
-            if reachable(goal + u * delta):
-                return out + f" -- it does {abs(delta):.2f} m {'farther from' if delta > 0 else 'closer to'} the mount along the same line"
-        return out + " -- nor within 0.15 m of it along the mount-to-goal line"
+        out += ("; a collision-free arm configuration reaches that TCP pose" if f.result().error_code.val == 1
+                else "; no collision-free arm configuration reaches that TCP pose with that tool orientation")
+        at_stop = [f"joint{i + 1} {v:+.2f} rad (limit +-{lim})" for i, (v, lim) in enumerate(zip(self.arm_state()["joints_rad"], ARM_JOINT_LIMITS_RAD))
+                   if abs(v) > lim - 0.08]
+        return out + ("; now at a joint stop: " + ", ".join(at_stop) if at_stop else "")
 
     def run_rskill(self, handle, capability: str, a: dict, deadline: float = 60.0) -> tuple[bool, str]:
         r = self.dispatch(handle, CONTRACTS["effects"]["move_ee_to_pose"]["lowers_to"], lower(capability, a), deadline)
@@ -528,16 +488,11 @@ class CapabilityServer(Node):
         if g.capability == "approach_target":
             ok, reason, evidence = self.approach_target(args, handle)
             r = ExecuteRskill.Result(success=ok, failure_kind=0 if ok else 3, failure_reason=reason)
-        elif g.capability == "look_at_feature" and (view := self.look_at_target(args)) is None:
-            r = ExecuteRskill.Result(success=False, failure_kind=3, failure_reason=(
-                "no collision-free arm configuration views that point from 0.20-0.45 m out along the feature's normal "
-                "and 0.05-0.35 m above it (the rover may be too far from or too close to the feature)"))
-            evidence = {}
         else:
-            params = lower("plan_ee_pose", view) if g.capability == "look_at_feature" else self.lower_effect(g.capability, args)
+            params = self.lower_effect(g.capability, args)
             r = self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
-            if not r.success and "position" in evidence["goal"]:  # a planner's error code does not say what was wrong
+            if not r.success and "position" in evidence["goal"]:  # a planner error code does not say what was wrong (ob5, ob6)
                 r.failure_reason += " (" + self.explain_arm_goal(params) + ")"
         evidence["sim_s"] = round(self.sim_t - sim0, 2)
         for key, fn in (("base_pose", self.base_pose), ("tcp_pose", self.tcp_pose)):

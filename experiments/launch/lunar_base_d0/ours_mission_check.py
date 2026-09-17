@@ -123,7 +123,6 @@ def save_before_next_step(evs):
 
 # D0_TRACE_OBJECT=<name>: log the object's truth pose whenever it moves > 2 cm, with the agent's last recorded step
 trace_prev = handle_pos(TRACE_OBJ) if TRACE_OBJ else None
-trace_start = trace_prev
 while agent.poll() is None:
     rclpy.spin_once(n, timeout_sec=0.2)
     evs = (run_dir / "events.jsonl").read_text().splitlines() if (run_dir / "events.jsonl").exists() else []
@@ -137,18 +136,9 @@ while agent.poll() is None:
                 moved_m=round(float(np.linalg.norm(hp - trace_prev)), 3), last_tool=lastev.get("tool"), last_args=lastev.get("args"),
                 tcp=[round(float(v), 3) for v in tcp_pose()[0]], jaw=round(float(jaw.get("q", -1)), 3))
             trace_prev = hp
-            # a physical failure no capability reports: the object pushed away with open jaws
-            if STOP_ON_FAILURE and jaw.get("q", 0.0) > 0.6 and np.linalg.norm(hp - trace_start) > 0.05:
-                agent.kill()
-                agent.wait()
-                log("STOPPED", at_step=steps(), failed=f"{TRACE_OBJ} pushed {np.linalg.norm(hp - trace_start):.3f} m with open jaws", sim_s=round(sim["t"] - sim0, 1))
-                break
     if STOP_ON_FAILURE:
-        # an arm goal the robot model shows unreachable is the agent's to handle (the boundary says so), not a defect
-        new_evs = evs[seen:]
-        unreachable = any("no collision-free arm configuration reaches" in x for x in new_evs)
-        failed = [] if unreachable else [json.loads(x) for x in new_evs if ('"execution_finished"' in x and '"success": false' in x)
-                                         or ('"effect_verified"' in x and '"holds": false' in x)]
+        failed = [json.loads(x) for x in evs[seen:] if ('"execution_finished"' in x and '"success": false' in x)
+                  or ('"effect_verified"' in x and '"holds": false' in x)]
         seen = len(evs)
         if failed:
             agent.kill()

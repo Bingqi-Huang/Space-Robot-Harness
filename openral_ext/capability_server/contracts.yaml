@@ -45,9 +45,8 @@ effects:
 
   arm_ready:
     description: >-
-      Raise the arm from its travel pose (or any pose) into the ready posture off the rover's rear, from which
-      end-effector motions start: TCP about (-1.07, 0, 1.05) in `chassis_base_link`, tool pointing rearward and
-      slightly up, so the wrist camera looks out over the work area towards the horizon, not down onto it.
+      Raise the arm from its travel pose (or any pose) into the ready posture in front of the rover, from which
+      end-effector motions start.
     inputs:
       tolerance_rad: [number, false, "per-joint tolerance (default 0.05)"]
     default_deadline_s: 60
@@ -103,7 +102,7 @@ effects:
       Close onto the pose from which the arm reaches a site feature (hull + arm reach out along its normal), or
       `standoff_m` further out on that axis (to back away). Entered along the axis. The arm works off the rover's
       rear, so at this pose the rear faces the feature: the front camera looks away from it and the wrist camera can
-      see the work area. The base moves rear first: an arm held out off the rear sweeps into whatever is there.
+      see the work area.
     inputs:
       feature: [string, true, "site interaction point"]
       standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 0)"]
@@ -117,27 +116,13 @@ effects:
       Plan and execute (MoveIt) the TCP to `offset_m` in front of a surveyed site feature along its normal, tool into
       the surface; `orientation` press = jaw axis vertical, grip = horizontal. The feature is placed by the rover's
       localization, so expect several centimetres of error: good for bringing the tool and wrist camera near, not for
-      contact. The arm (working radius 0.61 m) is mounted at about (-0.45, 0, 0.73) in `chassis_base_link` and works off
-      the rover's rear: the target must lie within that radius of the mount and clear of the rover's hull.
+      contact.
     inputs:
       feature: [string, true, "site interaction point"]
       offset_m: [number, true, "distance in front of the feature along its normal, m (negative = into it)"]
       lift_m: [number, false, "vertical offset, m (default 0)"]
       orientation: ["string(press|grip)", false, "tool orientation (default press); the wrist camera's image is level in grip and turned 90 degrees in press"]
       tolerance_m: [number, false, "position tolerance (default 0.01)"]
-    default_deadline_s: 120
-    authority_class: routine
-    lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
-
-  look_at_feature:
-    description: >-
-      Point the wrist camera at a surveyed site feature: the boundary picks a viewing pose the arm reaches without
-      collision (0.20-0.45 m out along the feature's normal, 0.05-0.35 m above the look-at point, nearest first), with
-      the tool aimed at the point and the image level, and plans the arm there (MoveIt). For finding what is at a
-      feature (then locate_in_view / approach_target); the survey placement carries the rover's localization error.
-    inputs:
-      feature: [string, true, "site interaction point"]
-      lift_m: [number, false, "look at this far above the feature point, m (default 0), e.g. the height of an item's handle"]
     default_deadline_s: 120
     authority_class: routine
     lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
