@@ -105,23 +105,24 @@ class HarnessToolClient:
     Stateless per step: the only input is the context the harness rebuilt from the authoritative record.
     """
 
-    def __init__(self, *, model_id: str, base_url: str, api_key: str, timeout_s: float):
+    def __init__(self, *, model_id: str, base_url: str, api_key: str, timeout_s: float, thinking: bool = True):
         from openai import OpenAI
 
         self.model_id, self.base_url = model_id, base_url
         self.tools = capability_tools() + local_tools()
         self.sdk = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_s)
+        self.extra = {} if thinking else {"extra_body": {"thinking": {"type": "disabled"}}}
         self.last_prompt_tokens = None
         self.last_raw = None
 
     def select_tool(self, *, context_text: str, palette, system_prompt: str):
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": context_text}]
         try:
-            resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto")
+            resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto", **self.extra)
             if not resp.choices[0].message.tool_calls:
                 messages += [{"role": "assistant", "content": resp.choices[0].message.content or ""},
                              {"role": "user", "content": "Respond with exactly one tool call now."}]
-                resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto")
+                resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto", **self.extra)
         except Exception as exc:  # reason: provider SDK boundary -> typed planning error for ReasonerCore
             raise ROSPlanningError(f"LLM call failed: {exc}") from exc
         self.last_prompt_tokens = resp.usage.prompt_tokens if resp.usage else None

@@ -75,7 +75,7 @@ class Agent:
         self.store = FactStore(run_dir / "events.jsonl")
         self.guard = Guard(cfg["guard"])
         self.client = HarnessToolClient(model_id=model, base_url=rc["endpoint"], api_key=os.environ["SPACE_LLM_API_KEY"],
-                                        timeout_s=rc["timeout_s"])
+                                        timeout_s=rc["timeout_s"], thinking=rc["thinking"])
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())
         self.renderer = HarnessRenderer(self.store, self.max_steps)

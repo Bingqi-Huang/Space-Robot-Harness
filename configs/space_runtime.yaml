@@ -36,5 +36,8 @@ reasoner:
   model: DeepSeek-V4.1-Flash
   endpoint: https://llmapi.paratera.com/v1
   timeout_s: 180
+  # DeepSeek's thinking mode: offline A/B over run oa1's 42 decision points, off = 3.9 s median per step vs 13.3 s on,
+  # with no systematic difference in the tools chosen (research repo F53)
+  thinking: false
   retry_cap_per_call: 3  # ReasonerCore's identical-call cap
   max_steps: 80  # mission step budget: exhausted -> run ends as needing ground assistance
