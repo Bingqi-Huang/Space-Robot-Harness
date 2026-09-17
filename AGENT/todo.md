@@ -1,65 +1,63 @@
 # TODO
 
-## Phase A–C — ✅ COMPLETE (2026-09-13 … 09-16)
+Order: `execution_plan` §21 (revised 2026-09-17) — the proposed method before the external baselines.
 
-Upstream verification, generic OpenRAL on SRB (LunarBot HAL + capabilities, F11–F38), lunar base scene +
-Mission A/B tasks with covered/held-out cases and verifier truth (F39–F49). The oracle's job is done.
+## Done (Phase A–D0, F1–F52)
 
----
-
-## Phase D0: the shared capability stack on Mission A/B — CORE PASSED (F50, F51)
-
-`execution_plan` §21.4 + §13.2. Realistic localization: wheel-inertial `/odom` + AMCL on the lidar-surveyed
-map (SLAM off), navigation and docking in `map`, errors against `/openral/pose_truth`.
-
-- [x] Localization: base 0.02–0.09 m from work poses (truth), AMCL 0.01–0.15 m, odom drift 0.4 m / 34 m.
-- [x] **Mission A `covered` end to end** (a5, av2): verifier success.
-- [x] **Mission B `covered` end to end** (b7, bv2): ORU clamped (jaw 0.17 rad) the whole carry, on PDU-1's
-      shelf upright, rover docked, verifier success.
-- [x] Held-out `route_block`: Nav2 detours round the unmapped rover, AMCL 0.074 m.
-- [x] Videos (success runs av2, bv2): `artifacts/videos/mission_{a,b}_covered.mp4`.
-- [x] Payload sag = leash ratchet in SRB's arm hold (F52 §3); fixed, b8 carry transient recovers.
-- [x] **World-aware arm planning** (F52 §2): site structures + movable objects in MoveIt's scene (default in
-      run_d0.sh); `heldout_cover_obstruction` capabilities pass end to end (ac5), Mission B success (b8).
-- [ ] Held-out primitives not yet run through D0: observe a component's state from a view pose (status_mismatch
-      lamps, destination_occupied shelf, spare_swapped identity) — Phase E perception; crate grasp/carry/place onto a
-      stand slot (destination_occupied).
-- [ ] Wedged-with-spinning-wheels localization: AMCL follows odometry when the rover is physically stuck
-      (b1: 4.5 m). Slip detection in the estimator (not by restricting manoeuvres).
-- [ ] Nav2/MPPI cut the charging station's corner (b1); Mission B uses the east-leg road point. Tune costmap /
-      critics near structures rather than routing around the defect.
-- [ ] Silence the bridge's per-tick camera TF lookups when a scene has no cameras.
-
-**BLOCKER BEFORE THE EXPERIMENT-I FREEZE:** arm targets come from simulator truth — `locate_feature` in the
-capability boundary (and `to_rover` in `d0_common.py`) is a stand-in for Phase E relative perception. It is
-evaluator-only state reaching a method (§13.2) and must be replaced before any campaign run. Same for the feature
-targets of `plan_ee_to_feature`/`move_ee_to_feature` and the movable objects in the planning scene.
+- LunarBot capability stack on SRB (HAL, kernel, Nav2 + AMCL on the lidar-surveyed map, MoveIt with a
+  world-aware planning scene, gripper, sensors).
+- Lunar base scene; Mission A and Mission B `covered` end to end, verifier success; `route_block` and
+  `cover_obstruction` capabilities pass.
+- Common capability boundary (`openral_ext/capability_server`, `contracts.yaml`); Mission A through it (cm2).
+- PLEXIL 6.1.3 built, adapter; `MissionA_Covered.ple` live, verifier success (p1).
 
 ---
 
-## §21.4 common capability boundary — DONE (F51 §5)
+## 1. Ground the tasks in future lunar mission literature (§6.3) — IN PROGRESS
 
-- [x] `space_harness_msgs` (ExecuteCapability action, QueryCapability service), `openral_ext/capability_server`
-      (contracts.yaml: 8 effects, 4 queries; one call → one ExecuteRskill; off-contract refused; verifier never
-      crosses). Offline refusals verified.
-- [x] Live proof (cm2): Mission A `covered` through the boundary only — verifier success, same as direct (a5).
-- [ ] Mission B through the boundary.
-- [ ] Ours' tool palette rendered from contracts.yaml (same names/args).
+- [ ] `docs/lunar_task_catalog.md`: literature survey of candidate tasks/situations with sources (running).
+- [ ] Review the 7 existing situations (A covered, cover_obstruction, status_mismatch; B covered,
+      destination_occupied, spare_swapped; route_block) against the catalog; choose the Experiment-I set.
+- [ ] Change the scenes only where a chosen situation is missing or unsupported.
 
-## After §21.4 (execution_plan §21, in order)
+## 2. Ours: thin `space_runtime` + LLM/VLM path, Mission A (§21.8, Phase E)
 
-- [x] §21.5 start: PLEXIL 6.1.3 pinned and built (`docs/baselines/plexil.md`), SafeDrive example runs;
-      `ros/plexil_capability_adapter` skeleton: ExecuteCapability command path verified through universalExec.
-- [x] §21.5: lookup stall fixed; typed Commands = capabilities (positional args); `MissionA_Covered.ple`
-      end to end on the live graph — verifier success (F52 §1, run p1).
-- [ ] §21.5: PLEXIL Mission B covered plan; Mission B through the boundary for Ours; plan-library structure
-      (library nodes) and the predefined recovery set per `execution_plan` §11.1.
-- [ ] §21.6 EUROPA → PLEXIL bridge; replanning inside the encoded domain on the same case.
-- [ ] §21.7 scenario manifests, evaluator-only annotations, freeze manifest, closed-capability validator.
-- [ ] §21.8 thin `space_runtime` for Mission A (facts/evidence, context, guard, playbook audit).
-- [ ] Phase D space context only for variables the final scenarios exercise.
-- [ ] Phase E: semantic query / relative perception (replaces the truth stand-in); terminal precision =
-      manipulation rSkill with visual servoing (user decision).
+- [ ] Tool palette rendered from `contracts.yaml` (same names/args as PLEXIL).
+- [ ] Authoritative facts/evidence: event schema, reducer, store; `MissionState` = working state only.
+- [ ] Context builder; thin invariant/authority guard at effectful dispatch.
+- [ ] Generic playbook + audit (no Mission A/B solution hints).
+- [ ] FDIR/capability availability; endpoint reconciliation; trace linkage; report from structured record.
+- [ ] Space-context variables only if the chosen scenarios exercise them.
+- [ ] Exit: model restart/switch keeps facts; decomposition/recovery change online without rule edits;
+      guard has no mission-specific logic; Ours succeeds on Mission A `covered`.
+
+## 3. Shared perception (all methods)
+
+- [ ] VLM semantic observation as a registered capability.
+- [ ] Relative perception replaces the truth stand-ins: `locate_feature`, arm feature targets
+      (`plan_ee_to_feature`/`move_ee_to_feature`), movable objects in the planning scene, `to_rover` in `d0_common.py`.
+
+## 4. Ours on covered, then held-out situations
+
+- [ ] Mission A/B covered; then the held-out situations. Failures → mission-generic changes only (§13.1).
+
+## 5–6. Baselines
+
+- [ ] PLEXIL: Mission B covered plan; plan library (library nodes); predefined recovery set (§11.1).
+- [ ] EUROPA: pin/build, NDDL domain, host, EUROPA→PLEXIL bridge, replanning inside the domain.
+
+## 7–9. Framework, covered runs, freeze, Experiment I
+
+- [ ] Scenario manifests, evaluator-only annotations, freeze by git commits/tags, closed-capability validator,
+      ALFUS operator events, metrics aggregation.
+- [ ] All three methods on covered development cases until infrastructure defects are gone.
+- [ ] Freeze → Experiment I. Then Experiment II (§13.3–13.4).
+
+## Known stack issues (fix only when a run fails on them)
+
+- Wedged rover with spinning wheels defeats AMCL (fix estimation, don't restrict manoeuvres).
+- Nav2/MPPI cuts the charging station's corner (Mission B uses the east-leg road point).
+- Bridge's per-tick camera TF lookups when a scene has no cameras.
 
 ---
 
@@ -68,7 +66,9 @@ targets of `plan_ee_to_feature`/`move_ee_to_feature` and the movable objects in 
 - Branch or worktree per task; delete after merge (AGENT.md §1). Clean debug/pilot artifacts.
 - Overwrite-update this file and `handoff.md`; ≤150 lines each (AGENT.md §2).
 - No pytest beyond upstream suites; pure-Python offline checks before one decisive live run.
-- No defensive coding, no hash checks, no corner-case guards (AGENT.md §4).
+- No defensive coding, no corner-case guards (AGENT.md §4).
+- Ours gets generic improvements only; never a situation-specific solution hint (§13.1).
+- Tasks must match documented future lunar mission needs (§6.3); choose from the catalog.
 - **Do not restrict LunarBot's manoeuvres to avoid slip**; fix estimation. **Carry payloads clamped** (check the jaw).
 - **No third-party research code that needs adapting** unless the in-house route is shown insufficient.
 - **Never navigate on truth.** Truth is for measuring and for the declared perception stand-in only.

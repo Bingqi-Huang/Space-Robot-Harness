@@ -487,7 +487,7 @@ The trace is the basis for behavioral explainability: it should show what facts 
 Before writing extension code:
 
 - clone OpenRAL;
-- record commit hash;
+- record the commit;
 - run its documented test suite and a minimal simulation/deploy workflow;
 - inspect `docs/architecture/repo-state-map.html`, `docs/reference/reasoner.md`, `docs/architecture/repo-map.md`, and the relevant ROS package READMEs;
 - trace `ReasonerCore.tick` through `ReasonerToolCall` serialization to ROS dispatch;
@@ -608,6 +608,8 @@ srb_ext/
 
 Follow SRB's task-extension pattern: duplicate the appropriate template, then modify scene, observation space, task-specific state/reward/termination only as required.
 
+**Task selection criterion (first priority).** Every mission task and every covered/held-out situation must correspond to a documented future lunar mission need, with its source cited. Candidates and their sources are catalogued once in `docs/lunar_task_catalog.md`; choose from it rather than re-surveying.
+
 ## 6.4 Mission A — infrastructure inspection and maintenance
 
 Mission A is the primary semantic/generalization mission.
@@ -634,7 +636,7 @@ These are visible during baseline authoring and may be explicitly modeled:
 
 ### Held-out examples
 
-These are hidden until artifact freeze. They must satisfy the closed-capability rule: the needed primitive skills already exist.
+They are not encoded in frozen baseline artifacts, and Ours may meet them before the freeze only under the generic-change rule of §13.1. They must satisfy the closed-capability rule: the needed primitive skills already exist.
 
 Candidate patterns:
 
@@ -997,7 +999,7 @@ Forbidden guidance includes:
 - action ordering that solves held-out cases;
 - rules that select a particular capability for a particular hidden semantic condition.
 
-The final freeze manifest hashes all system prompts/playbooks/skills available to Ours. Any scenario-specific hidden solution invalidates the held-out comparison.
+The final freeze records the git commits of all system prompts/playbooks/skills available to Ours. Any scenario-specific hidden solution invalidates the held-out comparison.
 
 ## 9.4 VLM / semantic observation path
 
@@ -1106,7 +1108,7 @@ Commands must call the shared capability execution path. The PLEXIL adapter may 
 
 Create a plan library for Mission A/B model-covered cases using native PLEXIL constructs. Include reasonable predefined recovery logic. Use library nodes for reusable general procedures rather than duplicating plans.
 
-Every plan/library file used in a campaign is hashed into the freeze manifest.
+Every plan/library file used in a campaign is recorded in the freeze by git commit.
 
 ## 11.2 EUROPA→PLEXIL baseline
 
@@ -1213,14 +1215,12 @@ Every run manifest must include:
 - random seed;
 - foundation-model/provider configuration where used;
 - PLEXIL/EUROPA/OpenRAL/SRB revisions;
-- hashes of frozen mission/domain artifacts and Ours generic prompt/playbook/capability/invariant artifacts;
+- git commits of frozen mission/domain artifacts and Ours generic prompt/playbook/capability/invariant artifacts;
 - space/network profile IDs;
 - capability-registry snapshot;
 - operator event log;
 - trace/log locations;
 - final metrics.
-
-The runner must reject a run if artifact hashes differ from the declared campaign freeze manifest.
 
 # 13. Experimental campaign design
 
@@ -1232,11 +1232,13 @@ Before collecting paper results:
 
 1. finish the common LunarBot capability stack;
 2. validate Mission A/B success conditions independently from all methods;
-3. run PLEXIL and EUROPA→PLEXIL on model-covered development cases until infrastructure/baseline bugs are resolved;
-4. run Ours on the same development cases;
+3. run Ours on model-covered development cases and on held-out situations (generic changes only, see below);
+4. run PLEXIL and EUROPA→PLEXIL on the model-covered development cases until infrastructure/baseline bugs are resolved;
 5. finalize generic capability contracts, generic prompts/playbooks, hard invariant/authority configuration, PLEXIL plan libraries, EUROPA domain/solver configuration, and effect-verifier mappings;
-6. create a cryptographic freeze manifest for all method-specific artifacts;
-7. only then reveal/instantiate final held-out cases.
+6. freeze all method-specific artifacts by recording and tagging their git commits;
+7. only then run the campaign on covered and held-out cases.
+
+**Held-out situations before the freeze.** Ours may run on held-out situations before the freeze, to establish whether and where the method works. Failures are answered only with mission-generic changes: capability descriptions, shared perception, the information the context builder supplies, and the reasoning-loop mechanism. A prompt/playbook hint, guard rule, verifier rule, or capability hint that encodes the solution of a particular situation is forbidden; the freeze audit checks every Ours artifact for it. The same holds for the baselines: a PLEXIL branch or EUROPA domain element added after seeing a held-out situation makes that situation covered for that baseline, and it is reported as covered.
 
 Infrastructure defects discovered after freeze may be fixed only if the same correction is applied fairly and the affected campaign is rerun from the start. A method-specific change that adds missing task knowledge invalidates the freeze and is counted as re-authoring. For Ours, “missing task knowledge” includes adding scenario-specific prompts/playbooks, guard rules, verifier logic, or capability hints that encode a held-out solution.
 
@@ -1569,7 +1571,7 @@ Every failed run is assigned one primary category from a frozen taxonomy such as
 
 Infrastructure failures are fixed and affected runs repeated before final analysis; they are not counted as scientific failures.
 
-Pre-register final metric definitions, freeze hashes, exclusion rules, and analysis scripts before the final campaign.
+Pre-register final metric definitions, the freeze commits, exclusion rules, and analysis scripts before the final campaign.
 
 # 16. LunarBot hardware demonstration — after the simulation result is stable
 
@@ -1711,7 +1713,7 @@ The development order should reduce uncertainty one integration boundary at a ti
 
 - finalize covered development cases;
 - generate/validate held-out cases with the closed-capability validator;
-- freeze method artifacts and hashes before revealing final held-out cases;
+- freeze method artifacts (git commits/tags) before the final campaign;
 - run paired covered/held-out campaigns for Mission A/B;
 - compute ALFUS-grounded autonomy metrics and failure taxonomy.
 
@@ -1774,29 +1776,30 @@ Create scripts that aggregate run artifacts into analysis tables without hand-ed
 - Do not create a custom lunar physics engine.
 - Do not train a new foundation model or VLA unless experiments later reveal a genuine capability gap that cannot be addressed with existing models.
 - Do not set fixed performance gates, training steps, retry counts, confidence thresholds, or resource margins merely to define progress.
-- Do not optimize parameters using the final test scenarios.
+- Do not add situation-specific solution knowledge to any method from running the held-out scenarios (§13.1).
 - Do not introduce mathematical notation into research reports unless it defines an actual implemented algorithm, objective, guarantee, or measured quantity.
 - Do not silently change the paper's central research question when a subproblem becomes technically interesting.
 
 ---
 
-# 21. Immediate concrete tasks (revised after baseline/experiment redesign, 2026-09-14)
+# 21. Immediate concrete tasks (revised 2026-09-17: the proposed method before the external baselines)
 
-Do not interrupt the current LunarBot capability-set work. The scientific redesign changes what comes **after** the common stack is functional.
+Done: LunarBot capability set (Phase B); Mission A and Mission B on the lunar base scene with covered/held-out switches and verifier truth (Phase C); the common capability boundary called identically by Ours and PLEXIL (F51 §5); PLEXIL Release 6 (6.1.3) built with the LunarBot adapter, one covered Mission A instance end to end (F52 §1).
 
-1. Finish LunarBot capability set §8.3 through the reasoner-in-loop Phase B exit condition.
-2. Upgrade `panel_remount` to Mission A v2 with multiple components, semantic inspection, real navigation approach, deterministic verifier truth, and controllable covered/held-out condition switches.
-3. Build a minimal Mission B only after Mission A's shared capabilities work; keep it compositionally distinct but smaller.
-4. Create the common `capability_server`/adapter boundary that can be called identically by Ours and PLEXIL; verify that every route still passes through the same safety/verifier path.
-5. Pin/build PLEXIL Release 6 and implement the LunarBot adapter; run one covered Mission A instance end-to-end.
+The remaining order follows §18 (Phase E before Phase F): the proposed method carries the largest scientific uncertainty, so whether and where it works is established before the baselines are completed.
+
+1. Ground Mission A/B and their covered/held-out situations in future lunar mission literature (§6.3): choose from `docs/lunar_task_catalog.md` and change the scenes where an existing situation is not supported.
+2. Finish the proposed thin `space_runtime`/LLM/VLM path for Mission A: tool palette rendered from the common capability contracts, authoritative facts/evidence, dynamic context, thin invariant/authority guard, playbook audit, and only the space-context variables exercised by final scenarios. Do not add mission-specific decision rules.
+3. Shared perception for all methods: VLM semantic observation as a registered capability; relative perception replacing the simulator-truth stand-ins (feature location, arm feature targets, movable objects in the planning scene).
+4. Run Ours on Mission A/B covered cases, then on held-out situations; answer failures with mission-generic changes only (§13.1).
+5. Complete PLEXIL: Mission B covered plan, plan library of reusable procedures (library nodes), predefined recovery set (§11.1).
 6. Pin/build EUROPA and implement a minimal NDDL domain + host + EUROPA→PLEXIL activity bridge; verify online feedback and replanning inside the encoded domain on the same covered case.
-7. Implement experiment scenario manifests, evaluator-only success annotations, freeze-manifest hashing, and the closed-capability validator.
-8. Finish the proposed thin `space_runtime`/LLM/VLM path for Mission A: authoritative facts/evidence, dynamic context, generic capability contracts, thin invariant/authority guard, playbook audit, and only the space-context variables exercised by final scenarios. Do not add mission-specific decision rules.
-9. Run all three methods on covered development cases until infrastructure defects are removed; do not tune against final held-out cases.
-10. Construct final held-out cases, freeze all method artifacts, and run Experiment I.
-11. After Experiment I, define extension cases and implement timed engineering worklogs for Experiment II.
-12. Only after both experiments are coherent, design the LunarBot hardware demo in detail.
-13. Keep `docs/research_findings.md`, baseline integration notes, freeze manifests, and citation/source notes current.
+7. Implement experiment scenario manifests, evaluator-only success annotations, the freeze (git commits/tags), and the closed-capability validator.
+8. Run all three methods on covered development cases until infrastructure defects are removed.
+9. Freeze all method artifacts and run Experiment I.
+10. After Experiment I, define extension cases and implement timed engineering worklogs for Experiment II.
+11. Only after both experiments are coherent, design the LunarBot hardware demo in detail.
+12. Keep `docs/research_findings.md`, baseline integration notes, freeze records, and citation/source notes current.
 
 # 22. Reference documentation reviewed for this plan
 

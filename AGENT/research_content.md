@@ -164,7 +164,7 @@ This wording intentionally acknowledges that classical systems already support g
 
 ### H1 — Autonomous mission-envelope expansion
 
-With the same robot embodiment and primitive capabilities, the proposed runtime will complete a broader set of **model-held-out mission situations** without ground re-authoring than PLEXIL and EUROPA-to-PLEXIL baselines whose mission/domain artifacts are frozen before those situations are revealed.
+With the same robot embodiment and primitive capabilities, the proposed runtime will complete a broader set of **model-held-out mission situations** without ground re-authoring than PLEXIL and EUROPA-to-PLEXIL baselines whose frozen mission/domain artifacts do not encode those situations.
 
 ### H2 — Lower mission-specific knowledge-engineering burden
 
@@ -666,7 +666,7 @@ The comparison is only valid if the following rules are enforced:
 2. **Same physical scenario.** Methods run the same simulator state/seed and mission objective.
 3. **Same available evidence.** No method receives privileged simulator truth for reasoning; deterministic truth may be used by the common verifier.
 4. **Strong baseline authoring.** PLEXIL/EUROPA artifacts are authored using their documented strengths and validated on model-covered development cases.
-5. **Artifact freeze.** Before held-out cases are revealed, PLEXIL plans/libraries, EUROPA domain/solver configuration, proposed generic prompts/playbooks, capability descriptions, hard invariant/authority configuration, and all shared capabilities are frozen.
+5. **Artifact freeze.** Before the campaign, PLEXIL plans/libraries, EUROPA domain/solver configuration, proposed generic prompts/playbooks, capability descriptions, hard invariant/authority configuration, and all shared capabilities are frozen.
 6. **No hidden solution in Ours.** Capability descriptions, prompts/playbooks, guard rules, verifier logic, and state schemas must be mission-generic and cannot encode the held-out task sequence, scenario-specific recovery graph, or required action ordering.
 7. **No online code/model editing during autonomous runs.** If continuing a mission would require editing a PLEXIL plan, EUROPA domain/task model, or proposed runtime code, that autonomous run is recorded as requiring ground re-authoring.
 8. **Equivalent mission intent.** Ours may receive natural-language mission intent; baselines receive the semantically equivalent formal mission goal required by their execution model. The difference in operator command abstraction is recorded rather than disguised.

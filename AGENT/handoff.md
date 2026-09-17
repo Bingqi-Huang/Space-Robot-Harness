@@ -1,9 +1,17 @@
 # Handoff
 
-State as of 2026-09-17 (early morning). **Phase D0's core has passed: Mission A and Mission B `covered` run end
+State as of 2026-09-17. **Phase D0's core has passed: Mission A and Mission B `covered` run end
 to end through the shared capability stack with realistic localization. §21.4's common capability boundary is
 proven live (Mission A through the boundary = direct run), and the PLEXIL baseline runs Mission A through it
 (F52). World-aware MoveIt + fixed arm hold: `heldout_cover_obstruction` capabilities pass.** Findings: `docs/research_findings.md` F1–F52 — **read F51, then F52**. Tasks: `todo.md`.
+
+## Plan change (2026-09-17, user decision)
+
+`execution_plan` §21 reordered: **Ours before the baselines** (matches §18, Phase E before F). Next, in order:
+ground tasks in lunar mission literature (`docs/lunar_task_catalog.md`, choose from it, no re-survey) → Ours
+(`space_runtime` + LLM/VLM) and shared perception → Ours on covered then held-out situations → PLEXIL Mission B +
+library → EUROPA → framework → freeze → Experiment I. §13.1: Ours may meet held-out situations before the freeze;
+failures get mission-generic changes only, never a situation-specific hint. Freeze = git commits/tags.
 
 ## What D0 established (F51)
 
@@ -72,5 +80,5 @@ proven live (Mission A through the boundary = direct run), and the PLEXIL baseli
 
 - openral: `master` ee6dec8, 6 commits ahead of `origin/master`, not pushed.
 - SRB: `feat/lunar-base-scene` b436599, 5 commits ahead of its origin, not pushed (`main` unchanged).
-- Research repo: `main` (no remote). PLEXIL 6.1.3, Ant, gperf under `~/Programs` (outside git, `docs/baselines/plexil.md`).
+- Research repo: `main` (no remote); plan change on branch `docs/plan-reorder-literature-tasks`. PLEXIL 6.1.3, Ant, gperf under `~/Programs` (outside git, `docs/baselines/plexil.md`).
 - Videos (not in git): `artifacts/videos/mission_{a,b}_covered.mp4`.
