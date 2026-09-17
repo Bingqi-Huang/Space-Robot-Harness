@@ -14,11 +14,12 @@ No code yet.
    trusted. The target lives in the eye-in-hand camera image (pixels + local depth) and is servoed there. The only
    geometry used is the robot's own: the fixed camera-to-tool mount and the arm's Cartesian velocity interface.
 4. **Closed loop at camera rate; verification from images and encoders.** Every contact step is guarded and checked.
-5. **Failures are bridged by the harness** (§5a): skills keep bounded control reflexes and report typed outcomes; the
-   harness safes the robot, keeps the attempt memory, exposes the recovery options and budgets, and verifies the
-   recovery; the agent chooses the recovery. No scenario-specific recovery graph anywhere.
+5. **Manipulation is a set of tools, not one skill.** Like `navigate_to_pose`, each tool does one job and reports what
+   it measured; none contains a recovery path. The agent in the harness composes them and, when a step fails,
+   chooses a different tool or different parameters (another candidate, generator, viewpoint, stand-off, speed, base
+   pose). The harness supplies the facts, the attempt record, independent verification, invariants and budgets (§5a).
 
-## 2. Pipeline
+## 2. A typical composition (chosen by the agent, not encoded anywhere)
 
 | Stage | What | Where / rate |
 |---|---|---|
@@ -59,8 +60,7 @@ space-mission layer below.
 - **Pre-close check:** grasp centre inside the finger-gap region, depth within the jaw's reach, feature track healthy.
 - **Post-close / lift:** jaw encoder stops in a plausible range for a clamp (not fully closed); on a short lift the
   tracked features stay put in the image while the scene behind moves → object held.
-- **Outcomes:** `ok | no_candidates | not_selected | track_lost | stalled | misaligned | not_clamped | slipped`, each with
-  an evidence bundle (candidate image, VLM choice + reason, track, pre-close frame, post-lift frame).
+- Each check is its own query (`target_status`, `hold_check`) so the agent and the harness verifiers can use it.
 
 ## 5. Harness (contribution, `space_runtime/`)
 
@@ -75,23 +75,40 @@ space-mission layer below.
 - **Latency layering:** cloud reasoning (tens of seconds) never sits inside the 15 Hz loop.
 - **Evidence:** every outcome links its frames and tracks.
 
-## 5a. Failure bridging (harness-centred)
+## 5a. Tools and composition
 
-| Layer | Who | What happens on a failure | Bounded by |
-|---|---|---|---|
-| A. Control reflexes | skill | re-acquire a lost track by feature match; on a stall back off to the pre-grasp and re-centre; each reflex logged | seconds, no goal change |
-| B. Safing | harness (invariants) | stop; retreat along the recorded path to the last safe stand-off; if the hold is uncertain the object fact becomes `unknown` and contact effects are blocked until a fresh observation; base stays locked while the arm is out | always, automatic |
-| C. Recovery context | harness | diagnosis fact (outcome, measured cause e.g. "misaligned 2.1 cm left of the jaw gap", candidate id, view id, evidence); per-target attempt ledger (candidates / viewpoints / base poses tried and their outcomes, failed candidates marked on the next selection image); the recovery options the capability metadata offers (other candidate, other viewpoint, reposition base, other grasp part, release and retreat, ask operator); attempt and time budgets | budget exhaustion → operator request with the evidence package |
-| D. Recovery choice | agent | picks an option or revises the plan (e.g. use the other spare, report) | harness guard + verification |
-| E. Verification | harness | a recovery counts only when the independent verifier confirms it | — |
+Perception queries (no motion):
 
-Provider failures are bridged the same way: VLM or reasoner no-answer → provider failover recorded as a fact.
-Measured in the experiments as recovered-failure rate, attempts per success, operator requests.
+| Tool | Does | Returns |
+|---|---|---|
+| `observe(camera, question)` (exists) | VLM question on the current frame | answer + frame |
+| `grasp_candidates(camera, generator, max_n, exclude)` | class-agnostic candidates on the current view (§3) | annotated numbered image; per candidate: pixel, image axis angle, depth, approach direction and jaw width in the camera frame, score |
+| `choose_candidate(candidates_id, intent, exclude)` | VLM set-of-mark choice for the intent | candidate id, reason, runner-up |
+| `lock_target(candidates_id, candidate)` | starts the on-board KLT + depth track of that candidate | track id, quality |
+| `target_status(track)` | reads the live track | pixel error to the jaw gap, axis error, depth, quality |
+| `hold_check(track)` | short image test while the tool moves: target static in the image, background moving | held yes/no + frames |
+
+Motion effects:
+
+| Tool | Does | Stops and reports |
+|---|---|---|
+| `servo_to_target(track, standoff_m, max_speed)` | IBVS to the stand-off with the target in the jaw gap | converged / track_lost / stalled (with the last errors) |
+| `approach_guarded(distance_m, max_speed)` | straight move along the tool axis | reached / contact / depth limit |
+| `move_camera(...)` / OpenRAL `LookAtRskill` | change the viewpoint relative to the current view | reached / blocked |
+| `move_tool`, `grasp`, `release`, `stow`, base navigation (exist) | as now | as now |
+
+The harness's part (contribution): object facts updated only by verified evidence; verifiers built on these queries
+(held = jaw range + `hold_check`, not a skill flag); automatic invariants (stop on a lost track during a contact move,
+no base motion while holding or with the arm out, contact blocked after an uncertain hold until re-observed); an
+attempt record in the context per target (tools, parameters, candidates, viewpoints, outcomes, failed candidates
+passed as `exclude`); attempt/time budgets with an operator request on exhaustion; provider failover for VLM and
+reasoner. The agent reads this and composes the next attempt differently. No recovery graph in tools or harness.
+Measured as recovered-failure rate, attempts per success, operator requests.
 
 ## 6. Capability boundary
 
-Effects `grasp_object(description, intent)` and `place_object(description_of_place)`; query `grasp_candidates` (the
-annotated candidate image and the VLM's pick, for transparency). Same contracts for Ours, PLEXIL and EUROPA→PLEXIL.
+The §5a tools as contracts (effects and queries), exactly like navigation today. Same contracts for Ours, PLEXIL and
+EUROPA→PLEXIL; PLEXIL composes them in authored plans and branches, Ours composes them online.
 
 ## 7. Validation gates
 
@@ -121,6 +138,6 @@ annotated candidate image and the VLM's pick, for transparency). Same contracts 
 1. G0 recorder (`experiments/perception/record_rgbd.py`) on the held graph.
 2. G1: classical generator (OpenCV/depth) first (no build risk), then Contact-GraspNet / GraspNet baseline.
 3. G2: candidate rendering + set-of-mark selection prompt.
-4. Tracker + IBVS + checks as `grasp_object` / `place_object` rSkills; boundary contracts.
+4. Tools of §5a (candidates, choose, lock/track, servo, guarded approach, checks) as rSkills + boundary contracts.
 5. Harness: object facts, verifiers, reconciliation, invariants.
 6. G3–G7 with the snapshot workflow.
