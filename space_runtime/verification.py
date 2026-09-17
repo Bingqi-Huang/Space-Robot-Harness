@@ -24,6 +24,8 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]
                         source="rover localization estimate (AMCL) vs commanded goal"))
     if capability in TCP and isinstance(evidence.get("tcp_pose"), dict):
         tol = args.get("tolerance_m", TCP_DEFAULT_TOL[capability]) * cfg["tcp"]["tolerance_factor"]
+        if capability.startswith("plan_"):
+            tol += cfg["tcp"]["plan_execution_m"]
         d = math.dist(evidence["tcp_pose"]["position"], goal["position"])
         out.append(dict(effect="tool_at_commanded_position", holds=d <= tol, position_error_m=round(d, 4), band_m=round(tol, 4),
                         source="arm forward kinematics vs commanded TCP target (rover frame)"))

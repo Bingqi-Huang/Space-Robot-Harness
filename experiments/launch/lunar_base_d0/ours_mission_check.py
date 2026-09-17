@@ -94,7 +94,6 @@ def start(extra):
 agent = start(["--resume"] if RESUME_FROM else ["--mission", BRIEF])
 last = time.time()
 seen = len((run_dir / "events.jsonl").read_text().splitlines()) if RESUME_FROM else 0
-STEP_END = ('"kind": "execution_finished"', '"kind": "query_answered"', '"kind": "local_tool"', '"kind": "reasoner_step_failed"')
 saved = -1
 
 
@@ -102,7 +101,9 @@ def save_before_next_step(evs):
     """Once the last recorded step has ended (or none started), save the state the next step will start from."""
     global saved
     k = steps()
-    ended = not evs or k == 0 or any(m in evs[-1] for m in STEP_END) or ('"guard_decision"' in evs[-1] and '"outcome": "allow"' not in evs[-1])
+    last = max((i for i, x in enumerate(evs) if '"kind": "tool_proposed"' in x or '"kind": "reasoner_step_failed"' in x), default=-1)
+    ended = last < 0 or '"reasoner_step_failed"' in evs[last] or any(
+        m in x for x in evs[last + 1:] for m in ('"kind": "execution_finished"', '"kind": "query_answered"', '"kind": "local_tool"', '"outcome": "deny', '"outcome": "approval'))
     if ended and k != saved:
         path = snap_dir / f"before_step_{k + 1}.pt"
         p, yaw, _ = est_pose()
