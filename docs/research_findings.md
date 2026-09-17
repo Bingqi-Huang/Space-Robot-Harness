@@ -2688,3 +2688,41 @@ off; physics is now ~24 of ~47 ms, so the ceiling of that port is ~2×.
 
 **6. Reasoner thinking.** Offline A/B over oa1's 42 decisions: thinking off 3.9 s median vs 13.3 s on, tool choice not
 systematically different; kept **on** (user decision: capability over latency).
+
+### F55 — Mission B with Ours: the pick fails on the pipeline, not on the reasoner alone; step-wise development; reasoner and VLM choices; ad-hoc patches reverted
+
+2026-09-17, Step 6, runs ob1–ob6 (+ ob5_s*, ob6_s* resumes), offline reasoner replay.
+
+**1. Step-wise development.** SRB `envs/snapshot` saves/restores every articulation, rigid object and the held action
+buffers; `ours_mission_check.py` saves before every agent step, `D0_HOLD=1` keeps the graph, `attach_d0.sh` restores to
+before a failed step (also into a fresh sim from disk), re-seeds AMCL from the saved estimate (only after `/initialpose`
+is matched — a lost message left a 0.16 m stale estimate once), truncates the record and resumes the agent.
+
+**2. Real defects found and fixed.** (a) `move_ee_to_pose` completed on a nonzero proportional twist; SRB applies the
+last twist until the next command → the arm crept ~1.5 cm/s after every servo (0.9 m in 60 s during reasoner thinking);
+it now commands a zero twist before reporting. (b) A VLM gateway timeout raised out of `approach_target` with no reason.
+(c) The camera frame can be one TF tick newer than the pose. (d) Verification band for MoveIt plans: executed plans end
+0.9–3.0 cm from the planned goal (9 plans) → +2.5 cm. (e) An arm-goal failure now states its distance from the mount,
+MoveIt IK reachability and joints at their stops (a bare `error_code=99999` gave the agent nothing).
+
+**3. Why the pick kept failing** (12 failures): 4 stack defects, 5 interface gaps, 3 reasoner judgement errors — the
+latter all where the interface made the reasoner do 3-D arm kinematics from coordinates (viewing poses inside the
+elbow limit, docking with the arm raised pushed the ORU 9 cm, survey-coordinate contact). The VLM-point pipeline marked
+the handle's base plate or the box edge instead of the bail twice (close up the gripper hides the T crossbar); the
+approach is two looks and a blind slide; no pre-close or post-lift check. Best result: the agent clamped the ORU neck
+(jaw 0.175 rad, ob6_s19d) but the lift stalled with joint3 at its stop.
+
+**4. Reasoner / VLM.** Offline replay (`experiments/reasoner_replay/replay.py`, 5 recorded decision points × 2, limited
+tools): DeepSeek-V4-Pro 7/10 (median 162 s), Kimi-K3 3/10, Qwen3.8-Max 3/10, local qwen3.8 27B (Ollama) 3/10 (33 s),
+GLM-5.3 2/10 (mostly timeouts), DeepSeek-V4.1-Flash 1/10 text, 3/10 with the wrist image. Reasoner → DeepSeek-V4-Pro.
+Shared VLM → GLM-5.3-Flash (Kimi-K3 took 95–150 s per answer with timeouts; same pixels). Wall time before the switch:
+reasoner ~55 %, arm motion ~25 %, VLM ~20 %.
+
+**5. Patches tried and reverted (user decision).** joint3 plan constraint, rejecting stand-off re-detections > 4 cm,
+coordinates/operating hints in the contracts, a `look_at_feature` grid search, a mount-line reachability probe,
+string/push-based stops in the dev check. They papered over one failure each. The pick is to be rebuilt as composable
+OpenRAL rSkills (VLM chooses among image grasp candidates, IBVS, image checks, no object models, no world-coordinate
+target) with the harness bridging failures: `docs/semantic_to_metric_manipulation_plan.md` (v3).
+
+**6. Drift noted.** The capability boundary implements skills (`approach_target`, VLM perception, feature lowering);
+these belong in OpenRAL rSkills, the boundary should be a thin mapping shared by all methods.
