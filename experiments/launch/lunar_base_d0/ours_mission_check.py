@@ -44,8 +44,19 @@ def start(extra):
 
 agent = start(["--mission", BRIEF])
 last = time.time()
+# D0_TRACE_OBJECT=<name>: log the object's truth pose whenever it moves > 2 cm, with the agent's last recorded step
+trace_prev = handle_pos(TRACE_OBJ) if TRACE_OBJ else None
 while agent.poll() is None:
     rclpy.spin_once(n, timeout_sec=0.2)
+    if TRACE_OBJ:
+        hp = handle_pos(TRACE_OBJ)
+        if np.linalg.norm(hp - trace_prev) > 0.02:
+            evs = (run_dir / "events.jsonl").read_text().splitlines()
+            lastev = next((json.loads(x) for x in reversed(evs) if '"tool_proposed"' in x), {})
+            log("OBJECT", name=TRACE_OBJ, sim_t=round(sim["t"], 2), handle=[round(float(v), 3) for v in hp],
+                moved_m=round(float(np.linalg.norm(hp - trace_prev)), 3), last_tool=lastev.get("tool"), last_args=lastev.get("args"),
+                tcp=[round(float(v), 3) for v in tcp_pose()[0]], jaw=round(float(jaw.get("q", -1)), 3))
+            trace_prev = hp
     if RESTART_AT and steps() >= RESTART_AT:
         agent.kill()
         agent.wait()
