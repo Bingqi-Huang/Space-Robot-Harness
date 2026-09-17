@@ -58,11 +58,13 @@ POINT_TYPES = {
     "indicator": "status lamp on a service panel: red = unit faulted, green = nominal",
     "place": "surface point where an object can be set down",
 }
-VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "DeepSeek-V4.1-Flash")  # the shared scene VLM (same for every method)
+# the shared scene VLM (same for every method): Kimi-K3 located a thin bail, a button beside a lamp and a lamp 15/15 on real
+# wrist frames (DeepSeek-V4.1-Flash 12/15, GLM-5.3-Flash 15/15, Qwen3.8-Flash 14/15, Qwen3.8-Max 5/15; research repo F54)
+VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "Kimi-K3")
 VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com/v1")
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
-VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 5, 3  # concurrent localisation asks; how many must find the target
+VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; how many must find the target
 DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
