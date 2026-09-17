@@ -29,13 +29,16 @@ def cap(name, **args):
 
 def ask(query_name, **args):
     f = query_client.call_async(QueryCapability.Request(query=query_name, args_json=json.dumps(args)))
-    rclpy.spin_until_future_complete(n, f, timeout_sec=120)
+    while not f.done():  # a VLM localisation with agreement checks can take minutes of wall time
+        rclpy.spin_once(n, timeout_sec=0.1)
     r = f.result()
     return {"success": r.success, **(json.loads(r.value_json) if r.success else {"failure_reason": r.failure_reason})}
 
 
 def target_error(res, world_point):
     """Evaluator: the RGB-D target (rover frame) vs a truth point in srb/world."""
+    if res is None or "target_rover" not in res["evidence"]:  # step not selected (D0_STEPS) or target never reached
+        return {}
     ev = res["evidence"]
     if "target_rover" not in ev:
         return {}
@@ -64,7 +67,7 @@ run("navigate slot_0", lambda: cap("navigate_to_feature", feature="depot_stand/s
 run("dock slot_0", lambda: cap("dock_at_feature", feature="depot_stand/slot_0"))
 run("open jaws", lambda: cap("release"))
 run("arm ready (depot)", lambda: cap("arm_ready"))
-run("moveit above slot", lambda: cap("plan_ee_to_feature", feature="depot_stand/slot_0", offset_m=0.25, lift_m=0.47, orientation="grip"))
+run("moveit above slot", lambda: cap("plan_ee_to_feature", feature="depot_stand/slot_0", offset_m=0.18, lift_m=0.47, orientation="grip"))  # F51 b7's reachable pre-grasp
 HANDLE = "the black T-shaped carry handle on top of the gold box"
 run("locate handle", lambda: ask("locate_in_view", camera="wrist", target=HANDLE))
 res = run("approach handle", lambda: cap("approach_target", target=HANDLE, standoff_m=0.12, orientation="grip"))
