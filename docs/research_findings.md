@@ -2653,3 +2653,38 @@ placed by AMCL (several cm), used to bring the camera near. Shared by every meth
 `data.pos_w`/`quat_w_ros` keep the spawn pose and SRB's ROS interface broadcast it: `odom -> wrist_camera_optical_frame`
 was constant at (-0.30, 0.06, 1.61) while the arm moved. First vision run (vc1) triangulated a button 17.8 m away.
 Fixed in SRB `ground_manipulation/visual_ext.py` (True for all three cameras).
+
+### F54 — Vision-guided contact works (press vc4, grasp vc10); the lunar base step cost was the lidar and re-published sensors, not rendering; GPU PhysX is not a switch in SRB
+
+2026-09-17, Phase E / Step 5, runs vc3–vc10, pf1–pf2, gp1.
+
+**1. Camera frames.** Chaining the cameras through their mount bodies (openral `feat/wrist-depth-relay`: Link7 / rgbd_camera_frame
+TF × the `lunarbot.py` extrinsics, IsaacLab "world" convention → ROS optical) fixed F53 §5. Setting
+`update_latest_camera_pose` in SRB did not change the broadcast pose and was reverted. Both cameras are D435i: the wrist depth
+is relayed too, and `approach_target` localises from one RGB-D view (no triangulation).
+
+**2. VLM localisation, measured on real frames.** One answer is not stable: vc3 got the PDU-2 button, then a rail point 14 cm
+below it on the next call (the arm pushed the panel and moved the rover 7 cm). On an elongated part (the ORU bail) five answers
+wandered 30–80 px along it. Now: five concurrent asks, ≥3 must find the target, per-axis median; depth = 25th percentile of a
+7×7 patch (the foreground, not the box behind a thin neck). Frames are rotated gravity-upright before the VLM; the wrist image is
+level in `grip` orientation and rolled 90° in `press` (user: view level).
+
+**3. Results.** vc4 (press, button described in words): PDU-2 cleared, 1 press. vc10 (ORU bail, wrist light on): target
+2.1 cm from the neck centre (mostly along the approach), one correction 1.8 cm, TCP 1 cm from the neck at the grasp, jaw
+0.181 rad (F51's truth-guided clamp: 0.172), jaw held 0.17 through a 10 cm lift, handle 1.022 → 1.078 m (the rest is the 1 kg arm
+sag, F51). Before the wrist light (vc7) the black bail against the black sky was invisible; the lunar base tasks now carry a
+wrist and a front work light.
+
+**4. Where a lunar base step went (SRB_ROS_PROFILE, pf1 → pf2).** 117 ms/tick at 0.155× real time: lidar ray-cast at every
+50 Hz step 47 ms (the lazy refresh also absorbs the GPU sync), re-publishing unchanged camera/point-cloud data 28 ms, CPU
+PhysX 26 ms, render 3 ms. Rendering was not the cost: cameras 50 → 15 Hz and dropping `cam_scene` changed 0.150× → 0.155×
+(my first hypothesis, wrong). Fix: lidar `update_period` 0.1 s (the Mid-360's 10 Hz), publish a sensor only when its
+timestamp advanced → ~47 ms/tick, **0.375×** measured on navigation and docking. Two graphs in parallel ran at 0.05× each
+(24 threads per Isaac process on 24 cores): run one at a time.
+
+**5. GPU PhysX (user request) is not a switch.** `SRB_SIM_DEVICE=cuda` (CCD off) crashes at the first step: IsaacLab's
+`BinaryJointPositionAction` mixes cuda and cpu tensors (SRB's `__main__` re-sets devices after the cfg). Left opt-in and
+off; physics is now ~24 of ~47 ms, so the ceiling of that port is ~2×.
+
+**6. Reasoner thinking.** Offline A/B over oa1's 42 decisions: thinking off 3.9 s median vs 13.3 s on, tool choice not
+systematically different; kept **on** (user decision: capability over latency).
