@@ -50,9 +50,9 @@ situations, then the 1x video. Findings: `docs/research_findings.md` F1–F54 �
   (joint3 at its stop). Graph torn down.
 - Reasoner **DeepSeek-V4-Pro** (offline replay `experiments/reasoner_replay/replay.py`: V4-Pro 7/10, Kimi-K3 /
   Qwen3.8-Max / local qwen3.8 27B 3/10, GLM-5.3 2/10, V4.1-Flash 1/10 text, 3/10 with image). VLM **GLM-5.3-Flash**.
-- **Next (user decision): rebuild grasping as on-board rSkills** -- VLM semantic selection only; CAD-model 6-DoF pose
-  tracking (FoundationPose / ViSP MBT); PBVS through the arm kinematics with MoveIt for the coarse move; pre-grasp and
-  post-lift visual checks. Offline test on saved wrist frames first.
+- **Next (user decision): grasping rebuilt per `docs/semantic_to_metric_manipulation_plan.md` v2** -- no object
+  models, no absolute target coordinates: grasp candidates from the wrist RGB-D view, VLM chooses among them, KLT/depth
+  tracking + IBVS, guarded close-in, image checks; harness object facts and reconciliation. Start with G0 recording.
 - Timing (ob6_s15d): reasoner thinking ~55 %, arm motion ~25 %, VLM ~20 % of wall time; reasoner 40–255 s per step.
 - Analysis: 12 failures = 4 stack defects, 5 interface gaps, 3 reasoner judgement errors (all where the interface made
   it do 3-D kinematics in coordinates).
