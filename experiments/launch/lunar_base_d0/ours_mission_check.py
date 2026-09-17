@@ -25,21 +25,54 @@ run_dir.mkdir(parents=True, exist_ok=True)
 # the run tag puts the agent under the graph's teardown (D0_GRAPH_LOG when attached to a held graph): an agent blocked
 # in rclpy ignores SIGTERM, and two left over from stopped runs were still alive in the next run's ROS domain (2026-09-17)
 env = dict(os.environ, PYTHONPATH=f"{REPO}:{os.environ.get('PYTHONPATH', '')}", D0_RUN_TAG=os.environ.get("D0_GRAPH_LOG", os.environ["D0_LOG"]))
-# Step-wise development (attach_d0.sh on a held graph): OURS_RESUME_FROM=<earlier ours dir> continues that record from
-# before its step OURS_RESUME_BEFORE_STEP (the failed one; default: after its last) in the live world as it is now;
-# OURS_STOP_ON_FAILURE=1 stops the agent at the first failed capability or effect that does not hold, leaving the
-# graph up for the fix.
+# Step-wise development (research runs never use these): the simulator's full state is saved before every agent step
+# (<log>/snapshots/before_step_<n>.pt, with the rover's own localization estimate beside it). OURS_STOP_ON_FAILURE=1
+# stops the agent at the first failed capability or effect that does not hold, the graph held up (D0_HOLD=1). After
+# the fix, attach_d0.sh with OURS_RESUME_FROM=<earlier log> OURS_RESUME_BEFORE_STEP=<n> puts the simulation back to
+# before step n, gives the localization back its estimate from then, and continues the agent's record from there.
+from geometry_msgs.msg import PoseWithCovarianceStamped
+
+snap_dir = Path(os.environ["D0_LOG"]) / "snapshots"
+snap_dir.mkdir(exist_ok=True)
+snap_pub = n.create_publisher(String, "/srb/envs/snapshot", 10)
+snap_done = []
+n.create_subscription(String, "/srb/envs/snapshot/done", lambda m: snap_done.append(json.loads(m.data)), 10)
+while snap_pub.get_subscription_count() == 0:
+    spin(0.5)
+
+
+def snapshot(op, path):
+    snap_done.clear()
+    snap_pub.publish(String(data=json.dumps(dict(op=op, path=str(path)))))
+    while not snap_done:
+        spin(0.1)
+
+
 RESUME_FROM = os.environ.get("OURS_RESUME_FROM")
 if RESUME_FROM:
+    before = int(os.environ["OURS_RESUME_BEFORE_STEP"])
     keep, n_steps = [], 0
-    before = int(os.environ.get("OURS_RESUME_BEFORE_STEP", "0"))
-    for line in (Path(RESUME_FROM) / "events.jsonl").read_text().splitlines():
+    for line in (Path(RESUME_FROM) / "ours/events.jsonl").read_text().splitlines():
         if '"kind": "tool_proposed"' in line or '"kind": "reasoner_step_failed"' in line:
             n_steps += 1
-        if before and n_steps >= before:
+        if n_steps >= before:
             break
         keep.append(line)
     (run_dir / "events.jsonl").write_text("\n".join(keep) + "\n")
+    snap = Path(RESUME_FROM) / f"snapshots/before_step_{before}.pt"
+    snapshot("restore", snap)
+    est = json.loads(snap.with_suffix(".json").read_text())
+    ip = PoseWithCovarianceStamped()
+    ip.header.frame_id = "map"
+    ip.pose.pose.position.x, ip.pose.pose.position.y = est["x"], est["y"]
+    ip.pose.pose.orientation.z, ip.pose.pose.orientation.w = math.sin(est["yaw"] / 2), math.cos(est["yaw"] / 2)
+    ip.pose.covariance[0] = ip.pose.covariance[7] = 0.02 ** 2
+    ip.pose.covariance[35] = 0.02 ** 2
+    n.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10).publish(ip)
+    t_restore = sim["t"]
+    while sim["t"] - t_restore < 5.0:
+        spin(0.2)
+    log("RESTORED", snapshot=str(snap), estimate=est, truth_error=base_err([est["x"], est["y"]], est["yaw"]))
 STOP_ON_FAILURE = bool(os.environ.get("OURS_STOP_ON_FAILURE"))
 log("PLAN", method="ours", brief=BRIEF, run_dir=str(run_dir))
 t0, sim0 = time.time(), sim["t"]
@@ -50,7 +83,7 @@ RESTART_AT = int(os.environ.get("OURS_RESTART_AT_STEP", "0"))
 
 def steps():
     p = run_dir / "events.jsonl"
-    return sum('"kind": "tool_proposed"' in line for line in p.read_text().splitlines()) if p.exists() else 0
+    return sum('"kind": "tool_proposed"' in line or '"kind": "reasoner_step_failed"' in line for line in p.read_text().splitlines()) if p.exists() else 0
 
 
 def start(extra):
@@ -61,10 +94,29 @@ def start(extra):
 agent = start(["--resume"] if RESUME_FROM else ["--mission", BRIEF])
 last = time.time()
 seen = len((run_dir / "events.jsonl").read_text().splitlines()) if RESUME_FROM else 0
+STEP_END = ('"kind": "execution_finished"', '"kind": "query_answered"', '"kind": "local_tool"', '"kind": "reasoner_step_failed"')
+saved = -1
+
+
+def save_before_next_step(evs):
+    """Once the last recorded step has ended (or none started), save the state the next step will start from."""
+    global saved
+    k = steps()
+    ended = not evs or k == 0 or any(m in evs[-1] for m in STEP_END) or ('"guard_decision"' in evs[-1] and '"outcome": "allow"' not in evs[-1])
+    if ended and k != saved:
+        path = snap_dir / f"before_step_{k + 1}.pt"
+        p, yaw, _ = est_pose()
+        path.with_suffix(".json").write_text(json.dumps(dict(x=float(p[0]), y=float(p[1]), yaw=float(yaw), sim_t=sim["t"])))
+        snapshot("save", path)
+        saved = k
+
+
 # D0_TRACE_OBJECT=<name>: log the object's truth pose whenever it moves > 2 cm, with the agent's last recorded step
 trace_prev = handle_pos(TRACE_OBJ) if TRACE_OBJ else None
 while agent.poll() is None:
     rclpy.spin_once(n, timeout_sec=0.2)
+    evs = (run_dir / "events.jsonl").read_text().splitlines() if (run_dir / "events.jsonl").exists() else []
+    save_before_next_step(evs)
     if TRACE_OBJ:
         hp = handle_pos(TRACE_OBJ)
         if np.linalg.norm(hp - trace_prev) > 0.02:
@@ -74,8 +126,7 @@ while agent.poll() is None:
                 moved_m=round(float(np.linalg.norm(hp - trace_prev)), 3), last_tool=lastev.get("tool"), last_args=lastev.get("args"),
                 tcp=[round(float(v), 3) for v in tcp_pose()[0]], jaw=round(float(jaw.get("q", -1)), 3))
             trace_prev = hp
-    if STOP_ON_FAILURE and (run_dir / "events.jsonl").exists():
-        evs = (run_dir / "events.jsonl").read_text().splitlines()
+    if STOP_ON_FAILURE:
         failed = [json.loads(x) for x in evs[seen:] if ('"execution_finished"' in x and '"success": false' in x)
                   or ('"effect_verified"' in x and '"holds": false' in x)]
         seen = len(evs)

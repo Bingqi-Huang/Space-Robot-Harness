@@ -1,9 +1,10 @@
 #!/bin/bash
 # Step-wise development on a held graph (run_d0.sh with D0_HOLD=1): run another check against the live simulation in the
-# state the last one left it, instead of booting a new one. For Ours, continue the earlier record from its failed step:
+# state the last one left it, instead of booting a new one. For Ours: put the simulation back to before the failed step
+# (the snapshot the earlier check saved) and continue the earlier record from there:
 #
 #   [D0_RESTART_BOUNDARY=1] D0_CHECK=ours_mission_check.py OURS_MISSION=b OURS_STOP_ON_FAILURE=1 \
-#   OURS_RESUME_FROM=<earlier log>/ours OURS_RESUME_BEFORE_STEP=<n> \
+#   OURS_RESUME_FROM=<earlier log> OURS_RESUME_BEFORE_STEP=<n> \
 #   experiments/launch/lunar_base_d0/attach_d0.sh <graph log> <new log>
 #
 # D0_RESTART_BOUNDARY=1 restarts the capability server first (its code changed). The graph keeps its own run tag, so
