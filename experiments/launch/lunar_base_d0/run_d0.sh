@@ -23,6 +23,10 @@ export ROS_DOMAIN_ID=${D0_DOMAIN:-77} ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  #
 # Two graphs share this host (GPU 0 / GPU 1): the deploy CLI's argv-signature reaps at start and exit, and its
 # Fast-DDS SHM purge, would kill or silence the sibling (research repo F51). This script's own teardown is by run tag.
 export OPENRAL_SKIP_ORPHAN_REAP=1
+# the LLM/VLM gateway (AGENT/VLM_provider.md) for the scene VLM behind `observe` and Ours' reasoner; it needs no proxy,
+# and the host's SOCKS proxy breaks httpx without socksio (research repo F38)
+SPACE_LLM_API_KEY=$(grep -o 'sk-[A-Za-z0-9_-]*' "$HERE/../../../AGENT/VLM_provider.md" | head -1) && export SPACE_LLM_API_KEY
+unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 SCENE=${D0_SCENE:-scenes/deploy/srb_lunar_base_mission_b.yaml}
 if [ -n "$D0_VIDEO$D0_GPU$D0_SCENERY$D0_SCENARIO" ]; then
   # A copy of the scene, adjusted for this run:

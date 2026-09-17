@@ -1,0 +1,39 @@
+# Ours' thin harness configuration (execution_plan §4.3, §4.4, §10.2). Mission-generic: nothing here names a mission,
+# a site feature or an ordering. Frozen with the rest of Ours' artifacts before the campaign.
+
+# ---- invariant / authority guard (§4.3) --------------------------------------------------------------------------
+guard:
+  # authority class (contracts.yaml `authority_class`) -> outcome without an operator approval on record
+  authority:
+    routine: allow
+    approval_required: approval_required
+    prohibited: deny
+  # hard execution invariants: {name, why, applies_to: [capabilities | all_effects], requires: {fact path: value}}.
+  # Only documented hard operating limits belong here (space-context limits enter with the scenarios that exercise them).
+  invariants: []
+  # an active fault prohibits these capability groups (§10.3); every other fault is context for the agent
+  fdir_prohibits:
+    estop: [all_effects]
+
+# ---- independent effect verification (§4.4, §10.4) ---------------------------------------------------------------
+# Effects are established from robot-observable evidence the boundary returns (AMCL base estimate, arm kinematics, jaw
+# encoder) against the commanded goal -- never from the skill's own success flag alone, never from simulator truth.
+verification:
+  base:
+    # Nav2 goal checker (openral_nav2_bringup/config/nav2_lunar_bot.yaml: xy_goal_tolerance 0.25)
+    navigate: {position_m: 0.25, yaw_rad: 0.3}
+    # move_base_to_pose closes to 0.03 m / 0.03 rad on the same estimate; twice that as the verification band
+    dock: {position_m: 0.06, yaw_rad: 0.06}
+  tcp:
+    tolerance_factor: 1.5  # x the call's own position tolerance
+  jaw:  # EG2 jaw angle, rad: 0.10 closed on nothing, 0.82 open (F49)
+    empty_max_rad: 0.12
+    open_min_rad: 0.6
+
+# ---- reasoner -----------------------------------------------------------------------------------------------------
+reasoner:
+  model: DeepSeek-V4.1-Flash
+  endpoint: https://llmapi.paratera.com/v1
+  timeout_s: 180
+  retry_cap_per_call: 3  # ReasonerCore's identical-call cap
+  max_steps: 80  # mission step budget: exhausted -> run ends as needing ground assistance

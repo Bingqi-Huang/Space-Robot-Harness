@@ -1,0 +1,32 @@
+"""Mission report from the structured record (execution_plan §9.6, §4.13).
+
+The agent's own operator report is quoted, but the body is generated from the events: what was executed, what the
+guard decided, which effects the independent verification established, what stayed unresolved. Where prose and
+evidence disagree, the evidence sections are the record.
+"""
+import json
+
+
+def write_report(store, path) -> None:
+    f, ev = store.facts, store.events
+    calls = [e for e in ev if e["kind"] == "execution_finished"]
+    guard = [e for e in ev if e["kind"] == "guard_decision" and e["outcome"] != "allow"]
+    failed = [e for e in ev if e["kind"] == "reasoner_step_failed"]
+    queries = [e for e in ev if e["kind"] == "query_answered" and e["query"] != "site_map"]
+    lines = ["# Mission report", "", "## Mission", f["mission"]["text"], "",
+             f"## Outcome of the autonomous run\n{f['terminal']['kind'] if f['terminal'] else 'in progress'}", ""]
+    for r in f["reports"]:
+        lines += [f"## Agent {'report' if r['kind'] == 'operator_report' else 'request to mission control'} (record #{r['seq']})", r["text"], ""]
+    lines += ["## Executed capabilities (boundary results)", "| # | sim t | capability | args | success | failure |", "|---|---|---|---|---|---|"]
+    lines += [f"| {e['seq']} | {e['sim_t']} | {e['capability']} | `{json.dumps(e['args'])}` | {e['success']} | {e['failure_reason'][:80]} |" for e in calls]
+    lines += ["", "## Verified effects (independent verification)", "| # | after | effect | holds | measure |", "|---|---|---|---|---|"]
+    lines += [f"| {e['seq']} | {e['capability']} | {e['effect']} | {e['holds']} | "
+              f"`{json.dumps({k: v for k, v in e.items() if k not in ('seq', 'kind', 'wall_t', 'sim_t', 'capability', 'effect', 'holds', 'source')})}` |"
+              for e in ev if e["kind"] == "effect_verified"]
+    lines += ["", "## Observations", *[f"- #{e['seq']} {e['query']} {json.dumps(e['args'])} -> {json.dumps(e['value'])[:300]}" for e in queries]]
+    lines += ["", "## Guard decisions other than allow", *([f"- #{e['seq']} {e['tool']}: {e['outcome']} ({e['reason']})" for e in guard] or ["(none)"])]
+    lines += ["", "## Steps without an executable call", *([f"- #{e['seq']} {e['tool']}: {e['detail'][:200]}" for e in failed] or ["(none)"])]
+    lines += ["", "## Unresolved at the end", *([f"- #{a['seq']} {a['capability']}: {a['reason']}" for a in f["anomalies"]] or ["(none)"])]
+    if f["ledger"]:
+        lines += ["", "## Agent working plan at the end", *[f"- {t['task_id']} [{t['status']}] {t['text']}" for t in f["ledger"]["tasks"]]]
+    path.write_text("\n".join(lines) + "\n")

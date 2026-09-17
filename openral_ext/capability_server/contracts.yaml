@@ -43,6 +43,16 @@ effects:
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_joints
 
+  arm_ready:
+    description: >-
+      Raise the arm from its travel pose (or any pose) into the ready posture in front of the rover, from which
+      end-effector motions start.
+    inputs:
+      tolerance_rad: [number, false, "per-joint tolerance (default 0.05)"]
+    default_deadline_s: 60
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_joints
+
   stow:
     description: Fold the arm into its travel pose.
     inputs:
@@ -54,7 +64,8 @@ effects:
   plan_ee_pose:
     description: >-
       Plan and execute a collision-checked arm motion (MoveIt, rover self-model) that puts the tool centre point at a
-      pose in `chassis_base_link`. For large reconfigurations; the planning scene knows the rover, not the worksite.
+      pose in `chassis_base_link`. For large reconfigurations; the planning scene holds the rover, the surveyed site
+      structures and the movable objects.
     inputs:
       position: ["number[3]", true, "TCP position in chassis_base_link, m"]
       orientation_xyzw: ["number[4]", true, "TCP orientation quaternion"]
@@ -144,6 +155,22 @@ effects:
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-release
 
 queries:
+  site_map:
+    description: >-
+      The surveyed site (fixed infrastructure, `map`): every named interaction point with its type, position and
+      outward normal, the camera view poses of the equipment, and the rover dock. Movable objects are not in it.
+    inputs: {}
+  observe:
+    description: >-
+      Look through one of the rover's cameras and answer a question about what it sees right now (vision-language
+      model on the current frame). `front` is the mast RGB-D camera looking ahead and slightly down; `wrist` is on the
+      gripper, looking along the tool. The answer is an observation, not ground truth; the frame is kept as evidence.
+    inputs:
+      camera: ["string(front|wrist)", true, "which camera"]
+      question: [string, true, "what to look for, e.g. the colour of a status lamp or whether a place is occupied"]
+  arm_state:
+    description: Arm posture from the joint encoders (stowed / ready / other), joint angles and the jaw angle.
+    inputs: {}
   base_pose:
     description: The rover's own estimate of its planar pose in `map` (AMCL).
     inputs: {}
