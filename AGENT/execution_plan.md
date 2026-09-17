@@ -138,7 +138,7 @@ Integration strategy for this project:
 - keep PLEXIL outside the proposed OpenRAL reasoner path;
 - expose the **same LunarBot capability server** used by Ours through a thin PLEXIL adapter/proxy;
 - map PLEXIL Commands to shared capability calls that still pass through the common low-level safety path;
-- map world state, capability availability, and verifier outputs to PLEXIL Lookups;
+- map the raw robot-observable signals, capability results and availability to PLEXIL Lookups (the same raw evidence Ours receives — not Ours' verified facts or internal verifier; method boundary: research_content §3.2);
 - write competent mission plans for the declared model-covered situations;
 - log plan/node transitions and all external command/lookup traffic into the common run artifact format.
 
@@ -1005,7 +1005,7 @@ The final freeze records the git commits of all system prompts/playbooks/skills 
 
 Reuse OpenRAL's scene-VLM path where possible. Support semantic questions such as abnormal-component identification, visual obstruction/access, configuration comparison, and what region warrants closer inspection.
 
-VLM output is logged with image/evidence reference, timestamp, and model identity. It enters agent context as an observation. Deterministic simulator truth remains confined to common verifier/evaluator paths unless the equivalent signal would be available on the real robot.
+VLM output is logged with image/evidence reference, timestamp, and model identity. It enters agent context as an observation. Deterministic simulator truth remains confined to the external experiment evaluator unless the equivalent signal would be available on the real robot.
 
 ## 9.5 Context builder
 
@@ -1030,7 +1030,7 @@ At mission end or operator request, generate a concise report from authoritative
 
 ## 9.7 Optional trustworthiness ablation
 
-Only after the full method works, a targeted ablation may selectively bypass the invariant/authority guard and/or independent effect verification while keeping the same agent context. This tests whether the thin execution boundaries prevent unsafe/unsupported state transitions. It is not a prompt-only or “less rules” baseline and must not introduce/remove mission-specific task knowledge.
+After the full method works, Ours-internal ablations (research_content §5.7) remove one harness component at a time — authoritative facts, internal effect verification, the invariant/authority guard, dynamic context reconstruction — on selected Experiment I cases. They attribute Ours' results to its components (the baselines are complete systems and do not receive these mechanisms). They are not prompt-only or “less rules” baselines and must not introduce/remove mission-specific task knowledge.
 
 # 10. Trustworthiness / FDIR integration work package
 
@@ -1156,6 +1156,8 @@ Enable:
 - independent verification;
 - distributed-reasoner reconciliation where exercised;
 - trace/evidence linkage.
+
+These are parts of the proposed method, not shared infrastructure: the baselines receive the same capabilities, perception sources, raw evidence, low-level safety and external evaluator, and use their own execution semantics (research_content §3.2 method boundary).
 
 ## 11.4 Development-only diagnostics
 
@@ -1732,7 +1734,7 @@ The development order should reduce uncertainty one integration boundary at a ti
 
 ## Phase I — Targeted trustworthiness analysis
 
-Only if necessary, run the single guard/verification ablation on selected Experiment-I scenarios and analyze hard-boundary violations, unsupported authoritative-fact advancement, stale/duplicate execution, and false effect declarations.
+Run the Ours-internal ablations (§9.7, research_content §5.7) on selected Experiment-I scenarios and analyze mission success, hard-boundary violations, unsupported authoritative-fact advancement, stale/duplicate execution, false effect declarations and recovered failures.
 
 ## Phase J — LunarBot demonstration
 

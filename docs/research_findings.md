@@ -2726,6 +2726,8 @@ target) with the harness bridging failures: `docs/semantic_to_metric_manipulatio
 
 **6. Drift noted; architecture decision.** The capability boundary implements skills (`approach_target`, VLM
 perception, feature lowering). Decision: physical-effect capabilities as OpenRAL rSkills; perception control and
-queries as perception/world-state services; a thin method-neutral boundary; shared verifier, low-level safety, external
-hard constraints and evidence identical across methods (research_content §5.2–5.3); Ours contributes authoritative
-mission state, context reconstruction and agent-owned strategy. Details: `docs/semantic_to_metric_manipulation_plan.md` §2.
+queries as perception/world-state services; a thin method-neutral capability contract. Method boundary revised in
+`research_content` §3.2/§5.2–5.3/§5.7 and `execution_plan` §9.7/§11: the baselines share the robot, capabilities,
+perception sources, raw evidence, low-level safety and the external evaluator; Ours' authoritative facts, context
+reconstruction, guard, internal effect verification and traces are the proposed method, attributed by Ours-internal
+ablations. Details: `docs/semantic_to_metric_manipulation_plan.md` §2.

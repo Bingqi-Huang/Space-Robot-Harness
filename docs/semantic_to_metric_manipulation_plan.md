@@ -16,39 +16,48 @@ repeatedly in Mission B (runs ob1–ob6, `docs/research_findings.md` F55). No co
 4. **Closed loop at camera rate; checks from images and encoders.**
 5. **Small tools, composed by the agent.** Each capability does one job and reports what it measured, like
    `navigate_to_pose`; none contains a recovery path. The agent composes them; when a step fails it re-composes with a
-   different tool or parameters. Ours supplies authoritative facts, the attempt record and budgets; physical
-   verification and hard constraints are the shared substrate (§2).
+   different tool or parameters. Ours' harness supplies authoritative facts, internal effect verification, the
+   guard, the attempt record and budgets (§2, §5).
 
 ## 2. Architecture decision (user, 2026-09-17)
 
 Physical-effect capabilities are implemented as OpenRAL rSkills; stateful perception control and read-only
-perception/state queries are provided by perception/world-state services. The shared boundary remains thin and
-method-neutral. Shared physical verification, low-level safety, externally imposed hard constraints and observable
-evidence remain identical across methods (`research_content` §5.2–5.3); Ours' contribution is the authoritative mission
-state, dynamic context reconstruction and agent-owned mission strategy above that common substrate.
+perception/state queries are provided by perception/world-state services; the shared capability contract stays thin
+and method-neutral. **Method boundary** (`research_content` §3.2, §5.2–5.3, §5.7): the baselines share the problem and
+the robot, not Ours' mechanisms.
 
 ```text
-Ours                                   PLEXIL / EUROPA→PLEXIL
-agent                                  plan / planner
-facts + context + mission reasoning    baseline execution semantics
-      |                                        |
-------------- each method's mission-level operating model -------------
-                           |
-======== shared capability / evidence boundary (thin, method-neutral) ========
-  contracts · argument checks · availability (incl. requires_remote_service) · external hard constraints
-                           |
-   physical effect      → OpenRAL rSkill (runner + safety kernel)
-   perception control   → perception module (start/stop tracking, set current target)
-   read-only query      → perception / world-state service
-                           |
-        shared verifier · FDIR signals · low-level safety
-                           |
-               Nav2 / MoveIt / controllers / HAL
+Ours                                        PLEXIL / EUROPA→PLEXIL
+LLM/VLM agent                               classical mission model
+        |                                             |
+==================== METHOD-SPECIFIC ====================
+Ours harness:                               their own plan / domain,
+ authoritative facts                        execution and recovery semantics,
+ dynamic context reconstruction             mission/authority constraints
+ thin authority / invariant guard           encoded in their artifacts
+ internal effect verification
+ evidence-linked trace / reconciliation
+        |                                             |
+================= SHARED ROBOT SUBSTRATE =================
+typed capability contract (names, arguments, availability incl. requires_remote_service)
+  physical effect      → OpenRAL rSkill (runner)
+  perception control   → perception module (start/stop tracking, set current target)
+  read-only query      → perception / world-state service
+raw robot-observable results and signals (the same evidence for every method)
+Nav2 / MoveIt / controllers · low-level hardware safety (limits, e-stop, collision-critical kernel) · robot / environment
+================= EXTERNAL EVALUATOR =================
+same success criteria for all methods; counts constraint violations and false success declarations
 ```
 
 Rules:
 
 - **Three interface classes**, used identically by all methods: physical effect, perception control, read-only query.
+- **Raw evidence shared, interpretation method-specific.** Every method gets the same capability results and signals;
+  Ours turns them into verified authoritative facts, PLEXIL reads them as Lookups under its own semantics.
+- **Constraints split.** Hardware-protecting limits live in the shared low-level safety; mission/authority constraints
+  (operator approval, no base motion while holding or with the arm out, contact blocked after an uncertain hold) are
+  method-specific — Ours' guard enforces them, the baselines encode them in their plans; the evaluator counts
+  violations for all.
 - **Fixed infrastructure vs movable objects.** `*_to_named_location` capabilities (navigate, dock, arm pre-position)
   use surveyed fixed-infrastructure places loaded into OpenRAL's world state (named places); rSkills do not parse the
   lunar-base files. Movable objects (ORU, crate, cover, handles) never go through fixed geometry: only current
@@ -64,9 +73,8 @@ Rules:
 - **Migration without a big refactor.** New capabilities follow these rules from the start; `approach_target`, the VLM
   perception calls and the feature-pose lowering move out of `capability_server` when the new work touches them;
   Mission A `covered` is the regression after each move.
-- **Consequence to schedule:** effect verification now lives in `space_runtime/verification.py` (Ours only) and the
-  guard's hard constraints (e.g. FDIR estop) are enforced there too; per §5.2–5.3 both belong to the shared substrate
-  (PLEXIL reads them as Lookups). Ours keeps authoritative facts, context and agent-facing authority reasoning.
+- **Attribution by Ours-internal ablations** (without authoritative facts / internal verification / guard / context
+  reconstruction), not by giving components to the baselines.
 
 ## 3. Tools (exposed through the shared boundary)
 
@@ -110,15 +118,15 @@ Related work (not claimed): VLM visual prompting over grasp candidates (OWG, Thi
 (GraspGPT family), iterative visual prompting (PIVOT); space heritage of pre-designated-target visual servoing
 (ETS-VII, Orbital Express ORU transfer, Dextre).
 
-## 5. Ours above the shared substrate (contribution, `space_runtime/`)
+## 5. Ours' harness for manipulation (contribution, `space_runtime/`)
 
 - **Object facts** (`on:<place> | in_gripper | unknown`), changed only by verified evidence.
-- **Verified facts from the shared verifier** (held = jaw range + `hold_check`; placed = jaws open + item at rest on
-  the support) folded into authoritative mission state. Never a skill's own success flag.
+- **Internal effect verification** on the shared query tools (held = jaw range + `hold_check`; placed = jaws open +
+  item at rest on the support) before a fact enters authoritative state. Never a skill's own success flag.
 - **Reconciliation with provenance:** manifest record vs VLM identity vs on-board measurement (extent of the point-cloud
   segment at the chosen candidate) → anomaly naming the sources (`spare_swapped`, `destination_occupied`).
-- **Hard constraints (shared substrate, same for all methods):** no base motion while holding or with the arm outside
-  the hull; stop on a lost track during a contact move; contact blocked after an uncertain hold until re-observed.
+- **Guard (mission/authority constraints):** no base motion while holding or with the arm outside the hull; stop on a
+  lost track during a contact move; contact blocked after an uncertain hold until re-observed.
 - **Attempt record in the context** per target: tools, parameters, candidates, viewpoints, base poses, outcomes; failed
   candidates handed back as `exclude`. Attempt/time budgets → operator request with the evidence.
 - **Provider failover** (VLM, reasoner) as recorded facts. **Latency layering:** cloud reasoning never inside a 15 Hz loop.

@@ -312,13 +312,25 @@ All compared systems receive the same closed set of primitive capabilities and t
 - manipulator planning/control;
 - grasp/release and end-effector motion;
 - optional learned policies where already available;
-- task-progress and outcome verifiers;
+- the same raw robot-observable capability results and signals;
 - resource/health services;
 - FDIR events;
 - low-level runtime safety;
 - operator communication.
 
-No baseline receives an easier robot, better perception, or stronger manipulation stack. The independent variable is the **mission-level operating model**.
+No baseline receives an easier robot, better perception, or stronger manipulation stack. The independent variable is the **complete mission-level operating system** above this substrate: for Ours, the agent together with its harness.
+
+**Method boundary (revised 2026-09-17).** Fairness means the same problem and the same robot, not giving the baselines
+the proposed method's mechanisms. Shared by all methods: robot embodiment, sensors, primitive physical capabilities
+behind one typed capability contract, perception sources/services, environment, mission objective, initial state, the
+same raw robot-observable capability results and signals, low-level hardware safety (joint/actuator limits, emergency
+stop, collision-critical kernel), and the **external experiment evaluator** (mission success, fault cleared, docked,
+object at the target; it also counts constraint violations for every method). Method-specific: how the raw evidence is
+interpreted and acted on. Ours' authoritative mission facts, dynamic context reconstruction, thin invariant/authority
+guard, internal effect verification and evidence-linked traces are parts of the proposed method; PLEXIL and
+EUROPA→PLEXIL use their own plan/domain, execution and recovery semantics, and encode mission/authority constraints in
+their own artifacts. The contribution of each Ours component is established by Ours-internal ablations (§5.7), not by
+copying components into the baselines.
 
 ## 3.3 Model-covered versus model-held-out mission situations
 
@@ -629,7 +641,7 @@ The experimental section should be intentionally small. The paper asks two scien
 | The proposed system expands autonomous mission capability beyond fully pre-engineered task models. | Experiment I: model-covered vs. model-held-out missions, compared with PLEXIL and EUROPA-to-PLEXIL. |
 | The increased autonomy reduces dependence on detailed ground planning/commanding. | ALFUS-grounded Human Independence measures in Experiment I. |
 | The system is more extensible and requires less mission-specific knowledge engineering. | Experiment II: controlled post-freeze capability/mission extension. |
-| Open-ended FM reasoning does not replace trusted execution semantics. | Common safety/verifier stack, hard-invariant/authority metrics, structured traces, and one targeted guard/verification ablation if needed. |
+| Open-ended FM reasoning does not replace trusted execution semantics. | Common low-level safety and external evaluator; constraint violations and false success/effect declarations counted for all methods; structured traces; Ours-internal ablations of the harness components (§5.7). |
 | The architecture transfers beyond simulation. | LunarBot integrated demonstration; not a third scientific experiment. |
 
 ## 5.2 Compared methods
@@ -652,7 +664,7 @@ The baseline must be allowed to replan within its encoded model. It must not be 
 
 ### Proposed — Space Robotics Agent Harness
 
-Use the same LunarBot capabilities, perception, world state, safety, verifier, and externally imposed hard constraints. The difference is that mission decomposition, observation choice, recovery, and capability composition are formed online by the LLM/VLM agent. Outside the model remain authoritative facts, the thin invariant/authority guard, execution, low-level safety, and effect verification — not a second mission planner.
+Use the same LunarBot capabilities, perception sources, raw robot-observable evidence, low-level safety and external evaluator as the baselines. Mission decomposition, observation choice, recovery, and capability composition are formed online by the LLM/VLM agent. Outside the model, as parts of the proposed method, remain authoritative facts, dynamic context reconstruction, the thin invariant/authority guard, internal effect verification, and evidence-linked traces — not a second mission planner. Execution runs through the shared OpenRAL rSkills and low-level safety.
 
 ### Not main baselines
 
@@ -662,9 +674,9 @@ Generic OpenRAL and prompt-only variants remain useful during development and po
 
 The comparison is only valid if the following rules are enforced:
 
-1. **Same embodiment and primitive capabilities.** Navigation, perception, manipulation, VLM service, verifier, FDIR primitives, and low-level safety are shared.
+1. **Same embodiment and primitive capabilities.** Navigation, perception, manipulation, VLM service, FDIR primitives/signals, raw capability results, and low-level safety are shared. Method mechanisms (Ours' facts, context, guard, internal verification, traces; the baselines' plans/domains and execution semantics) are not.
 2. **Same physical scenario.** Methods run the same simulator state/seed and mission objective.
-3. **Same available evidence.** No method receives privileged simulator truth for reasoning; deterministic truth may be used by the common verifier.
+3. **Same available evidence.** No method receives privileged simulator truth for reasoning; deterministic truth is used only by the external experiment evaluator, which scores all methods with the same criteria, including constraint violations.
 4. **Strong baseline authoring.** PLEXIL/EUROPA artifacts are authored using their documented strengths and validated on model-covered development cases.
 5. **Artifact freeze.** Before the campaign, PLEXIL plans/libraries, EUROPA domain/solver configuration, proposed generic prompts/playbooks, capability descriptions, hard invariant/authority configuration, and all shared capabilities are frozen.
 6. **No hidden solution in Ours.** Capability descriptions, prompts/playbooks, guard rules, verifier logic, and state schemas must be mission-generic and cannot encode the held-out task sequence, scenario-specific recovery graph, or required action ordering.
@@ -774,18 +786,15 @@ H2 is supported if Ours reaches valid extension support with substantially less 
 
 ## 5.7 Targeted trustworthiness ablation / failure analysis
 
-Do not create a third large ablation campaign. If needed, run one focused comparison on a subset of Experiment I cases:
+Do not create a third large ablation campaign. Because Experiment I compares complete systems, the contribution of the harness components is shown by focused Ours-internal ablations on a subset of Experiment I cases:
 
-- **Full Ours** versus
-- **Ours with the thin invariant/authority guard and/or independent verification selectively bypassed**.
+- **Full Ours** versus Ours without **authoritative facts** (the agent's own claims advance state), without **internal effect verification** (skill success flags are trusted), without the **thin invariant/authority guard**, and without **dynamic context reconstruction** (plain accumulated history).
 
-The purpose is only to show that semantic flexibility alone is not the paper's contribution. Relevant outcomes are hard-boundary violations, unsupported authoritative-state advancement, stale/duplicate execution, and false effect/success declarations. The ablation must not introduce a task-specific rule engine.
-
-If the external-baseline traces already make this point convincingly, this ablation can remain supplementary.
+The purpose is to show that semantic flexibility alone is not the paper's contribution. Relevant outcomes are mission success, hard-boundary violations, unsupported authoritative-state advancement, stale/duplicate execution, false effect/success declarations, and recovered failures. The ablations must not introduce or remove mission-specific task knowledge.
 
 ## 5.8 Real LunarBot demonstration
 
-A later hardware demonstration should execute one representative mission segment with the same mission-runtime abstraction, typed capability interfaces, safety path, verifier, and natural-language mission/reporting interface.
+A later hardware demonstration should execute one representative mission segment with the same mission-runtime abstraction, typed capability interfaces, safety path, harness (including its internal effect verification), and natural-language mission/reporting interface.
 
 Its purpose is deployment feasibility and transfer, not another baseline campaign. Detailed design is intentionally deferred until the simulation experiments and real LunarBot capability stack are stable.
 

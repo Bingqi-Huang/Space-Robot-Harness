@@ -19,10 +19,11 @@ Tasks: `AGENT/todo.md`. Current design work: **`docs/semantic_to_metric_manipula
   freeze with mission-generic changes only; freeze = git commits/tags, **no hash checks anywhere**.
 - Reasoner **DeepSeek-V4-Pro**, thinking on (offline replay, F55 §4). Shared VLM **GLM-5.3-Flash**. Gateway key in
   `AGENT/VLM_provider.md` (never in code).
-- **Architecture (plan v3 §2):** physical-effect capabilities = OpenRAL rSkills; perception control and read-only
-  queries = perception / world-state services; thin method-neutral boundary; shared verifier, low-level safety,
-  external hard constraints and evidence identical across methods; Ours contributes authoritative mission state,
-  context reconstruction and agent-owned strategy. Fixed infrastructure may use surveyed named places; movable objects
+- **Method boundary (research_content §3.2/§5.2–5.3/§5.7, revised):** baselines share robot, capabilities,
+  perception sources, raw evidence, low-level safety and the external evaluator — not Ours' mechanisms. Ours' facts,
+  context reconstruction, guard, internal effect verification and traces are the method; attribution by Ours-internal
+  ablations. **Architecture (plan v3 §2):** physical-effect capabilities = OpenRAL rSkills; perception control and
+  read-only queries = perception / world-state services; thin method-neutral capability contract. Fixed infrastructure may use surveyed named places; movable objects
   only via perception → tracking → visual servo. rSkills adapt locally but never change target/strategy/recovery mode.
   No playbook-style decision rSkills. No big refactor: move logic out of `capability_server` when new work touches it.
 - **Manipulation (plan v3):** no object models, no world-coordinate targets; grasp candidates from the wrist RGB-D view,
@@ -56,8 +57,8 @@ Tasks: `AGENT/todo.md`. Current design work: **`docs/semantic_to_metric_manipula
   (and dev-only snapshot restore). Cameras D435i front + wrist, 15 Hz, work lights; wrist image level in `grip`.
 - Capability boundary: `openral_ext/capability_server/{contracts.yaml,node.py}` (`/space/capability/execute`, `/query`);
   PLEXIL adapter `ros/plexil_capability_adapter`. Today it still implements `approach_target`, VLM `observe` /
-  `locate_in_view` and feature-pose lowering (to move per plan v3 §2). Effect verification and the FDIR guard live in
-  `space_runtime/` (to become shared per plan v3 §2).
+  `locate_in_view` and feature-pose lowering (to move per plan v3 §2). Effect verification and the guard live in
+  `space_runtime/` (Ours' harness — correct per the method boundary).
 - Arm: RM-75 (`docs/lunar_bot_rm75_spec.md`); MoveIt plans end 0.9–3 cm from goal; 1 kg payload sags ~4.5 cm.
 - OpenRAL rSkill manifests: `openral/rskills/*/rskill.yaml` (kinds procedural, ros_action, detector, segmenter, vlm,
   playbook); entrypoints `openral/python/rskill/src/openral_rskill/`; reasoner palette/tools in

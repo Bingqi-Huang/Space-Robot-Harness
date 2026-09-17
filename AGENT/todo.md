@@ -26,8 +26,8 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
 
 - [ ] Move `approach_target`, VLM `observe` / `locate_in_view`, feature-pose lowering out of `capability_server`;
       fixed-infrastructure places into OpenRAL world state; regression: Mission A `covered`.
-- [ ] Effect verification and hard constraints (FDIR estop, arm-out/holding base lock) into the shared substrate;
-      PLEXIL reads them as Lookups.
+- [ ] PLEXIL adapter Lookups expose the same raw evidence (capability results, jaw, poses, availability) — not Ours'
+      verified facts. Evaluator counts constraint violations and false success declarations for all methods.
 - [ ] `requires_remote_service` availability metadata for VLM-backed capabilities.
 
 ## Then
@@ -36,7 +36,8 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
       cover_obstruction, status_mismatch, route_block. Failures → mission-generic changes only.
 - [ ] Space context variables only if the chosen scenarios exercise them.
 - [ ] 1x video run + `experiments/video/overlay.py`.
-- [ ] Baselines (§21 items 5–6), scenario manifests and freeze, Experiment I, Experiment II.
+- [ ] Baselines (§21 items 5–6), scenario manifests and freeze, Experiment I, Ours-internal ablations
+      (research_content §5.7), Experiment II.
 
 ## Known stack issues (fix only when a run fails on them)
 
