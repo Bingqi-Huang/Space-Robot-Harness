@@ -144,9 +144,9 @@ effects:
 
   approach_target:
     description: >-
-      Bring the tool to `standoff_m` in front of a target described in words, facing it, guided by the wrist camera:
-      a vision-language model finds the target in the image, the arm shifts sideways for a second view, the two views
-      are triangulated, the tool servos to the stand-off and the camera re-checks and corrects. The target must be in
+      Bring the tool to `standoff_m` in front of a target described in words, facing it, guided by the wrist RGB-D
+      camera: a vision-language model finds the target in the image, its depth gives the 3-D point, the tool servos
+      to the stand-off, and the camera re-checks from there and corrects. The target must be in
       the wrist camera's view when called (use locate_in_view / observe to check). Describe it unambiguously by
       appearance and position (e.g. "the red mushroom-shaped push button, not the glowing round lamp"). Ends aligned
       with the target; finish contact with move_tool.
@@ -208,9 +208,9 @@ queries:
       question: [string, true, "what to look for, e.g. the colour of a status lamp or whether a place is occupied"]
   locate_in_view:
     description: >-
-      Find a target described in words in one camera's current image (vision-language model): whether it is visible,
-      its pixel position and box, and the viewing ray to it in `chassis_base_link` (no range; approach_target
-      triangulates). The frame is kept as evidence.
+      Find a target described in words in one camera's current image (vision-language model) and measure it with the
+      camera's depth: whether it is visible, its pixel position and box, and its 3-D position in `chassis_base_link`.
+      Both cameras are RGB-D (RealSense D435i). The frame is kept as evidence.
     inputs:
       camera: ["string(front|wrist)", true, "which camera"]
       target: [string, true, "what to find, described by appearance and position"]

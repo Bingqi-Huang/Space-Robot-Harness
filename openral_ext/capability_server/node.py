@@ -61,8 +61,7 @@ VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "DeepSeek-V4.1-Flash")  # the shar
 VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com/v1")
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
-BASELINE_M = 0.06  # sideways camera shift between the two views approach_target triangulates from
-TRIANGULATION_GAP_M = 0.03  # two views whose rays pass further apart than this did not see the same point
+DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
 HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]["press"]  # arm reach past the hull (C3)
@@ -170,7 +169,7 @@ class CapabilityServer(Node):
         self.buf = Buffer()
         TransformListener(self.buf, self)
         self.jaw, self.arm_q, self.sim_t = None, None, 0.0
-        self.infos = {}
+        self.infos, self.depths = {}, {}
         self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
         self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
         self.images = {}
@@ -178,6 +177,9 @@ class CapabilityServer(Node):
             self.create_subscription(Image, f"/openral/cameras/{cam}/image", lambda m, cam=cam: self.images.__setitem__(cam, m),
                                      qos_profile_sensor_data, callback_group=cb)
             self.create_subscription(CameraInfo, f"/openral/cameras/{cam}/camera_info", lambda m, cam=cam: self.infos.__setitem__(cam, m),
+                                     qos_profile_sensor_data, callback_group=cb)
+            # both cameras are RealSense D435i: depth registered to the colour image, metres along the optical axis
+            self.create_subscription(Image, f"/openral/cameras/{cam}_depth/image", lambda m, cam=cam: self.depths.__setitem__(cam, m),
                                      qos_profile_sensor_data, callback_group=cb)
         self.evidence_dir = Path(os.environ.get("SPACE_EVIDENCE_DIR", os.environ.get("D0_LOG", "/tmp"))) / "evidence"
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
@@ -220,15 +222,23 @@ class CapabilityServer(Node):
 
     def frame(self, camera: str):
         """The latest image of a camera, saved as evidence, with the camera's pose in `odom` at its stamp."""
-        m, info = self.images[camera], self.infos[camera]
+        m, info, dm = self.images[camera], self.infos[camera], self.depths[camera]
+        depth = np.frombuffer(dm.data, np.float32).reshape(dm.height, dm.width)
         img = np.frombuffer(m.data, np.uint8).reshape(m.height, m.width, -1)
         bgr = cv2.cvtColor(img, {"rgb8": cv2.COLOR_RGB2BGR, "rgba8": cv2.COLOR_RGBA2BGR, "bgra8": cv2.COLOR_BGRA2BGR}[m.encoding]) if m.encoding != "bgr8" else img
         stamp = m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
-        path = self.evidence_dir / f"{camera}_{stamp:010.2f}.jpg"
-        cv2.imwrite(str(path), bgr)
         tr = self.buf.lookup_transform("odom", m.header.frame_id, Time.from_msg(m.header.stamp)).transform
         pose = (np.array([tr.translation.x, tr.translation.y, tr.translation.z]), quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w))
-        return dict(camera=camera, path=path, stamp=stamp, K=np.array(info.k).reshape(3, 3), w=m.width, h=m.height, pose_odom=pose)
+        # gravity-upright image for the VLM: "above"/"below" in a description then mean what they mean on the equipment,
+        # whatever the wrist's roll (quarter turns; pixels are mapped back to the raw image)
+        up = pose[1].T @ np.array([0.0, 0.0, 1.0])
+        turn = {0: None, 1: cv2.ROTATE_90_COUNTERCLOCKWISE, 2: cv2.ROTATE_180, 3: cv2.ROTATE_90_CLOCKWISE}[
+            round(math.atan2(up[0], -up[1]) / (math.pi / 2)) % 4]
+        upright = bgr if turn is None else cv2.rotate(bgr, turn)
+        path = self.evidence_dir / f"{camera}_{stamp:010.2f}.jpg"
+        cv2.imwrite(str(path), upright)
+        return dict(camera=camera, path=path, stamp=stamp, K=np.array(info.k).reshape(3, 3), w=m.width, h=m.height, pose_odom=pose,
+                    turn=turn, uw=upright.shape[1], uh=upright.shape[0], depth=depth)
 
     def ask_vlm(self, path: Path, text: str) -> str:
         b64 = base64.b64encode(path.read_bytes()).decode()
@@ -242,17 +252,29 @@ class CapabilityServer(Node):
         return {"camera": camera, "answer": answer, "frame_stamp_s": round(f["stamp"], 2), "image": str(f["path"]), "model": VLM_MODEL}
 
     def detect(self, camera: str, target: str) -> dict:
-        """Where a target described in words is in the current image of a camera, and the viewing ray to it in `odom`."""
+        """Where a target described in words is in the current image of a camera: pixel, and its 3-D point in `odom` from the
+        registered depth."""
         f = self.frame(camera)
-        reply = self.ask_vlm(f["path"], LOCATE_PROMPT.format(target=target, w=f["w"], h=f["h"]))
+        reply = self.ask_vlm(f["path"], LOCATE_PROMPT.format(target=target, w=f["uw"], h=f["uh"]))
         found = re.search(r"\{.*\}", reply, re.S)
         j = json.loads(found.group(0)) if found else {"found": False}
         out = dict(camera=camera, image=str(f["path"]), frame_stamp_s=round(f["stamp"], 2), found=bool(j.get("found")))
         if out["found"]:
-            u, v = map(float, j["center"])
-            ray_cam = np.linalg.inv(f["K"]) @ np.array([u, v, 1.0])
+            x, y = map(float, j["center"])  # upright image -> raw image pixel
+            w, h = f["w"], f["h"]
+            u, v = {None: (x, y), cv2.ROTATE_90_COUNTERCLOCKWISE: (w - 1 - y, x), cv2.ROTATE_180: (w - 1 - x, h - 1 - y),
+                    cv2.ROTATE_90_CLOCKWISE: (y, h - 1 - x)}[f["turn"]]
+            ui, vi, k = int(round(u)), int(round(v)), DEPTH_WINDOW_PX
+            patch = f["depth"][max(vi - k, 0):vi + k + 1, max(ui - k, 0):ui + k + 1]
+            patch = patch[np.isfinite(patch) & (patch > 0)]
             t, R = f["pose_odom"]
-            out.update(pixel=[round(u), round(v)], box=j.get("box"), origin=t, direction=R @ (ray_cam / np.linalg.norm(ray_cam)))
+            out.update(pixel=[ui, vi], box=j.get("box"), origin=t)
+            if patch.size:
+                z = float(np.median(patch))
+                p_cam = np.linalg.inv(f["K"]) @ np.array([u, v, 1.0]) * z
+                out.update(depth_m=round(z, 4), point=R @ p_cam + t)
+            else:
+                out["found"], out["why"] = False, "no valid depth at the located pixel"
         return out
 
     def locate_in_view(self, camera: str, target: str):
@@ -260,8 +282,8 @@ class CapabilityServer(Node):
         out = {k: d[k] for k in ("camera", "found", "image", "frame_stamp_s")}
         if d["found"]:
             t, R = self._tf("chassis_base_link", "odom")
-            out.update(pixel=d["pixel"], box=d["box"], ray_frame="chassis_base_link", ray_origin=[round(float(v), 4) for v in R @ d["origin"] + t],
-                       ray_direction=[round(float(v), 4) for v in R @ d["direction"]])
+            out.update(pixel=d["pixel"], box=d["box"], depth_m=d["depth_m"], frame="chassis_base_link",
+                       position=[round(float(v), 4) for v in R @ d["point"] + t])
         return out
 
     def tcp_pose(self):
@@ -316,41 +338,21 @@ class CapabilityServer(Node):
 
     # ---- the camera-in-the-loop controller ------------------------------------------------------------------------
     def approach_target(self, a: dict, handle) -> tuple[bool, str, dict]:
-        """Bring the tool to `standoff_m` in front of a target described in words, facing it, from wrist-camera vision."""
+        """Bring the tool to `standoff_m` in front of a target described in words, facing it, from the wrist camera (RGB-D)."""
         target, standoff, orientation = a["target"], a.get("standoff_m", 0.10), a.get("orientation", "press")
         ev = {"target": target, "views": []}
 
         def view(tag):
             d = self.detect("wrist", target)
-            ev["views"].append({"at": tag, "found": d["found"], "pixel": d.get("pixel"), "image": d["image"]})
+            ev["views"].append({"at": tag, "found": d["found"], "pixel": d.get("pixel"), "depth_m": d.get("depth_m"), "image": d["image"]})
             return d
 
         d0 = view("start")
         if not d0["found"]:
-            return False, f"target not found in the wrist camera image: {target!r}", ev
-        cam_x_odom = self.buf.lookup_transform("odom", "wrist_camera_optical_frame", Time()).transform
-        Rc = quat_to_mat(cam_x_odom.rotation.x, cam_x_odom.rotation.y, cam_x_odom.rotation.z, cam_x_odom.rotation.w)
+            return False, f"target not found in the wrist camera (RGB-D): {target!r} {d0.get('why', '')}".strip(), ev
+        X = d0["point"]
+        n_odom = horizontal(d0["origin"] - X)  # approach from the camera's side, horizontally
         t_ro, R_ro = self._tf("chassis_base_link", "odom")
-        shift = self.move_tool_target({})
-        shift["position"] = (np.array(shift["position"]) + R_ro @ Rc[:, 0] * BASELINE_M).tolist()  # sideways along the image x axis
-        ok, why = self.run_rskill(handle, "move_ee_to_pose", {**shift, "tolerance_m": 0.005, "max_linear_speed_m_s": 0.05})
-        if not ok:
-            return False, f"sideways move for the second view failed: {why}", ev
-        d1 = view("shifted")
-        if not d1["found"]:
-            return False, f"target lost in the second view: {target!r}", ev
-        # closest points of the two rays
-        o0, u0, o1, u1 = d0["origin"], d0["direction"], d1["origin"], d1["direction"]
-        w, b = o0 - o1, u0 @ u1
-        s0 = (b * (u1 @ w) - (u0 @ w)) / (1 - b * b)
-        s1 = ((u1 @ w) - b * (u0 @ w)) / (1 - b * b)
-        p0, p1 = o0 + s0 * u0, o1 + s1 * u1
-        gap = float(np.linalg.norm(p0 - p1))
-        X = (p0 + p1) / 2
-        ev.update(triangulation_gap_m=round(gap, 4), range_m=round(float(s0), 3))
-        if gap > TRIANGULATION_GAP_M or s0 <= 0:
-            return False, f"the two views do not agree on one point (ray gap {gap:.3f} m): the description may match several things", ev
-        n_odom = horizontal(o1 - X)  # approach from the camera's side, horizontally
 
         def servo(Xo, tag):
             p, n = R_ro @ Xo + t_ro, R_ro @ n_odom
@@ -362,17 +364,15 @@ class CapabilityServer(Node):
         ok, why = servo(X, "stand-off")
         if not ok:
             return False, f"servo to the stand-off failed: {why}", ev
-        d2 = view("stand-off")
-        if d2["found"]:  # correct the point along the new ray: keep its depth, move it onto what the camera now sees
-            X2 = d2["origin"] + d2["direction"] * float((X - d2["origin"]) @ d2["direction"])
-            ev["correction_m"] = round(float(np.linalg.norm(X2 - X)), 4)
+        d1 = view("stand-off")  # closer, the target is seen larger and its depth better: correct once
+        if d1["found"]:
+            ev["correction_m"] = round(float(np.linalg.norm(d1["point"] - X)), 4)
             if ev["correction_m"] > 0.004:
-                X = X2
+                X = d1["point"]
                 ok, why = servo(X, "corrected stand-off")
                 if not ok:
                     return False, f"corrective servo failed: {why}", ev
-        p = R_ro @ X + t_ro
-        ev["target_rover"] = [round(float(v), 4) for v in p]
+        ev["target_rover"] = [round(float(v), 4) for v in R_ro @ X + t_ro]
         return True, "", ev
 
     def run_rskill(self, handle, capability: str, a: dict, deadline: float = 60.0) -> tuple[bool, str]:

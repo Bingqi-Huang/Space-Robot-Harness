@@ -1,8 +1,8 @@
 """Vision-guided contact check (Phase E: replaces the simulator-truth arm targets): can the wrist camera + VLM +
-triangulating servo press a button and bring the jaws to a bail handle, through the common boundary only?
+depth-guided servo press a button and bring the jaws to a bail handle, through the common boundary only?
 
 PDU-2 (faulted in `covered`): dock by the survey, READY, MoveIt near the surveyed button, approach_target on the
-button described in words, push with move_tool, retract; then the evaluator compares the triangulated target with
+button described in words, push with move_tool, retract; then the evaluator compares the RGB-D target with
 the button's surveyed position in `srb/world` and reads the verifier's press count. Depot: dock at slot 0, READY,
 MoveIt near the slot, approach_target on the ORU's handle (grip), jaws open, slide in, grasp, lift -- evaluated by the
 jaw and the handle's truth height. Truth is the evaluator's only.
@@ -35,13 +35,13 @@ def ask(query_name, **args):
 
 
 def target_error(res, world_point):
-    """Evaluator: triangulated target (rover frame) vs a truth point in srb/world."""
+    """Evaluator: the RGB-D target (rover frame) vs a truth point in srb/world."""
     ev = res["evidence"]
     if "target_rover" not in ev:
         return {}
     t, R = tf("srb/world", "chassis_base_link")
     p = R @ np.array(ev["target_rover"]) + t
-    return {"target_err_m": round(float(np.linalg.norm(p - np.array(world_point))), 4), "triangulation_gap_m": ev.get("triangulation_gap_m"),
+    return {"target_err_m": round(float(np.linalg.norm(p - np.array(world_point))), 4), "depths_m": [v.get("depth_m") for v in ev.get("views", []) if "depth_m" in v],
             "correction_m": ev.get("correction_m"), "views": ev.get("views")}
 
 
@@ -51,8 +51,8 @@ run("dock pdu_2", lambda: cap("dock_at_feature", feature="pdu_2_panel/press"))
 run("close jaws", lambda: {**cap("grasp"), "success": True})
 run("arm ready", lambda: cap("arm_ready"))
 run("moveit near button", lambda: cap("plan_ee_to_feature", feature="pdu_2_panel/press", offset_m=0.20))
-run("locate button", lambda: ask("locate_in_view", camera="wrist", target="the red mushroom-shaped push button (not the glowing round lamp)"))
-res = run("approach button", lambda: cap("approach_target", target="the red mushroom-shaped push button (not the glowing round lamp)", standoff_m=0.05))
+run("locate button", lambda: ask("locate_in_view", camera="wrist", target="the red push button: the lower of the two red domes on the yellow panel (the upper one is the glowing status lamp)"))
+res = run("approach button", lambda: cap("approach_target", target="the red push button: the lower of the two red domes on the yellow panel (the upper one is the glowing status lamp)", standoff_m=0.05))
 log("TARGET", what="button", **target_error(res, BUTTON))
 run("push", lambda: {**cap("move_tool", forward_m=0.065, max_linear_speed_m_s=0.03, timeout_s=20.0), "mission": dict(mission)})
 run("retract", lambda: {**cap("move_tool", forward_m=-0.12, max_linear_speed_m_s=0.08), "mission": dict(mission)})
