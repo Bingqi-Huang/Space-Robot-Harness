@@ -59,9 +59,10 @@ POINT_TYPES = {
     "indicator": "status lamp on a service panel: red = unit faulted, green = nominal",
     "place": "surface point where an object can be set down",
 }
-# the shared scene VLM (same for every method): Kimi-K3 located a thin bail, a button beside a lamp and a lamp 15/15 on real
-# wrist frames (DeepSeek-V4.1-Flash 12/15, GLM-5.3-Flash 15/15, Qwen3.8-Flash 14/15, Qwen3.8-Max 5/15; research repo F54)
-VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "Kimi-K3")
+# the shared scene VLM (same for every method): GLM-5.3-Flash and Kimi-K3 located a thin bail, a button beside a lamp and a
+# lamp 15/15 on real wrist frames (DeepSeek-V4.1-Flash 12/15, Qwen3.8-Flash 14/15, Qwen3.8-Max 5/15; research repo F54).
+# Kimi-K3 then answered in 95-150 s with timeouts on the gateway (2026-09-17 evening), GLM-5.3-Flash in 4-10 s, same pixels.
+VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "GLM-5.3-Flash")
 VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com/v1")
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
