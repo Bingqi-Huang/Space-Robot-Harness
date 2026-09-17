@@ -22,9 +22,25 @@ else:
              "then return the rover to the dock with the arm stowed.")
 run_dir = Path(os.environ["D0_LOG"]) / "ours"
 run_dir.mkdir(parents=True, exist_ok=True)
-# the run tag puts the agent under the run's teardown: an agent blocked in rclpy ignores SIGTERM, and two left over from
-# stopped runs were still alive in the next run's ROS domain (2026-09-17)
-env = dict(os.environ, PYTHONPATH=f"{REPO}:{os.environ.get('PYTHONPATH', '')}", D0_RUN_TAG=os.environ["D0_LOG"])
+# the run tag puts the agent under the graph's teardown (D0_GRAPH_LOG when attached to a held graph): an agent blocked
+# in rclpy ignores SIGTERM, and two left over from stopped runs were still alive in the next run's ROS domain (2026-09-17)
+env = dict(os.environ, PYTHONPATH=f"{REPO}:{os.environ.get('PYTHONPATH', '')}", D0_RUN_TAG=os.environ.get("D0_GRAPH_LOG", os.environ["D0_LOG"]))
+# Step-wise development (attach_d0.sh on a held graph): OURS_RESUME_FROM=<earlier ours dir> continues that record from
+# before its step OURS_RESUME_BEFORE_STEP (the failed one; default: after its last) in the live world as it is now;
+# OURS_STOP_ON_FAILURE=1 stops the agent at the first failed capability or effect that does not hold, leaving the
+# graph up for the fix.
+RESUME_FROM = os.environ.get("OURS_RESUME_FROM")
+if RESUME_FROM:
+    keep, n_steps = [], 0
+    before = int(os.environ.get("OURS_RESUME_BEFORE_STEP", "0"))
+    for line in (Path(RESUME_FROM) / "events.jsonl").read_text().splitlines():
+        if '"kind": "tool_proposed"' in line or '"kind": "reasoner_step_failed"' in line:
+            n_steps += 1
+        if before and n_steps >= before:
+            break
+        keep.append(line)
+    (run_dir / "events.jsonl").write_text("\n".join(keep) + "\n")
+STOP_ON_FAILURE = bool(os.environ.get("OURS_STOP_ON_FAILURE"))
 log("PLAN", method="ours", brief=BRIEF, run_dir=str(run_dir))
 t0, sim0 = time.time(), sim["t"]
 # Continuity probe (Phase E exit 1): OURS_RESTART_AT_STEP=N kills the agent process (SIGKILL, no goodbye) once its record
@@ -42,8 +58,9 @@ def start(extra):
                             stdout=(run_dir / "agent.log").open("a"), stderr=subprocess.STDOUT)
 
 
-agent = start(["--mission", BRIEF])
+agent = start(["--resume"] if RESUME_FROM else ["--mission", BRIEF])
 last = time.time()
+seen = len((run_dir / "events.jsonl").read_text().splitlines()) if RESUME_FROM else 0
 # D0_TRACE_OBJECT=<name>: log the object's truth pose whenever it moves > 2 cm, with the agent's last recorded step
 trace_prev = handle_pos(TRACE_OBJ) if TRACE_OBJ else None
 while agent.poll() is None:
@@ -57,6 +74,16 @@ while agent.poll() is None:
                 moved_m=round(float(np.linalg.norm(hp - trace_prev)), 3), last_tool=lastev.get("tool"), last_args=lastev.get("args"),
                 tcp=[round(float(v), 3) for v in tcp_pose()[0]], jaw=round(float(jaw.get("q", -1)), 3))
             trace_prev = hp
+    if STOP_ON_FAILURE and (run_dir / "events.jsonl").exists():
+        evs = (run_dir / "events.jsonl").read_text().splitlines()
+        failed = [json.loads(x) for x in evs[seen:] if ('"execution_finished"' in x and '"success": false' in x)
+                  or ('"effect_verified"' in x and '"holds": false' in x)]
+        seen = len(evs)
+        if failed:
+            agent.kill()
+            agent.wait()
+            log("STOPPED", at_step=steps(), failed=failed[0], sim_s=round(sim["t"] - sim0, 1))
+            break
     if RESTART_AT and steps() >= RESTART_AT:
         agent.kill()
         agent.wait()

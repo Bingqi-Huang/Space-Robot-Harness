@@ -343,16 +343,19 @@ try:
     log("TF", arm_root="ok")
 except RuntimeError as e:
     log("TF", arm_root=str(e))
-spin(20.0)  # costmaps
-# Functional probe, not a presence check: `server_is_ready()` was True against a rskill runner left
-# over from an earlier run's incomplete teardown, and every real dispatch then went unanswered for
-# 90 s a piece (research repo F50). Opening the (empty) jaws is the harmless dispatch that proves the
-# runner in THIS graph answers.
-probe = dispatch("release", {"mode": "open", "timeout_s": 8.0}, deadline=15.0, prompt="d0 readiness probe")
-log("PROBE", **probe)
-if "no goal response" in probe.get("failure_reason", ""):
-    log("RESULT", error="rskill runner does not answer — check for nodes left over from an earlier run on this ROS_DOMAIN_ID")
-    sys.exit(2)
+# D0_ATTACH (attach_d0.sh): a held graph that is mid-mission -- probed at its boot, and opening the jaws now could drop
+# what the robot holds
+if not os.environ.get("D0_ATTACH"):
+    spin(20.0)  # costmaps
+    # Functional probe, not a presence check: `server_is_ready()` was True against a rskill runner left
+    # over from an earlier run's incomplete teardown, and every real dispatch then went unanswered for
+    # 90 s a piece (research repo F50). Opening the (empty) jaws is the harmless dispatch that proves the
+    # runner in THIS graph answers.
+    probe = dispatch("release", {"mode": "open", "timeout_s": 8.0}, deadline=15.0, prompt="d0 readiness probe")
+    log("PROBE", **probe)
+    if "no goal response" in probe.get("failure_reason", ""):
+        log("RESULT", error="rskill runner does not answer — check for nodes left over from an earlier run on this ROS_DOMAIN_ID")
+        sys.exit(2)
 log("MISSION", **mission)
 
 step = 0
