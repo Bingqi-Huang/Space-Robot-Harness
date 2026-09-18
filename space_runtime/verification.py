@@ -7,6 +7,7 @@ truth. For `pick` and `place` it recomputes the image checks itself from the raw
 skill's own verdict is not evidence), with the jaw encoder and the arm kinematics.
 """
 import math
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -17,13 +18,17 @@ TCP = {"plan_ee_pose", "move_ee_to_pose", "plan_ee_to_feature", "move_ee_to_feat
 TCP_DEFAULT_TOL = {"plan_ee_pose": 0.01, "plan_ee_to_feature": 0.01, "move_ee_to_pose": 0.015, "move_ee_to_feature": 0.015, "move_tool": 0.015}
 
 
-def image_motion(before_png: str, after_png: str, before_depth: str, near_m: float, item_rows_px: int = 216) -> tuple[float, float, int]:
-    """Median dense optical flow (px) over what is in front of the wrist camera in the part of the frame the fingers do
-    not fill (they are static in it and would mask any motion), the region's median depth, and how many pixels it has."""
+def image_motion(before_png: str, after_png: str, before_depth: str, near_m: float,
+                 gripper_mask: str | None = None) -> tuple[float, float, int]:
+    """Median dense optical flow (px) over what is in front of the wrist camera and is not the gripper's own body (it is
+    static in the frame and would mask any motion), the region's median depth, and how many pixels it has. The mask is
+    the skill's own record of where its gripper falls in its camera, from the mount's geometry; the flow itself is
+    recomputed here from the raw images and depth."""
     a, b = (cv2.cvtColor(cv2.imread(p), cv2.COLOR_BGR2GRAY) for p in (before_png, after_png))
     z = np.load(before_depth)
     near = np.isfinite(z) & (z > 0.05) & (z < near_m)
-    near[item_rows_px:, :] = False
+    if gripper_mask and Path(gripper_mask).exists():
+        near &= ~np.load(gripper_mask)
     flow = cv2.calcOpticalFlowFarneback(a, b, None, 0.5, 4, 31, 5, 7, 1.5, 0)
     if near.sum() == 0:
         return float("nan"), float("nan"), 0
@@ -72,7 +77,8 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]
         m = dict(effect="item_held", target=args["target"], jaw_rad=arm["jaw_rad"], jaw=state,
                  source="jaw encoder + wrist images before/after the lift (flow recomputed here) + arm kinematics")
         if hc:
-            flow, depth, n = image_motion(hc["before"], hc["after"], hc["before_depth"], cfg["hold"]["near_m"], hc.get("item_rows_px", 216))
+            near_m = float(hc.get("self_depth_m", 0.0)) + cfg["hold"]["beyond_gripper_m"] if hc.get("self_depth_m") else cfg["hold"]["near_m"]
+            flow, depth, n = image_motion(hc["before"], hc["after"], hc["before_depth"], near_m, hc.get("gripper_mask"))
             expected = hc["fx"] * hc["lift_m"] / depth if n else float("nan")
             moved_with = n >= cfg["hold"]["min_pixels"] and flow < cfg["hold"]["flow_fraction"] * expected
             m.update(lift_m=hc["lift_m"], image_flow_px=round(flow, 1), left_behind_flow_px=round(expected, 1), rose_with_gripper=bool(moved_with))

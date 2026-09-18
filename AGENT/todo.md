@@ -23,13 +23,10 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
       staged failure + evidence); one contract line in the boundary. `place(support)` written, not yet live.
 - [x] Ours side (plan v4 §5): movable-object facts, automatic `item_held` / `item_placed` verification recomputed from
       the raw evidence, attempt record in the context. Guard unchanged (no posture/payload rules).
-- [ ] G3: `pick` live, unknown placement, one call per trial; every failure returns a stage. **Nominal passed**
-      (g3bn: one call, a same-target retry inside it, jaw 0.172, `item_held` true with 7.85 cm of lift). Running:
-      ±8 cm / ±20–30° placements and a perturbed dock (g3bo).
+- [ ] G3: `pick` live, unknown placement, one call per trial. Nominal holds the ORU (g3bn, and again in g3bp where
+      only the verification region was blind). `find` now aims at the structures the views measure, and the camera
+      geometry is derived, not tuned (F57). Running: nominal + ±8 cm / ±20–30° placements + a perturbed dock (g3bq).
 - [ ] `place` live, then the pick→place pair on one snapshot.
-- [ ] `find` still carries three tuned tables (`overview_pose`, `reach_zone_x_m`, `side_view_*`). Per plan v4 they
-      should be a sweep of the arm's own reachable workspace with a measured stopping rule, like `tool_in_view` now
-      replaces the camera constants (F57 §5). Do it when `find` next fails, not before.
 
 ## Architecture follow-ups (plan v4 §2, when touched — no big refactor)
 

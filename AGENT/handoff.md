@@ -17,9 +17,13 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
   `place(support)` are procedural rSkills in the fork (`openral/python/rskill/src/openral_rskill/{procedural_pick,
   procedural_place,grasp_perception,_eye_in_hand}.py`, manifests in `openral/rskills/rskill-procedural-{pick,place}`),
   the boundary has one contract line each, the model's palette is operations only, and the harness verifies
-  `item_held` / `item_placed` from the raw evidence. G0–G2 passed; **G3's nominal placement passes** (g3bn: one call,
-  jaw 0.172, `item_held` true, 7.85 cm of lift), perturbed placements running; `place` and G4 are next. Branch
-  `feat/pick-place-rskills` (fork), `feat/g0-wrist-rgbd` (research repo).
+  `item_held` / `item_placed` from the raw evidence. G0–G2 passed; **G3's nominal placement holds the ORU** (g3bn),
+  perturbed placements running; `place` and G4 are next. Branch `feat/pick-place-rskills` (fork),
+  `feat/g0-wrist-rgbd` (research repo).
+- Rule that keeps costing runs (F57): nothing about the camera–gripper geometry may be a constant. `find` aims at the
+  structures the views measure; `tool_in_view()` derives the self-occlusion depth, the free image band and the
+  gripper's silhouette from TF. When a run fails, read the evidence pictures first — every one of these was visible
+  in one image and invisible in the numbers.
 - Baselines: PLEXIL runs Mission A through the common boundary (F52); PLEXIL Mission B, EUROPA→PLEXIL, Experiments I/II
   not started.
 

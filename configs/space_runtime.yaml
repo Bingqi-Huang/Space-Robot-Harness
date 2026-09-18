@@ -35,7 +35,8 @@ verification:
     open_min_rad: 0.6
   hold:  # item_held after pick: the item's image moves less than this fraction of a left-behind item's lift displacement
     flow_fraction: 0.35
-    near_m: 0.6  # the near foreground in front of the wrist camera (the held item)
+    near_m: 0.6  # fallback when the skill did not record its gripper's own reach
+    beyond_gripper_m: 0.12  # a held item lies within this of the gripper's own surface, outside its silhouette
     min_pixels: 200
     min_lift_m: 0.05
   place:  # item_placed: jaws open, tool this far from the release point, the scene still between two frames
