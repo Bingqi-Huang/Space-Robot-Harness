@@ -41,29 +41,31 @@ effects:
     description: Drive the 7 arm joints to target angles.
     inputs:
       joint_targets: ["number[7]", true, "RM-75 joint1..joint7, rad"]
-      tolerance_rad: [number, false, "per-joint tolerance (default 0.05)"]
-    default_deadline_s: 60
+      tolerance_rad: [number, false, "per-joint tolerance (default 0.08)"]
+    default_deadline_s: 120
     authority_class: routine
-    lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_joints
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-posture
     engineering: true
 
   arm_ready:
     description: >-
-      Raise the arm from its travel pose (or any pose) into the ready posture in front of the rover, from which
-      end-effector motions start.
+      Raise the arm from its travel pose into the ready posture, along a path the robot's planner finds through what
+      it knows and what its cameras have measured standing beside it.
     inputs:
-      tolerance_rad: [number, false, "per-joint tolerance (default 0.05)"]
-    default_deadline_s: 60
+      tolerance_rad: [number, false, "per-joint tolerance (default 0.08)"]
+    default_deadline_s: 120
     authority_class: routine
-    lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_joints
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-posture
 
   stow:
-    description: Fold the arm into its travel pose.
+    description: >-
+      Fold the arm into its travel pose for driving, along a path the robot's planner finds through what it knows and
+      what its cameras have measured standing beside it. The jaws must be empty: put a held item down first.
     inputs:
-      tolerance_rad: [number, false, "per-joint tolerance (default 0.1)"]
-    default_deadline_s: 60
+      tolerance_rad: [number, false, "per-joint tolerance (default 0.08)"]
+    default_deadline_s: 120
     authority_class: routine
-    lowers_to: OpenRAL/rskill-procedural-lunar_bot-stow
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-posture
 
   plan_ee_pose:
     description: >-
@@ -215,7 +217,8 @@ effects:
   pick:
     description: >-
       Pick up an item described in words, holding it by the part you name, with the arm and the wrist RGB-D camera,
-      and lift it clear of where it stood. The item must be within the arm's reach behind the rover (dock at the
+      and lift it clear of where it stood. The arm needs no preparation: the skill takes its own views and plans its
+      own way there from wherever the arm is. The item must be within the arm's reach behind the rover (dock at the
       item's work pose first). The skill looks over the work area, finds possible grasps in the image, has the
       vision-language model choose the one on the described part of the described item, servoes to it, closes the
       jaws and checks the hold while lifting; it retries on the same item only. On failure it reports the stage it
@@ -228,6 +231,7 @@ effects:
     default_deadline_s: 900
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-pick
+    requires_remote_service: vision_language_model  # a choice among the grasps it finds; a non-answer fails the call
 
   place:
     description: >-

@@ -83,7 +83,11 @@ def apply(f: dict, ev: dict) -> None:
         # a capability that now succeeds resolves its own earlier failures
         f["anomalies"] = [a for a in f["anomalies"] if not (ev["success"] and a["capability"] == ev["capability"])]
         if not ev["success"]:
-            f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": ev["failure_reason"]})
+            # a remote service that did not answer is an outage of the stack, not an outcome of the robot's work: the
+            # anomaly says so, so the record separates "the method failed here" from "the gateway was down"
+            dep = (evd.get("skill") or {}).get("dependency_unavailable")
+            f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": ev["failure_reason"],
+                                   **({"service_outage": dep} if dep else {})})
     elif k == "effect_verified":
         f["verified_effects"].append({key: ev[key] for key in ev if key not in ("kind", "wall_t")})
         # object facts change only on verified evidence

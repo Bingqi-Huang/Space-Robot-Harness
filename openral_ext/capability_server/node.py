@@ -73,7 +73,7 @@ ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec
 ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # same datasheet, joint1..7
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
-JAW_EMPTY_MAX_RAD = 0.13  # above this the jaws have something between them (EG2: 0.10 closed empty, 0.82 open)
+JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD = 0.13, 0.78  # EG2: 0.10 closed on nothing, ~0.17 on a 12 mm neck, 0.82 open
 HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]  # arm reach past the hull, by interaction type (C3)
 
 
@@ -131,10 +131,10 @@ def lower(capability: str, a: dict) -> dict:
         return p
     if capability == "move_joints":
         return {"joint_targets": a["joint_targets"], "tolerance_rad": a.get("tolerance_rad", 0.05), "timeout_s": 30.0}
-    if capability == "arm_ready":
-        return lower("move_joints", dict(joint_targets=READY, tolerance_rad=a.get("tolerance_rad", 0.05)))
-    if capability == "stow":
-        return {"tolerance_rad": a.get("tolerance_rad", 0.1), "timeout_s": 30.0}
+    if capability in ("arm_ready", "stow"):
+        # a planned path, so the arm goes round what the cameras measured standing beside the rover (F57)
+        return {"joint_targets": READY if capability == "arm_ready" else STOW,
+                "tolerance_rad": a.get("tolerance_rad", 0.08)}
     if capability == "plan_ee_pose":
         return {"pose": {"frame_id": "chassis_base_link", "link_name": "tcp_frame", "position": a["position"],
                          "orientation": a["orientation_xyzw"], "quaternion_order": "xyzw",
@@ -503,7 +503,7 @@ class CapabilityServer(Node):
             return res
         # folding the arm with something in the jaws puts the item through the rover: a hardware limit, shared by every
         # method, so it is refused here and not in any one method's guard
-        if g.capability in ("stow", "arm_ready") and self.jaw > JAW_EMPTY_MAX_RAD:
+        if g.capability in ("stow", "arm_ready") and JAW_EMPTY_MAX_RAD < self.jaw < JAW_OPEN_MIN_RAD:
             handle.succeed()
             res.success, res.failure_kind = False, REJECTED
             res.failure_reason = (f"the jaws are holding something (jaw {self.jaw:.3f} rad): {g.capability} folds the arm "
