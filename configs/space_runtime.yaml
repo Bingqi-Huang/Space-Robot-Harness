@@ -42,7 +42,7 @@ verification:
   place:  # item_placed: jaws open, tool this far from the release point, the scene still between two frames
     min_clear_m: 0.10
     near_m: 1.0
-    still_flow_px: 1.5
+    settle_moved_mm: 3.0  # the item counts as still if the region moved less than this at its own depth
 
 # ---- reasoner -----------------------------------------------------------------------------------------------------
 reasoner:

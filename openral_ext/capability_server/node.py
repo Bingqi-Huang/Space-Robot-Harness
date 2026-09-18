@@ -73,6 +73,7 @@ ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec
 ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # same datasheet, joint1..7
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
+JAW_EMPTY_MAX_RAD = 0.13  # above this the jaws have something between them (EG2: 0.10 closed empty, 0.82 open)
 HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]  # arm reach past the hull, by interaction type (C3)
 
 
@@ -244,6 +245,9 @@ class CapabilityServer(Node):
                            for k, v in fixed.items()},
                 "view_poses": {k: {"x": v["xy"][0], "y": v["xy"][1], "yaw": round(math.radians(v["yaw_deg"]), 4), "looks_at": v["target"]}
                                for k, v in IX["view_poses"].items()},
+                # the graded network the site was built with: the rover drives along it. A goal set straight across the
+                # site cuts the corners of what stands between (research repo F53), which the costmap only sees late.
+                "roads": {k: [[p[0], p[1]] for p in v] for k, v in IX.get("roads", {}).items()},
                 "dock": {"x": 0.0, "y": 0.0, "yaw": 0.0}}
 
     def frame(self, camera: str):
@@ -371,6 +375,13 @@ class CapabilityServer(Node):
         return {"position": goal.tolist(), "orientation_xyzw": mat_to_quat(R)}
 
     def lower_effect(self, capability: str, a: dict) -> dict:
+        if capability == "move_base_delta":
+            # the rover's own frame -> the map pose the base skill drives to, through the rover's localization
+            b = self.base_pose()
+            c, s = math.cos(b["yaw"]), math.sin(b["yaw"])
+            dx, dy = float(a.get("dx_m", 0.0)), float(a.get("dy_m", 0.0))
+            return lower("dock_to_pose", dict(x=b["x"] + c * dx - s * dy, y=b["y"] + s * dx + c * dy,
+                                              yaw=b["yaw"] + float(a.get("dyaw_rad", 0.0)), approach_m=0.0))
         if capability in ("navigate_to_feature", "dock_at_feature"):
             p, n = self.feature_geometry(a["feature"])
             x, y, yaw = work_pose_from(p, n, a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0),
@@ -489,6 +500,15 @@ class CapabilityServer(Node):
             handle.succeed()
             res.success, res.failure_kind = False, REJECTED
             res.failure_reason = contract_reason or f"unknown capability {g.capability!r} (effects: {sorted(CONTRACTS['effects'])})"
+            return res
+        # folding the arm with something in the jaws puts the item through the rover: a hardware limit, shared by every
+        # method, so it is refused here and not in any one method's guard
+        if g.capability in ("stow", "arm_ready") and self.jaw > JAW_EMPTY_MAX_RAD:
+            handle.succeed()
+            res.success, res.failure_kind = False, REJECTED
+            res.failure_reason = (f"the jaws are holding something (jaw {self.jaw:.3f} rad): {g.capability} folds the arm "
+                                  "into its travel pose, which would carry the item into the rover. Put the item down "
+                                  "first, or drive with the arm as the pick left it.")
             return res
         deadline = g.deadline_s or float(contract["default_deadline_s"])
         sim0 = self.sim_t

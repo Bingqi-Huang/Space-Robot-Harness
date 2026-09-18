@@ -104,6 +104,10 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
 - Stale agents ignore SIGTERM → kill -9; check the ROS domain is clean before a run. Parallel sims → 0.05×.
 - A publisher's first message is lost before discovery (AMCL `/initialpose`): wait for the match.
 - Verifier `oru_on: ""` can mean knocked off, not grasped — check jaw and handle height.
+- `move_group` can wedge: idle (1% CPU) and answering nobody after a planning request that never completes. Every
+  service call in the skills now has a deadline, so this ends the call with its stage instead of hanging a run
+  (one run lost 40 minutes to an `fk` call with no deadline).
+- Teardown takes the run's **absolute** path (the tag is matched exactly); a relative one reports `TREE 0 pids`.
 
 ## Where things are
 

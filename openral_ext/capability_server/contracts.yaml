@@ -103,6 +103,20 @@ effects:
     authority_class: routine
     lowers_to: OpenRAL/rskill-nav2-mobile_base-navigate_to_pose
 
+  move_base_delta:
+    description: >-
+      Move the base by a small offset given in the rover's own frame (x forward, y left, yaw counter-clockwise),
+      holding everything else. For adjusting a stance the arm could not work from; the site's own places are reached
+      with navigate_to_feature / dock_at_feature.
+    inputs:
+      dx_m: [number, false, "forward, m (default 0)"]
+      dy_m: [number, false, "left, m (default 0)"]
+      dyaw_rad: [number, false, "counter-clockwise, rad (default 0)"]
+    default_deadline_s: 120
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-mobile_base-move_base_to_pose
+    engineering: true
+
   dock_at_feature:
     description: >-
       Close onto the pose from which the arm reaches a site feature (hull + arm reach out along its normal), or
@@ -205,7 +219,9 @@ effects:
       item's work pose first). The skill looks over the work area, finds possible grasps in the image, has the
       vision-language model choose the one on the described part of the described item, servoes to it, closes the
       jaws and checks the hold while lifting; it retries on the same item only. On failure it reports the stage it
-      reached (find, select, approach, grasp, hold), why, and what the camera and the vision model saw.
+      reached (find, select, approach, grasp, hold), why, and what the camera and the vision model saw. It ends with
+      the item held clear of where it stood and the arm in that carrying posture: the rover can drive like this, and
+      the arm must not be folded (stow, arm_ready) until the item is set down.
     inputs:
       target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
       part: [string, true, "the part to hold it by (e.g. its carry handle)"]
@@ -236,7 +252,8 @@ queries:
   site_map:
     description: >-
       The surveyed site (fixed infrastructure, `map`): every named interaction point with its type, position and
-      outward normal, the camera view poses of the equipment, and the rover dock. Movable objects are not in it.
+      outward normal, the camera view poses of the equipment, the graded road network the rover drives on, and the
+      rover dock. Movable objects are not in it.
     inputs: {}
   observe:
     description: >-

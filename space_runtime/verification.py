@@ -94,8 +94,11 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]
                  source="jaw encoder + arm kinematics (tool clear of the release point) + wrist images after the retreat (flow recomputed here)")
         if st and contact and isinstance(evidence.get("tcp_pose"), dict):
             clear = math.dist(evidence["tcp_pose"]["position"], contact["tcp"])
-            flow, _, n = image_motion(st["before"], st["after"], st["before_depth"], cfg["place"]["near_m"])
-            still = n == 0 or flow < cfg["place"]["still_flow_px"]
+            flow, depth, n = image_motion(st["before"], st["after"], st["before_depth"], cfg["place"]["near_m"],
+                                          st.get("gripper_mask"))
+            # a distance, not a pixel count: `settle_moved_mm` at the region's own depth through the camera's focal length
+            limit = st["fx"] * cfg["place"]["settle_moved_mm"] / 1000.0 / depth if n else float("nan")
+            still = n >= cfg["hold"]["min_pixels"] and flow < limit
             m.update(tool_clear_of_release_m=round(clear, 3), image_flow_px=round(flow, 2), item_still=bool(still))
             m["holds"] = state == "open" and clear >= cfg["place"]["min_clear_m"] and bool(still)
         else:
