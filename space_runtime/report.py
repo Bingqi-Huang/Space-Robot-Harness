@@ -23,6 +23,8 @@ def write_report(store, path) -> None:
     lines += [f"| {e['seq']} | {e['capability']} | {e['effect']} | {e['holds']} | "
               f"`{json.dumps({k: v for k, v in e.items() if k not in ('seq', 'kind', 'wall_t', 'sim_t', 'capability', 'effect', 'holds', 'source')})}` |"
               for e in ev if e["kind"] == "effect_verified"]
+    lines += ["", "## Movable items (verified)", *([f"- {n}: {o['state']} (#{o['seq']}, {o['by']})" for n, o in f["objects"].items()] or ["(none)"])]
+    lines += ["", "## Manipulation attempts", *([f"- #{a['seq']} {a['operation']} {json.dumps(a['args'])}: {'success' if a['success'] else 'failed'} at {a['stage']} {a['why']}" for a in f["attempts"]] or ["(none)"])]
     lines += ["", "## Observations", *[f"- #{e['seq']} {e['query']} {json.dumps(e['args'])} -> {json.dumps(e['value'])[:300]}" for e in queries]]
     lines += ["", "## Guard decisions other than allow", *([f"- #{e['seq']} {e['tool']}: {e['outcome']} ({e['reason']})" for e in guard] or ["(none)"])]
     lines += ["", "## Steps without an executable call", *([f"- #{e['seq']} {e['tool']}: {e['detail'][:200]}" for e in failed] or ["(none)"])]

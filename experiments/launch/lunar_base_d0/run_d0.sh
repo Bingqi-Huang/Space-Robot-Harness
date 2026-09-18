@@ -20,6 +20,8 @@ cd "$HERE/../../../openral"
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=${D0_DOMAIN:-77} ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  # D0_DOMAIN=78 for a second graph on GPU 1
+# camera images need large shared-memory segments, or most frames are lost in transport (fastdds_large_shm.xml)
+export FASTRTPS_DEFAULT_PROFILES_FILE="$HERE/fastdds_large_shm.xml"
 # Two graphs share this host (GPU 0 / GPU 1): the deploy CLI's argv-signature reaps at start and exit, and its
 # Fast-DDS SHM purge, would kill or silence the sibling (research repo F51). This script's own teardown is by run tag.
 export OPENRAL_SKIP_ORPHAN_REAP=1

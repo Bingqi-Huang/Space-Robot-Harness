@@ -32,4 +32,6 @@ def check_args(contract: dict, args: dict) -> str:
             return f"{key!r} must be one of {typ[7:-1].split('|')}"
         if key == "feature" and (v not in IX["points"] or "object" in IX["points"][v]):
             return f"unknown feature {v!r}"
+        if key == "support" and (v not in IX["points"] or IX["points"][v]["type"] != "place"):
+            return f"unknown support {v!r} (a site map point of type place)"
     return ""

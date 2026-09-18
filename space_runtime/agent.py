@@ -80,7 +80,9 @@ class Agent:
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())
         self.renderer = HarnessRenderer(self.store, self.max_steps)
-        self.palette = ToolPalette(execute_rskill_ids=frozenset([*CONTRACTS["effects"], *CONTRACTS["queries"], SET_TASK_STATUS, DECOMPOSE]))
+        self.palette = ToolPalette(execute_rskill_ids=frozenset([*(k for k, c in CONTRACTS["effects"].items() if not c.get("engineering")),
+                                                                 *(k for k, c in CONTRACTS["queries"].items() if not c.get("engineering")),
+                                                                 SET_TASK_STATUS, DECOMPOSE]))
 
     def event(self, kind: str, **data) -> dict:
         return self.store.append(kind, sim_t=round(self.sim_t, 2), **data)

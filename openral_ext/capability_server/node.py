@@ -73,7 +73,7 @@ ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec
 ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # same datasheet, joint1..7
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
-HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]["press"]  # arm reach past the hull (C3)
+HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]  # arm reach past the hull, by interaction type (C3)
 
 
 def horizontal(v) -> np.ndarray:
@@ -81,10 +81,11 @@ def horizontal(v) -> np.ndarray:
     return v / np.linalg.norm(v)
 
 
-def work_pose_from(p_map: np.ndarray, n_map: np.ndarray, standoff_m: float):
-    """Base pose from which the arm reaches a point: hull + reach out along its normal, heading along it; `standoff_m`
-    further out on the same axis (the docking corridor's entry)."""
-    xy = p_map[:2] + n_map[:2] * (HULL_M + REACH_M + standoff_m)
+def work_pose_from(p_map: np.ndarray, n_map: np.ndarray, standoff_m: float, point_type: str = "press"):
+    """Base pose from which the arm reaches a point: hull + the reach for what the arm does there (a grasp needs the
+    last centimetres past the part and elbow room above the item, a press only the tool tip) out along the point's
+    normal, heading along it; `standoff_m` further out on the same axis (the docking corridor's entry)."""
+    xy = p_map[:2] + n_map[:2] * (HULL_M + REACH_M.get(point_type, REACH_M["press"]) + standoff_m)
     return float(xy[0]), float(xy[1]), math.atan2(n_map[1], n_map[0])
 
 
@@ -151,6 +152,11 @@ def lower(capability: str, a: dict) -> dict:
         return {"mode": "close", "timeout_s": 8.0}
     if capability == "release":
         return {"mode": "open", "timeout_s": 8.0}
+    if capability == "pick":
+        return {"target": a["target"], "part": a["part"]}
+    if capability == "place":
+        # a named support is fixed infrastructure: its surveyed point goes to the skill, which puts it in the rover frame
+        return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"]}
     raise KeyError(capability)
 
 
@@ -168,7 +174,7 @@ def goal_summary(p: dict) -> dict:
         return {"frame": p["frame_id"], "position": [round(v, 4) for v in p["position"]]}
     if "joint_targets" in p:
         return {"joint_targets": p["joint_targets"]}
-    return {k: v for k, v in p.items() if k in ("mode",)}
+    return {k: v for k, v in p.items() if k in ("mode", "target", "part", "support")}
 
 
 class CapabilityServer(Node):
@@ -177,7 +183,7 @@ class CapabilityServer(Node):
         cb = ReentrantCallbackGroup()
         self.buf = Buffer()
         TransformListener(self.buf, self)
-        self.jaw, self.arm_q, self.sim_t = None, None, 0.0
+        self.jaw, self.arm_q, self.sim_t, self.calls = None, None, 0.0, 0
         self.infos, self.depths = {}, {}
         self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
         self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
@@ -367,7 +373,8 @@ class CapabilityServer(Node):
     def lower_effect(self, capability: str, a: dict) -> dict:
         if capability in ("navigate_to_feature", "dock_at_feature"):
             p, n = self.feature_geometry(a["feature"])
-            x, y, yaw = work_pose_from(p, n, a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0))
+            x, y, yaw = work_pose_from(p, n, a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0),
+                                       IX["points"][a["feature"]]["type"])
             if capability == "navigate_to_feature":
                 return lower("navigate_to_pose", dict(x=x, y=y, yaw=yaw))
             return lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, **({"approach_m": a["approach_m"]} if "approach_m" in a else {})))
@@ -490,8 +497,12 @@ class CapabilityServer(Node):
             r = ExecuteRskill.Result(success=ok, failure_kind=0 if ok else 3, failure_reason=reason)
         else:
             params = self.lower_effect(g.capability, args)
+            if g.capability in ("pick", "place"):
+                params["evidence_dir"] = str(self.evidence_dir)
             r = self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
+            if r.evidence_json and r.evidence_json != "{}":
+                evidence["skill"] = json.loads(r.evidence_json)  # the skill's own record: raw evidence, not a verdict
             if not r.success and "position" in evidence["goal"]:  # a planner error code does not say what was wrong (ob5, ob6)
                 r.failure_reason += " (" + self.explain_arm_goal(params) + ")"
         evidence["sim_s"] = round(self.sim_t - sim0, 2)
@@ -512,7 +523,10 @@ class CapabilityServer(Node):
 
     def dispatch(self, handle, rskill_id: str, params: dict, deadline: float):
         """One ExecuteRskill goal through the OpenRAL runner, waited for; feedback keeps the caller informed."""
-        goal = ExecuteRskill.Goal(rskill_id=rskill_id, prompt="capability boundary", goal_params_json=json.dumps(params), deadline_s=deadline)
+        # a distinct prompt per call: the runner reuses a resident skill for a byte-identical request, which would replay a
+        # finished goal's state (a repeated identical call must run again)
+        self.calls += 1
+        goal = ExecuteRskill.Goal(rskill_id=rskill_id, prompt=f"capability boundary call {self.calls}", goal_params_json=json.dumps(params), deadline_s=deadline)
         sim0 = self.sim_t
         handle.publish_feedback(ExecuteCapability.Feedback(state="dispatched", elapsed_s=0.0))
         sent = self.rskill.send_goal_async(goal)

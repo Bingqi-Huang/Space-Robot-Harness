@@ -33,6 +33,15 @@ verification:
   jaw:  # EG2 jaw angle, rad: 0.10 closed on nothing, 0.82 open (F49)
     empty_max_rad: 0.12
     open_min_rad: 0.6
+  hold:  # item_held after pick: the item's image moves less than this fraction of a left-behind item's lift displacement
+    flow_fraction: 0.35
+    near_m: 0.6  # the near foreground in front of the wrist camera (the held item)
+    min_pixels: 200
+    min_lift_m: 0.05
+  place:  # item_placed: jaws open, tool this far from the release point, the scene still between two frames
+    min_clear_m: 0.10
+    near_m: 1.0
+    still_flow_px: 1.5
 
 # ---- reasoner -----------------------------------------------------------------------------------------------------
 reasoner:

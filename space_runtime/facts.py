@@ -28,10 +28,25 @@ def empty_facts() -> dict:
         "recent": [],  # last RECENT tool steps: proposal, guard outcome, result
         "reasoner": None,  # {"model", "endpoint"} currently attached
         "reasoner_history": [],  # every attach: {"seq", "model", "endpoint"}
+        "objects": {},  # movable item (as the mission agent named it) -> {"state": in_gripper|on <support>|unknown, "seq", "by"}
+        "attempts": [],  # manipulation operations and their outcomes: {"seq", "operation", "args", "success", "stage", "why", "saw"}
         "active_execution": None,  # {"seq", "capability", "args"} between execution_started and _finished
         "reports": [],  # operator-facing reports/requests the agent emitted
         "terminal": None,  # {"kind": report|request|budget, "seq"}
     }
+
+
+def attempt_summary(ev: dict) -> dict:
+    sk = ev["evidence"]["skill"]
+    out = {"seq": ev["seq"], "operation": ev["capability"], "args": ev["args"], "success": ev["success"],
+           "stage": sk.get("failed_stage") or sk.get("stage"), "why": sk.get("why", ""), "sim_s": sk.get("sim_s")}
+    tries = [{k: a.get(k) for k in ("attempt", "outcome")} for a in sk.get("attempts", [])]
+    if tries:
+        out["tries"] = tries
+    saw = sorted({v["vlm"]["what_is_visible"] for v in (sk.get("find") or {}).get("views", []) if v.get("vlm", {}).get("what_is_visible")})
+    if saw:
+        out["vision_model_saw"] = saw[:3]
+    return out
 
 
 def apply(f: dict, ev: dict) -> None:
@@ -62,6 +77,8 @@ def apply(f: dict, ev: dict) -> None:
         evd = ev["evidence"]
         f["recent"][-1]["result"] = {"success": ev["success"], "failure_reason": ev["failure_reason"],
                                      "sim_s": evd.get("sim_s"), "goal": evd.get("goal")}
+        if "skill" in evd:  # an operation's own record: the stage it reached and what its camera / vision model saw
+            f["attempts"].append(attempt_summary(ev))
         f["robot"].update({key: evd[src] for key, src in (("base", "base_pose"), ("tcp", "tcp_pose"), ("arm", "arm")) if isinstance(evd.get(src), dict)})
         # a capability that now succeeds resolves its own earlier failures
         f["anomalies"] = [a for a in f["anomalies"] if not (ev["success"] and a["capability"] == ev["capability"])]
@@ -69,6 +86,17 @@ def apply(f: dict, ev: dict) -> None:
             f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": ev["failure_reason"]})
     elif k == "effect_verified":
         f["verified_effects"].append({key: ev[key] for key in ev if key not in ("kind", "wall_t")})
+        # object facts change only on verified evidence
+        if ev["effect"] == "item_held":
+            if ev["holds"]:
+                f["objects"][ev["target"]] = {"state": "in_gripper", "seq": ev["seq"], "by": "verified item_held"}
+            elif f["objects"].get(ev["target"], {}).get("state") == "in_gripper" or ev["jaw"] == "holding_object":
+                f["objects"][ev["target"]] = {"state": "unknown", "seq": ev["seq"], "by": "item_held did not verify"}
+        if ev["effect"] == "item_placed":
+            held = [name for name, o in f["objects"].items() if o["state"] == "in_gripper"]
+            for name in held:
+                f["objects"][name] = ({"state": f"on {ev['support']}", "seq": ev["seq"], "by": "verified item_placed"} if ev["holds"]
+                                      else {"state": "unknown", "seq": ev["seq"], "by": "item_placed did not verify"})
     elif k == "query_answered":
         f["recent"][-1]["result"] = {"success": ev["success"], "value": ev["value"], "failure_reason": ev["failure_reason"]}
         if ev["success"]:

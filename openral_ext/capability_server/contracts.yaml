@@ -5,6 +5,9 @@
 # space_harness_msgs/ExecuteCapability or QueryCapability with the same names and arguments.
 #
 # Forbidden here (§8.2): mission logic -- orderings, recoveries, "after X do Y". A contract says what one call means.
+# Granularity (plan v4, execution_plan §8.2): a capability the mission agent sees is one physical operation with
+# mission-level arguments. `engineering: true` marks stage-level capabilities (Cartesian moves, jaw, vision-guided
+# stand-off) kept for engineering checks and for authoring procedures; they are not rendered as mission tools.
 #
 # Frames: `map` is the robot's own localization (AMCL on the surveyed base map); `chassis_base_link` is the rover.
 # Inputs: {name: [type, required, description]}; types: number, number[N], string, string(a|b).
@@ -42,6 +45,7 @@ effects:
     default_deadline_s: 60
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_joints
+    engineering: true
 
   arm_ready:
     description: >-
@@ -73,6 +77,7 @@ effects:
     default_deadline_s: 120
     authority_class: routine
     lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
+    engineering: true
 
   move_ee_to_pose:
     description: Servo the tool centre point in a straight Cartesian motion to a pose in `chassis_base_link` and hold.
@@ -85,6 +90,7 @@ effects:
     default_deadline_s: 60
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+    engineering: true
 
   navigate_to_feature:
     description: >-
@@ -126,6 +132,7 @@ effects:
     default_deadline_s: 120
     authority_class: routine
     lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
+    engineering: true
 
   move_ee_to_feature:
     description: >-
@@ -142,6 +149,7 @@ effects:
     default_deadline_s: 60
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+    engineering: true
 
   approach_target:
     description: >-
@@ -159,6 +167,7 @@ effects:
     default_deadline_s: 300
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+    engineering: true
 
   move_tool:
     description: >-
@@ -177,6 +186,7 @@ effects:
     default_deadline_s: 60
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+    engineering: true
 
   grasp:
     description: >-
@@ -186,6 +196,34 @@ effects:
     default_deadline_s: 20
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-grasp
+    engineering: true
+
+  pick:
+    description: >-
+      Pick up an item described in words, holding it by the part you name, with the arm and the wrist RGB-D camera,
+      and lift it clear of where it stood. The item must be within the arm's reach behind the rover (dock at the
+      item's work pose first). The skill looks over the work area, finds possible grasps in the image, has the
+      vision-language model choose the one on the described part of the described item, servoes to it, closes the
+      jaws and checks the hold while lifting; it retries on the same item only. On failure it reports the stage it
+      reached (find, select, approach, grasp, hold), why, and what the camera and the vision model saw.
+    inputs:
+      target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
+      part: [string, true, "the part to hold it by (e.g. its carry handle)"]
+    default_deadline_s: 900
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-pick
+
+  place:
+    description: >-
+      Set the item held in the jaws down on a surveyed support: carry it above the support point, lower it until the
+      support takes its weight, open the jaws, retreat clear and check that the item stays put. The support must be
+      within the arm's reach behind the rover (dock at the support's work pose first). On failure it reports the stage
+      reached (over, lower, release, retreat, settle) and why.
+    inputs:
+      support: [string, true, "a surveyed place point of type place from the site map, e.g. pdu_1_shelf/shelf"]
+    default_deadline_s: 600
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-place
 
   release:
     description: Open the jaws fully.
@@ -218,6 +256,7 @@ queries:
     inputs:
       camera: ["string(front|wrist)", true, "which camera"]
       target: [string, true, "what to find, described by appearance and position"]
+    engineering: true
   manifest:
     description: >-
       Mission control's logistics manifest: what each depot staging slot is recorded to hold, and the catalogue data of

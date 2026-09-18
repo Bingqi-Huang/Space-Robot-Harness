@@ -53,6 +53,8 @@ def capability_tools() -> list[dict]:
     for group, tag in (("effects", "EFFECT (acts on the robot; runs to completion before your next step)"),
                        ("queries", "QUERY (read-only)")):
         for name, c in CONTRACTS[group].items():
+            if c.get("engineering"):  # stage-level capabilities are not mission tools (plan v4 granularity rule)
+                continue
             inputs = c.get("inputs") or {}
             props = {k: {**_json_type(t), "description": d} for k, (t, _, d) in inputs.items()}
             tools.append(_function(name, f"{tag}. {' '.join(c['description'].split())}", props,

@@ -36,6 +36,12 @@ def render(facts: dict, step: int, max_steps: int) -> str:
     out.append("## VERIFIED EFFECTS (independent verification of what physically happened; latest last)\n" + ("\n".join(eff) or "(none yet)"))
     obs = [f"- [{o['seq']}] {o['query']}{_j(o['args']) if o['args'] else ''} -> {_j(o['value'])}" for o in f["observations"][-8:] if o["query"] != "site_map"]
     out.append("## OBSERVATIONS (query answers; latest last)\n" + ("\n".join(obs) or "(none yet)"))
+    objs = [f"- {name}: {o['state']} (record #{o['seq']}, {o['by']})" for name, o in f["objects"].items()]
+    out.append("## MOVABLE ITEMS (changed only by verified effects)\n" + ("\n".join(objs) or "(no verified manipulation yet)"))
+    tries = [f"- [{a['seq']}] {a['operation']}{_j(a['args'])} -> {'success' if a['success'] else 'failed'} at stage {a['stage']}"
+             + (f": {a['why']}" if a["why"] else "") + (f"; tries {_j(a['tries'])}" if a.get("tries") else "")
+             + (f"; the vision model saw {_j(a['vision_model_saw'])}" if a.get("vision_model_saw") else "") for a in f["attempts"][-10:]]
+    out.append("## MANIPULATION ATTEMPTS (operations on items, latest last)\n" + ("\n".join(tries) or "(none yet)"))
     anomalies = [f"- [{a['seq']}] {a['capability']}: {a['reason']}" for a in f["anomalies"]]
     out.append("## UNRESOLVED ANOMALIES\n" + ("\n".join(anomalies) or "(none)"))
     if len(f["reasoner_history"]) > 1:

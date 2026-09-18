@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Fast DDS for the D0 graph: shared-memory segments large enough for 640x480 camera images (research repo F57).
+     With the default ~0.5 MB segments a 1.2 MB depth image goes over fragmented UDP and a Python subscriber
+     received 75 of 207 frames (36%, idle host; < 1 Hz of 15 Hz in the running simulation); with these, 207 of 207. -->
+<profiles xmlns="http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles">
+  <transport_descriptors>
+    <transport_descriptor>
+      <transport_id>shm_large</transport_id>
+      <type>SHM</type>
+      <segment_size>16777216</segment_size>
+      <maxMessageSize>8388608</maxMessageSize>
+    </transport_descriptor>
+    <transport_descriptor>
+      <transport_id>udp4</transport_id>
+      <type>UDPv4</type>
+    </transport_descriptor>
+  </transport_descriptors>
+  <participant profile_name="default_participant" is_default_profile="true">
+    <rtps>
+      <userTransports>
+        <transport_id>shm_large</transport_id>
+        <transport_id>udp4</transport_id>
+      </userTransports>
+      <useBuiltinTransports>false</useBuiltinTransports>
+    </rtps>
+  </participant>
+</profiles>
