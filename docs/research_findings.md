@@ -2760,3 +2760,66 @@ generator ablation are dropped. Granularity rule recorded in `execution_plan` §
 gains the held/placed checks; `guard.py` and its config are unchanged (invariants already empty); the PLEXIL adapter
 gets simpler (one Command per operation); F55's reverted patches stay reverted; the snapshot workflow is the
 development loop for G3–G5. Expected Mission B step count falls from 60+ to roughly 15–25.
+
+### F57 — `pick` as one call: what the wrist camera has to see, and the constants that hid it
+
+2026-09-18, runs g3a–g3bn (`artifacts/runs/g3*`), `openral/python/rskill/src/openral_rskill/{procedural_pick.py,
+grasp_perception.py,_eye_in_hand.py}`, SRB `lunarbot.py` + `ground_manipulation/visual_ext.py`.
+
+**1. The gate is passed at the nominal placement (g3bn).** One `pick("the spare ORU ...", "its carry handle")` call:
+the skill found the handle, the vision model chose the neck under the head, the first approach stalled 2.2 cm short and
+the skill retried *on the same target* (the plan's locality rule) and held it. Jaw 0.172 rad (a 12 mm neck between the
+pads), TCP 2.1 cm from the truth handle, Ours' independent `item_held` true: 7.85 cm of lift, 4 px of image motion on
+the item against the 232 px it would have shown if left behind. 237 s of sim time. The truth handle settles back after
+the call returns -- the 1 kg arm sag of F51, not a slip (F55's reading of `handle_rise_m` alone was wrong: g3aw's
+handle rose 1.023 -> 1.085 m *during* the lift and the call still reported 1.7 cm afterwards).
+
+**2. What the skill does.** `pick(target, part)` takes no geometry: side views of the reach zone from the arm's own
+working branch, class-agnostic antipodal candidates from the wrist depth (G1), one vision-language choice among the
+numbered marks (G2), the planner to the stand-off in the grasp's own orientation, then a closed loop -- the part
+followed by its own image template -- for the last stretch. Nothing in the loop knows what an ORU is; the only
+object-specific text is the site's payload-handle convention in the selection prompt.
+
+**3. Look-move-look does not converge; the closed loop does.** Re-running the generic detector per frame and
+re-associating the candidate walked the goal 8 cm sideways over an approach (servo trace, g3ap): the narrowing view
+offers new antipodal pairs and the nearest one is not the same part. Following the part's own template instead
+(`PartTracker`: NCC in a window predicted from the arm's own motion, template rescaled by the depth ratio and turned by
+the camera's own roll, matches at the wrong distance rejected) removed the item pushing entirely -- the handle moved
+3 mm during a whole approach (g3aw) where the open-loop version moved it 5 cm.
+
+**4. Three defects, one cause: the camera's geometry written down as constants.** Each was found by looking at the
+evidence pictures, not at the trajectory numbers.
+- *The roll.* Which side of the tool axis the camera looks from decides the grasp's half-turn. Choosing it by
+  projecting the measured camera offset across the *optical* axis cancels exactly the lateral component it is meant to
+  keep (the optical axis is 17 deg off the tool axis, so in the tool frame it carries 0.29 of y): every view got the
+  opposite roll (g3bg, `servo_00.jpg` is the chosen view upside down). Taking the lateral part *in the tool frame*
+  fixes it for any mount. The roll itself belongs to the part -- the camera goes to the side the part is measured to be
+  free on -- and must not be chosen to spare the tracker a rotation: doing that picked the opposite roll and the
+  approach diverged, the tool sliding 18 cm sideways in 1.6 s with the error growing (g3bh).
+- *The half turn itself.* Turning the wrist where the tool stands swings the camera's view by twice the mount's 17 deg
+  and the part leaves the image (g3bl `turned.jpg`: only the rover deck). The planner now takes the tool to the
+  stand-off *in the grasp's orientation* in one move, which puts the part back on the tool axis, and the visual servo
+  does only the last 10 cm.
+- *The self-depth.* "Nearer than 0.17 m is the gripper" was written into `seen_through`, with copies at 0.20, 0.22 and
+  0.16 elsewhere. After the camera moved, the gripper's own pixels read as *an obstacle in front of every candidate
+  pose* and no view of the work zone was allowed at all (g3bm: every side view `reachable: false`).
+
+**5. The fix is one derivation, not four numbers.** `tool_in_view(K, T_camera_tool, rows)` computes, from the mount
+(TF) and the tool's own dimensions, how far the gripper reaches along the optical axis and which image band it always
+occupies; the self-occlusion depth, the framing rows, the candidate depth floor, the tracker's "the gripper covers the
+part" test and the lift check all read it. Checked against the old mount it reproduces the hand-tuned values that were
+in the manifest (0.203 m vs 0.20, row 107 vs 108) -- they were always geometry, not tuning. The manifest lost four
+entries.
+
+**6. The wrist camera itself was wrong twice.** Its intrinsics were `focal 10 mm / aperture 16 mm` = 77 deg, which is
+the D435's *depth* field, not the colour stream the skills work in; it now renders the D435i's own 640x480 colour
+intrinsics (15.4/16.0, fx = fy = 616, 55 x 42 deg). And it sat 0.048 m off the tool axis aimed at the grasp point,
+which left two thirds of every frame filled by the fingers. The mount was recomputed (not tuned): 0.12 m off the axis,
+0.22 m behind the TCP, aimed 0.15 m beyond it -- the gripper then occupies the bottom fifth of the frame with both pad
+tips visible, and the part being approached sits in the middle of the image. G0's dataset and the G1/G2 offline scores
+were taken with the old camera and stand as such.
+
+**7. Method note.** Every one of these was visible in a single evidence image and invisible in the numbers; the runs
+that only printed distances (g3ab..g3bd) cost hours and settled nothing. The servo now writes one picture per frame
+with the tracked point, the match score, the roll correction and why a frame was rejected.
+

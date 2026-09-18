@@ -14,15 +14,22 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
 
 ## Now: manipulation skills (plan v4, gates G0–G5)
 
-- [ ] G0: wrist RGB-D recorder, ~30 viewpoints of the ORU and crate on the depot stand (truth only for scoring).
-- [ ] G1: grasp candidates offline, classical (OpenCV + depth); learned generator only if classical fails.
-- [ ] G2: candidate rendering + VLM set-of-mark selection offline; wrong-item flag.
-- [ ] `pick(target, part)` as an OpenRAL procedural rSkill in the fork (find → select → approach → grasp → hold as
-      internal stages; tracking as a perception service; same-target local retries only; staged failure + evidence);
-      one contract line in the boundary. Then `place(support)` the same way.
-- [ ] Ours side (plan v4 §5): object facts, automatic verification after pick/place, reconciliation with provenance,
-      attempt record in the context. Guard keeps only mission/authority rules (no posture/payload rules).
-- [ ] G3: `pick` live, unknown placement, one call per trial; every failure returns a stage.
+- [x] G0: wrist RGB-D recorder, 29 viewpoints of the ORU and crate on the depot stand (truth only for scoring).
+- [x] G1: grasp candidates offline, classical (OpenCV + depth): a correct neck grasp in 28/29 views, ~0.1 s a view.
+- [x] G2: candidate rendering + VLM set-of-mark selection offline: 20/28 correct; the wrong-item flag is weak (7/29).
+      Live, with the site's payload-handle convention in the prompt, the three asks agree on the neck (g3bf).
+- [x] `pick(target, part)` as an OpenRAL procedural rSkill in the fork (find → select → approach → grasp → hold as
+      internal stages; VLM chooses once, then the part's own template closes the loop; same-target local retries only;
+      staged failure + evidence); one contract line in the boundary. `place(support)` written, not yet live.
+- [x] Ours side (plan v4 §5): movable-object facts, automatic `item_held` / `item_placed` verification recomputed from
+      the raw evidence, attempt record in the context. Guard unchanged (no posture/payload rules).
+- [ ] G3: `pick` live, unknown placement, one call per trial; every failure returns a stage. **Nominal passed**
+      (g3bn: one call, a same-target retry inside it, jaw 0.172, `item_held` true with 7.85 cm of lift). Running:
+      ±8 cm / ±20–30° placements and a perturbed dock (g3bo).
+- [ ] `place` live, then the pick→place pair on one snapshot.
+- [ ] `find` still carries three tuned tables (`overview_pose`, `reach_zone_x_m`, `side_view_*`). Per plan v4 they
+      should be a sweep of the arm's own reachable workspace with a measured stopping rule, like `tool_in_view` now
+      replaces the camera constants (F57 §5). Do it when `find` next fails, not before.
 
 ## Architecture follow-ups (plan v4 §2, when touched — no big refactor)
 

@@ -95,11 +95,13 @@ for spec in os.environ.get("G3_TRIALS", "0,0,0,0").split(";"):
     track, stop = [], []
 
     def sample():
-        last = handle_pos("spare_oru")
+        # reads the TF buffer the main thread fills; it must not spin the node itself at all (rclpy is not re-entrant:
+        # a second thread spinning the same node corrupts its wait set, and the next action goal never completes)
+        last = h0
         while not stop:
             time.sleep(0.2)
-            h = handle_pos("spare_oru")
-            if float(np.linalg.norm(h - last)) > 0.01:
+            h = handle_pos("spare_oru", spin=False)
+            if h is not None and float(np.linalg.norm(h - last)) > 0.01:
                 track.append({"sim_t": round(sim["t"] - sim0, 1), "handle": [round(float(v), 3) for v in h],
                               "moved_m": round(float(np.linalg.norm(h - last)), 3)})
                 last = h

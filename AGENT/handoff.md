@@ -1,8 +1,8 @@
 # Handoff
 
-State as of 2026-09-17 night. Research goal and plan: `AGENT/research_content.md`, `AGENT/execution_plan.md` (§21 order:
-the proposed method before the baselines; §8.2 granularity rule). Findings F1–F56 in `docs/research_findings.md` —
-**read F53–F56**. Tasks: `AGENT/todo.md`. Current design: **`docs/semantic_to_metric_manipulation_plan.md` (v4)**.
+State as of 2026-09-18 midday. Research goal and plan: `AGENT/research_content.md`, `AGENT/execution_plan.md` (§21 order:
+the proposed method before the baselines; §8.2 granularity rule). Findings F1–F57 in `docs/research_findings.md` —
+**read F53–F57**. Tasks: `AGENT/todo.md`. Current design: **`docs/semantic_to_metric_manipulation_plan.md` (v4)**.
 
 **The picture in one line:** Claude Code for a lunar robot. The model owns the mission (what to observe, where to go,
 what to pick, what to try after a failure); tools are whole operations (`navigate`, `dock`, `pick`, `place`, `press`,
@@ -13,8 +13,13 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
 
 - Ours (`space_runtime/`, on OpenRAL `ReasonerCore`) runs Mission A `covered` end to end with vision-only contact (oa2,
   verifier success). Restart/model switch on the same record works (rs1).
-- Mission B (fetch the spare ORU, deliver to PDU-1) is blocked at the **pick**: 12 failures analysed (F55). The
-  VLM-point + open-loop approach is replaced by plan v4 (`pick` as one skill); nothing of v4 is implemented yet.
+- Mission B (fetch the spare ORU, deliver to PDU-1): plan v4 is **implemented** — `pick(target, part)` and
+  `place(support)` are procedural rSkills in the fork (`openral/python/rskill/src/openral_rskill/{procedural_pick,
+  procedural_place,grasp_perception,_eye_in_hand}.py`, manifests in `openral/rskills/rskill-procedural-{pick,place}`),
+  the boundary has one contract line each, the model's palette is operations only, and the harness verifies
+  `item_held` / `item_placed` from the raw evidence. G0–G2 passed; **G3's nominal placement passes** (g3bn: one call,
+  jaw 0.172, `item_held` true, 7.85 cm of lift), perturbed placements running; `place` and G4 are next. Branch
+  `feat/pick-place-rskills` (fork), `feat/g0-wrist-rgbd` (research repo).
 - Baselines: PLEXIL runs Mission A through the common boundary (F52); PLEXIL Mission B, EUROPA→PLEXIL, Experiments I/II
   not started.
 
@@ -54,7 +59,14 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
 - Snapshots: `<log>/snapshots/before_step_<n>.{pt,json}` (SRB `envs/snapshot` + the AMCL estimate). Resume after a fix:
   `[D0_RESTART_BOUNDARY=1] OURS_MISSION=b OURS_STOP_ON_FAILURE=1 OURS_RESUME_FROM=<log> OURS_RESUME_BEFORE_STEP=<n>
   setsid nohup experiments/launch/lunar_base_d0/attach_d0.sh <graph log> <new log> &` (works on a held graph or a fresh one).
-- Take a held graph down: `experiments/launch/lunar_base_d0/teardown_d0.sh <graph log>`.
+- Take a held graph down: `experiments/launch/lunar_base_d0/teardown_d0.sh <graph log>` — **the absolute path** the
+  run was started with (the tag is matched exactly; a relative path finds nothing and reports `TREE 0 pids`).
+- One `pick` trial per placement (G3): `D0_CAPABILITY_SERVER=1 D0_HOLD=1 D0_CHECK=../../perception/g3_pick.py
+  G3_TRIALS="0,0,0,0;0.08,0,20,0" setsid nohup experiments/launch/lunar_base_d0/run_d0.sh <log> &` (a trial is
+  `dx,dy,dyaw_deg,rover_dx`). Changing skill code needs a new graph: the runner imports it once per process.
+- Read a pick failure from its pictures, not its numbers: `<log>/evidence/pick_*/` has the overview, each side view
+  with its numbered candidates, and `servo_NN.jpg` per approach frame with the tracked point and the match score
+  (`evidence.approach_track` lists them even when the stage fails).
 - Record: `<log>/ours/{events.jsonl,report.md,agent.log}`; boundary `capability_server.log`; frames `evidence/`.
 - Offline reasoner comparison on recorded decision points: `experiments/reasoner_replay/replay.py`.
 - Scripted checks: `D0_CHECK=d0_mission_{a,b}_check.py`, `vision_check.py`, `d0_plexil_mission_a_check.py`; options
@@ -70,7 +82,12 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
   PLEXIL adapter `ros/plexil_capability_adapter`. Today it still implements `approach_target`, VLM `observe` /
   `locate_in_view` and feature-pose lowering (to move per plan v3 §2). Effect verification and the guard live in
   `space_runtime/` (Ours' harness — correct per the method boundary).
-- Arm: RM-75 (`docs/lunar_bot_rm75_spec.md`); MoveIt plans end 0.9–3 cm from goal; 1 kg payload sags ~4.5 cm.
+- Arm: RM-75 (`docs/lunar_bot_rm75_spec.md`); MoveIt plans end 0.9–3 cm from goal; 1 kg payload sags ~4.5 cm — a held
+  item settles back after the call returns, so read the lift *during* it (the truth track), not after.
+- Wrist camera (changed 2026-09-18, F57 §6): 0.12 m off the tool axis, 0.22 m behind the TCP, aimed 0.15 m beyond it,
+  D435i colour intrinsics at 640×480 (fx = fy = 616). The numbers live in SRB's `lunarbot.py` and, identically, in the
+  HAL's `CAMERA_MOUNTS`. Nothing in the skills may hard-code them: `tool_in_view()` derives the self-occlusion depth
+  and the free image band from TF.
 - OpenRAL rSkill manifests: `openral/rskills/*/rskill.yaml` (kinds procedural, ros_action, detector, segmenter, vlm,
   playbook); entrypoints `openral/python/rskill/src/openral_rskill/`; reasoner palette/tools in
   `openral/python/reasoner`; integration notes `docs/openral_integration_notes.md`.

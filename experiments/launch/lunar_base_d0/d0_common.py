@@ -108,15 +108,23 @@ def mat_to_quat(R):
     return q
 
 
+def tf_buffered(target, source):
+    """The transform already in the buffer, without spinning: safe from a second thread while the main thread spins
+    (rclpy's executor is not re-entrant -- two threads spinning one node corrupt its wait set). None when not there."""
+    if not buf.can_transform(target, source, Time()):
+        return None
+    tr = buf.lookup_transform(target, source, Time()).transform
+    return (np.array([tr.translation.x, tr.translation.y, tr.translation.z]),
+            quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w))
+
+
 def tf(target, source, timeout=10.0):
     t = time.time()
     while time.time() - t < timeout:
         rclpy.spin_once(n, timeout_sec=0.05)
-        if buf.can_transform(target, source, Time()):
-            tr = buf.lookup_transform(target, source, Time()).transform
-            p = np.array([tr.translation.x, tr.translation.y, tr.translation.z])
-            R = quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w)
-            return p, R
+        got = tf_buffered(target, source)
+        if got is not None:
+            return got
     raise RuntimeError(f"no TF {target} <- {source}")
 
 
@@ -164,8 +172,11 @@ def to_rover(p_w, R_w):
     return Rb.T @ (np.asarray(p_w) - pb), Rb.T @ R_w
 
 
-def handle_pos(name):
-    p, R = tf("srb/world", f"srb/env0/lb_{name}")
+def handle_pos(name, spin=True):
+    got = tf("srb/world", f"srb/env0/lb_{name}") if spin else tf_buffered("srb/world", f"srb/env0/lb_{name}")
+    if got is None:
+        return None
+    p, R = got
     return p + R @ np.array(IX["objects"][name]["handle"]["xyz"])
 
 
