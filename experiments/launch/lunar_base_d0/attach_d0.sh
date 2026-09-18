@@ -21,6 +21,8 @@ export ROS_DOMAIN_ID=${D0_DOMAIN:-77} ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST
 # camera images need large shared-memory segments, or most frames are lost in transport (fastdds_large_shm.xml)
 export FASTRTPS_DEFAULT_PROFILES_FILE="$HERE/fastdds_large_shm.xml"
 SPACE_LLM_API_KEY=$(grep -o 'sk-[A-Za-z0-9_-]*' "$HERE/../../../AGENT/VLM_provider.md" | head -1) && export SPACE_LLM_API_KEY
+# the reasoner runs on DeepSeek's own endpoint (its key is the second one in that file); the scene VLM keeps the gateway
+SPACE_REASONER_API_KEY=$(grep -o 'sk-[A-Za-z0-9_-]*' "$HERE/../../../AGENT/VLM_provider.md" | tail -1) && export SPACE_REASONER_API_KEY
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 if [ -n "$D0_RESTART_BOUNDARY" ]; then
   for e in /proc/[0-9]*/environ; do

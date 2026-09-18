@@ -75,7 +75,7 @@ class Agent:
         self.cfg, self.max_steps = cfg, rc["max_steps"]
         self.store = FactStore(run_dir / "events.jsonl")
         self.guard = Guard(cfg["guard"])
-        self.client = HarnessToolClient(model_id=model, base_url=rc["endpoint"], api_key=os.environ["SPACE_LLM_API_KEY"],
+        self.client = HarnessToolClient(model_id=model, base_url=rc["endpoint"], api_key=os.environ[rc.get("api_key_env", "SPACE_LLM_API_KEY")],
                                         timeout_s=rc["timeout_s"], thinking=rc["thinking"])
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())

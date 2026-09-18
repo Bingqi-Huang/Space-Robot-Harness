@@ -17,8 +17,9 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
   `place(support)` are procedural rSkills in the fork (`openral/python/rskill/src/openral_rskill/{procedural_pick,
   procedural_place,grasp_perception,_eye_in_hand}.py`, manifests in `openral/rskills/rskill-procedural-{pick,place}`),
   the boundary has one contract line each, the model's palette is operations only, and the harness verifies
-  `item_held` / `item_placed` from the raw evidence. G0–G2 passed; **G3's nominal placement holds the ORU** (g3bn),
-  perturbed placements running; `place` and G4 are next. Branch `feat/pick-place-rskills` (fork),
+  `item_held` / `item_placed` from the raw evidence. **G0–G3 passed**: the nominal placement holds the ORU (g3bn,
+  g3br, independently verified), and perturbed placements outside the arm's envelope return the stage and the grasp's
+  position in the rover frame instead of flailing. `place` has never run live; **G4 is running**. Branch `feat/pick-place-rskills` (fork),
   `feat/g0-wrist-rgbd` (research repo).
 - Rule that keeps costing runs (F57): nothing about the camera–gripper geometry may be a constant. `find` aims at the
   structures the views measure; `tool_in_view()` derives the self-occlusion depth, the free image band and the
@@ -31,8 +32,11 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
 
 - Ours before the baselines; tasks from `docs/lunar_task_catalog.md`; Ours may meet held-out situations before the
   freeze with mission-generic changes only; freeze = git commits/tags, **no hash checks anywhere**.
-- Reasoner **DeepSeek-V4-Pro**, thinking on (offline replay, F55 §4). Shared VLM **GLM-5.3-Flash**. Gateway key in
-  `AGENT/VLM_provider.md` (never in code).
+- Reasoner **deepseek-flash on DeepSeek's own endpoint** (`SPACE_REASONER_API_KEY`, the second key in
+  `AGENT/VLM_provider.md`): 1.2 s per tool call against 162 s through the gateway (F55 §4), which is what made the
+  agent runs affordable. The shared scene VLM stays **GLM-5.3-Flash** on the gateway (`SPACE_LLM_API_KEY`). Keys are
+  never in code. Which reasoner the *experiments* are run with is still open; the offline replay compares them on
+  recorded decision points.
 - **Method boundary (research_content §3.2/§5.2–5.3/§5.7, revised):** baselines share robot, capabilities,
   perception sources, raw evidence, low-level safety and the external evaluator — not Ours' mechanisms. Ours' facts,
   context reconstruction, guard, internal effect verification and traces are the method; attribution by Ours-internal
@@ -76,7 +80,8 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
 - Scripted checks: `D0_CHECK=d0_mission_{a,b}_check.py`, `vision_check.py`, `d0_plexil_mission_a_check.py`; options
   `D0_VIDEO`, `D0_SCENARIO=<heldout_…>`, `D0_SCENERY=lunar_base_route_block`, `D0_STEPS`, `D0_PLANNING_SCENE=0`.
 - Video: `D0_VIDEO=<mp4>` + `SRB_VIDEO_SPEEDUP=1` → `<mp4>.times`; `python3 experiments/video/overlay.py`.
-- Speed: sim ≈ 0.375× wall; reasoner steps take minutes (V4-Pro), so dev runs are long. GPU PhysX crashes in SRB.
+- Speed: sim ≈ 0.25–0.375× wall (Isaac's PhysX runs on the CPU at ~900%; the GPU sits near idle and GPU PhysX
+  crashes in SRB). Reasoner steps are ~1 s on deepseek-flash, so a dev run's wall time is the simulation, not the model.
 
 ## Stack facts (don't rediscover)
 
