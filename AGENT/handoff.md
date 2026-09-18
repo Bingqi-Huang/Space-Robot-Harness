@@ -1,6 +1,6 @@
 # Handoff
 
-State as of 2026-09-18 midday. Research goal and plan: `AGENT/research_content.md`, `AGENT/execution_plan.md` (§21 order:
+State as of 2026-09-18 evening. Research goal and plan: `AGENT/research_content.md`, `AGENT/execution_plan.md` (§21 order:
 the proposed method before the baselines; §8.2 granularity rule). Findings F1–F57 in `docs/research_findings.md` —
 **read F53–F57**. Tasks: `AGENT/todo.md`. Current design: **`docs/semantic_to_metric_manipulation_plan.md` (v4)**.
 
@@ -17,14 +17,25 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
   `place(support)` are procedural rSkills in the fork (`openral/python/rskill/src/openral_rskill/{procedural_pick,
   procedural_place,grasp_perception,_eye_in_hand}.py`, manifests in `openral/rskills/rskill-procedural-{pick,place}`),
   the boundary has one contract line each, the model's palette is operations only, and the harness verifies
-  `item_held` / `item_placed` from the raw evidence. **G0–G3 passed**: the nominal placement holds the ORU (g3bn,
-  g3br, independently verified), and perturbed placements outside the arm's envelope return the stage and the grasp's
-  position in the rover frame instead of flailing. `place` has never run live; **G4 is running**. Branch `feat/pick-place-rskills` (fork),
-  `feat/g0-wrist-rgbd` (research repo).
-- Rule that keeps costing runs (F57): nothing about the camera–gripper geometry may be a constant. `find` aims at the
-  structures the views measure; `tool_in_view()` derives the self-occlusion depth, the free image band and the
-  gripper's silhouette from TF. When a run fails, read the evidence pictures first — every one of these was visible
-  in one image and invisible in the numbers.
+  `item_held` / `item_placed` from the raw evidence. **G0–G3 passed**, and on 2026-09-18 evening **`pick` worked
+  inside the agent loop for the first time (g4m)**: one call, two attempts on the same target, `item_held` verified
+  independently (jaw 0.327 rad, 11.7 cm lift, 19.5 px of item motion against the 315 px it would have shown if left
+  behind). G3 had passed on a dock that landed 6 cm short, which hid the two defects G4 then hit — the item was an
+  obstacle to its own grasp, and the approach direction was fixed (both fixed, F59). **What is left of G4**: carry →
+  `place` (never run live) → stow → dock, resumable from `artifacts/runs/g4m` before step 9. Branch
+  `feat/pick-place-rskills` (fork), `feat/g0-wrist-rgbd` (research repo).
+- Rule that keeps costing runs (F57–F59): **no geometry may be a constant** — not the camera–gripper mount, not how
+  far the rover parks, not which way the tool comes at a part. `tool_in_view()` derives the self-occlusion depth and
+  the free image band from TF; `openral_ext/workspace/` derives where the rover stands from the arm's own kinematics
+  (reach map from the live URDF + footprint clearance, each candidate settled with the robot's own IK); the skill
+  searches the approach direction about the jaws' closing axis instead of taking the free-side one as given.
+- **What a skill is working on is not an obstacle** (F59): measured obstacles made the ORU unpickable — no arm
+  configuration was allowed at its handle. A skill now declares the volume its tool is about to be inside (a sphere
+  the size of the gripper, `/space/manipulation_target`, renewed while it works, expires when it stops); the world
+  model leaves the measurement inside it out. Verified live: IK at the handle -31 → 1 → -31 as the declaration is
+  made and dropped.
+- When a run fails, read the evidence pictures first — F57's three defects were each visible in one image and
+  invisible in the numbers.
 - Baselines: PLEXIL runs Mission A through the common boundary (F52); PLEXIL Mission B, EUROPA→PLEXIL, Experiments I/II
   not started.
 
@@ -32,11 +43,12 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
 
 - Ours before the baselines; tasks from `docs/lunar_task_catalog.md`; Ours may meet held-out situations before the
   freeze with mission-generic changes only; freeze = git commits/tags, **no hash checks anywhere**.
-- Reasoner **deepseek-flash on DeepSeek's own endpoint** (`SPACE_REASONER_API_KEY`, the second key in
-  `AGENT/VLM_provider.md`): 1.2 s per tool call against 162 s through the gateway (F55 §4), which is what made the
-  agent runs affordable. The shared scene VLM stays **GLM-5.3-Flash** on the gateway (`SPACE_LLM_API_KEY`). Keys are
-  never in code. Which reasoner the *experiments* are run with is still open; the offline replay compares them on
-  recorded decision points.
+- **Everything model-facing runs on DeepSeek's own endpoint**: reasoner and scene/grasp VLM are both `deepseek-flash`
+  (`https://api.deepseek.com`, the second key in `AGENT/VLM_provider.md`, exported as both `SPACE_REASONER_API_KEY`
+  and `SPACE_LLM_API_KEY`). The shared gateway is gone: it answered a `select` in 2-9 s from a shell and hung for the
+  full 300 s deadline from inside the runner, run after run (F58). deepseek-flash reads the marked frames (different
+  mark per view, null on a blank image) and answers in 1-14 s. Keys are never in code. Which reasoner the
+  *experiments* are run with is still open; the offline replay compares them on recorded decision points.
 - **Method boundary (research_content §3.2/§5.2–5.3/§5.7, revised):** baselines share robot, capabilities,
   perception sources, raw evidence, low-level safety and the external evaluator — not Ours' mechanisms. Ours' facts,
   context reconstruction, guard, internal effect verification and traces are the method; attribution by Ours-internal
@@ -119,4 +131,14 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
 - Research repo `main` (feature branch merged 2026-09-17). openral fork `master` (camera mounts, wrist depth relay,
   servo zero-twist fix). SRB `feat/lunar-base-scene` (lunar base, 15 Hz cameras, work lights, lidar 10 Hz,
   publish-on-new, video `.times`, `envs/snapshot`); SRB `main` untouched.
-- Runs (not in git): `artifacts/runs/` (oa*, ob*, vc*, rs1, pf*); replay results `artifacts/reasoner_replay/`.
+- Runs (not in git): `artifacts/runs/` (oa*, ob*, vc*, rs1, pf*, g3*, g4*); replay results `artifacts/reasoner_replay/`.
+  **g4m is the one to resume from**: the ORU is in the jaws there, and the mission stopped before step 9 (the carry).
+
+## Open, unsettled (read before the next run)
+
+- The wrist view in `servo_*.jpg` comes out upside down while `view_*.jpg` / `candidates_*.jpg` are uprighted with
+  `upright(bgr, up_cam)`. Either the servo frames simply never call it (a recording difference), or the camera is
+  being taken to the branch below the tool axis somewhere. Settle it from the images first: the whole of F57 was
+  camera-geometry conventions read wrongly, and this looks like the same family.
+- Two depot features have no legal stand (see `AGENT/todo.md`); the PDU presses stand 0.20 m too far. Both come from
+  the reach model, and both are scene facts, not skill bugs.

@@ -23,6 +23,7 @@ Run inside a sourced graph (ROS Humble + openral install + ros/install):
 
 import base64
 import json
+import sys
 import re
 import math
 import os
@@ -36,6 +37,9 @@ import numpy as np
 import rclpy
 from moveit_msgs.srv import GetPositionIK
 from openral_msgs.action import ExecuteRskill
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from workspace.footprint import DOCK_ERROR_M, clear_distance  # noqa: E402
+from workspace.reach import reach_map  # noqa: E402
 from rclpy.action import ActionClient, ActionServer
 from rclpy.duration import Duration
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -51,7 +55,10 @@ from space_harness_msgs.srv import QueryCapability
 from tf2_ros import Buffer, TransformListener
 
 from contracts import CONTRACTS, IX, check_args
-READY = [0.0, -1.0, 0.0, -1.4, 0.0, 1.2, 0.0]  # the arm's ready posture (robot, not mission)
+# The arm's ready posture (robot, not mission). The wrist roll is half a turn: that is the branch with the wrist camera
+# above the tool axis, the one every view and every grasp works from (research repo F57), and it is the posture the
+# manipulation skills start and end in. `openral_rskill._eye_in_hand.READY` is the same seven numbers.
+READY = [0.0, -1.0, 0.0, -1.4, 0.0, 1.2, math.pi]
 STOW = [0.0, -0.6, 0.0, 1.2, 0.0, 0.6, 0.0]  # rskill-procedural-stow's travel pose
 ARM_JOINTS = [f"joint{i}" for i in range(1, 8)]
 # what each interaction-point type is, as the site's equipment documentation states it
@@ -60,11 +67,13 @@ POINT_TYPES = {
     "indicator": "status lamp on a service panel: red = unit faulted, green = nominal",
     "place": "surface point where an object can be set down",
 }
-# the shared scene VLM (same for every method): GLM-5.3-Flash and Kimi-K3 located a thin bail, a button beside a lamp and a
-# lamp 15/15 on real wrist frames (DeepSeek-V4.1-Flash 12/15, Qwen3.8-Flash 14/15, Qwen3.8-Max 5/15; research repo F54).
-# Kimi-K3 then answered in 95-150 s with timeouts on the gateway (2026-09-17 evening), GLM-5.3-Flash in 4-10 s, same pixels.
-VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "GLM-5.3-Flash")
-VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com/v1")
+# the shared scene VLM (same for every method): deepseek-flash on DeepSeek's own endpoint. The models were compared on
+# real wrist frames through a shared gateway (GLM-5.3-Flash and Kimi-K3 15/15, Qwen3.8-Flash 14/15; research repo F54),
+# but that gateway stalled image requests coming from the runner process for the full deadline while the same request
+# from a shell answered in seconds (F58). deepseek-flash reads these frames: on the recorded marked views it names the
+# handle's mark, a different one per view, and answers null on a blank image.
+VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "deepseek-flash")
+VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://api.deepseek.com")
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
 VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; how many must find the target
@@ -74,7 +83,8 @@ ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # same
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
 JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD = 0.13, 0.78  # EG2: 0.10 closed on nothing, ~0.17 on a 12 mm neck, 0.82 open
-HULL_M, REACH_M = IX["robot"]["hull_x_back_m"], IX["robot"]["reach_m"]  # arm reach past the hull, by interaction type (C3)
+#: how high above a support the tool works: the item is held by its handle, so the tool never goes to the shelf itself
+ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.get("handle"))
 
 
 def horizontal(v) -> np.ndarray:
@@ -82,12 +92,30 @@ def horizontal(v) -> np.ndarray:
     return v / np.linalg.norm(v)
 
 
-def work_pose_from(p_map: np.ndarray, n_map: np.ndarray, standoff_m: float, point_type: str = "press"):
-    """Base pose from which the arm reaches a point: hull + the reach for what the arm does there (a grasp needs the
-    last centimetres past the part and elbow room above the item, a press only the tool tip) out along the point's
-    normal, heading along it; `standoff_m` further out on the same axis (the docking corridor's entry)."""
-    xy = p_map[:2] + n_map[:2] * (HULL_M + REACH_M.get(point_type, REACH_M["press"]) + standoff_m)
+def work_heights(feature: str) -> list[float]:
+    """Where the tool itself has to be to do the work at a site point: at the point for a panel or a handle, and a
+    handle's height above a support, because an item is carried by its handle and never set down by the tool's own
+    tip."""
+    pt = IX["points"][feature]
+    return [float(pt["xyz"][2]) + (ITEM_HANDLE_M if pt["type"] == "place" else 0.0)]
+
+
+def stand_at(p_map: np.ndarray, n_map: np.ndarray, d: float, standoff_m: float):
+    xy = p_map[:2] + n_map[:2] * (d + standoff_m)
     return float(xy[0]), float(xy[1]), math.atan2(n_map[1], n_map[0])
+
+
+def approach_rotations(elevations_deg=(0.0, -20.0, -40.0)) -> list[np.ndarray]:
+    """Tool orientations a job at a site point could need, in the frame where the point lies on the rover's -x axis:
+    coming at it level and from above, jaws across. Which one a grasp actually takes is measured from the part when
+    the robot is there; this is only what the stand has to keep possible."""
+    out = []
+    for deg in elevations_deg:
+        th = math.radians(deg)
+        z = np.array([-math.cos(th), 0.0, math.sin(th)])
+        x = np.array([0.0, 1.0, 0.0])
+        out.append(np.stack([x, np.cross(z, x), z], axis=1))
+    return out
 
 
 def tool_rotation(n: np.ndarray, orientation: str) -> np.ndarray:
@@ -197,6 +225,7 @@ class CapabilityServer(Node):
             # both cameras are RealSense D435i: depth registered to the colour image, metres along the optical axis
             self.create_subscription(Image, f"/openral/cameras/{cam}_depth/image", lambda m, cam=cam: self.depths.__setitem__(cam, m),
                                      qos_profile_sensor_data, callback_group=cb)
+        self._stands: dict[str, float] = {}  # where the rover parks for a feature, settled once with the arm's own IK
         self.evidence_dir = Path(os.environ.get("SPACE_EVIDENCE_DIR", os.environ.get("D0_LOG", "/tmp"))) / "evidence"
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         from openai import OpenAI
@@ -384,8 +413,8 @@ class CapabilityServer(Node):
                                               yaw=b["yaw"] + float(a.get("dyaw_rad", 0.0)), approach_m=0.0))
         if capability in ("navigate_to_feature", "dock_at_feature"):
             p, n = self.feature_geometry(a["feature"])
-            x, y, yaw = work_pose_from(p, n, a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0),
-                                       IX["points"][a["feature"]]["type"])
+            x, y, yaw = stand_at(p, n, self.stand_distance(a["feature"]),
+                                 a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0))
             if capability == "navigate_to_feature":
                 return lower("navigate_to_pose", dict(x=x, y=y, yaw=yaw))
             return lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, **({"approach_m": a["approach_m"]} if "approach_m" in a else {})))
@@ -437,6 +466,57 @@ class CapabilityServer(Node):
                     return False, f"corrective servo failed: {why}", ev
         ev["target_rover"] = [round(float(v), 4) for v in R_ro @ X + t_ro]
         return True, "", ev
+
+    class NoStand(Exception):
+        """There is no place to park where the rover is clear of the site and the arm reaches the work."""
+
+    def ik_reaches(self, p_base: np.ndarray, R: np.ndarray) -> bool:
+        """Whether some arm configuration puts the tool at this pose in the rover's own frame. Kinematics only: what
+        stands in the way when the robot is actually there is the planner's business, and the rover is not there yet."""
+        req = GetPositionIK.Request()
+        req.ik_request.group_name, req.ik_request.ik_link_name, req.ik_request.avoid_collisions = "rm_group", "tcp_frame", False
+        req.ik_request.pose_stamped.header.frame_id = "chassis_base_link"
+        pp = req.ik_request.pose_stamped.pose
+        pp.position.x, pp.position.y, pp.position.z = (float(v) for v in p_base)
+        q = mat_to_quat(R)
+        pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = q
+        req.ik_request.timeout.nanosec = 100_000_000
+        f = self.ik.call_async(req)
+        t0 = time.time()
+        while not f.done():
+            if time.time() - t0 > 5.0:
+                return False
+            time.sleep(0.02)
+        return f.result() is not None and f.result().error_code.val == 1
+
+    def arm_reaches(self, d: float, heights: list[float]) -> bool:
+        """Standing `d` from a site point, can the arm put its tool where the work is?"""
+        return all(any(self.ik_reaches(np.array([-d, 0.0, z]), R) for R in approach_rotations()) for z in heights)
+
+    def stand_distance(self, feature: str) -> float:
+        """How far from a site point this rover parks to work there.
+
+        The arm decides, not a table: the reach model proposes the stand-offs where its tool can be at the work
+        heights, the footprint rules out the ones where the rover would be in the furniture, and the robot's own IK
+        settles each candidate -- including one docking error nearer and further, because that is how accurately a dock
+        lands. The first that survives all three is the stand. When none does, the robot cannot do that job from any
+        parking place, which is a fact the caller needs before driving there (research repo F58)."""
+        if feature in self._stands:
+            return self._stands[feature]
+        p, n = self.feature_geometry(feature)
+        heights = work_heights(feature)
+        near = clear_distance(p[:2], n[:2])
+        cands = reach_map().stand_candidates(heights, near)
+        for d, _room in cands[:8]:
+            if all(self.arm_reaches(d + e, heights) for e in (0.0, -DOCK_ERROR_M, DOCK_ERROR_M)):
+                self.get_logger().info(f"stand at {feature}: {d:.3f} m from the point (hull clear from {near:.3f} m, "
+                                       f"work at z {[round(z, 3) for z in heights]})")
+                self._stands[feature] = d
+                return d
+        raise self.NoStand(
+            f"the rover cannot park anywhere that lets the arm work at {feature}: its hull clears the site's "
+            f"structures no closer than {near:.2f} m from the point, and from there the arm cannot put its tool at "
+            f"the working height ({', '.join(f'{z:.2f} m' for z in heights)})")
 
     def explain_arm_goal(self, params: dict) -> str:
         """Why an arm goal may have failed, from the robot model: the goal's distance from the arm mount, whether a
@@ -516,8 +596,16 @@ class CapabilityServer(Node):
             ok, reason, evidence = self.approach_target(args, handle)
             r = ExecuteRskill.Result(success=ok, failure_kind=0 if ok else 3, failure_reason=reason)
         else:
-            params = self.lower_effect(g.capability, args)
-            if g.capability in ("pick", "place"):
+            try:
+                params = self.lower_effect(g.capability, args)
+            except self.NoStand as exc:
+                handle.succeed()
+                res.success, res.failure_kind, res.failure_reason = False, 3, str(exc)
+                return res
+            # the skills that keep a record of what they saw are handed the run's evidence directory: where a skill
+            # writes belongs to the harness, not to the skill. Which ones those are is in the contract, because a goal
+            # param an rSkill does not declare is an error, not a spare field (a nav2 action goal has no such field)
+            if contract.get("records_evidence"):
                 params["evidence_dir"] = str(self.evidence_dir)
             r = self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}

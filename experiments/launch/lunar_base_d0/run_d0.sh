@@ -25,11 +25,12 @@ export FASTRTPS_DEFAULT_PROFILES_FILE="$HERE/fastdds_large_shm.xml"
 # Two graphs share this host (GPU 0 / GPU 1): the deploy CLI's argv-signature reaps at start and exit, and its
 # Fast-DDS SHM purge, would kill or silence the sibling (research repo F51). This script's own teardown is by run tag.
 export OPENRAL_SKIP_ORPHAN_REAP=1
-# the LLM/VLM gateway (AGENT/VLM_provider.md) for the scene VLM behind `observe` and Ours' reasoner; it needs no proxy,
-# and the host's SOCKS proxy breaks httpx without socksio (research repo F38)
-SPACE_LLM_API_KEY=$(grep -o 'sk-[A-Za-z0-9_-]*' "$HERE/../../../AGENT/VLM_provider.md" | head -1) && export SPACE_LLM_API_KEY
-# the reasoner runs on DeepSeek's own endpoint (its key is the second one in that file); the scene VLM keeps the gateway
-SPACE_REASONER_API_KEY=$(grep -o 'sk-[A-Za-z0-9_-]*' "$HERE/../../../AGENT/VLM_provider.md" | tail -1) && export SPACE_REASONER_API_KEY
+# Both the reasoner and the scene/grasp VLM run on DeepSeek's own endpoint, on its key (the second one in
+# AGENT/VLM_provider.md). The shared gateway is no longer used: a `select` request that answered in 2-9 s from a shell
+# hung for the full 300 s deadline from inside the runner, run after run (research repo F58). It needs no proxy, and
+# the host's SOCKS proxy breaks httpx without socksio (research repo F38).
+SPACE_LLM_API_KEY=$(grep -o 'sk-[A-Za-z0-9_-]*' "$HERE/../../../AGENT/VLM_provider.md" | tail -1) && export SPACE_LLM_API_KEY
+SPACE_REASONER_API_KEY=$SPACE_LLM_API_KEY && export SPACE_REASONER_API_KEY
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 SCENE=${D0_SCENE:-scenes/deploy/srb_lunar_base_mission_b.yaml}
 if [ -n "$D0_VIDEO$D0_GPU$D0_SCENERY$D0_SCENARIO$D0_PROFILE$D0_GPU_PHYSICS" ]; then

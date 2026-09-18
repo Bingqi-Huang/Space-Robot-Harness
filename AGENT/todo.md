@@ -14,19 +14,35 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
 
 ## Now: manipulation skills (plan v4, gates G0–G5)
 
-- [x] G0: wrist RGB-D recorder, 29 viewpoints of the ORU and crate on the depot stand (truth only for scoring).
-- [x] G1: grasp candidates offline, classical (OpenCV + depth): a correct neck grasp in 28/29 views, ~0.1 s a view.
-- [x] G2: candidate rendering + VLM set-of-mark selection offline: 20/28 correct; the wrong-item flag is weak (7/29).
-      Live, with the site's payload-handle convention in the prompt, the three asks agree on the neck (g3bf).
-- [x] `pick(target, part)` as an OpenRAL procedural rSkill in the fork (find → select → approach → grasp → hold as
-      internal stages; VLM chooses once, then the part's own template closes the loop; same-target local retries only;
-      staged failure + evidence); one contract line in the boundary. `place(support)` written, not yet live.
-- [x] Ours side (plan v4 §5): movable-object facts, automatic `item_held` / `item_placed` verification recomputed from
-      the raw evidence, attempt record in the context. Guard unchanged (no posture/payload rules).
-- [ ] G3: `pick` live, unknown placement, one call per trial. Nominal holds the ORU (g3bn, and again in g3bp where
-      only the verification region was blind). `find` now aims at the structures the views measure, and the camera
-      geometry is derived, not tuned (F57). Running: nominal + ±8 cm / ±20–30° placements + a perturbed dock (g3bq).
+- [x] G0–G2 offline: wrist RGB-D recorder (29 views), classical candidates (28/29 with a correct neck grasp),
+      VLM set-of-mark selection (20/28; a single ask scores the same as the majority of three).
+- [x] `pick(target, part)` and `place(support)` as procedural rSkills in the fork; one contract line each at the
+      boundary; Ours-side object facts, automatic `item_held` / `item_placed`, attempt record.
+- [x] G3: `pick` live, one call per trial — nominal holds, out-of-envelope placements return the stage (g3bn, g3br).
+      Read with hindsight (F59): that gate passed on a dock that landed 6 cm short, which hid two defects.
+- [x] **`pick` works inside the agent loop (g4m)**: one call, two attempts on the same target, `item_held` verified
+      independently (jaw 0.327 rad, 11.7 cm lift, 19.5 px of item motion against 315 px expected if left behind).
+- [ ] **G4**: Mission B `covered` end to end. The agent composes it correctly and pick now works; what is left is
+      carry → `place` (never run live) → stow → dock, from g4m's snapshot before step 9.
 - [ ] `place` live, then the pick→place pair on one snapshot.
+
+## Harness gaps found on the way (F58/F59) — infrastructure, not this mission
+
+- [x] Reasoner and scene/grasp VLM both on DeepSeek's own endpoint (`deepseek-flash`); the shared gateway is gone.
+- [x] `openral_ext/workspace/`: the robot's own reach (arm kinematics sampled from the live URDF) + footprint
+      clearance decide where the rover parks; `dock_at_feature` settles each candidate with the robot's own IK.
+      The `REACH` table in the scene generator is superseded — **still to delete, with `interaction.json`'s
+      `robot.reach_m` and `d0_common`'s copy**, and the site's own work poses regenerated from the reach model.
+- [x] A skill declares the volume its tool is about to be inside (`/space/manipulation_target`); the world model
+      stops calling that measurement an obstacle. Without it no arm configuration was allowed at the ORU's handle.
+- [ ] **Two features have no legal stand at all** (`depot_stand/slot_1`, the crate on it): the hull cannot clear the
+      stand at any distance from which the arm reaches the handle. The depot needs items staged where this arm can
+      take them, or a shallower stand.
+- [ ] The PDU presses are approached from 0.20 m too far (Mission A's own record has a `move_tool` failing at 1.127 m
+      and succeeding at 1.082 m). Re-dock them from the reach model and re-run Mission A as a regression.
+- [ ] **Open and unexplained: the wrist view in `servo_*.jpg` is upside down** while `view_*.jpg` / `candidates_*.jpg`
+      are uprighted (`upright(bgr, up_cam)`). Either the servo frames merely miss that call, or the camera-above-tool
+      branch is being entered where it should not be. Settle it from the images before trusting another approach run.
 
 ## Architecture follow-ups (plan v4 §2, when touched — no big refactor)
 

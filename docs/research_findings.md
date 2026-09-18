@@ -2823,3 +2823,92 @@ were taken with the old camera and stand as such.
 that only printed distances (g3ab..g3bd) cost hours and settled nothing. The servo now writes one picture per frame
 with the tracked point, the match score, the roll correction and why a frame was rejected.
 
+### F58 — The two things that stopped `pick` being callable by the agent were not about grasping
+
+2026-09-18, runs g4a–g4h, `openral/python/rskill/src/openral_rskill/{_eye_in_hand.py,grasp_perception.py,
+procedural_pick.py}`.
+
+**1. A skill may not own a subscription it closes.** `pick` created its wrist RGB-D subscriptions per call and
+destroyed them at the end, from the worker thread that runs the skill. `rclpy` handles belong to the executor: the
+destroy raced `executor.spin()` on the runner's own thread, which died with `InvalidHandle` -- and with it every later
+goal on that runner, including the ones the agent had not sent yet. The symptom (each capability after the first
+returning "no result") pointed at the boundary, the capability server and the agent in turn; none of them was at
+fault. Sensor streams are now the *node's*, created once and never destroyed; the skill borrows them. The general
+rule for this codebase: a skill may create work for the executor, never take work away from it.
+
+**2. The vision model's latency is set by the request, and the request was ours to choose.** Every G4 attempt before
+g4h died at stage `select` on a vision-language call that never returned. Measured and excluded, in this order:
+gateway health (three concurrent asks answered in 12.7 s, all ten choices correct), concurrency (sequential was
+*slower*), the GIL (9.3 s with four camera pump threads running), CPU load (24 cores, load 13), a proxy (the runner's
+environment has none -- the "proxied process" was my own shell), stale keep-alive sockets, and the SDK version (raw
+`httpx` timed out identically). What was left was the request itself, and it reproduced on demand with the same
+recorded frames:
+
+| what the one request carried | bytes | two trials |
+|---|---|---|
+| overview + both marked views, full size | 265 KB | 60 s no answer, 16 s |
+| both views side by side, 448 px wide each | 69 KB | 60 s no answer, 45 s |
+| **one marked view** | **54 KB** | **15 s, 7 s** |
+
+`select` now asks one question per marked view, carrying that view alone, and stops at the first view that answers;
+on three real frames it answered in 12, 74 and 78 s and chose the neck mark in every one. The overview left the
+request: the item's identity is carried by the words, and the separate `item_visible` / `what_is_visible` fields left
+with it -- a choice of null is the same answer, and a model spends its time on what it is asked to write. The three
+concurrent asks became one on the G2 dataset's own evidence: a single answer and the majority of three both scored
+20/28.
+
+**3. Why this belongs in the record.** Neither defect is about manipulation, and both would have been read as "the
+grasp method is unreliable" from the mission log alone. The harness already separates them: a call that fails because
+a remote service did not answer is recorded as `dependency_unavailable` / `requires_remote_service` and reported under
+"service outages (not the robot's doing)", not as a failed operation. A study that compares methods across an agent
+loop needs that line drawn before the numbers are collected, not after.
+
+
+### F59 — What the robot can reach is the harness's business, and what it is holding is not an obstacle
+
+2026-09-18, runs g4h–g4l, `openral_ext/workspace/{reach.py,footprint.py}`, `openral_ext/planning_scene/node.py`,
+`openral_rskill._eye_in_hand.working_on`.
+
+**1. An item in the planner's scene is an item the robot can never pick up.** Measured obstacles (F57 gap 1) put what
+the cameras see standing in the arm's work zone into MoveIt's scene, so a planned move goes round the things no map
+knows about. The ORU is one of those things. With it in the scene, no arm configuration was allowed to put the tool at
+its handle; with the same request and the measurement dropped, the pose solved. Measured at the depot, one dock pose,
+one tool orientation, `/compute_ik` with collisions on:
+
+| | measurement present | measurement dropped |
+|---|---|---|
+| tool at the handle | no solution | solves |
+| tool at the 7 cm stand-off | solves | solves |
+
+The general rule this needs is not an exception for ORUs. A skill that is working on something says which piece of the
+world its tool is about to be inside -- a sphere the size of the gripper itself, published as a collision object on
+`/space/manipulation_target` and renewed while the skill runs. The world model leaves the measurement inside that
+sphere out; everything outside it is an obstacle as before, and a declaration that stops being renewed (the skill
+ended, or died) expires within two of the model's own cycles. While the item is in the jaws the sphere follows the
+tool, which is also what makes carrying it past other structures safe. Nothing in it is item-specific: the radius is
+the tool's own dimensions, the centre is where the tool is going.
+
+**2. Where the rover parks was a table of hand-written numbers.** `interaction.py` carried `REACH = {"press": 0.45,
+"pick": 0.40, ...}`: one distance past the hull per kind of job, baked into `interaction.json` and read by the
+boundary, which docked there without ever asking the arm. A single number per job cannot be right -- the arm reaches a
+shell around its shoulder, so the distance depends on how high the work is. The 0.40 was read off a press at panel
+height and reused for a handle 0.29 m above the shoulder.
+
+The replacement is a model of the robot, not of the site: `openral_ext/workspace/reach.py` samples the arm's own
+kinematics from the live URDF (the model MoveIt plans with) on the working branch the skills use, and bins the tool
+poses it can hold by point and approach direction; `footprint.py` says how close the hull may come to the surveyed
+structures, with the dock's own measured error as the margin. `dock_at_feature` now proposes stands from the reach
+map, rules out the ones the hull cannot take, and settles each with the robot's own IK -- one docking error nearer and
+further as well, because that is how accurately a dock lands. A feature with no such stand is answered before the
+rover drives anywhere: *the rover cannot park anywhere that lets the arm work here*.
+
+**3. What the survey then said about the site.** Running that decision over every interaction point: the three PDU
+panels were being approached from 0.20 m too far (their presses worked at the edge of the envelope -- Mission A's own
+record has a `move_tool` failing at 1.127 m and succeeding at 1.082 m), and two features -- `depot_stand/slot_1` and
+the crate staged on it -- have no legal stand at all: the hull cannot clear the stand at any distance from which the
+arm reaches the handle. That is a fact about the scene the robot can now state, instead of a mission that fails at the
+last centimetre.
+
+**4. Why G3 looked fine.** The G3 gate passed at a dock that landed 6 cm short of its work pose, which was enough for
+the measured-obstacle problem to stay hidden behind a stand-off that happened to be reachable. A gate that only ever
+runs one placement measures the luck of one dock; the reach model is what turns that into a statement about the site.

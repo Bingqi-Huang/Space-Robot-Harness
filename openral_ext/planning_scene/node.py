@@ -106,9 +106,22 @@ class PlanningSceneNode(Node):
                                      lambda m, c=cam: self.depth.__setitem__(c, m), qos_profile_sensor_data)
             self.create_subscription(CameraInfo, f"/openral/cameras/{cam}/camera_info",
                                      lambda m, c=cam: self.info.__setitem__(c, m), qos_profile_sensor_data)
+        # what a skill is working on: the sphere it says its tool is about to occupy (`_eye_in_hand.working_on`).
+        # An item the planner treats as an obstacle is an item the robot can never take hold of (research repo F58).
+        self.working_on: tuple[float, np.ndarray, float] | None = None
+        self.create_subscription(CollisionObject, "/space/manipulation_target", self.on_working_on, 10)
         self.create_timer(0.5, self.tick)
         self.create_timer(1.0, self.measure)
         self.get_logger().info(f"planning scene: {len(self.static)} site structures, measured obstacles from wrist + front depth")
+
+    def on_working_on(self, m: CollisionObject) -> None:
+        if m.operation == CollisionObject.REMOVE or not m.primitives:
+            self.working_on = None
+            return
+        p = m.primitive_poses[0].position
+        self.working_on = (m.header.stamp.sec + m.header.stamp.nanosec * 1e-9, np.array([p.x, p.y, p.z]),
+                           float(m.primitives[0].dimensions[0]))
+        self.working_frame = m.header.frame_id
 
     def T(self, target: str, source: str):
         try:
@@ -153,6 +166,21 @@ class PlanningSceneNode(Node):
             pm = pm[keep]
         return pm
 
+    def minus_the_job(self, pts: np.ndarray) -> np.ndarray:
+        """Drop what a skill says its tool is about to be inside. A declaration that stops being renewed within two of
+        this node's own cycles is gone: a skill that ended, or died, leaves no hole in the world."""
+        if self.working_on is None:
+            return pts
+        stamp, centre, radius = self.working_on
+        if self.get_clock().now().nanoseconds * 1e-9 - stamp > 2.0:
+            self.working_on = None
+            return pts
+        T = self.T("map", getattr(self, "working_frame", "chassis_base_link"))
+        if T is None:
+            return pts
+        c = T[:3, :3] @ centre + T[:3, 3]
+        return pts[np.linalg.norm(pts - c, axis=1) > radius]
+
     def measure(self):
         """Publish what the cameras see standing in the arm's work zone as one rebuilt collision object."""
         base = self.T("map", "chassis_base_link")
@@ -163,6 +191,9 @@ class PlanningSceneNode(Node):
             return
         near = np.linalg.norm(pts[:, :2] - base[:3, 3][:2], axis=1) < ZONE_M
         pts = pts[near]
+        pts = self.minus_the_job(pts)
+        if not len(pts):
+            return
         floor = float(np.percentile(pts[:, 2], 5))  # the ground, as these very points measured it
         cols = columns(pts, floor)
         o = CollisionObject()
