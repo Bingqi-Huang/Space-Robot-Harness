@@ -169,6 +169,20 @@ def quat_to_mat(x, y, z, w):
                      [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
 
 
+#: the logistics record's item names (the equipment catalogue is keyed by them)
+ITEM_NAMES = {"spare_oru": "spare ORU (orbital replacement unit, gold MLI-covered box)", "spare_crate": "cargo crate (white case)"}
+
+
+def held_item(a: dict) -> dict:
+    """The named catalogue item's envelope, for the skill to keep the carried item clear of the rover and supports."""
+    if "item" not in a:
+        return {}
+    key = next(k for k, n in ITEM_NAMES.items() if a["item"] in (k, n))
+    c = item_catalogue(IX["objects"][key])
+    return {"held_item": {"size_m": c["size_m"], "handle_above_base_m": c["handle_height_above_base_m"],
+                          "neck_height_m": c["grasp_interface"]["dimensions_m"]["neck_height"]}}
+
+
 def lower(capability: str, a: dict) -> dict:
     """Contract arguments -> the rSkill's goal_params (the D0 checks' settings, F51)."""
     if capability == "navigate_to_pose":
@@ -206,10 +220,10 @@ def lower(capability: str, a: dict) -> dict:
     if capability == "release":
         return {"mode": "open", "timeout_s": 8.0}
     if capability == "pick":
-        return {"target": a["target"], "part": a["part"]}
+        return {"target": a["target"], "part": a["part"], **held_item(a)}
     if capability == "place":
         # a named support is fixed infrastructure: its surveyed point goes to the skill, which puts it in the rover frame
-        return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"],
+        return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"], **held_item(a),
                 **({"release_constraint": a["release_constraint"]} if "release_constraint" in a else {})}
     if capability == "press":
         # nothing to lower: the skill finds the target in its own camera, and where to stand off and how far to press
@@ -296,7 +310,7 @@ class CapabilityServer(Node):
 
     def manifest(self):
         """The logistics record as mission control holds it: the depot slots as staged, the items' catalogue data."""
-        names = {"spare_oru": "spare ORU (orbital replacement unit, gold MLI-covered box)", "spare_crate": "cargo crate (white case)"}
+        names = ITEM_NAMES
         slots = {IX["objects"][k]["support"].split("/")[1]: names[k] for k in names}
         items = {names[k]: item_catalogue(IX["objects"][k]) for k in names}
         return {"depot_stand": slots, "items": items}

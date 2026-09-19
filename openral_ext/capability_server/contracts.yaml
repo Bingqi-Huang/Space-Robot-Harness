@@ -233,6 +233,7 @@ effects:
     inputs:
       target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
       part: [string, true, "the contact region to hold, described semantically; include applicable interface constraints from the equipment catalogue"]
+      item: [string, false, "the item's name in the equipment catalogue; the skill then keeps its catalogued size clear of the rover while carrying"]
     default_deadline_s: 900
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-pick
@@ -250,6 +251,7 @@ effects:
     inputs:
       support: [string, true, "a surveyed place point of type place from the site map, e.g. pdu_1_shelf/shelf"]
       release_constraint: ["string(unconstrained|below_overhang)", false, "the grasp interface's release constraint from equipment knowledge; default unconstrained"]
+      item: [string, false, "the held item's name in the equipment catalogue; the skill then brings its catalogued size over the support clear of the support's edges"]
     default_deadline_s: 600
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-place

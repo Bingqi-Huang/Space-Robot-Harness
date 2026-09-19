@@ -17,8 +17,8 @@ while the previous one still has an unverified fix in it.
 - [x] Fragile vetoes → evidence (zero-triangle permission, insertion free-rays); selected mark width/range in context.
 - [ ] g8v (no STOP_ON_FAILURE, g8b before_step_10): does the model recover pick failures and reach PDU-1 holding?
 - [ ] Repeat pick+carry from the same snapshot to judge stability at mission level (recoveries counted).
-- [ ] bring_in drives joint4 to its stop; servo command winds up 0.4–0.75 rad at a stop (release to measured).
-- [ ] Carry: ORU pivots 16–32 deg on the neck, swings pry jaw to 0.23; head interlock retains it. Watch only.
+- [x] Carry root cause: bring_in pulled the ORU onto the rear deck (lag, pivot, jaw prying). Envelope now checked.
+- [ ] Fresh graph (new shelf) → pick → carry → place with `item`; confirm no deck contact, over reached, placed.
 
 ## Mission B backlog
 
@@ -35,7 +35,7 @@ while the previous one still has an unverified fix in it.
       `drive limits: carrying … lever_m` in `capability_server.log` and `item_still_held` after the dock at PDU-1.
 - [x] The carry holds for a drive (F63 §1): `bring_in()` (lever 1.144 → 0.838 m) plus carrying drive limits; g5m
       completed the depot → PDU-1 leg with the payload verified held on arrival.
-- [ ] `place` (deferred until pick is stable): `over` sweeps at carry height; hanging ORU hits the 0.50 m shelf (g8s stall, g8t drop). Raise item clear of support first, from re-measured hang.
+- [ ] `place`: shelf enlarged, envelope raised over support, over tolerance 3 cm; validate live.
 - [x] Removed the pick manifest’s site-specific standard-handle grasp hint; choice must use the image and caller intent.
 - [ ] Stow + dock at the far end: never reached either, and likely to hit the same wall as Mission A (below).
 - [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.

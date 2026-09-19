@@ -3777,3 +3777,20 @@ check remains (planning_scene/node.py). (2) Insertion free-ray observation is re
 27 mm pick against the catalogue's 12 mm neck is visible to the model. Kept: target-drift gate, closure pose check,
 empty-jaw and lift checks (confirmed problems). `restart_runtime.py` also restarts the planning_scene node.
 g8v runs without STOP_ON_FAILURE from g8b before_step_10, stopping after a verified dock at PDU-1.
+
+**Carry and place root cause (g8s bag vs the robot's collision model).** After bring_in the ORU's box overlapped
+the rover's deck collision box by 13–93 mm (x) and 60–105 mm (z) for the whole carry: bring_in had pulled the
+hanging item onto the rear deck. That one fact explains the 0.4–0.75 rad joint lag, the 16–32 deg pivot and the
+jaw prying. Nothing checked it: state validity saw the arm and gripper, never the item. Offline, live MoveIt with
+the catalogue envelope attached reports held_item vs chassis_base_link/base_link at those configurations and
+nothing against the robot just after the lift. Fix (openral 0179a1d): the envelope (upright square prism over any
+yaw, extended by the neck length it can slide) joins every state-validity check while held; world objects are
+exempt (the measured scene holds the item itself); bring_in may raise before walking in; place travels over the
+support with the envelope above it and drops it on release. Boundary: pick/place take an optional catalogue `item`.
+
+**Shelf.** The PDU shelf (0.42 x 0.56 m, back strip 0.20 m above the plate) left 2.4 cm behind a centred ORU; both
+g8s and g8t struck the back strip (far edge 4.64–4.66 m vs strip 4.627 m). User approved a larger shelf: 0.60 x
+0.72 m, place point at the plate centre, ~10 cm clear (SRB 6839574). Regenerated site boxes are now axis-aligned
+(the committed ones were skewed min-area rectangles). place's over tolerance 1.0 cm → 3 cm / 0.08 rad (a third of
+the clearance). The evaluator's window (±12 / ±18 cm, 15 deg) already exceeds what the new shelf allows; unchanged.
+Needs a fresh graph (the running Isaac holds the old shelf).

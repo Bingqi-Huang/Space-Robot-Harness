@@ -30,7 +30,8 @@ Current order: **finish Mission B → press live → Mission A → baselines/fre
 - OpenRAL branch `feat/manipulation-contracts`, 6154482 (manipulation fixes) + 56ce9b8 (method documentation).
 - SRB `feat/lunar-base-scene`: 1928821 commits shared gripper friction and sensor depth-return semantics.
 - GUI Isaac had already exited; stale agent/check/launch and tagged graph processes were torn down explicitly.
-- F78: close-in fix (openral f925430); fragile vetoes → evidence (2a24b9c + planning_scene); g8v tests recovery.
+- F78: close-in fix; fragile vetoes → evidence; carried-item envelope in collision checks (openral 0179a1d);
+  larger PDU shelf (SRB 6839574, needs a fresh graph). g8v tests model recovery on the old graph.
   place `over` stalled 1.1 cm, item still in jaws. g8r: VLM chose 27 mm pedestal; no width-vs-catalogue check yet.
 - Only graph g8m_contact retained; runtime 1505904, scene 1504068 (restarted for g8v). Recheck PIDs before control.
 - g8p/g8q bags closed; no diagnostic skill. g8q cleanup restored geometry/ACM. Recheck PIDs before control.
