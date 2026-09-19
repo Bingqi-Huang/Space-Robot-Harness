@@ -5,7 +5,9 @@ Run: python3 evaluation/smoke_test_logic.py
 """
 from pathlib import Path
 
+from evaluation.artifact_delta import artifact_delta
 from evaluation.baselines.plexil_normalize import normalize_capability_server_log, normalize_plexil_check_log
+from evaluation.engineering_worklog import add_note, start_session, stop_session, total_active_seconds
 from evaluation.rows import extract_row
 from evaluation.scenario_schema import iter_manifests, load_certificate
 from evaluation.tables import bootstrap_ci, success_rate_table, wilson_ci
@@ -104,6 +106,37 @@ def test_plexil_check_log_normalizes_synthetic_fixture(tmp_path=Path("/tmp/eval_
     assert events[2].capability == "navigate_to_feature" and events[2].success is True
 
 
+# ── engineering_worklog: start/note/stop round-trips through a real log file ──
+def test_engineering_worklog_round_trip(log=Path("/tmp/eval_smoke_worklog.jsonl")):
+    log.unlink(missing_ok=True)
+    sid = start_session(log, extension_id="vlm_scene_query", method="ours", engineer="smoke_test")
+    add_note(log, "wired locate_in_view contract, testing offline")
+    stopped = stop_session(log, reason="validation suite passed")
+    assert sid == stopped
+    assert total_active_seconds(log, extension_id="vlm_scene_query") >= 0.0
+    log.unlink()
+
+
+def test_engineering_worklog_rejects_double_start(log=Path("/tmp/eval_smoke_worklog2.jsonl")):
+    log.unlink(missing_ok=True)
+    start_session(log, extension_id="x", method="ours", engineer="smoke_test")
+    try:
+        start_session(log, extension_id="x", method="ours", engineer="smoke_test")
+        raise AssertionError("expected RuntimeError: a session is already open")
+    except RuntimeError:
+        pass
+    finally:
+        stop_session(log)
+        log.unlink()
+
+
+# ── artifact_delta: a real commit range, grouped by ours' own frozen-artifact patterns ──
+def test_artifact_delta_real_commit_range():
+    delta = artifact_delta("ours", "main~15", "main", _REPO_ROOT)
+    assert any("contracts.yaml" in k for k in delta.by_type), delta.by_type
+    assert delta.other_files  # some changed files fall outside the frozen set -- must not be silently dropped
+
+
 check("all_scenario_manifests_load", test_all_scenario_manifests_load)
 check("extract_row_success_run", test_extract_row_success_run)
 check("extract_row_failure_run", test_extract_row_failure_run)
@@ -113,4 +146,7 @@ check("bootstrap_ci_is_centred_on_the_mean", test_bootstrap_ci_is_centred_on_the
 check("success_rate_table_end_to_end", test_success_rate_table_end_to_end)
 check("plexil_capability_log_normalizes_real_fixture", test_plexil_capability_log_normalizes_real_fixture)
 check("plexil_check_log_normalizes_synthetic_fixture", test_plexil_check_log_normalizes_synthetic_fixture)
+check("engineering_worklog_round_trip", test_engineering_worklog_round_trip)
+check("engineering_worklog_rejects_double_start", test_engineering_worklog_rejects_double_start)
+check("artifact_delta_real_commit_range", test_artifact_delta_real_commit_range)
 print("ALL SMOKE CHECKS PASSED")
