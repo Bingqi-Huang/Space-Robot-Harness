@@ -14,8 +14,9 @@ One field is an explicit DRAFT hook per the task, not a final rule:
 The four `evaluator_*_count` fields (§14.3/§5.5 metric 6's physical-violation half, decided --
 see `docs/evaluator_violations.md`) are computed by `evaluation/violations.py` from
 `<run_dir>/evaluator/events.jsonl` (the external evaluator's own recorder,
-`experiments/evaluator_recorder/recorder.py`) plus `capability_server.log` and, when present, the
-`robot_motion` rosbag. `None` when the recorder was not attached to the run -- never a fabricated 0.
+`experiments/evaluator_recorder/recorder.py`, which records the pose signals it needs itself -- no
+rosbag dependency) plus `capability_server.log`. `None` when the recorder was not attached to the run,
+or when it was attached but a needed pose was never resolved -- never a fabricated 0.
 """
 from __future__ import annotations
 

@@ -14,9 +14,11 @@ CSV: every table is produced by a script reading normalized rows.
   classes (`docs/evaluator_violations.md`, the decided definition): unintended
   robot contact, carried-item drop, collateral change, execution during an active
   e-stop/fault. Reads `<run_dir>/evaluator/events.jsonl`
-  (`experiments/evaluator_recorder/recorder.py`'s own output), `capability_server.log`
-  and, when present, the `robot_motion` rosbag. `None` per class when the recorder
-  was not attached to the run.
+  (`experiments/evaluator_recorder/recorder.py`'s own output, including the poses
+  it records itself from `/tf` -- no rosbag dependency) and `capability_server.log`.
+  `None` per class when the recorder was not attached, or a needed pose never
+  resolved; a mission that structurally has nothing of a class (e.g. Mission A has
+  no carried item) is a genuine `0`.
 - `tables.py` -- `wilson_ci`/`bootstrap_ci` (§15), `success_rate_table()` and
   `violation_table()` (the four evaluator classes, summed per method x coverage),
   stratified by method x coverage. `python3 -m evaluation.tables --rows-dir <dir>`.
