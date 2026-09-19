@@ -39,7 +39,7 @@ from typing import Any
 import yaml
 
 from openral_ext.run_manifest.capability_registry import resolve_capability_registry
-from openral_ext.run_manifest.revisions import submodule_revisions
+from openral_ext.run_manifest.revisions import research_repo_revision, submodule_revisions
 from openral_ext.run_manifest.schemas import RunManifest
 
 __all__ = ["RunManifestWriter"]
@@ -146,6 +146,7 @@ class RunManifestWriter:
             seed=seed,
             dashboard_port=self._dashboard_port,
             rosbag_enabled=self._rosbag,
+            research_repo_revision=research_repo_revision(self._repo_root),
         )
         self._write_yaml("run_manifest.yaml", self._manifest.model_dump())
         self._write_yaml(

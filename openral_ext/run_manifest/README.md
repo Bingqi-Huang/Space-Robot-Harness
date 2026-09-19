@@ -61,12 +61,26 @@ one and why — never silently missing, never a fabricated stand-in):
 
 ## Layout
 
-- `schemas.py` — `RunManifest` (Pydantic), the generic run header.
-- `revisions.py` — `submodule_revisions()`, pure, no ROS/sim.
+- `schemas.py` — `RunManifest` (Pydantic), the generic run header. Now also
+  carries the method-comparison axis (`method`, `research_repo_revision`,
+  `plexil_revision`, `europa_revision`, `operator_event_log_path`) -- §12/§19.
+- `revisions.py` — `submodule_revisions()`, `research_repo_revision()`,
+  `baseline_revision()` (PLEXIL/EUROPA, built outside this repo, best-effort).
+  Pure, no ROS/sim.
 - `capability_registry.py` — `resolve_capability_registry()`, pure, no ROS/sim.
 - `writer.py` — `RunManifestWriter`, the orchestration (subprocess launch,
   rosbag, trace query, finalize). The only piece that needs a live process
   to exercise past the file-writing logic itself.
+- `backfill.py` — `backfill_run_manifest()`: a post-hoc §19-layout dict for a
+  run directory `RunManifestWriter` never wrapped (every dev run under
+  `artifacts/runs/*/` so far, launched by `run_d0.sh` directly). Read-only,
+  never launches anything -- this tool must not start or attach to a
+  simulation. Returns a plain dict, not `RunManifest`: old runs cannot
+  honestly satisfy that model's required fields (`command`/`cwd` are unknown).
+- `freeze.py` — `list_method_artifacts()` / `plan_freeze()`, execution_plan.md
+  §13.1 steps 5-6. `plan_freeze` is dry-run by default and has never been run
+  with `dry_run=False` -- no freeze tag exists yet. See `docs/freeze_audit.md`
+  for the checklist to run before it ever is.
 - `__main__.py` — `python -m openral_ext.run_manifest --config <scene.yaml>`.
 - `smoke_test_logic.py` — offline checks (no ROS/sim/pytest) against real
   fixtures: `python3 openral_ext/run_manifest/smoke_test_logic.py`.

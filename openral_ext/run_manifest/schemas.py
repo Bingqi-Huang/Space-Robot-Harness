@@ -53,9 +53,30 @@ class RunManifest(BaseModel):
     method: str = Field(
         default="generic_openral",
         description=(
-            "The only real condition today — Phase B2 has no baseline-comparison "
-            "axis yet (execution_plan.md §21 items 5-6, PLEXIL/EUROPA, not "
-            "started). `method_config.yaml` is written with this same value; "
-            "there is nothing else real to put in a fuller method_config yet."
+            "'ours' | 'plexil' | 'europa_plexil' | 'generic_openral' (the last is the "
+            "pre-baseline-axis default some callers still pass). §21 items 5-6 (PLEXIL, "
+            "EUROPA) build the other two conditions; 'generic_openral' is not a fourth "
+            "experimental condition, just this field's old default."
         ),
+    )
+    # §12/§19: "git commits of frozen mission/domain artifacts" + "PLEXIL/EUROPA/OpenRAL/SRB
+    # revisions". openral_revision.txt/srb_revision.txt (already written, see writer.py) cover two
+    # of those four; these three fields are the rest. Each is None (never a fabricated value) when
+    # that method/repo has no real source yet -- see docstrings.
+    research_repo_revision: str | None = Field(
+        default=None, description="This outer repo's own HEAD commit -- was missing before; openral/srb had it, this repo did not."
+    )
+    plexil_revision: str | None = Field(
+        default=None,
+        description="`git -C <PLEXIL_HOME> rev-parse HEAD`, PLEXIL_HOME from docs/baselines/plexil.md's pin. "
+                     "None when PLEXIL_HOME is unset or not a git checkout -- PLEXIL is built outside this "
+                     "repo (not a submodule), so this is best-effort, not guaranteed.",
+    )
+    europa_revision: str | None = Field(
+        default=None, description="Same idea as plexil_revision. None today -- the EUROPA baseline has not been built (todo.md item 1)."
+    )
+    operator_event_log_path: str | None = Field(
+        default=None,
+        description="Path (relative to run_dir) to the §13.2 human-interaction event log, when the operator "
+                     "console (experiments/operator_console/) was attached to this run.",
     )
