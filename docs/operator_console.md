@@ -1,76 +1,113 @@
 # Operator console -- mechanism only, protocol is a pending user decision
 
-execution_plan.md §13.2 "Human-interaction event logging". Builds the receiving +
-logging mechanism (`experiments/operator_console/console.py`); does NOT decide the
-operator PROTOCOL (when the agent should escalate, what authority level a given
-request implies, how an operator's answer feeds back into the agent's next step) --
-that is a pending user decision this file does not make.
+execution_plan.md §13.2 "Human-interaction event logging". Builds the operator request/answer
+MECHANISM across Ours, PLEXIL and the EUROPA host, plus the console that answers them
+(`experiments/operator_console/console.py`). Does NOT decide the operator PROTOCOL (when a
+method should escalate, what authority level a given request implies, what an answer *means* to
+the requester beyond an explicit continue/abort) -- that stays a pending user decision.
 
-## What exists today (read directly, not inferred)
+## The mechanism (built here)
 
-- `space_runtime/tools.py` defines `REQUEST_TOPIC = "/space/operator/request"` and
-  `REPORT_TOPIC = "/space/operator/report"`, and renders `report_to_operator` /
-  `request_operator` as model-facing tools that decode into
-  `openral_core.EmitPromptTool(target_topic=..., text=...)`.
-- `openral_core.schemas.EmitPromptTool`'s own docstring says it "publish[es] on
-  `target_topic`" as a `PromptStamped` message
-  (`header: std_msgs/Header`, `text: string`, `metadata_json: string` --
-  `openral/packages/msgs/msg/PromptStamped.msg`).
-- **But `space_runtime/agent.py`'s `Agent.dispatch()` (lines ~139-144) intercepts
-  `EmitPromptTool` itself**: it logs a local `tool_proposed` + `operator_report`/
-  `operator_request` event to `ours/events.jsonl` and returns immediately. It never
-  calls the generic OpenRAL path that would actually publish a `PromptStamped`
-  message. **Confirmed by reading the code, not assumed**: no `create_publisher` for
-  either topic exists anywhere in `space_runtime/`.
-- Either tool call sets `facts["terminal"]` (`space_runtime/facts.py`), and
-  `Agent.run()`'s loop condition is `while facts["terminal"] is None` -- so **both
-  `report_to_operator` and `request_operator` end the autonomous run outright**,
-  the same as reaching the step budget. There is no live wait-for-reply.
-- The only field an operator's answer could flow back through is
-  `facts["approvals"]`, filled by an `approval_granted` event
-  (`facts.py` reducer) and read by `space_runtime/guard.py`'s
-  `approval_required` check -- but **no `approval_granted` event has ever appeared
-  in any run's log**, and nothing produces one. It would have to be hand-appended
-  to `events.jsonl` and the agent restarted with `--resume`.
-- `ros/plexil_capability_adapter` has **no operator-related code at all** (`grep -rl
-  operator` returns nothing) -- no `RequestOperator` PLEXIL `Command` exists.
+One channel, three topics (`openral_msgs/PromptStamped`: `header`, `text`, `metadata_json`),
+shared by every method:
 
-## What this console builds
+- `/space/operator/request` -- a method asks; `metadata_json` carries `{"request_id"}` it mints.
+- `/space/operator/report`  -- a method's final report (no reply expected, but the console
+  interaction still logs one -- see console behaviour below).
+- `/space/operator/reply`   -- the console's answer, `metadata_json` echoing `request_id` plus
+  `{authority_level, interaction_id, start_wall_t, end_wall_t}` the console itself assigns.
 
-`experiments/operator_console/console.py`: an rclpy node subscribing
-`/space/operator/request` and `/space/operator/report` (`openral_msgs/PromptStamped`),
-a blocking CLI that prompts the operator for a reply to each message received, and an
-`OperatorEventLog` that appends `interaction_start` / `interaction_message` (both
-directions) / `interaction_end` / `clarification_request` / `escalation_request` /
-`human_command` to `<run_dir>/operator/events.jsonl`, each with an ALFUS
-`authority_level` (`mission > strategic_goal > tactical_goal > mission_task > route >
-autopilot > servo`) and a timestamp -- never inferred from chat timestamps after the
-fact (§13.2's explicit instruction), always recorded at the moment the event happens.
+**Ours** (`space_runtime/agent.py`, `Agent.dispatch()`): `request_operator` publishes on
+`/space/operator/request`, records an `operator_request_sent` event, then blocks (`queue.SimpleQueue.get()`
+fed by a `PromptStamped` subscription on `/space/operator/reply`, filtered by `request_id`; the
+background executor keeps spinning, so this blocks the reasoning loop only, not any ROS thread)
+until the matching reply arrives, then records an `operator_answered` event with the console's
+authority level and timestamps. Neither event kind is in `space_runtime/facts.py`'s reducer, so
+`facts["terminal"]` is never touched -- the run is not terminal and the next step proceeds.
+`report_to_operator` now actually publishes on `/space/operator/report` (previously: local event
+only, confirmed by reading the code) and still ends the run via the existing `operator_report`
+event/`facts["terminal"]`. `space_runtime/context.py`'s `render()` takes the raw event list
+alongside `facts` and renders an `## OPERATOR EXCHANGES` section straight off
+`operator_request_sent`/`operator_answered` events (facts.py is untouched, per the constraint
+below) -- mission-generic, no decision logic about what the answer means.
+`space_runtime/report.py`'s mission report gets the same exchanges under "Operator exchanges
+during the run".
 
-Verified against a synthetic publisher (`--selftest`, ROS_DOMAIN_ID=94, never the
-simulation's domain 77): a `PromptStamped` published on `/space/operator/request` is
-received, the operator's stdin reply is logged, `interaction_start`/
-`interaction_message`x2/`interaction_end` land in `operator/events.jsonl` with a
-shared `interaction_id`. `evaluation/rows.py::_hir` reads this file when present.
+**`space_runtime/facts.py` is owned by another session and was not edited.** If an operator's
+answer needs to enter the fact store itself (e.g. as `facts["approvals"]`, so
+`space_runtime/guard.py`'s `approval_required` check can read it), that reducer needs a new
+branch, e.g. `elif k == "operator_answered": ...` -- not built here.
 
-## What `space_runtime/` and `ros/plexil_capability_adapter` would need (not built here -- owned elsewhere)
+**PLEXIL** (`ros/plexil_capability_adapter/src/CapabilityAdapter.cc`): a `RequestOperator(String
+question)` Command, registered like `ExecuteCapability` (not through the generic
+capability-forwarding default handler). Publishes on `/space/operator/request`, acks
+`COMMAND_SENT_TO_SYSTEM`, and returns (`handleCommandReturn` + ack `COMMAND_SUCCESS`) only when a
+`/space/operator/reply` message with a matching `request_id` arrives -- the same async
+ack-then-return-later pattern `send()`/`ExecuteCapability`'s `result_callback` already use, so the
+Command node stays `EXECUTING` without blocking the executor thread. No mission logic: the plan
+decides when to call it and what the returned `String` means.
 
-To make this console receive anything from a **live** Ours run:
+**EUROPA host** (`baselines/europa/host.py`): a new `ask_operator(node, pub, inbox, question)`
+helper (publish + spin-and-wait for the matching reply, mirroring the other two). Both `"needs
+operator"` points (`plan["solved"]` is false; `ATTEMPTS` exhausted) now call it instead of
+breaking outright: the exchange is logged as an `operator_answered` event, and only an answer of
+exactly `"continue"` resumes the outer loop (anything else stops the run, as before) -- what a "no
+plan" state means and whether the operator can fix it stays baseline logic, per the user decision.
 
-1. `space_runtime/agent.py`'s `Agent.dispatch()` needs to actually publish a
-   `PromptStamped` on `call.target_topic` for `EmitPromptTool` (today it only logs
-   locally) -- a `create_publisher(PromptStamped, ...)` per topic, publish before (or
-   instead of) setting `facts["terminal"]`.
-2. A decision on whether `request_operator` should still end the run immediately
-   (current behavior) or block for a bounded time waiting on an `approval_granted` /
-   new event kind (e.g. `operator_answered`) this console would publish back --
-   this is the "operator PROTOCOL" pending user decision. Either way, whatever
-   consumes the operator's answer needs a new event kind in
-   `space_runtime/facts.py`'s reducer if it is not `approval_granted`.
-3. For PLEXIL to reach a human operator at all, `ros/plexil_capability_adapter` needs
-   a `RequestOperator`-style `Command` (mirroring `ExecuteCapability`) that blocks the
-   plan node on a `Lookup` or async reply, wired to the same two topics this console
-   listens on -- none of that exists today.
+## The console (`experiments/operator_console/console.py`)
 
-None of the three items above are implemented by this deliverable; `space_runtime/`
-and `ros/plexil_capability_adapter` are owned by other sessions per `AGENT/handoff.md`.
+Subscribes both request topics; for every message, gets a reply (operator stdin, or -- new -- the
+next line of `--answers-file <path>` for development, one canned answer per line, consumed in
+order) and publishes it on `/space/operator/reply` with `metadata_json` carrying the echoed
+`request_id` plus the console's own `authority_level`/`interaction_id`/timestamps. Every exchange
+is still logged as `interaction_start` / `interaction_message` (agent, then operator) /
+`interaction_end` with an ALFUS `authority_level` to `<run_dir>/operator/events.jsonl`
+(`OperatorEventLog`, unchanged) -- `evaluation/rows.py::_hir` reads this file when present.
+`report_to_operator` messages get the same interaction lifecycle and a reply publish, even though
+nothing currently blocks on it.
+
+## PLEXIL node-level trace (§14.6 trace completeness)
+
+`baselines/plexil/Debug.cfg` turns on universalExec's own `Node:transition` debug flag (its
+default debug config is `./Debug.cfg`, and every `d0_plexil_*` check script runs with
+`cwd=baselines/plexil`, so this is picked up automatically, no CLI change needed).
+`d0_plexil_mission_a_check.py` and the new `d0_plexil_operator_check.py` both now persist
+universalExec's *full* stdout to `<log_dir>/plexil_node_trace.log` (the `EXEC` log line itself
+still keeps only a 4-line tail). `evaluation/baselines/plexil_normalize.py` gained
+`normalize_plexil_node_trace()`, parsing `Transitioning <node> ... to EXECUTING` lines into their
+own `execution_started` `CommonEvent`s with `plan_node_id` set; `normalize_plexil_check_log()`
+appends these automatically when a `plexil_node_trace.log` sits next to `check_log`. No attempt to
+join a node to the capability it dispatches (not represented in `check.log`'s format, and no
+per-capability interpretation belongs in a normalizer).
+
+## Verified offline (ROS_DOMAIN_ID=95, never 77 -- never the simulation)
+
+- **Ours**: `Agent.dispatch()` called directly with a synthetic `request_operator` `EmitPromptTool`
+  against the real console (`--answers-file`, scripted) and a stub boundary (the real
+  `capability_server` needs SRB assets this worktree's empty submodule doesn't have; a stub
+  `ActionServer`/`Service` satisfies `Agent.__init__`'s `wait_for_server`/`wait_for_service` gate
+  only -- `RequestOperator`'s own path never calls the boundary). Confirmed: the loop blocks, the
+  console's reply resolves it, `operator_answered` lands in `events.jsonl`,
+  `facts["terminal"]` stays `None`, and the answer appears in the next `HarnessRenderer.render()`
+  output under `## OPERATOR EXCHANGES`. A follow-up `report_to_operator` dispatch then set
+  `facts["terminal"]["kind"] == "operator_report"` and the console logged both interactions
+  (`type: request_operator` then `type: report_to_operator`).
+- **PLEXIL**: `baselines/plexil/plans/smoke/RequestOperatorSmoke.plx` (compiled with `plexilc -c`)
+  run through `universalExec` against the same console + stub boundary. Full round trip: `Ask` node
+  calls `RequestOperator`, blocks, the console's scripted answer resolves it, `Report` node
+  `pprint`s the answer. `plexil_node_trace.log` carries every `Node:transition` line
+  (`RequestOperatorSmoke`/`Ask`/`Report`, `INACTIVE -> WAITING -> EXECUTING -> ...`);
+  `normalize_plexil_node_trace()` recovered `plan_node_id` for all three nodes from it.
+  `d0_plexil_operator_check.py` reproduces this standalone (spawns the console and stub boundary
+  itself, tears them down after).
+- **EUROPA**: `host.ask_operator(node, pub, inbox, question)` called directly against the console
+  (scripted answer `"continue"`) -- publishes, blocks, resolves with the matching `request_id` and
+  the console's `authority_level`. The full `host.py` loop (actual NDDL planning) was not run: the
+  EUROPA planner binary is built only in a different worktree, out of scope here.
+
+## What is still a pending PROTOCOL decision (not built here)
+
+When a method should call `request_operator`/`RequestOperator`/reach a "needs operator" state,
+what authority level a given request implies, and what an answer other than a literal
+continue/abort should change about the mission -- all deliberately left to the user's separate
+protocol research. This document and the code above build only the request/answer mechanism.

@@ -8,13 +8,16 @@ writes (read directly, not guessed): `PLAN`/`EXEC`/`STEP`/`DOCK`/`RESULT` lines,
 success, failure_kind, failure_reason, evidence`), so this normalizer can also read
 `capability_server.log` directly when `check.log`'s `STEP` lines are absent.
 
-**Known limitation, stated honestly**: `d0_plexil_mission_a_check.py` captures
-universalExec's own stdout (`exec_out`) but only logs `tail=[...][-4:]` -- the last
-4 lines -- in the `EXEC` line. Full PLEXIL node-transition output (State:
-WAITING/EXECUTING/... per plan node) is never persisted to disk by that script today,
-so `plan_node_id` is `None` on every event this normalizer produces -- there is no
-node-level PLEXIL data anywhere on disk to recover it from. Capability-level
-Command/Lookup traffic (what `STEP`/`CAPABILITY` lines carry) IS recovered.
+**Node-level trace (§13.2/§14.6)**: `d0_plexil_mission_a_check.py` and
+`d0_plexil_operator_check.py` both persist universalExec's full stdout to
+`<log_dir>/plexil_node_trace.log` (the `EXEC` line itself keeps only a 4-line tail) --
+`baselines/plexil/Debug.cfg` turns on universalExec's own `Node:transition` debug flag, so
+that file carries one line per PLEXIL node state transition. When it sits next to
+`check_log`, `normalize_plexil_node_trace` turns it into its own `execution_started`
+`CommonEvent`s, one per node entering `EXECUTING`, each carrying `plan_node_id` -- a
+mechanical read of the trace (node id, timestamp), no attempt to match a node to the
+capability it dispatches (that pairing is not represented in `check.log`'s own format
+and no per-capability interpretation belongs in a normalizer).
 
 **No real PLEXIL run exists on disk right now** (F52's run "p1" was cleaned up per
 AGENT.md's debug-artifact-cleanup rule). This module was verified against a REAL
@@ -31,15 +34,34 @@ from pathlib import Path
 
 from evaluation.baselines.common_schema import CommonEvent
 
-__all__ = ["normalize_plexil_check_log"]
+__all__ = ["normalize_plexil_check_log", "normalize_plexil_node_trace"]
 
 _LINE_RE = re.compile(r"^([A-Z_]+) (\{.*\})\s*$")
+_TRANSITION_RE = re.compile(r"Transitioning (\S+) \S+ from (\S+) to (\S+) at ([\d.]+)")
+
+
+def normalize_plexil_node_trace(trace_log: Path) -> list[CommonEvent]:
+    """One `execution_started` `CommonEvent` per `Node:transition` line landing on `EXECUTING`
+    (see module docstring). `t` is universalExec's own plan-relative clock, as the trace line
+    carries it -- not resynchronised to `check_log`'s wall/sim clocks."""
+    events: list[CommonEvent] = []
+    seq = 0
+    for line in trace_log.read_text(encoding="utf-8", errors="replace").splitlines():
+        m = _TRANSITION_RE.search(line)
+        if not m or m.group(3) != "EXECUTING":
+            continue
+        events.append(CommonEvent(kind="execution_started", seq=seq, t=float(m.group(4)), method="plexil",
+                                   plan_node_id=m.group(1)))
+        seq += 1
+    return events
 
 
 def normalize_plexil_check_log(check_log: Path) -> list[CommonEvent]:
-    """One `CommonEvent` per `PLAN`/`EXEC`/`STEP` line in `check_log`. `DOCK`/`RESULT`/
-    `READY`/`TF`/`PROBE`/`MISSION` lines are evaluator bookkeeping, not trace events, and
-    are skipped (same convention `evaluation/rows.py` uses for `check.log`)."""
+    """One `CommonEvent` per `PLAN`/`EXEC`/`STEP` line in `check_log`, plus every node
+    transition in a sibling `plexil_node_trace.log` when one is on disk (see module
+    docstring). `DOCK`/`RESULT`/`READY`/`TF`/`PROBE`/`MISSION` lines are evaluator
+    bookkeeping, not trace events, and are skipped (same convention `evaluation/rows.py`
+    uses for `check.log`)."""
     events: list[CommonEvent] = []
     seq = 0
     for line in check_log.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -67,6 +89,11 @@ def normalize_plexil_check_log(check_log: Path) -> list[CommonEvent]:
         else:
             continue
         seq += 1
+    trace_log = check_log.parent / "plexil_node_trace.log"
+    if trace_log.exists():
+        for e in normalize_plexil_node_trace(trace_log):
+            events.append(e.model_copy(update={"seq": seq}))
+            seq += 1
     return events
 
 

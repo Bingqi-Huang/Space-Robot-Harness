@@ -2,27 +2,27 @@
 
 A small rclpy node + CLI: subscribes `/space/operator/request` and `/space/operator/report`
 (`openral_msgs/PromptStamped` -- the type `openral_core.EmitPromptTool` names in its own
-docstring), lets an operator type an answer, and appends
+docstring), lets an operator answer (typed on stdin, or read from a scripted-answers file for
+development), publishes the answer back on `/space/operator/reply` (matched to the request by the
+`request_id` its metadata_json carries, echoed from the request), and appends
 `interaction_start`/`interaction_message`/`interaction_end`/`clarification_request`/
 `escalation_request`/`human_command` events with an ALFUS `authority_level` and timestamps to
 `<run_dir>/operator/events.jsonl`.
 
-Today nothing actually publishes on those two topics: `space_runtime/agent.py`'s `dispatch()`
-handles `EmitPromptTool` by logging a local `operator_report`/`operator_request` event and
-returning -- it never calls into the generic OpenRAL path that would publish `PromptStamped`
-(confirmed by reading `Agent.dispatch()`, not inferred). See `docs/operator_console.md` for
-exactly what `space_runtime/` and `ros/plexil_capability_adapter` would need for this console to
-receive anything from a live run; this module only builds the receiving/logging mechanism and
-proves it against a synthetic publisher (`--selftest`), never against the simulation.
+`space_runtime/agent.py`'s `Agent.dispatch()` publishes a `PromptStamped` per `EmitPromptTool` and,
+for `request_operator`, blocks the reasoning loop on this console's reply; `ros/plexil_capability_adapter`'s
+`RequestOperator` Command and `baselines/europa/host.py`'s operator escalation use the same three
+topics, so one console serves all three methods.
 
-The operator PROTOCOL (when to escalate, what counts as which authority level, how an answer
-flows back to the agent) is a pending user decision -- this file does not encode one. It logs
-whatever the operator types, tagged with whatever `--authority-level` they pass.
+The operator PROTOCOL (when to escalate, what counts as which authority level, what a given answer
+means to the requester) is a pending user decision -- this file does not encode one. It logs
+whatever the operator (or the scripted-answers file) says, tagged with whatever
+`--authority-level` was passed, and echoes it back verbatim.
 
 Run (system ROS Humble Python, matching this project's other rclpy scripts):
     source /opt/ros/humble/setup.bash && source <openral>/install/setup.bash
     ROS_DOMAIN_ID=94 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST \\
-        python3 experiments/operator_console/console.py --run-dir <run_dir>
+        python3 experiments/operator_console/console.py --run-dir <run_dir> [--answers-file <file, one answer per line>]
 """
 from __future__ import annotations
 
@@ -36,6 +36,7 @@ ALFUS_AUTHORITY_LEVELS = ("mission", "strategic_goal", "tactical_goal", "mission
 
 REQUEST_TOPIC = "/space/operator/request"
 REPORT_TOPIC = "/space/operator/report"
+REPLY_TOPIC = "/space/operator/reply"
 
 
 class OperatorEventLog:
@@ -58,47 +59,63 @@ class OperatorEventLog:
 
 class Interaction:
     """One request/report -> operator-answer exchange. `interaction_id` pairs `interaction_start`
-    with the `interaction_end` that closes it (see `evaluation/rows.py::_hir`)."""
+    with the `interaction_end` that closes it (see `evaluation/rows.py::_hir`). `request_id`, when
+    the incoming message's metadata_json carried one, is echoed back on the reply so the requester
+    (Ours, the PLEXIL adapter, the EUROPA host) can match it to the call it is blocked on."""
 
-    def __init__(self, log: OperatorEventLog, *, kind: str, authority_level: str, source_topic: str, text: str):
+    def __init__(self, log: OperatorEventLog, *, kind: str, authority_level: str, source_topic: str, text: str,
+                 request_id: str | None):
         if authority_level not in ALFUS_AUTHORITY_LEVELS:
             msg = f"authority_level must be one of {ALFUS_AUTHORITY_LEVELS}, got {authority_level!r}"
             raise ValueError(msg)
-        self.log, self.interaction_id = log, uuid.uuid4().hex[:12]
-        log.append("interaction_start", interaction_id=self.interaction_id, type=kind,
-                    authority_level=authority_level, source_topic=source_topic)
+        self.log, self.interaction_id, self.authority_level, self.request_id = log, uuid.uuid4().hex[:12], authority_level, request_id
+        start_ev = log.append("interaction_start", interaction_id=self.interaction_id, type=kind,
+                              authority_level=authority_level, source_topic=source_topic)
+        self.start_wall_t = start_ev["wall_t"]
         log.append("interaction_message", interaction_id=self.interaction_id, from_="agent", text=text)
 
     def operator_reply(self, text: str) -> None:
         self.log.append("interaction_message", interaction_id=self.interaction_id, from_="operator", text=text)
 
     def end(self) -> None:
-        self.log.append("interaction_end", interaction_id=self.interaction_id)
+        end_ev = self.log.append("interaction_end", interaction_id=self.interaction_id)
+        self.end_wall_t = end_ev["wall_t"]
 
 
-def run_cli(run_dir: Path, *, default_authority: str) -> None:
-    """Blocking loop: subscribes the two topics, prompts the operator for a reply on stdin for
-    every message received, logs the full exchange. Ctrl+C to stop. Assumes `rclpy.init()` has
-    already been called by the caller (so a self-test publisher can share one context)."""
+def run_cli(run_dir: Path, *, default_authority: str, answers: list[str] | None = None) -> None:
+    """Blocking loop: subscribes the two request topics, gets a reply for every message received
+    (operator stdin, or the next line of `answers` in scripted-answer mode for development), logs
+    the full exchange and publishes the reply on `REPLY_TOPIC`. Ctrl+C to stop. Assumes
+    `rclpy.init()` has already been called by the caller (so a self-test publisher can share one
+    context)."""
     import rclpy
     from openral_msgs.msg import PromptStamped
     from rclpy.node import Node
 
     log = OperatorEventLog(run_dir)
     node = Node("space_operator_console")
+    reply_pub = node.create_publisher(PromptStamped, REPLY_TOPIC, 10)
 
     def on_message(topic: str, kind: str):
         def cb(msg: PromptStamped) -> None:
-            interaction = Interaction(log, kind=kind, authority_level=default_authority, source_topic=topic, text=msg.text)
+            request_id = json.loads(msg.metadata_json or "{}").get("request_id")
+            interaction = Interaction(log, kind=kind, authority_level=default_authority, source_topic=topic,
+                                      text=msg.text, request_id=request_id)
             print(f"\n[{kind}] {msg.text}\n> ", end="", flush=True)
-            reply = input()
+            reply = answers.pop(0) if answers is not None else input()
+            print(reply) if answers is not None else None  # scripted mode: echo what was "typed"
             interaction.operator_reply(reply)
             interaction.end()
+            reply_pub.publish(PromptStamped(text=reply, metadata_json=json.dumps({
+                "request_id": request_id, "interaction_id": interaction.interaction_id,
+                "authority_level": interaction.authority_level,
+                "start_wall_t": interaction.start_wall_t, "end_wall_t": interaction.end_wall_t})))
         return cb
 
     node.create_subscription(PromptStamped, REQUEST_TOPIC, on_message(REQUEST_TOPIC, "request_operator"), 10)
     node.create_subscription(PromptStamped, REPORT_TOPIC, on_message(REPORT_TOPIC, "report_to_operator"), 10)
-    print(f"space_operator_console: logging to {log.path}, listening on {REQUEST_TOPIC} and {REPORT_TOPIC}")
+    print(f"space_operator_console: logging to {log.path}, listening on {REQUEST_TOPIC} and {REPORT_TOPIC}, "
+         f"replying on {REPLY_TOPIC}" + (f" (scripted, {len(answers)} canned answers)" if answers is not None else ""))
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -116,10 +133,11 @@ def log_human_initiated(run_dir: Path, kind: str, authority_level: str, text: st
     OperatorEventLog(run_dir).append(kind, authority_level=authority_level, text=text)
 
 
-def _selftest(run_dir: Path) -> None:
-    """Proves the receive/log mechanism with a synthetic publisher -- never the simulation.
-    Caller is responsible for ROS_DOMAIN_ID (must not be 77, the live graph's domain) and for
-    `rclpy.init()`/`shutdown()` (shared with `run_cli` so both use one context)."""
+def _selftest(run_dir: Path, *, answers: list[str] | None = None) -> None:
+    """Proves the receive/reply/log mechanism with a synthetic publisher -- never the simulation.
+    Also subscribes `REPLY_TOPIC` itself and prints the round trip. Caller is responsible for
+    ROS_DOMAIN_ID (must not be 77, the live graph's domain) and for `rclpy.init()`/`shutdown()`
+    (shared with `run_cli` so both use one context)."""
     import threading
 
     from openral_msgs.msg import PromptStamped
@@ -127,17 +145,21 @@ def _selftest(run_dir: Path) -> None:
 
     pub_node = Node("selftest_publisher")
     pub = pub_node.create_publisher(PromptStamped, REQUEST_TOPIC, 10)
+    pub_node.create_subscription(PromptStamped, REPLY_TOPIC,
+                                 lambda m: print(f"(selftest) reply received: {m.text!r} metadata={m.metadata_json}"), 10)
 
     def publish_once():
         time.sleep(1.0)
         m = PromptStamped()
         m.text = "selftest: does the console receive and log this?"
+        m.metadata_json = json.dumps({"request_id": "selftest-1"})
         pub.publish(m)
 
     threading.Thread(target=publish_once, daemon=True).start()
-    print("(selftest) publishing one PromptStamped on", REQUEST_TOPIC, "-- reply on stdin, Ctrl+C after")
+    print("(selftest) publishing one PromptStamped on", REQUEST_TOPIC,
+         "-- reply on stdin (or scripted), Ctrl+C after")
     try:
-        run_cli(run_dir, default_authority="mission_task")
+        run_cli(run_dir, default_authority="mission_task", answers=answers)
     finally:
         pub_node.destroy_node()
 
@@ -153,6 +175,8 @@ def main() -> None:
     ap.add_argument("--authority-level", choices=ALFUS_AUTHORITY_LEVELS)
     ap.add_argument("--text")
     ap.add_argument("--selftest", action="store_true", help="Prove the mechanism with a synthetic publisher, no simulation.")
+    ap.add_argument("--answers-file", type=Path,
+                     help="Development mode: one canned answer per line, consumed in order instead of prompting stdin.")
     args = ap.parse_args()
 
     if args.log_event:
@@ -169,12 +193,13 @@ def main() -> None:
         os.environ["ROS_DOMAIN_ID"] = args.ros_domain_id
     if args.discovery_range:
         os.environ["ROS_AUTOMATIC_DISCOVERY_RANGE"] = args.discovery_range
+    answers = args.answers_file.read_text().splitlines() if args.answers_file else None
     rclpy.init(args=None)
     try:
         if args.selftest:
-            _selftest(args.run_dir)
+            _selftest(args.run_dir, answers=answers)
         else:
-            run_cli(args.run_dir, default_authority=args.default_authority_level)
+            run_cli(args.run_dir, default_authority=args.default_authority_level, answers=answers)
     finally:
         rclpy.shutdown()
 

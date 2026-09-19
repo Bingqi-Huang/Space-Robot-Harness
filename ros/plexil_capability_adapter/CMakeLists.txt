@@ -6,6 +6,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_action REQUIRED)
 find_package(space_harness_msgs REQUIRED)
+find_package(openral_msgs REQUIRED)
 
 # PLEXIL Release 6 install (research repo docs/baselines/plexil.md): headers and libraries under $PLEXIL_HOME
 set(PLEXIL_HOME $ENV{PLEXIL_HOME} CACHE PATH "PLEXIL installation")
@@ -18,7 +19,7 @@ find_library(PLEXIL_UTILS PlexilUtils PATHS ${PLEXIL_HOME}/lib REQUIRED NO_DEFAU
 add_library(CapabilityAdapter SHARED src/CapabilityAdapter.cc)
 target_include_directories(CapabilityAdapter PRIVATE ${PLEXIL_HOME}/include)
 target_link_libraries(CapabilityAdapter ${PLEXIL_APP} ${PLEXIL_INTFC} ${PLEXIL_VALUE} ${PLEXIL_UTILS})
-ament_target_dependencies(CapabilityAdapter rclcpp rclcpp_action space_harness_msgs)
+ament_target_dependencies(CapabilityAdapter rclcpp rclcpp_action space_harness_msgs openral_msgs)
 
 install(TARGETS CapabilityAdapter LIBRARY DESTINATION lib)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
