@@ -71,8 +71,11 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
   `[D0_RESTART_BOUNDARY=1] OURS_MISSION=b [OURS_RESUME_FROM=<log> OURS_RESUME_BEFORE_STEP=<n> | OURS_RESET=1]
   setsid nohup experiments/launch/lunar_base_d0/attach_d0.sh <graph log> <new log> &`
   — `OURS_RESET=1` puts the scene back to the graph's own start (`<graph log>/snapshots/initial.pt`, saved at boot).
-  `D0_RESTART_BOUNDARY=1` when `capability_server` changed. **Changing skill code needs a new graph** (the runner
-  imports it once per process); changing `space_runtime/` needs only a new attach.
+  **`D0_RESTART_BOUNDARY=1` reloads changed skill code too** — the rSkills run inside `capability_server`, which
+  that flag kills and restarts. **Never boot a new graph to test a skill change**: attach with
+  `OURS_RESUME_FROM=<earlier log> OURS_RESUME_BEFORE_STEP=<n>` and the scene goes back to just before that step,
+  rover parked where it was. Booting Isaac and driving to the depot again costs ~30 min a turn and buys nothing
+  (g6a/g6b/g6c each paid it for a `pick` change).
 - Take a held graph down: `experiments/launch/lunar_base_d0/teardown_d0.sh <graph log>` — **the absolute path**.
 - Read a pick failure from its pictures, not its numbers: `<log>/evidence/pick_*/` has the overview, each view with
   its numbered candidates, `servo_NN.jpg` per approach frame, `stall_*.jpg` where an arm stopped short, and

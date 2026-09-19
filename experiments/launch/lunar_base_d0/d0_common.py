@@ -70,8 +70,17 @@ n.create_subscription(Odometry, "/odom", lambda m: vel["odom"].append((round(m.t
 truth = {}  # latest /openral/pose_truth: evaluator-only
 from sensor_msgs.msg import JointState
 jaw = {}  # EG2 jaw joint (rad): 0.10 closed on nothing, 0.82 open -- "clamped, not hanging" is measured, not inferred
-n.create_subscription(JointState, "/srb/env0/robot/joint_states",
-                      lambda m: jaw.update(q=m.position[m.name.index("eg2_joint1")]) if "eg2_joint1" in m.name else None, 10)
+arm = {}  # the seven arm joints (rad), by name: a snapshot restore is checked against these, never trusted (F65)
+
+
+def _on_joint_states(m):
+    if "eg2_joint1" in m.name:
+        jaw.update(q=m.position[m.name.index("eg2_joint1")])
+    arm.update({k: float(v) for k, v in zip(m.name, m.position) if k in ARM_JOINTS})
+
+
+ARM_JOINTS = frozenset(f"joint{i}" for i in range(1, 8))
+n.create_subscription(JointState, "/srb/env0/robot/joint_states", _on_joint_states, 10)
 n.create_subscription(Odometry, "/openral/pose_truth", lambda m: truth.update(p=m.pose.pose.position, q=m.pose.pose.orientation), 10)
 T0 = time.time()
 sim = dict(t=0.0)  # SRB's /clock: a rendering graph runs at a fraction of real time, and every skill

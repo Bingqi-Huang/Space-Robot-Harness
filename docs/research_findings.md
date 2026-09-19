@@ -3145,3 +3145,78 @@ never been run, and I moved on to build `press` and then to run ma1–ma4 on top
 stopped it. The standing rule — finish the thing under test before opening the next one — is not a style preference;
 it is what keeps a claim like §1's attached to a run that actually happened. Both halves of this finding exist
 because the rule was applied late rather than early.
+
+### F64 — The visual servo was chasing a goal that moved when the tool moved
+
+2026-09-19, runs g5p (two failures), g6a (one). `openral_rskill.procedural_pick.{approach,take_standoff,grasp_rotation}`.
+
+**1. The symptom looked like a tracking problem and was not.** Three `approach` stages in a row ended with "lost
+sight of the chosen grasp 8 frames running while still 13–15 cm away", and the honest reading of that message — the
+template tracker gives up when the item fills the frame — is wrong. The pictures say something else: in g5p's
+`servo_10` the part is dead centre with 10.3 cm to go, and nine frames later in `servo_19` it has been swept to the
+right edge of the image with **13.2 cm** to go. The tool was further from the grasp than it had been, and the whole
+scene had rotated. The `take_standoff` trace of g6a shows the same thing numerically: the error runs
+0.012 → 0.009 → 0.016 → 0.020 → 0.012 m and the TCP walks a closed loop, never converging.
+
+**2. The goal pose was a function of the tool's own pose.** `goal_now()` recomputed the grasp orientation on every
+frame from `view = p_base - view_base`, where `view_base` was updated to the *current* camera position on every
+successful measurement. The camera is bolted to the gripper. `grasp_rotation` points the tool's z away from the
+camera (`if np.dot(z, view_b) < 0: z = -z`), so once the tool swung past the part far enough for the camera to
+change sides, z flipped 180°, the tool swung back, the camera changed sides again — a bang-bang limit cycle, not a
+slow divergence. Offline, with the part's geometry held fixed and only the camera's position varied, the commanded
+tool z flips from `[-1,0,0]` to `[+1,0,0]` between 180° and 240° of camera swing.
+
+**3. The fix is to decide the approach direction once.** Which side a grasp is taken from is a property of the view
+that *chose* it, not of where the tool has got to. `set_view_dir()` fixes it at that moment; the servo loop keeps
+updating **where** the part is and never **which side** it is taken from. The same offline check with the direction
+fixed gives a spread of exactly 0.0 over every tool pose — the loop is open.
+
+**4. Why four earlier picks succeeded.** g5h/i/k/m are not evidence against any of this. A bang-bang loop of this
+shape is conditionally stable: when the stand-off already puts the tool near the grasp orientation, the sign never
+flips and the servo converges in a few centimetres. The 2/3 success rate was the initial angle, not chance — which
+is exactly the kind of thing a success rate hides, and the reason "it works, four times running" was the wrong
+claim to record in F61 §1 without reading the failures underneath it.
+
+**5. What the fix uncovered (g6b).** With the loop open, the first live approach behaved as it never had: 43 frames
+tracked and **0 missed** through the stand-off, the tool's roll within a tenth of a degree, the part square in the
+middle of every frame. It still failed — and the message was the same sentence ("lost sight … 8 frames running"),
+which is why the sentence was never a diagnosis. The tracker was matching at **score 1.00** and throwing the match
+away: `no depth where it matches`. A grasp that holds is a thin one (12 mm across, ~20 px at 0.37 m) and behind it
+is sky, which returns no range; the depth image had no value at a pixel the template was certain of. The pixel is
+the strong measurement in that geometry and the range is the weak one — and the arm's own motion already implies
+the range. `measure()` now takes the predicted distance when the match is confident enough (0.9) and marks it
+`depth_predicted`, so a trace says which frames were ranged and which were inferred. This is not the same mistake
+as §2 wearing a different hat: the prediction is the tracked point carried through the camera's *measured* motion,
+so the distance still comes from the arm, never from the match. Offline: with sky behind the neck the old path
+loses a 1.00 match and the new one returns 0.360 m marked predicted; given a real depth image both return the
+measured 0.352 m.
+
+### F65 — A resume is a claim about the whole robot, and nobody was checking the arm
+
+2026-09-19, runs g6a–g6e. `experiments/launch/lunar_base_d0/{ours_mission_check.py,d0_common.py}`, `AGENT/handoff.md`.
+
+**1. Three graphs were booted to test a one-line change.** `handoff.md` said "changing skill code needs a new graph",
+and it was wrong: the rSkills run inside `capability_server`, which `attach_d0.sh`'s `D0_RESTART_BOUNDARY=1` kills and
+restarts. Every `pick` change from F64 was therefore paid for with eight minutes of Isaac Sim start-up and twenty
+minutes of driving to the depot — about an hour and a half, to reach a scene that `OURS_RESUME_BEFORE_STEP=7` puts
+back in **twenty seconds**. The note is corrected. The user's instruction was blunter than the fix: don't start from
+the beginning; the simulator has snapshots.
+
+**2. The first resume measured something other than the scene it named.** g6d restored `before_step_7` with the base
+within 3 mm of its saved estimate — and the arm still in the half-way posture the killed run had left it in. `pick`'s
+first overview was taken pressed against a panel, the ORU was not in the frame at all, and the call failed at `find`
+with "none of the structures in view from here is the described item". That reads as a perception failure. It was a
+resume nobody had checked: the joint target that holds the arm is a live ROS action, not part of the physics state
+the snapshot saves, so whatever the previous run was commanding can outlive a restore.
+
+**3. So the restore is now verified, like everything else here.** The snapshot's metadata records the seven joint
+angles beside the localization estimate; after a restore the joints are read back; a mismatch is driven to the saved
+posture through the boundary and read back again; and a mismatch that survives that stops the run rather than
+continuing into a scene that is not the one named. `RESTORED_ARM` says which of those happened. This is the same
+principle the method applies to effects, turned on the harness's own development tooling — which had been trusted
+precisely because it was "just" tooling.
+
+**4. What it cost to not have it.** Two of the three `pick` diagnoses in F64 came out of runs whose approach never
+started, and one whole run (g6d) was spent on a failure that existed only because the resume was silently wrong. A
+development loop that cannot restore a known state is not faster than booting from scratch; it is slower, because it
+looks like it worked.

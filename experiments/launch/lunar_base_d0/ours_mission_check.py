@@ -71,6 +71,26 @@ def put_scene_back(snap: Path) -> dict:
         p_est, yaw_est, _ = est_pose()
         if math.hypot(p_est[0] - est["x"], p_est[1] - est["y"]) < 0.03:
             break
+    # A restore is a claim about the whole robot, and the arm is half of it. g6d resumed a `pick` with the base put
+    # back to 3 mm and the arm still in the half-way posture the killed run had left it in, so the skill's first
+    # overview was taken pressed against a panel and the ORU was not in the frame at all -- a failure that looked
+    # like perception and was a resume that had not been checked (F65). Nothing here trusts "restore" without
+    # reading the joints back.
+    if est.get("arm"):
+        spin(1.0)
+        want = [est["arm"][f"joint{i}"] for i in range(1, 8)]
+        off = {j: round(arm[j] - q, 3) for j, q in est["arm"].items() if j in arm and abs(arm[j] - q) > 0.05}
+        if off:
+            # The arm is commanded back rather than assumed back: the joint target that holds it is a live ROS
+            # action, not part of the saved physics state, so whatever posture the killed run left behind can
+            # out-argue the restore. Driving it there also puts the controller's own target where the snapshot says.
+            dispatch("joints", {"joint_targets": want, "tolerance_rad": 0.05}, deadline=90.0)
+            spin(1.0)
+            off = {j: round(arm[j] - q, 3) for j, q in est["arm"].items() if j in arm and abs(arm[j] - q) > 0.05}
+        log("RESTORED_ARM", matches=not off, off_rad=off or None)
+        if off:
+            raise SystemExit(f"the restore did not put the arm back: {off} rad off the snapshot. The scene is not the "
+                             f"one the snapshot names, and a run from here would be measuring something else.")
     log("RESTORED", snapshot=str(snap), estimate=est, truth_error=base_err([est["x"], est["y"]], est["yaw"]))
     return est
 
@@ -136,7 +156,8 @@ def save_before_next_step(evs):
     if ended and k != saved:
         path = snap_dir / f"before_step_{k + 1}.pt"
         p, yaw, _ = est_pose()
-        path.with_suffix(".json").write_text(json.dumps(dict(x=float(p[0]), y=float(p[1]), yaw=float(yaw), sim_t=sim["t"])))
+        path.with_suffix(".json").write_text(json.dumps(dict(x=float(p[0]), y=float(p[1]), yaw=float(yaw),
+                                                            sim_t=sim["t"], arm=dict(arm))))
         snapshot("save", path)
         saved = k
 
