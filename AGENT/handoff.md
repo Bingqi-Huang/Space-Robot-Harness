@@ -10,7 +10,9 @@ Order in force: **finish Mission B → press live → Mission A → baselines/fr
 - **Session M (manipulation, live sim):** owns the one running simulation and Mission B pick/carry/place.
   Owns these files: `openral/python/rskill/src/openral_rskill/{_eye_in_hand,procedural_pick,procedural_place,
   grasp_perception}.py`, pick/place manifests, `openral_ext/planning_scene/`, pick/place contract lines,
-  `space_runtime/facts.py`, `experiments/launch/lunar_base_d0/`, SRB `assets/lunar_base/`.
+  `space_runtime/facts.py`, `experiments/launch/lunar_base_d0/{attach_d0.sh,run_d0.sh,ours_mission_check.py,
+  restart_runtime.py,teardown_d0.sh}`, SRB `assets/lunar_base/`. Baseline code: `baselines/plexil/`,
+  `experiments/launch/lunar_base_d0/d0_plexil_*` (free for Session P).
 - **Session P (parallel, offline only):** takes the "Parallel track" in `todo.md`. It must not start or attach to a
   simulation, must not touch processes or the live graph, and must not edit Session M's files.
 - **Never `git checkout`/switch branches in the main working tree**: the live graph imports OpenRAL from
