@@ -1,0 +1,26 @@
+// Reusable library node (execution_plan §11.1): drive the base (Nav2) to a site feature's approach point, then
+// close onto its work pose (dock_at_feature standoff 0). Both are capabilities of the common boundary
+// (openral_ext/capability_server/contracts.yaml), positional arguments in the contract's input order; no mission
+// logic in the adapter (ros/plexil_capability_adapter).
+//
+// Result comes back through `ok` (InOut), not node outcome: a LibraryCall node's own outcome does not mirror its
+// callee's by default (verified against 6.1.3 -- see docs/baselines/plexil.md), so every caller gates its next
+// step on `ok` (PreCondition), the idiom PLEXIL's own regression tests use for a typed result
+// (compilers/plexil/test/input/library-call1.ple).
+//
+// Nominal path only -- no retry/back-off yet. Failure kinds and reported stages for navigate_to_feature /
+// dock_at_feature are still moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD.
+
+Boolean Command navigate_to_feature(String, Real);
+Boolean Command dock_at_feature(String, Real, Real);
+
+DriveAndDock:
+{
+  In String feature;
+  In Real standoff_m;    // navigate_to_feature's stand-off along the feature's normal
+  In Real approach_m;    // dock_at_feature's entry corridor length
+  InOut Boolean ok;       // true on entry (the caller already gated on it); false on exit if either leg failed
+
+  Nav:  { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(feature, standoff_m); }
+  Dock: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(feature, 0.0, approach_m); }
+}
