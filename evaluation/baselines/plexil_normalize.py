@@ -17,11 +17,11 @@ node-level PLEXIL data anywhere on disk to recover it from. Capability-level
 Command/Lookup traffic (what `STEP`/`CAPABILITY` lines carry) IS recovered.
 
 **No real PLEXIL run exists on disk right now** (F52's run "p1" was cleaned up per
-AGENT.md's debug-artifact-cleanup rule) -- `smoke_test_logic.py` tests the
-`STEP`/`CAPABILITY`-line parsing against a REAL `capability_server.log` fixture from a
-non-PLEXIL D0 run (`artifacts/runs/pf1`, same boundary, same log format) and the
-`PLAN`/`EXEC`-line parsing against a small synthetic fixture built to the documented
-format, clearly labeled synthetic, not presented as a captured run.
+AGENT.md's debug-artifact-cleanup rule). This module was verified against a REAL
+`capability_server.log` fixture from a non-PLEXIL D0 run (`artifacts/runs/pf1`, same
+boundary, same log format) for `STEP`/`CAPABILITY`-line parsing, and against a small
+synthetic fixture built to the documented format (clearly labeled synthetic, not a
+captured run) for `PLAN`/`EXEC`-line parsing.
 """
 from __future__ import annotations
 

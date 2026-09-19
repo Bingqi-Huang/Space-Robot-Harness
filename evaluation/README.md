@@ -16,9 +16,6 @@ CSV: every table is produced by a script reading normalized rows.
 - `artifact_delta.py` -- diff summarizer between two freeze tags (§14.4).
 - `baselines/` -- PLEXIL log normalization into the common event schema (§14.6); the
   EUROPA token schema slot.
-- `smoke_test_logic.py` -- offline checks (no ROS/sim/pytest) against real
-  `experiments/scenarios/` manifests and `artifacts/runs/*` dev runs:
-  `PYTHONPATH=. python3 evaluation/smoke_test_logic.py`.
 
 ## What this does NOT do
 
