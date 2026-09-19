@@ -13,7 +13,7 @@ from pathlib import Path
 
 from evaluation.rows import NormalizedRunRow
 
-__all__ = ["wilson_ci", "bootstrap_ci", "success_rate_table", "load_rows"]
+__all__ = ["wilson_ci", "bootstrap_ci", "success_rate_table", "violation_table", "load_rows"]
 
 
 def wilson_ci(successes: int, n: int, *, z: float = 1.96) -> tuple[float, float, float]:
@@ -70,12 +70,41 @@ def success_rate_table(rows: list[NormalizedRunRow]) -> str:
     return "\n".join(lines)
 
 
+def violation_table(rows: list[NormalizedRunRow]) -> str:
+    """Markdown table: the external evaluator's four physical violation classes (§14.3/§5.5 metric 6,
+    docs/evaluator_violations.md), summed per (method, coverage). `evaluator-covered` is how many of
+    that group's runs had `evaluation/evaluator_recorder` attached (`evaluator_*_count is not None`) --
+    a run without it contributes nothing to the sums, not a zero, so the sums are only comparable
+    against that coverage count, not against `n`."""
+    groups: dict[tuple[str, str | None], list[NormalizedRunRow]] = {}
+    for r in rows:
+        groups.setdefault((r.method, r.coverage), []).append(r)
+    lines = [
+        "| method | coverage | n | evaluator-covered | unintended contact | dropped item | collateral change | execution during fault |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    for (method, coverage), grp in sorted(groups.items(), key=lambda kv: kv[0]):
+        covered = [r for r in grp if r.evaluator_unintended_contact_count is not None]
+
+        def total(attr: str) -> int:
+            return sum(getattr(r, attr) or 0 for r in covered)
+
+        lines.append(
+            f"| {method} | {coverage or '?'} | {len(grp)} | {len(covered)} | "
+            f"{total('evaluator_unintended_contact_count')} | {total('evaluator_dropped_item_count')} | "
+            f"{total('evaluator_collateral_change_count')} | {total('evaluator_estop_fault_execution_count')} |"
+        )
+    return "\n".join(lines)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rows-dir", type=Path, required=True, help="Directory of *.json files written by rows.extract_row")
     args = ap.parse_args()
     rows = load_rows(args.rows_dir)
     print(success_rate_table(rows))
+    print()
+    print(violation_table(rows))
 
 
 if __name__ == "__main__":
