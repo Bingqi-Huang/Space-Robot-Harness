@@ -45,6 +45,7 @@ def render(facts: dict, step: int, max_steps: int) -> str:
              + (f": {a['why']}" if a["why"] else "") + (f"; tries {_j(a['tries'])}" if a.get("tries") else "")
              + (f"; base estimate {_j(a['base_pose'])}" if a.get("base_pose") else "")
              + (f"; skill measurements {_j(a['measurements'])}" if a.get("measurements") else "")
+             + (f"; RECONCILIATION selected part vs equipment catalogue {_j(a['reconciliation'])}" if a.get("reconciliation") else "")
              + (f"; execution conditions {_j(a['execution_conditions'])}" if a.get("execution_conditions") else "")
              + (f"; the vision model saw {_j(a['vision_model_saw'])}" if a.get("vision_model_saw") else "") for a in f["attempts"][-10:]]
     out.append("## MANIPULATION ATTEMPTS (operations on items, latest last)\n" + ("\n".join(tries) or "(none yet)"))

@@ -180,7 +180,8 @@ def held_item(a: dict) -> dict:
     key = next(k for k, n in ITEM_NAMES.items() if a["item"] in (k, n))
     c = item_catalogue(IX["objects"][key])
     return {"held_item": {"size_m": c["size_m"], "handle_above_base_m": c["handle_height_above_base_m"],
-                          "neck_height_m": c["grasp_interface"]["dimensions_m"]["neck_height"]}}
+                          "neck_height_m": c["grasp_interface"]["dimensions_m"]["neck_height"],
+                          "closing_width_m": c["grasp_interface"]["closing_width_m"]}}
 
 
 def lower(capability: str, a: dict) -> dict:

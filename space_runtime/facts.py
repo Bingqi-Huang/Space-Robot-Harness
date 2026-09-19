@@ -45,6 +45,19 @@ def attempt_summary(ev: dict) -> dict:
              for a in sk.get("attempts", [])]
     if tries:
         out["tries"] = tries
+    # Reconciliation (method mechanism, not a skill filter): the part the vision model chose, as the skill measured it,
+    # against the catalogued dimension the jaws close across; within the measurement's own pixel resolution or not.
+    closing = (ev["evidence"].get("goal") or {}).get("held_item", {}).get("closing_width_m")
+    if closing:
+        for a in sk.get("attempts", []):
+            if a.get("candidate") and a.get("selection_fx"):
+                # a depth edge is a mixed foreground/background pixel: up to two pixels of doubt at each measured edge
+                resolution = 4 * a["candidate"]["depth_m"] / a["selection_fx"]
+                width = a["candidate"]["width_m"]
+                out.setdefault("reconciliation", []).append({
+                    "selected_mark": a["candidate"]["id"], "measured_width_m": round(width, 4),
+                    "catalogue_closing_width_m": closing, "measurement_resolution_m": round(resolution, 4),
+                    "consistent": abs(width - closing) <= resolution})
     find = sk.get("find") or {}
     views = [v.get("vlm", {}) for v in find.get("views", [])] + [find.get("locate", {}), find.get("select", {})]
     saw = sorted({v["what_is_visible"] for v in views if v.get("what_is_visible")})
