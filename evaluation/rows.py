@@ -5,14 +5,17 @@ Reads only what a run directory already has on disk (`check.log`, `ours/events.j
 no simulation, no ROS. A field is `None` when the source data does not exist yet
 (e.g. no interaction events were ever logged in current dev runs) -- never guessed.
 
-Two fields are explicit DRAFT hooks per the task, not final rules:
+One field is an explicit DRAFT hook per the task, not a final rule:
   - `preplanned_transition_fraction`: three draft categories (human_preauthored /
     planner_generated / agent_generated_online), left `None` until a human fixes the
     annotation rule (§14.2: "the annotation rule must be fixed before the final
     campaign") -- see `PREPLANNED_TRANSITION_CATEGORIES` below.
-  - `constraint_violation_count`: see `docs/evaluator_violations_draft.md` -- the
-    evaluator's constraint-violation list is itself a pending user decision; this row
-    only exposes the guard/effect-verifier counts the list would be built from.
+
+The four `evaluator_*_count` fields (§14.3/§5.5 metric 6's physical-violation half, decided --
+see `docs/evaluator_violations.md`) are computed by `evaluation/violations.py` from
+`<run_dir>/evaluator/events.jsonl` (the external evaluator's own recorder,
+`experiments/evaluator_recorder/recorder.py`) plus `capability_server.log` and, when present, the
+`robot_motion` rosbag. `None` when the recorder was not attached to the run -- never a fabricated 0.
 """
 from __future__ import annotations
 
@@ -22,6 +25,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from evaluation import violations
 
 __all__ = ["NormalizedRunRow", "PREPLANNED_TRANSITION_CATEGORIES", "extract_row"]
 
@@ -55,11 +60,18 @@ class NormalizedRunRow(BaseModel):
     preplanned_transition_fraction: float | None  # DRAFT hook -- see module docstring
     interaction_authority_levels: list[str]  # observed `authority_level`s, lowest listed = most human-directed
 
-    # §14.3 Trustworthiness (raw counts, computed straight from event kinds -- see docs/evaluator_violations_draft.md)
+    # §14.3 Trustworthiness (raw counts, computed straight from event kinds -- see docs/evaluator_violations.md)
     guard_denied_count: int
     guard_allowed_count: int
     execution_despite_guard_denial_count: int  # should always be 0 by construction; a nonzero value is a guard bug
     false_completion_declaration_count: int  # report_to_operator sent while mission_verdict.success is False
+
+    # §14.3/§5.5 metric 6 -- the external evaluator's physical violations, identical judging rule for
+    # every method (docs/evaluator_violations.md). None when evaluator/events.jsonl was not recorded.
+    evaluator_unintended_contact_count: int | None
+    evaluator_dropped_item_count: int | None
+    evaluator_collateral_change_count: int | None
+    evaluator_estop_fault_execution_count: int | None
 
     # §14.5/§14.6 supporting
     step_count: int
@@ -118,6 +130,7 @@ def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow
     mission = _check_log_mission(run_dir / "check.log")
     resolved_method = method or ("ours" if events else "generic_openral")
     _, family, coverage = _match_scenario_id(mission, resolved_method)
+    evaluator_signals = violations.count_violations(run_dir)
 
     guard = [e for e in events if e.get("kind") == "guard_decision"]
     allowed = [e for e in guard if e.get("outcome") == "allow"]
@@ -209,6 +222,10 @@ def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow
         guard_allowed_count=len(allowed),
         execution_despite_guard_denial_count=despite_denial,
         false_completion_declaration_count=false_completion,
+        evaluator_unintended_contact_count=evaluator_signals.unintended_contact_count,
+        evaluator_dropped_item_count=evaluator_signals.dropped_item_count,
+        evaluator_collateral_change_count=evaluator_signals.collateral_change_count,
+        evaluator_estop_fault_execution_count=evaluator_signals.estop_fault_execution_count,
         step_count=len(steps),
         trace_complete=trace_complete,
     )
