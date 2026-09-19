@@ -9,11 +9,9 @@ while the previous one still has an unverified fix in it.
 **Before anything: read `handoff.md`'s first section.** Iterating on a skill costs ~20 s (attach + resume), not
 half an hour (new graph). Three graphs were booted before this was noticed.
 
-## Now: Mission B end to end — the whole blocker is `pick`'s last 10 cm
+## Now: Mission B end to end — the blocker is where the rover stands, not the servo
 
-- [ ] **Read `artifacts/runs/g6e/` first.** It is a resume at step 7 with all three F64 fixes, and its last servo
-      frame read `hit 0.87 d 0.317 left 9.3cm` with the neck square between the fingers — nearer than any approach
-      has held. Either it grasped (then go to the carry) or it did not (then the failure is new evidence).
+- [ ] **The blocker is now the stand, not the servo** (handoff "What g6e did"): far enough to see the 12 mm neck and the arm cannot reach it; close enough to reach it and no view measures it; at the near stand `READY` no longer fits. Nothing owns base position + viewing geometry + arm reach together. Same root cause as F62 §3, F61 §1, F63 §3.
 - [x] **Three `pick` defects behind one error message** (F64), all fixed, offline-verified, committed:
       the goal orientation was a function of the tool's own pose (180° bang-bang limit cycle → `set_view_dir`);
       a 12 mm neck against sky gives no depth at a pixel matched at 1.00 (eight such frames ended the call);

@@ -31,20 +31,12 @@ one-line `pick` changes (F65 §1). The loop that works, ~20 seconds:
   the dock at the far end; the boundary now derives the angular limit from the lever (α = 0.5 / lever) so the
   payload sees the 0.5 m/s² it survived in a straight line. **That fix has still never been exercised** — every run
   since has failed earlier, in `pick`.
-- **`pick` is the blocker, and it was three defects wearing one error message** (F64). All three said "lost sight of
-  the chosen grasp 8 frames running":
-  1. **Fixed, verified.** The goal orientation was recomputed every frame from the current camera position, and the
-     camera is bolted to the tool — so the goal pose was a function of the tool's own pose, and `grasp_rotation`'s
-     "point z away from the camera" made it a 180° bang-bang limit cycle. `set_view_dir()` fixes the approach
-     direction at the view that chose the grasp. After it: **43 frames tracked, 0 missed**, roll within 0.1°.
-  2. **Fixed.** The neck is 12 mm across with sky behind it, so the depth image has no value at a pixel the
-     template matches at 1.00, and eight such frames in a row ended the call.
-  3. **Fixed (my own regression from 2).** Returning the predicted range as if measured let the caller rebuild the
-     part's point from it — the point walked down the line of sight, 10.0 cm → 36.4 cm in nineteen seconds. The
-     part is a static rigid body: an unranged frame now says "still there, still matched" and nothing about where.
-- **g6e is running as of this handoff**, resumed at step 7 with all three fixes. Its last servo frame reads
-  `hit 0.87 d 0.317 left 9.3cm` with the neck square between the fingers — nearer than any approach has held
-  before. **Read `artifacts/runs/g6e/` first: it either grasped or it did not, and that decides the next move.**
+- **`pick`'s servo is fixed** — three defects had been wearing one error message ("lost sight of the chosen grasp 8
+  frames running"), all three now settled offline and committed (F64): the goal orientation was a function of the
+  tool's own pose (a 180° bang-bang limit cycle, since the camera is bolted to the tool) → `set_view_dir()`; a
+  12 mm neck against sky gives no depth at a pixel matched at 1.00, and eight such frames ended the call; and
+  returning the predicted range as measured let the tracked point walk down the line of sight (10.0 → 36.4 cm in
+  19 s) → an unranged frame now says "still there, still matched" and nothing about where.
 - `place` has never run with a payload in the jaws. Mission B has never reached stow/dock.
 - **`press` is built and wired** (F62, F63 §3) and has **never pressed a button live**. ma4 photographed empty sky;
   `face_the_work_zone()` is the untested fix.
@@ -53,14 +45,34 @@ one-line `pick` changes (F65 §1). The loop that works, ~20 seconds:
   Nav2 will not push a raised arm into a panel; from there the arm can neither rise nor stow. **Nothing owns the
   joint feasibility of arm posture and base position.**
 
-## If g6e failed, the next thing to look at
+## What g6e showed: the blocker moved from the servo to the stand
 
-The remaining geometry, computed but never yet the cause of a failure: the wrist camera sits 0.12 m off the tool
-axis and 0.22 m behind the TCP, vertical half-FOV 21.3°. The target's angle off the camera axis is
-`atan(0.12 / (d + 0.22))` — 18.0° at 15 cm, 20.6° at 10 cm (画面最边缘), 23.2° at 6 cm (**out of frame**).
-`blind_ok_m` is 0.06, exactly where it leaves the frame, so 6–10 cm is a stretch where the part is at the very edge
-of the image and blind close-in is not yet allowed. Every failure so far happened at 13–15 cm for other reasons, so
-this has never been demonstrated — do not change it without a run that fails there.
+The F64 fixes hold — the stand-off servo reached the grasp at `pos_err 0.0038 m`, **27 frames tracked, 0 missed**,
+closing to `covered_at_m 0.0905`, nearer than any approach before. In one `pick` sequence the agent then met four
+walls and worked the base position itself:
+
+| base y | stage | outcome |
+|---|---|---|
+| −13.30 (reach model's 0.905 m) | approach | blind close-in ended `0.2 cm / **44 deg**` from the goal; on retry the grasp sat 34 cm from the tool and **all 21** stand-off combinations (`turn_deg` ±0/15/30/45 × `stand_off_m` 0.07/0.10/0.14) were unreachable |
+| −13.65 (agent drove 35 cm in) | dock | stopped 3.7 cm short, skill failed, **`base_at_commanded_pose` verified true** (dock band 0.06 m) |
+| ≈ −13.61 | find | "none of the 6 views of the item measured anything the jaws could close on" |
+| −13.5 (agent split the difference) | arm_ready | `joint6 +0.21 rad off` — the written-down `READY` does not fit this close |
+
+**Stand far enough to see the neck and the arm cannot reach it; stand close enough to reach it and no view measures
+it — and at the near stand the ready posture no longer fits.** Nothing owns the joint feasibility of base position,
+viewing geometry and arm reach: the reach model answers only for the arm, Nav2 only for the hull, `pick`'s view
+search only within whatever stand it is given, and `READY`/`STOW` are constants from when the rover parked further
+back. This is the same root cause as F62 §3 (Mission A's deadlock), F61 §1 (the written-down overview posture) and
+F63 §3 (`press` looking at empty sky): **a posture or a stand written down in advance does not know what is around
+it.** It is now the blocker for both missions, and it is a harness question, not a `pick` question.
+
+The agent recovered its way through all four by itself (drive in, split the difference, back off to
+`standoff_m 0.5`) — the model layer responds to the conflict; no component can answer it in advance.
+
+**One geometry computed but never yet the cause of a failure** (do not change it without a run that fails there):
+the wrist camera is 0.12 m off the tool axis, 0.22 m behind the TCP, vertical half-FOV 21.3°, so the target's angle
+off the camera axis is `atan(0.12 / (d + 0.22))` — 20.6° at 10 cm (image edge), 23.2° at 6 cm (out of frame).
+`blind_ok_m` is 0.06, exactly where it leaves the frame.
 
 ## User decisions (keep)
 
