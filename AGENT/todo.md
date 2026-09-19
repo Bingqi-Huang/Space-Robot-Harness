@@ -2,111 +2,74 @@
 
 Order: `execution_plan` §21 — the proposed method before the external baselines.
 Goal of this phase: Ours completes Mission A/B covered and the held-out situations, then a 1x-sim-time video.
+**Sequence in force (user): finish Mission B → `press` live → Mission A.** Two sessions work in parallel; the split
+and file ownership are in `handoff.md` ("Two sessions"). Only Session M runs a simulation.
 
-**Sequence in force (user): finish Mission B → then `press` live → then Mission A.** Do not open the next one
-while the previous one still has an unverified fix in it.
+## Session M — Mission B manipulation (live sim)
 
-**Before anything: read `handoff.md`'s first section.** Skill edits need a new runtime_node process, plus attach/resume; restarting only the capability server is insufficient.
-
-## Now: pick + carry robust through the harness (F78, user principle)
-
-- Principle: a skill check that cannot certify is evidence, not a veto; confirmed problems return typed facts and
-  the model recovers (retry / re-observe / re-dock). No per-task tuning, no mechanical parameters to the model.
-- [x] g8q stall = sag integral + posture pull in empty-jaw close-in (bag + FK replay); fixed, openral f925430.
-- [x] g8s/g8t: neck picked, carried, docked at PDU-1 held. g8r: VLM chose 27 mm pedestal. g8u: 0-triangle permission veto.
+- [x] g8q close-in stall → no sag integral / posture pull in empty-jaw close-in (openral f925430).
 - [x] Fragile vetoes → evidence (zero-triangle permission, insertion free-rays); selected mark width/range in context.
-- [ ] g8v (no STOP_ON_FAILURE, g8b before_step_10): does the model recover pick failures and reach PDU-1 holding?
-- [ ] Repeat pick+carry from the same snapshot to judge stability at mission level (recoveries counted).
-- [x] Carry root cause: bring_in pulled the ORU onto the rear deck (lag, pivot, jaw prying). Envelope now checked.
-- [ ] Fresh graph (new shelf) → pick → carry → place with `item`; confirm no deck contact, over reached, placed.
-
-## Mission B backlog
-
-- [x] **Stale runner confirmed (F66):** g7b/c loaded the actual tracker and both lifted from the original stand.
-- [x] **Carry retraction (F68/F71):** g8b retains the neck through 0.25 m retraction after contour/target-lock fixes. One successful development run; not a reliability claim.
-- [ ] **Previous stand hypothesis is unproven:** g7b/c reached a grasp from the original step-7 stand; do not repeat the old blanket unreachable diagnosis.
-- [x] **Three `pick` defects behind one error message** (F64), all fixed, offline-verified, committed:
-      the goal orientation was a function of the tool's own pose (180° bang-bang limit cycle → `set_view_dir`);
-      a 12 mm neck against sky gives no depth at a pixel matched at 1.00 (eight such frames ended the call);
-      and my own regression — returning the predicted range as measured let the part walk down the line of sight
-      (10.0 → 36.4 cm in 19 s). An unranged frame now says "still there, still matched" and nothing about where.
-- [x] **Verify the turn limit** (F63 §2) — g8b exposed scalar evidence bug; fixed path in g8c retained grip through docking:
-      the boundary derives Nav2's angular limit from the measured lever (α = 0.5 / lever). Look for
-      `drive limits: carrying … lever_m` in `capability_server.log` and `item_still_held` after the dock at PDU-1.
-- [x] The carry holds for a drive (F63 §1): `bring_in()` (lever 1.144 → 0.838 m) plus carrying drive limits; g5m
-      completed the depot → PDU-1 leg with the payload verified held on arrival.
-- [ ] `place`: shelf enlarged, envelope raised over support, over tolerance 3 cm; validate live.
-- [x] Removed the pick manifest’s site-specific standard-handle grasp hint; choice must use the image and caller intent.
-- [ ] Stow + dock at the far end: never reached either, and likely to hit the same wall as Mission A (below).
+- [x] Carry root cause (ORU on the rear deck) → catalogue envelope in every validity check; bring_in may raise.
+- [x] Place root cause (sweep at carry height, 2.4 cm shelf clearance) → envelope over support, 3 cm over tolerance,
+      shelf 0.60 x 0.72 m (SRB 6839574).
+- [ ] g8v result on the old graph: does the model recover pick failures and reach PDU-1 holding?
+- [ ] Teardown g8m_contact → fresh graph (new shelf) → pick → carry → place with `item`; check no deck contact,
+      over reached, item_placed, evaluator delivered.
+- [ ] Repeat pick+carry from one snapshot without STOP_ON_FAILURE; count mission-level success and recoveries.
+- [ ] If the VLM keeps choosing the pedestal: decide with the user between a catalogue width filter inside pick
+      (source the tolerance) and leaving it to model recovery.
+- [ ] Servo command wind-up at a joint stop (release command to measured when stalled).
+- [ ] Stow + return dock (never reached), then full Mission B covered from the initial state.
 - [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.
+- [ ] Then `press` live (never pressed a button), then Mission A's ready/stand deadlock (F62 §3).
 
-## Next: `press` live, then Mission A
+## Parallel track — Session P (offline only; no sim, no Session M files)
 
-- [x] `press(target)` built and wired (F62): locate → approach → press → retreat, `locate_point` for a target that
-      is a patch on a surface, one contract line, `pressed` verified from the robot's own kinematics.
-      `actions: ["push"]` — the controlled vocabulary has no `press` (F63 §3).
-- [ ] **`press` has never pressed anything live.** ma4 photographed empty sky; `face_the_work_zone()` derives a
-      looking posture instead of assuming one. Untested.
-- [ ] **Mission A deadlocks before it presses** (F62 §3) and no part of it is wrong: the reach model stands the
-      rover 0.905 m out; at 0.905 m the written-down `ready` posture has no collision-free path; raising the arm
-      1.5 m out and driving in stops 7 cm short because Nav2 will not push a raised arm into a panel; from there
-      the arm can neither rise nor stow. **Nothing owns the joint feasibility of arm posture and base position** —
-      the reach model asks only about the arm, Nav2 only about the hull, and `READY`/`STOW` are constants from when
-      the rover parked further back. Same disease as F61 §1, F63 §3 and F64 §2: **a written-down constant that does
-      not know what is around it is a bug until proven otherwise.**
+Pick in this order; each gets its own worktree branch, a findings section and a note in `handoff.md`.
 
-## Harness gaps — infrastructure, not this mission
+1. [ ] **EUROPA baseline build** (§21 item 6, execution_plan §11.2): pin/build NASA EUROPA, run its examples, write
+       the minimal NDDL domain for Mission A/B covered, the host with online replanning, and the EUROPA→PLEXIL
+       activity bridge. Live check later through the common boundary (Session M's sim).
+2. [ ] **PLEXIL Mission B** (§21 item 5, §11.1): covered plan, reusable library nodes, predefined recovery set,
+       over the same boundary commands (`pick`/`place` now take the optional catalogue `item`).
+3. [ ] **Experiment infrastructure** (§21 item 7, §12–§14): scenario manifests, evaluator-only success annotations,
+       run-manifest writer (§19 layout), freeze tooling (tags), closed-capability validator, and scripts that
+       compute the ALFUS measures and trustworthiness counts from `events.jsonl` + `check.log` (no hand-edited CSV).
+4. [ ] **Harness gaps in `space_runtime`/boundary** (not Session M's files): an exception inside `_execute` leaves
+       `failure_reason` blank (F62 §2); `OURS_RESET=1` reads TF before seeding AMCL (seed first); the thin guard has
+       never fired — add the explicit hard invariants/approval classes the scenarios need for H3 (§4.3, §10.2).
+5. [ ] **Held-out grounding** (§21 item 1): tie each G5 held-out case to lunar-mission literature in
+       `docs/lunar_task_catalog.md`; list scene changes needed (implemented later by Session M in SRB).
+6. [ ] **Paper drafting**: Introduction, Related Work and Method (research_content §1–§4) as LaTeX for Acta
+       Astronautica, with verified citations; no results language before measurements.
 
-- [ ] g8c/e: single-frame VLM held/identity negatives can contradict visible geometry; unknown is correct, not asserted empty. Resolve through evidence, not forced positives.
+## Harness gaps (either session, when a run needs them)
 
-- [x] Reasoner and VLM on DeepSeek's own endpoint; `openral_ext/workspace/` (the robot's reach decides the stand);
-      `/space/manipulation_target`; `held_item` + continuous held-check; carrying drive limits at the boundary;
-      **snapshot restore now verified, arm included** (F65).
-- [ ] **Cache the views within a `pick` call.** Six views are re-taken on every attempt; one `pick` costs 15–40 min
-      of wall time, and that cost is what pushes everyone (me included) toward "run it again" instead of reading
-      the evidence. This is the single biggest speed-up left.
-- [ ] Effects need the query path's error handling: an exception inside `_execute` leaves `failure_reason` empty
-      and the agent gets a blank failure (F62 §2 — it cost five steps of re-wording against a `KeyError`).
-- [ ] `item_cells` finds ~6 of the ~70 cells the grasped lid occupies, so most of what the robot is holding is
-      still an obstacle to its own clearance check.
-- [ ] `OURS_RESET=1` leaves AMCL without a pose (the reset teleports the rover, and the check re-seeds
-      `/initialpose` after reading TF): the run dies with `no TF map <- chassis_base_link`. Seed first, then read.
-      (Resume-by-step works; only the reset-to-start path has this bug.)
-- [ ] The `REACH` table in the scene generator is superseded — still to delete, with `interaction.json`'s
-      `robot.reach_m` and `d0_common`'s copy; regenerate the site's work poses from the reach model.
-- [ ] **Two features have no legal stand at all** (`depot_stand/slot_1` and the crate on it): the hull cannot clear
-      the stand at any distance from which the arm reaches the handle.
-- [ ] The guard has never fired — every effect `routine`, `invariants: []`. H3 has no evidence yet.
+- [ ] Single-frame VLM held/identity negatives can contradict visible geometry; unknown is correct, not "empty".
+- [ ] Cache the views within one `pick` call (a pick costs 15–40 min wall; `find` alone ~10 min).
+- [ ] The scene generator's `REACH` table is superseded by the reach model; delete it with `robot.reach_m` copies.
+- [ ] `depot_stand/slot_1` (crate) has no legal stand at any reach distance.
 
 ## Then
 
-- [ ] Space context variables only if the chosen scenarios exercise them.
+- [ ] Space-context variables only if the chosen scenarios exercise them.
 - [ ] 1x video run + `experiments/video/overlay.py`.
-- [ ] Baselines (§21 items 5–6: PLEXIL Mission B, EUROPA→PLEXIL), scenario manifests and freeze, Experiment I,
-      Ours-internal ablations (research_content §5.7), Experiment II.
+- [ ] Freeze, Experiment I, Ours-internal ablations (research_content §5.7), Experiment II.
 
 ## Known stack issues (fix only when a run fails on them)
 
 - Wedged rover with spinning wheels defeats AMCL; Nav2/MPPI cuts the charging station's corner.
 - MoveIt plans 15–77 s sim; an arm pushing a structure moves the rover (vc3: 7 cm).
-- Movable objects are not in MoveIt's planning scene (a skill declares its own working volume instead).
-
----
 
 ## Rules
 
 - Branch or worktree per task; delete after merge (AGENT.md §1). Clean debug/pilot artifacts.
 - Overwrite-update this file and `handoff.md`; ≤150 lines each; update at every milestone.
-- No pytest beyond upstream suites; **offline checks before one decisive live run** — every F64 fix was settled
-  offline first, and that is the only reason three of them could be separated at all.
-- No defensive coding, no corner-case guards, no hash checks, no ad-hoc patches (AGENT.md §4, F55 §5).
+- No pytest beyond upstream suites; offline checks before one decisive live run.
+- No defensive coding, corner-case guards, hash checks or ad-hoc patches (AGENT.md §4).
 - Ours gets generic improvements only; never a situation-specific solution hint (§13.1).
 - Model-facing tools are operations, not stages; no mechanical parameters in contracts (execution_plan §8.2).
-- **Never rerun a whole mission after a failure**: restore the snapshot before the failed step, fix, rerun that
-  step. Only a jaws-open snapshot is a valid resume point (F60 §1), and check `RESTORED_ARM` (F65).
-- One simulation at a time. Never navigate on truth. Measure motion in sim time.
-- **Kill only your own run's processes by explicit PID, and check afterwards that none survived** (F60 §8).
-- Replies to the user: always Simplified Chinese, plain words, concise; design choices are the user's to make.
-
-Current priority: scoped expected contact → actual grasp/transport validation → Mission B.
-OpenRAL 6154482/56ce9b8 and SRB 1928821 committed; root commit includes g8q outcome and continuation notes.
+- A check that cannot certify is evidence, not a veto; recovery belongs to the model through the harness.
+- Never rerun a whole mission after a failure: restore the jaws-open snapshot before the failed step.
+- One simulation at a time. Never navigate on truth. Kill only your own processes by explicit PID.
+- Replies to the user: Simplified Chinese, plain words, concise; design choices are the user's to make.
