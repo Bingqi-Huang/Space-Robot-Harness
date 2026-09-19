@@ -25,16 +25,21 @@ and file ownership are in `handoff.md` ("Two sessions"). Only Session M runs a s
 
 ## Parallel track — Session P (offline only; no sim, no Session M files)
 
-Pick in this order; each gets its own worktree branch, a findings section and a note in `handoff.md`.
+Worktrees `.worktree/<name>`, branches `p/<name>`, collected on `p/integration` (handoff "Session P state").
 
-1. [ ] **EUROPA baseline build** (§21 item 6, execution_plan §11.2): pin/build NASA EUROPA, run its examples, write
-       the minimal NDDL domain for Mission A/B covered, the host with online replanning, and the EUROPA→PLEXIL
-       activity bridge. Live check later through the common boundary (Session M's sim).
-2. [ ] **PLEXIL Mission B** (§21 item 5, §11.1): covered plan, reusable library nodes, predefined recovery set,
-       over the same boundary commands (`pick`/`place` now take the optional catalogue `item`).
-3. [ ] **Experiment infrastructure** (§21 item 7, §12–§14): scenario manifests, evaluator-only success annotations,
-       run-manifest writer (§19 layout), freeze tooling (tags), closed-capability validator, and scripts that
-       compute the ALFUS measures and trustworthiness counts from `events.jsonl` + `check.log` (no hand-edited CSV).
+1. [x] EUROPA build + generic host/replan/bridge on a skeleton domain (F80). [ ] Mission B NDDL domain, retry cap and
+       "near" distance into config — after the manipulation contracts settle; live check on Session M's sim.
+2. [x] PLEXIL Mission B covered on library nodes, nominal path (F79). [ ] predefined recovery set (after pick/place
+       failure kinds settle); [ ] Mission A on `press` only after `press` is fixed (user).
+3. [x] Experiment infrastructure (F81). [ ] review fixes (false-completion = reports claiming success only; drop
+       smoke tests) → re-merge into `p/integration`.
+3b. [ ] Operator mechanism (user: run pauses for the answer; researcher is the campaign operator, script in
+       development) on `p/operator-mechanism`; PLEXIL node trace persisted. [ ] Protocol from literature
+       (`docs/operator_protocol.md`, `p/operator-protocol`), then the user reviews it.
+3c. [ ] Evaluator violation list (`docs/evaluator_violations_draft.md`): explained to the user, awaiting decision.
+3d. [ ] **Merge `p/integration` into `feat/manipulation-contracts` after Session M finishes Mission B** (user), rebuild
+       the PLEXIL adapter, then delete merged `p/*` branches/worktrees and stale `feat/g0-wrist-rgbd`,
+       `fix/mission-operation-evidence`.
 4. [ ] **Harness gaps in `space_runtime`/boundary** (not Session M's files): an exception inside `_execute` leaves
        `failure_reason` blank (F62 §2); `OURS_RESET=1` reads TF before seeding AMCL (seed first); the thin guard has
        never fired — add the explicit hard invariants/approval classes the scenarios need for H3 (§4.3, §10.2).
@@ -49,6 +54,14 @@ Pick in this order; each gets its own worktree branch, a findings section and a 
 - [ ] Cache the views within one `pick` call (a pick costs 15–40 min wall; `find` alone ~10 min).
 - [ ] The scene generator's `REACH` table is superseded by the reach model; delete it with `robot.reach_m` copies.
 - [ ] `depot_stand/slot_1` (crate) has no legal stand at any reach distance.
+
+## Open questions (user deferred, 2026-09-20)
+
+- Space context + hard boundaries for H3/space-native: all capabilities are `routine`, guard fires only on estop.
+  Candidates: contact interruption (SPICE Earth visibility) + approval-required operation class; energy limit; which
+  model plays the onboard tier.
+- Held-out set: admit `route_block` (never run with a mission variant)? A3+A4 dust-fused lamp and A5 substitution do
+  not exist in the scene; Experiment II needs a new capability other than the VLM (B7).
 
 ## Then
 

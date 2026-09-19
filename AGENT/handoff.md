@@ -16,10 +16,24 @@ Order in force: **finish Mission B → press live → Mission A → baselines/fr
 - **Session P (parallel, offline only):** takes the "Parallel track" in `todo.md`. It must not start or attach to a
   simulation, must not touch processes or the live graph, and must not edit Session M's files.
 - **Never `git checkout`/switch branches in the main working tree**: the live graph imports OpenRAL from
-  `openral/python/...` (editable) and `openral/install/`. Session P works in its own worktrees:
-  `git worktree add <path> -b <branch> feat/manipulation-contracts` (research repo) and, only if needed,
-  the same inside `openral`/`space_robotics_bench`. Merge back through the user; update this file on merge.
-- Both sessions append findings as new `F79+` sections; claim a number by writing its heading first.
+  `openral/python/...` (editable) and `openral/install/`. Session P works in worktrees inside the repo:
+  `git worktree add .worktree/<name> -b p/<name> <base>` (`.worktree/` is gitignored). Merge back through the user.
+- Findings: Session P used F79–F81 (on `p/integration`); renumber on merge if Session M took them meanwhile.
+
+## Session P state (2026-09-20)
+
+- **Integration branch `p/integration`** (`.worktree/integration`) holds all Session P work, merged from
+  `p/plexil-mission-b`, `p/europa`, `p/eval-infra`. **Not merged into `feat/manipulation-contracts`** (user):
+  merge after Session M finishes Mission B, then delete the merged `p/*` branches/worktrees and the stale
+  `feat/g0-wrist-rgbd`, `fix/mission-operation-evidence` (todo). Merge touches `ros/plexil_capability_adapter`
+  (rebuild it) and `openral_ext/run_manifest/`.
+- PLEXIL (F79): Mission B covered plan on library nodes, nominal path only (`plexiltest`); recovery set waits for
+  pick/place failure kinds. Mission A keeps stage-level tools until `press` is fixed (user).
+- EUROPA (F80): native build in `~/Programs/europa`, deps `~/Programs/europa-deps`; generic host/bridge verified on a
+  base-only skeleton domain. Mission B domain waits for the manipulation contracts.
+- Evaluation (F81): manifests, run manifest/freeze (dry-run), metrics rows/tables, console, PLEXIL normalizer, worklog.
+- Running (offline): `p/operator-mechanism` (pause-for-answer for Ours/PLEXIL/EUROPA, PLEXIL node trace),
+  `p/operator-protocol` (literature-grounded protocol draft), `p/eval-infra` review fixes.
 
 ## Where Mission B stands (F78, `docs/research_findings.md`)
 
