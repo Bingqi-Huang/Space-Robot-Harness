@@ -10,6 +10,35 @@ CONTRACTS = yaml.safe_load((HERE / "contracts.yaml").read_text())
 IX = json.loads((HERE / "../../space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json").resolve().read_text())
 
 
+def item_catalogue(record: dict) -> dict:
+    """Public equipment data, not current object pose or a grasp solution.
+
+    The asset-side catalogue is the equipment specification; the scene interaction
+    export can retain older handle fields. All methods receive this same record.
+    """
+    source = Path(record["usd"]).with_suffix(".json")
+    data = json.loads(source.read_text())
+    result = {"size_m": data["size_m"], "mass_kg": data["mass_kg"],
+              "catalogue_source": str(source.relative_to(HERE.parents[1]))}
+    handle = data.get("handle")
+    if handle:
+        result["handle_height_above_base_m"] = round(handle["xyz"][2], 3)
+        if "neck_thickness_m" in handle and "head_width_m" in handle:
+            result["carry_handle"] = "T-shaped lifting eye on top"
+            result["grasp_interface"] = {
+                "type": "neck_with_overhanging_head",
+                "contact_region": "narrow neck between the transverse head and the wider mounting pedestal",
+                "engagement": "fingers close on opposite sides of the neck below the head; the head supports the lifted load",
+                "release_constraint": "below_overhang: after opening, withdraw sideways below the head before lifting clear",
+                "not_clamping_regions": ["transverse head", "wider mounting pedestal"],
+                "observation_requirement": "distinguish the neck from both the head and pedestal, and see clearance for both fingers",
+                "dimensions_m": {k.removesuffix("_m"): handle[k] for k in (
+                    "neck_thickness_m", "neck_width_m", "neck_height_m", "head_width_m", "head_depth_m")},
+                "evidence_requirement": "catalogue geometry does not locate the interface; confirm the visible part before contact",
+            }
+    return result
+
+
 def check_args(contract: dict, args: dict) -> str:
     """'' when `args` matches the contract's inputs, else the reason."""
     inputs = contract.get("inputs") or {}

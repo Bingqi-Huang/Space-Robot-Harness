@@ -13,3 +13,4 @@ string evidence_json     # robot-observable evidence after the call (estimated b
 ---
 string state             # "dispatched" | "executing"
 float32 elapsed_s
+string evidence_json       # forwarded skill event; raw evidence, not a verified physical effect

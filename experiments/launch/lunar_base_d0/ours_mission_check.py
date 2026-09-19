@@ -112,16 +112,23 @@ RESUME_FROM = os.environ.get("OURS_RESUME_FROM")
 if os.environ.get("OURS_RESET"):
     put_scene_back(INITIAL)
 elif RESUME_FROM:
-    before = int(os.environ["OURS_RESUME_BEFORE_STEP"])
-    keep, n_steps = [], 0
-    for line in (Path(RESUME_FROM) / "ours/events.jsonl").read_text().splitlines():
-        if '"kind": "tool_proposed"' in line or '"kind": "reasoner_step_failed"' in line:
-            n_steps += 1
-        if n_steps >= before:
-            break
-        keep.append(line)
-    (run_dir / "events.jsonl").write_text("\n".join(keep) + "\n")
-    put_scene_back(Path(RESUME_FROM) / f"snapshots/before_step_{before}.pt")
+    record = (Path(RESUME_FROM) / "ours/events.jsonl").read_text()
+    if os.environ.get("OURS_RESUME_BEFORE_STEP"):
+        before = int(os.environ["OURS_RESUME_BEFORE_STEP"])
+        keep, n_steps = [], 0
+        for line in record.splitlines():
+            if '"kind": "tool_proposed"' in line or '"kind": "reasoner_step_failed"' in line:
+                n_steps += 1
+            if n_steps >= before:
+                break
+            keep.append(line)
+        (run_dir / "events.jsonl").write_text("\n".join(keep) + "\n")
+        put_scene_back(Path(RESUME_FROM) / f"snapshots/before_step_{before}.pt")
+    else:
+        # Continue the held graph's current physical state and complete record,
+        # including the failure. No teleport or contact reconstruction.
+        (run_dir / "events.jsonl").write_text(record)
+        log("CONTINUED", record=str(Path(RESUME_FROM) / "ours/events.jsonl"))
 STOP_ON_FAILURE = bool(os.environ.get("OURS_STOP_ON_FAILURE"))
 log("PLAN", method="ours", brief=BRIEF, run_dir=str(run_dir))
 t0, sim0 = time.time(), sim["t"]
@@ -143,6 +150,7 @@ def start(extra):
 agent = start(["--resume"] if RESUME_FROM else ["--mission", BRIEF])
 last = time.time()
 seen = len((run_dir / "events.jsonl").read_text().splitlines()) if RESUME_FROM else 0
+pending_failure = None
 saved = -1
 
 
@@ -152,7 +160,7 @@ def save_before_next_step(evs):
     k = steps()
     last = max((i for i, x in enumerate(evs) if '"kind": "tool_proposed"' in x or '"kind": "reasoner_step_failed"' in x), default=-1)
     ended = last < 0 or '"reasoner_step_failed"' in evs[last] or any(
-        m in x for x in evs[last + 1:] for m in ('"kind": "execution_finished"', '"kind": "query_answered"', '"kind": "local_tool"', '"outcome": "deny', '"outcome": "approval'))
+        m in x for x in evs[last + 1:] for m in ('"kind": "verification_finished"', '"kind": "query_answered"', '"kind": "local_tool"', '"outcome": "deny', '"outcome": "approval'))
     if ended and k != saved:
         path = snap_dir / f"before_step_{k + 1}.pt"
         p, yaw, _ = est_pose()
@@ -178,13 +186,16 @@ while agent.poll() is None:
                 tcp=[round(float(v), 3) for v in tcp_pose()[0]], jaw=round(float(jaw.get("q", -1)), 3))
             trace_prev = hp
     if STOP_ON_FAILURE:
-        failed = [json.loads(x) for x in evs[seen:] if ('"execution_finished"' in x and '"success": false' in x)
-                  or ('"effect_verified"' in x and '"holds": false' in x)]
+        new_events = [json.loads(x) for x in evs[seen:]]
+        failed = [e for e in new_events if (e["kind"] == "execution_finished" and not e["success"])
+                  or (e["kind"] == "effect_verified" and not e["holds"])]
+        pending_failure = pending_failure or (failed[0] if failed else None)
         seen = len(evs)
-        if failed:
+        # Development stopping must not interrupt the independent effect query/verification (g8b).
+        if pending_failure and any(e["kind"] == "verification_finished" for e in new_events):
             agent.kill()
             agent.wait()
-            log("STOPPED", at_step=steps(), failed=failed[0], sim_s=round(sim["t"] - sim0, 1))
+            log("STOPPED", at_step=steps(), failed=pending_failure, sim_s=round(sim["t"] - sim0, 1))
             break
     if RESTART_AT and steps() >= RESTART_AT:
         agent.kill()

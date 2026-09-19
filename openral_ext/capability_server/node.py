@@ -40,7 +40,7 @@ from openral_msgs.action import ExecuteRskill
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from workspace.footprint import DOCK_ERROR_M, clear_distance  # noqa: E402
 from workspace.reach import reach_map  # noqa: E402
-from rclpy.action import ActionClient, ActionServer
+from rclpy.action import ActionClient, ActionServer, CancelResponse
 from rclpy.duration import Duration
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -54,7 +54,7 @@ from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
 from tf2_ros import Buffer, TransformListener
 
-from contracts import CONTRACTS, IX, check_args
+from contracts import CONTRACTS, IX, check_args, item_catalogue
 # The arm's ready posture (robot, not mission). The wrist roll is half a turn: that is the branch with the wrist camera
 # above the tool axis, the one every view and every grasp works from (research repo F57), and it is the posture the
 # manipulation skills start and end in. `openral_rskill._eye_in_hand.READY` is the same seven numbers.
@@ -209,7 +209,8 @@ def lower(capability: str, a: dict) -> dict:
         return {"target": a["target"], "part": a["part"]}
     if capability == "place":
         # a named support is fixed infrastructure: its surveyed point goes to the skill, which puts it in the rover frame
-        return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"]}
+        return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"],
+                **({"release_constraint": a["release_constraint"]} if "release_constraint" in a else {})}
     if capability == "press":
         # nothing to lower: the skill finds the target in its own camera, and where to stand off and how far to press
         # past the face are its own defaults
@@ -267,7 +268,8 @@ class CapabilityServer(Node):
         self.vlm_pool = ThreadPoolExecutor(8)
         self.rskill = ActionClient(self, ExecuteRskill, "/openral/execute_rskill", callback_group=cb)
         self.ik = self.create_client(GetPositionIK, "/compute_ik", callback_group=cb)
-        ActionServer(self, ExecuteCapability, "/space/capability/execute", self._execute, callback_group=cb)
+        ActionServer(self, ExecuteCapability, "/space/capability/execute", self._execute,
+                     cancel_callback=lambda _: CancelResponse.ACCEPT, callback_group=cb)
         self.create_service(QueryCapability, "/space/capability/query", self._query, callback_group=cb)
         self.get_logger().info(f"capability boundary up: effects {sorted(CONTRACTS['effects'])}, queries {sorted(CONTRACTS['queries'])}")
 
@@ -296,14 +298,13 @@ class CapabilityServer(Node):
         """The logistics record as mission control holds it: the depot slots as staged, the items' catalogue data."""
         names = {"spare_oru": "spare ORU (orbital replacement unit, gold MLI-covered box)", "spare_crate": "cargo crate (white case)"}
         slots = {IX["objects"][k]["support"].split("/")[1]: names[k] for k in names}
-        items = {names[k]: {"size_m": IX["objects"][k]["size_m"], "mass_kg": IX["objects"][k]["mass_kg"],
-                            "carry_handle": "T-shaped bail on top", "handle_height_above_base_m": round(IX["objects"][k]["handle"]["xyz"][2], 3)}
-                 for k in names}
+        items = {names[k]: item_catalogue(IX["objects"][k]) for k in names}
         return {"depot_stand": slots, "items": items}
 
     def site_map(self):
         fixed = {k: v for k, v in IX["points"].items() if "object" not in v}
         return {"frame": "map", "point_types": POINT_TYPES,
+                "equipment_catalogue": self.manifest()["items"],
                 "points": {k: {"type": v["type"], "equipment": v["asset"], "xyz": v["xyz"], "normal": [round(c, 3) for c in v["normal"]]}
                            for k, v in fixed.items()},
                 "view_poses": {k: {"x": v["xy"][0], "y": v["xy"][1], "yaw": round(math.radians(v["yaw_deg"]), 4), "looks_at": v["target"]}
@@ -378,7 +379,7 @@ class CapabilityServer(Node):
         self._drive_limits = want
         self.get_logger().info(f"drive limits: {'carrying' if carrying else 'free'} {want['max_velocity'][0]} m/s, "
                                f"{want['max_accel'][0]} m/s^2")
-        return {"carrying": carrying, "changed": True, **{k: v[0] for k, v in want.items()}}
+        return {"carrying": carrying, "changed": True, **want}
 
     def held_item(self) -> dict:
         """What the gripper has between its fingers, from its own camera, with the jaw angle beside it.
@@ -712,7 +713,12 @@ class CapabilityServer(Node):
         evidence["arm"] = self.arm_state()
         if drive is not None:
             evidence["drive_limits"] = drive
-        handle.succeed()
+        if handle.is_cancel_requested:
+            handle.canceled()
+        elif r.success:
+            handle.succeed()
+        else:
+            handle.abort()
         res.success, res.failure_kind, res.failure_reason = bool(r.success), int(r.failure_kind), r.failure_reason
         res.evidence_json = json.dumps(evidence)
         # the call trace (§4.6): one line per effect, whoever called it
@@ -729,19 +735,24 @@ class CapabilityServer(Node):
         goal = ExecuteRskill.Goal(rskill_id=rskill_id, prompt=f"capability boundary call {self.calls}", goal_params_json=json.dumps(params), deadline_s=deadline)
         sim0 = self.sim_t
         handle.publish_feedback(ExecuteCapability.Feedback(state="dispatched", elapsed_s=0.0))
-        sent = self.rskill.send_goal_async(goal)
+        def feedback(msg):
+            fb = msg.feedback
+            handle.publish_feedback(ExecuteCapability.Feedback(
+                state=fb.state, elapsed_s=float(self.sim_t - sim0), evidence_json=fb.evidence_json))
+
+        sent = self.rskill.send_goal_async(goal, feedback_callback=feedback)
         while not sent.done():
             time.sleep(0.05)
         gh = sent.result()
         if gh is None or not gh.accepted:
             return ExecuteRskill.Result(success=False, failure_kind=255, failure_reason="rskill runner rejected the goal")
         rf = gh.get_result_async()
-        last = 0.0
+        cancel_sent = False
         while not rf.done():
+            if handle.is_cancel_requested and not cancel_sent:
+                gh.cancel_goal_async()
+                cancel_sent = True
             time.sleep(0.1)
-            if time.time() - last > 2.0:
-                handle.publish_feedback(ExecuteCapability.Feedback(state="executing", elapsed_s=float(self.sim_t - sim0)))
-                last = time.time()
         return rf.result().result
 
 

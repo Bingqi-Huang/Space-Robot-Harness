@@ -92,7 +92,9 @@ if [ "${D0_PLANNING_SCENE:-1}" != 0 ]; then
   # plans in, on by default (D0_PLANNING_SCENE=0 turns it off); tagged for the teardown
   D0_RUN_TAG="$LOG" setsid .venv/bin/python ../openral_ext/planning_scene/node.py > "$LOG/planning_scene.log" 2>&1 &
 fi
-timeout 14400 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
+# The check is an actuator client too. A failed boot must not leave it waiting
+# to command a later graph in the same ROS domain after teardown.
+D0_RUN_TAG="$LOG" timeout 14400 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
 echo "CHECK_EXIT $?" >> "$LOG/check.log"
 if [ -n "$D0_HOLD" ]; then
   # step-wise development: the graph stays up after the check for attach_d0.sh (continue from the failed step);

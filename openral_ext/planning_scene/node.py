@@ -7,8 +7,8 @@ depot -- pushed the ORU off its slot. This node publishes `moveit_msgs/Collision
 - static structures: the surveyed site boxes (`site_structures.json`, the same structures the lidar map shows) in
   `map`, so they land where the robot's own localization puts them -- site knowledge, like the navigation map;
 - measured obstacles: what the robot's own depth cameras see standing in the arm's work zone, as one collision object
-  of coarse columns rebuilt every cycle. Movable items (a staged ORU, a crate, a service cover a moment after it was
-  set down) are in nobody's map; they are in the depth image. The arm's own links and the rover's hull are filtered
+  of observed surface triangles rebuilt every cycle. Movable items (a staged ORU, a crate, a service cover a moment after it was
+  set down) are in nobody's map; they are in the depth image. The arm's own links are filtered
   out by TF, so the arm never plans around itself.
 
 Truth is never read: the obstacles come from the same cameras every method has, so every method's MoveIt calls see the
@@ -16,6 +16,8 @@ same scene. Run inside a sourced graph:
     python3 openral_ext/planning_scene/node.py
 """
 
+from collections import deque
+import copy
 import json
 import math
 import time
@@ -23,13 +25,19 @@ from pathlib import Path
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import Pose
-from moveit_msgs.msg import CollisionObject
+from geometry_msgs.msg import Pose, Point
+from moveit_msgs.msg import AllowedCollisionEntry, CollisionObject, PlanningScene, PlanningSceneComponents
+from moveit_msgs.srv import ApplyPlanningScene, GetPlanningScene
+from openral_msgs.srv import ConfigureContact
+from std_srvs.srv import Trigger
+from rclpy.callback_groups import ReentrantCallbackGroup
+from openral_rskill.grasp_perception import GripperGeometry
+from surfaces import depth_surface
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image
-from shape_msgs.msg import SolidPrimitive
+from shape_msgs.msg import SolidPrimitive, Mesh, MeshTriangle
 from tf2_ros import Buffer, TransformListener
 
 SITE = Path(__file__).resolve().parent / "../../space_robotics_bench/assets/lunar_base/usd/scene/lunar_base"
@@ -39,9 +47,7 @@ IX = json.loads((SITE / "interaction.json").read_text())
 #: the arm's own links, from its base to the tool: their measured pixels are the robot, not the world
 ARM_LINKS = ("base_link", "Link1", "Link2", "Link3", "Link4", "Link5", "Link6", "Link7", "tcp_frame")
 LINK_CLEAR_M = 0.18  # a measured point this close to an arm link is the arm itself (its links are ~0.1 m across)
-CELL_M = 0.08  # one column per cell: coarse enough that a work zone is tens of boxes, fine enough for a handle
 ZONE_M = 1.4  # how far around the arm's base the work zone reaches (RM-75 works to 0.61 m; the rest is margin)
-GROUND_CLEAR_M = 0.06  # a column this low is the ground the wheels stand on, not an obstacle
 MAX_RANGE_M = 2.5
 
 
@@ -70,23 +76,6 @@ def quat_to_mat(x, y, z, w) -> np.ndarray:
                      [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
 
 
-def columns(points: np.ndarray, floor: float) -> list[tuple[float, float, float, float]]:
-    """Measured points -> one column per occupied cell: (x, y, top, height). A column runs from the ground to the
-    highest point measured in its cell, which is what an arm must go around whatever the thing is."""
-    if not len(points):
-        return []
-    keys = np.floor(points[:, :2] / CELL_M).astype(int)
-    out: dict[tuple[int, int], float] = {}
-    for (cx, cy), z in zip(map(tuple, keys), points[:, 2]):
-        if z > out.get((cx, cy), -np.inf):
-            out[(cx, cy)] = float(z)
-    cols = []
-    for (cx, cy), top in out.items():
-        height = top - floor
-        if height < GROUND_CLEAR_M:
-            continue
-        cols.append(((cx + 0.5) * CELL_M, (cy + 0.5) * CELL_M, top, height))
-    return cols
 
 
 class PlanningSceneNode(Node):
@@ -99,116 +88,218 @@ class PlanningSceneNode(Node):
         self.last_static = 0.0
         self.buf = Buffer()
         self.tf = TransformListener(self.buf, self)
-        self.depth: dict[str, Image] = {}
+        self.depth = {cam: deque(maxlen=qos_profile_sensor_data.depth) for cam in ("wrist", "front")}
         self.info: dict[str, CameraInfo] = {}
         for cam in ("wrist", "front"):
             self.create_subscription(Image, f"/openral/cameras/{cam}_depth/image",
-                                     lambda m, c=cam: self.depth.__setitem__(c, m), qos_profile_sensor_data)
+                                     lambda m, c=cam: self.depth[c].append(m), qos_profile_sensor_data)
             self.create_subscription(CameraInfo, f"/openral/cameras/{cam}/camera_info",
                                      lambda m, c=cam: self.info.__setitem__(c, m), qos_profile_sensor_data)
-        # what a skill is working on: the sphere it says its tool is about to occupy (`_eye_in_hand.working_on`).
-        # An item the planner treats as an obstacle is an item the robot can never take hold of (research repo F58).
-        self.working_on: tuple[float, np.ndarray, float] | None = None
-        self.create_subscription(CollisionObject, "/space/manipulation_target", self.on_working_on, 10)
+        self.frozen = False
+        self.contact_region = None
+        self.scene_revision = 0
+        self.scene_evidence = {}
+        self.apply_client = self.create_client(ApplyPlanningScene, "/apply_planning_scene",
+                                               callback_group=ReentrantCallbackGroup())
+        self.get_scene_client = self.create_client(GetPlanningScene, "/get_planning_scene",
+                                                   callback_group=ReentrantCallbackGroup())
+        self.create_service(ConfigureContact, "/space/configure_contact", self.configure_contact)
+        self.create_service(Trigger, "/space/prepare_contact_scene", self.prepare_contact)
+        self.create_service(Trigger, "/space/release_contact_scene", self.release_contact)
         self.create_timer(0.5, self.tick)
         self.create_timer(1.0, self.measure)
-        self.get_logger().info(f"planning scene: {len(self.static)} site structures, measured obstacles from wrist + front depth")
+        self.get_logger().info("shared planning scene: measured 3-D surfaces; no target deletion")
 
-    def on_working_on(self, m: CollisionObject) -> None:
-        if m.operation == CollisionObject.REMOVE or not m.primitives:
-            self.working_on = None
-            return
-        p = m.primitive_poses[0].position
-        self.working_on = (m.header.stamp.sec + m.header.stamp.nanosec * 1e-9, np.array([p.x, p.y, p.z]),
-                           float(m.primitives[0].dimensions[0]))
-        self.working_frame = m.header.frame_id
+    async def prepare_contact(self, request, response):
+        # This service returns only after the collision consumer applied the scene.
+        # Frozen geometry is a stationary-workpiece snapshot for one serial operation.
+        if self.frozen:
+            response.message = "contact scene already owned by an operation"
+            return response
+        request = GetPlanningScene.Request()
+        request.components.components = PlanningSceneComponents.ALLOWED_COLLISION_MATRIX
+        snapshot = await self.get_scene_client.call_async(request)
+        self.original_acm = snapshot.scene.allowed_collision_matrix
+        response.success = await self.measure()
+        self.frozen = response.success
+        response.message = json.dumps(self.scene_evidence)
+        return response
 
-    def T(self, target: str, source: str):
+    async def release_contact(self, request, response):
+        # Restore both geometry and the exact prior ACM before admitting another operation.
+        scene = PlanningScene(is_diff=True)
+        scene.allowed_collision_matrix = self.original_acm
+        scene.world.collision_objects = [self.measured_object]
+        if self.contact_region is not None:
+            scene.world.collision_objects.append(
+                CollisionObject(id="measured/contact", operation=CollisionObject.REMOVE))
+        result = await self.apply_client.call_async(ApplyPlanningScene.Request(scene=scene))
+        response.success = result.success
+        if result.success:
+            self.contact_region = None
+            self.frozen = False
+        response.message = "contact geometry and permissions restored" if result.success else "contact release not applied"
+        return response
+
+    async def configure_contact(self, request, response):
+        phase = request.phase
+        evidence = {"phase": phase, "scene": self.scene_evidence.get("scene"), "applied": False}
+        if not self.frozen or phase not in ("register", "endpoint_check", "insertion", "revoke"):
+            evidence["reason"] = "requires an acquired scene and a declared contact phase"
+        elif phase == "register" and self.contact_region is not None:
+            evidence["reason"] = "selected region is immutable until operation release"
+        elif phase != "register" and self.contact_region is None:
+            evidence["reason"] = "no selected measured contact region"
+        else:
+            scene = PlanningScene(is_diff=True)
+            if phase == "register":
+                pose = request.region.pose
+                q = pose.orientation
+                region = np.eye(4)
+                region[:3, :3] = quat_to_mat(q.x, q.y, q.z, q.w)
+                region[:3, 3] = [pose.position.x, pose.position.y, pose.position.z]
+                transform = self.T("map", request.region.header.frame_id)
+                dimensions = np.array([request.dimensions.x, request.dimensions.y, request.dimensions.z])
+                if transform is None or not np.all(dimensions > 0) or not request.evidence_ref:
+                    evidence["reason"] = "region requires TF, positive measured dimensions and evidence"
+                    response.evidence_json = json.dumps(evidence)
+                    return response
+                region = transform @ region
+                remainder = copy.deepcopy(self.measured_object)
+                target = CollisionObject(id="measured/contact", operation=CollisionObject.ADD)
+                target.header.frame_id = "map"
+                count = 0
+                for mesh, mesh_pose in zip(remainder.meshes, remainder.mesh_poses):
+                    vertices = np.array([[v.x, v.y, v.z] for v in mesh.vertices])
+                    local = (vertices - region[:3, 3]) @ region[:3, :3]
+                    inside = np.all(abs(local) <= dimensions / 2, axis=1)
+                    # Keep boundary-crossing triangles protected. No triangle is removed.
+                    selected = [t for t in mesh.triangles if np.all(inside[t.vertex_indices])]
+                    mesh.triangles = [t for t in mesh.triangles if not np.all(inside[t.vertex_indices])]
+                    if selected:
+                        target.meshes.append(Mesh(vertices=mesh.vertices, triangles=selected))
+                        target.mesh_poses.append(mesh_pose)
+                        count += len(selected)
+                evidence.update(region_map=region.tolist(), dimensions_m=dimensions.tolist(),
+                                evidence_ref=request.evidence_ref, contact_triangles=count,
+                                contact_links=list(GripperGeometry().contact_links))
+                if count == 0:
+                    evidence["reason"] = "selected region contains no complete measured surface triangles"
+                    response.evidence_json = json.dumps(evidence)
+                    return response
+                scene.world.collision_objects = [remainder, target]
+            allowed = phase in ("endpoint_check", "insertion")
+            acm = copy.deepcopy(self.original_acm)
+            for name in ("measured/contact", *GripperGeometry().contact_links):
+                if name not in acm.entry_names:
+                    acm.entry_names.append(name)
+                    for entry in acm.entry_values:
+                        entry.enabled.append(False)
+                    acm.entry_values.append(AllowedCollisionEntry(enabled=[False] * len(acm.entry_names)))
+            target_index = acm.entry_names.index("measured/contact")
+            # This new object has no inherited world-wide/default exemptions.
+            acm.entry_values[target_index].enabled = [False] * len(acm.entry_names)
+            for entry in acm.entry_values:
+                entry.enabled[target_index] = False
+            for link in GripperGeometry().contact_links:
+                index = acm.entry_names.index(link)
+                acm.entry_values[index].enabled[target_index] = allowed
+                acm.entry_values[target_index].enabled[index] = allowed
+            scene.allowed_collision_matrix = acm
+            result = await self.apply_client.call_async(ApplyPlanningScene.Request(scene=scene))
+            response.success = result.success
+            evidence.update(applied=result.success, contact_allowed=allowed,
+                            contact_links=list(GripperGeometry().contact_links))
+            if result.success and phase == "register":
+                self.contact_region = evidence
+        response.evidence_json = json.dumps(evidence)
+        return response
+
+    def T(self, target: str, source: str, stamp=None):
         try:
-            tr = self.buf.lookup_transform(target, source, rclpy.time.Time()).transform
-        except Exception:
+            tr = self.buf.lookup_transform(target, source, rclpy.time.Time() if stamp is None else rclpy.time.Time.from_msg(stamp)).transform
+        except Exception as exc:
+            self.tf_failure = str(exc)
             return None
         M = np.eye(4)
         M[:3, :3] = quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w)
         M[:3, 3] = [tr.translation.x, tr.translation.y, tr.translation.z]
         return M
 
-    def arm_segments(self) -> np.ndarray:
+    def arm_segments(self, stamp=None) -> np.ndarray:
         """The arm as it stands now, in `map`: the segments between consecutive link origins. A link is a metre of
         steel, not a point -- filtering by the origins alone leaves the middle of every link in the depth image, and
         the arm then plans around itself."""
-        pts = [M[:3, 3] for M in (self.T("map", link) for link in ARM_LINKS) if M is not None]
+        pts = [M[:3, 3] for M in (self.T("map", link, stamp) for link in ARM_LINKS) if M is not None]
         return np.array([[a, b] for a, b in zip(pts[:-1], pts[1:])]) if len(pts) > 1 else np.zeros((0, 2, 3))
 
-    def measured(self, cam: str) -> np.ndarray:
-        """The depth image of one camera as points in `map`, thinned, in range, and clear of the arm's own links."""
-        m, info = self.depth.get(cam), self.info.get(cam)
-        if m is None or info is None:
-            return np.zeros((0, 3))
-        T = self.T("map", m.header.frame_id)
-        if T is None:
-            return np.zeros((0, 3))
-        z = np.frombuffer(m.data, np.float32).reshape(m.height, m.width)[::6, ::6]
+    def measured_mesh(self, cam: str):
+        info = self.info.get(cam)
+        if info is None:
+            return None
+        # Sensor and TF messages arrive independently. Use the newest image with
+        # its own timestamped transforms, within the sensor QoS history.
+        for m in reversed(self.depth[cam]):
+            T = self.T("map", m.header.frame_id, m.header.stamp)
+            base = self.T("map", "chassis_base_link", m.header.stamp)
+            if T is not None and base is not None:
+                break
+        else:
+            return None
+        z = np.frombuffer(m.data, np.float32).reshape(m.height, m.width)
         K = np.array(info.k, float).reshape(3, 3)
-        vs, us = np.nonzero(np.isfinite(z) & (z > 0.05) & (z < MAX_RANGE_M))
-        if not us.size:
-            return np.zeros((0, 3))
+        valid = np.isfinite(z) & (z > 0.05) & (z < MAX_RANGE_M)
+        vs, us = np.nonzero(valid)
         d = z[vs, us]
-        pc = np.stack([(us * 6 - K[0, 2]) / K[0, 0] * d, (vs * 6 - K[1, 2]) / K[1, 1] * d, d], axis=1)
-        pm = (T[:3, :3] @ pc.T).T + T[:3, 3]
-        seg = self.arm_segments()
-        if len(seg):
-            a, b = seg[:, 0, :], seg[:, 1, :]
+        pc = np.stack([(us - K[0, 2]) / K[0, 0] * d, (vs - K[1, 2]) / K[1, 1] * d, d], axis=1)
+        pm = pc @ T[:3, :3].T + T[:3, 3]
+        keep = np.linalg.norm(pm[:, :2] - base[:3, 3][:2], axis=1) < ZONE_M
+        # The existing arm self-filter only removes measurements; it never
+        # certifies the resulting holes as free space.
+        for a, b in self.arm_segments(m.header.stamp):
             ab = b - a
-            t = np.clip(np.einsum("pd,sd->ps", pm, ab) - (a * ab).sum(1), 0, None) / np.maximum((ab * ab).sum(1), 1e-9)
-            near = a[None, :, :] + np.clip(t, 0, 1)[:, :, None] * ab[None, :, :]
-            keep = np.min(np.linalg.norm(pm[:, None, :] - near, axis=2), axis=1) > LINK_CLEAR_M
-            pm = pm[keep]
-        return pm
+            t = np.clip((pm - a) @ ab / max(float(ab @ ab), 1e-9), 0, 1)
+            keep &= np.linalg.norm(pm - (a + t[:, None] * ab), axis=1) > LINK_CLEAR_M
+        valid[vs, us] = keep
+        vertices, faces = depth_surface(z, K, T, valid, GripperGeometry().min_part_width_m)
+        mesh = Mesh()
+        mesh.vertices = [Point(x=float(x), y=float(y), z=float(z)) for x, y, z in vertices]
+        mesh.triangles = [MeshTriangle(vertex_indices=list(map(int, face))) for face in faces]
+        return mesh, {"camera": cam, "stamp_s": m.header.stamp.sec + m.header.stamp.nanosec * 1e-9,
+                      "triangles": len(faces), "unknown_is_free": False}
 
-    def minus_the_job(self, pts: np.ndarray) -> np.ndarray:
-        """Drop what a skill says its tool is about to be inside. A declaration that stops being renewed within two of
-        this node's own cycles is gone: a skill that ended, or died, leaves no hole in the world."""
-        if self.working_on is None:
-            return pts
-        stamp, centre, radius = self.working_on
-        if self.get_clock().now().nanoseconds * 1e-9 - stamp > 2.0:
-            self.working_on = None
-            return pts
-        T = self.T("map", getattr(self, "working_frame", "chassis_base_link"))
-        if T is None:
-            return pts
-        c = T[:3, :3] @ centre + T[:3, 3]
-        return pts[np.linalg.norm(pts - c, axis=1) > radius]
-
-    def measure(self):
-        """Publish what the cameras see standing in the arm's work zone as one rebuilt collision object."""
-        base = self.T("map", "chassis_base_link")
-        if base is None:
-            return
-        pts = np.vstack([self.measured("wrist"), self.measured("front")])
-        if not len(pts):
-            return
-        near = np.linalg.norm(pts[:, :2] - base[:3, 3][:2], axis=1) < ZONE_M
-        pts = pts[near]
-        pts = self.minus_the_job(pts)
-        if not len(pts):
-            return
-        floor = float(np.percentile(pts[:, 2], 5))  # the ground, as these very points measured it
-        cols = columns(pts, floor)
+    async def measure(self):
+        if self.frozen or not self.apply_client.service_is_ready():
+            return False
+        meshes = [self.measured_mesh(cam) for cam in ("wrist", "front")]
+        if any(value is None for value in meshes):
+            self.scene_evidence = {"reason": "camera or timestamped TF unavailable",
+                                   "cameras": list(self.depth), "camera_info": list(self.info),
+                                   "tf_failure": getattr(self, "tf_failure", None)}
+            return False
         o = CollisionObject()
-        o.header.frame_id = "map"
-        o.id = "measured/work_zone"
-        # one object, rebuilt each cycle so nothing stale is left standing; an empty measurement means "nothing is
-        # there any more", which is a removal -- an ADD with no shapes is an error to MoveIt, not an empty scene
-        o.operation = CollisionObject.ADD if cols else CollisionObject.REMOVE
-        for x, y, top, height in cols:
-            o.primitives.append(SolidPrimitive(type=SolidPrimitive.BOX, dimensions=[CELL_M, CELL_M, float(height)]))
-            p = Pose()
-            p.position.x, p.position.y, p.position.z = float(x), float(y), float(top - height / 2)
-            p.orientation.w = 1.0
-            o.primitive_poses.append(p)
-        self.pub.publish(o)
+        o.header.frame_id, o.id = "map", "measured/work_zone"
+        o.operation = CollisionObject.ADD
+        for mesh, evidence in meshes:
+            if mesh.triangles:
+                o.meshes.append(mesh)
+                pose = Pose()
+                pose.orientation.w = 1.0
+                o.mesh_poses.append(pose)
+        if not o.meshes:
+            self.scene_evidence = {"reason": "no measured surface; previous obstacles retained"}
+            return False
+        req = ApplyPlanningScene.Request()
+        req.scene.is_diff = True
+        req.scene.world.collision_objects = [*self.static, o]
+        self.scene_revision += 1
+        req.scene.name = f"measured_scene_{self.scene_revision}"
+        result = await self.apply_client.call_async(req)
+        if result.success:
+            self.measured_object = o
+        self.scene_evidence = {"scene": req.scene.name, "applied": result.success,
+                               "observations": [e for _, e in meshes], "target_excluded": False}
+        return result.success
 
     def tick(self):
         if time.time() - self.last_static > 5.0:
@@ -219,7 +310,10 @@ class PlanningSceneNode(Node):
 
 def main():
     rclpy.init()
-    rclpy.spin(PlanningSceneNode())
+    from rclpy.executors import MultiThreadedExecutor
+    executor = MultiThreadedExecutor()
+    executor.add_node(PlanningSceneNode())
+    executor.spin()
 
 
 if __name__ == "__main__":

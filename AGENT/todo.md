@@ -6,23 +6,51 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
 **Sequence in force (user): finish Mission B → then `press` live → then Mission A.** Do not open the next one
 while the previous one still has an unverified fix in it.
 
-**Before anything: read `handoff.md`'s first section.** Iterating on a skill costs ~20 s (attach + resume), not
-half an hour (new graph). Three graphs were booted before this was noticed.
+**Before anything: read `handoff.md`'s first section.** Skill edits need a new runtime_node process, plus attach/resume; restarting only the capability server is insufficient.
 
-## Now: Mission B end to end — the blocker is where the rover stands, not the servo
+## Now: reproduce a compatible successful reference (r3, user approved)
 
-- [ ] **The blocker is now the stand, not the servo** (handoff "What g6e did"): far enough to see the 12 mm neck and the arm cannot reach it; close enough to reach it and no view measures it; at the near stand `READY` no longer fits. Nothing owns base position + viewing geometry + arm reach together. Same root cause as F62 §3, F61 §1, F63 §3.
+- [x] Draft `docs/manipulation_contracts_proposal.md`: observation success, target lock/invalidation,
+      feedback and physical control handoff; literature support, v4 conflicts, offline validation obligations.
+- [x] User-requested self-review: r2 fixes contract circularity, ownership handoff and effect/knowledge boundaries.
+- [x] Scope reduced: success-reference reproduction first; no full C1/C3 build. Implementation/simulation authorized.
+- [x] Current-asset oracle reference reproduced grasp/carry; delayed evaluator confirmed delivery. Reference retreat failed; no stow/dock.
+- [x] Offline comparison isolated g7c pedestal selection and contour-merging defect; no VLM-reconfirmation layer.
+- [x] g8a selected the 12 mm neck; approach then lost lock at 6.9 cm. Recording closed after cooperative cancellation.
+- [x] Fixed template/contact (odom) + geometry-bounded association checked on 109 recorded frames; truth confirms static object.
+- [x] g8b physical pick validation: neck selected, lift/retraction completed, independent held=true; no hidden re-selection.
+- [x] g8c carried and docked at PDU-1; bag confirms retained grip, VLM false negative stopped development check.
+- [x] g8d model resolved contradictory held observation and performed over/lower/release. Retreat stalled.
+- [x] g8e moved clear/inspected; stopped to analyze recorded placement divergence rather than search blindly.
+- [x] F73: release was initially in bounds, tilted axial withdrawal lifted/dragged ORU; semantic below_overhang correction passes offline geometry/contract checks.
+- [x] g8f ended: correct neck selected, lifted, slipped at bring_in; place correction not reached.
+- [ ] Grasp/transport: g8q permission applied, last validity=true, servo stalled 27 mm out; no closure, held=false.
+- [ ] Next: read closed g8q bag; compare commanded/measured TCP/joints against g8b success before any new change.
+- [x] F77: immutable measured patch + distal jaw contact permission; contact IK/servo/free-ray semantics aligned.
+- [x] Real MoveIt integration: all triangles/unrelated ACM entries preserved; phases/revocation/cleanup pass.
+- [x] Depth/TF acquisition uses latest timestamp-matched frame within sensor QoS history.
+- [x] Solution-focused audit: `docs/contact_closure_audit.md`; confirmed incompatible collision representations and permissive close-in exit.
+- [x] Shared geometry/scene acknowledgement and closure conditions implemented; g8j contact IK passes, g8m closes.
+- [ ] If non-contact linkage collision persists, analyze selected frame (g8p ~16 degrees); never exempt the whole gripper.
+- [x] Offline direction error vs evaluator truth: g8f 7.44 → 0.80 degrees, g8b 0.55 → 0.35 degrees.
+
+## Mission B backlog
+
+- [x] **Stale runner confirmed (F66):** g7b/c loaded the actual tracker and both lifted from the original stand.
+- [x] **Carry retraction (F68/F71):** g8b retains the neck through 0.25 m retraction after contour/target-lock fixes. One successful development run; not a reliability claim.
+- [ ] **Previous stand hypothesis is unproven:** g7b/c reached a grasp from the original step-7 stand; do not repeat the old blanket unreachable diagnosis.
 - [x] **Three `pick` defects behind one error message** (F64), all fixed, offline-verified, committed:
       the goal orientation was a function of the tool's own pose (180° bang-bang limit cycle → `set_view_dir`);
       a 12 mm neck against sky gives no depth at a pixel matched at 1.00 (eight such frames ended the call);
       and my own regression — returning the predicted range as measured let the part walk down the line of sight
       (10.0 → 36.4 cm in 19 s). An unranged frame now says "still there, still matched" and nothing about where.
-- [ ] **Verify the turn limit** (F63 §2) — still never exercised, because every run since g5m has failed in `pick`:
+- [x] **Verify the turn limit** (F63 §2) — g8b exposed scalar evidence bug; fixed path in g8c retained grip through docking:
       the boundary derives Nav2's angular limit from the measured lever (α = 0.5 / lever). Look for
       `drive limits: carrying … lever_m` in `capability_server.log` and `item_still_held` after the dock at PDU-1.
 - [x] The carry holds for a drive (F63 §1): `bring_in()` (lever 1.144 → 0.838 m) plus carrying drive limits; g5m
       completed the depot → PDU-1 leg with the payload verified held on arrival.
-- [ ] `place` live: never yet reached with a payload in the jaws.
+- [ ] `place` live: g8d reached over/lower/release with payload; retreat stalled and settle not reached. F73 correction in g8f.
+- [x] Removed the pick manifest’s site-specific standard-handle grasp hint; choice must use the image and caller intent.
 - [ ] Stow + dock at the far end: never reached either, and likely to hit the same wall as Mission A (below).
 - [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.
 
@@ -42,6 +70,8 @@ half an hour (new graph). Three graphs were booted before this was noticed.
       not know what is around it is a bug until proven otherwise.**
 
 ## Harness gaps — infrastructure, not this mission
+
+- [ ] g8c/e: single-frame VLM held/identity negatives can contradict visible geometry; unknown is correct, not asserted empty. Resolve through evidence, not forced positives.
 
 - [x] Reasoner and VLM on DeepSeek's own endpoint; `openral_ext/workspace/` (the robot's reach decides the stand);
       `/space/manipulation_target`; `held_item` + continuous held-check; carrying drive limits at the boundary;
@@ -91,3 +121,6 @@ half an hour (new graph). Three graphs were booted before this was noticed.
 - One simulation at a time. Never navigate on truth. Measure motion in sim time.
 - **Kill only your own run's processes by explicit PID, and check afterwards that none survived** (F60 §8).
 - Replies to the user: always Simplified Chinese, plain words, concise; design choices are the user's to make.
+
+Current priority: scoped expected contact → actual grasp/transport validation → Mission B.
+OpenRAL 6154482/56ce9b8 and SRB 1928821 committed; root commit includes g8q outcome and continuation notes.

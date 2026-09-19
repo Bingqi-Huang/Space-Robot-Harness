@@ -17,6 +17,7 @@ Run inside a sourced graph (ROS Humble + openral install + ros/install), repo ro
 import argparse
 import json
 import os
+import queue
 import threading
 import time
 from pathlib import Path
@@ -103,8 +104,30 @@ class Agent:
         return dict(success=r.success, value=json.loads(r.value_json) if r.success else None, failure_reason=r.failure_reason)
 
     def execute(self, name: str, args: dict) -> dict:
-        gh = wait(self.cap.send_goal_async(ExecuteCapability.Goal(capability=name, args_json=json.dumps(args))))
-        r = wait(gh.get_result_async()).result
+        inbox = queue.SimpleQueue()
+        gh = wait(self.cap.send_goal_async(
+            ExecuteCapability.Goal(capability=name, args_json=json.dumps(args)),
+            feedback_callback=inbox.put,
+        ))
+        if gh is None or not gh.accepted:
+            return dict(success=False, failure_kind=255, failure_reason="capability goal rejected", evidence={})
+        future = gh.get_result_async()
+        last = None
+        while True:
+            while not inbox.empty():
+                msg = inbox.get()
+                feedback = msg.feedback
+                evidence = json.loads(feedback.evidence_json or "{}")
+                key = (feedback.state, evidence.get("seq"))
+                if key != last:
+                    self.event("execution_feedback", capability=name,
+                               operation_id=bytes(msg.goal_id.uuid).hex(),
+                               phase=feedback.state, evidence=evidence)
+                    last = key
+            if future.done():
+                break
+            time.sleep(0.05)
+        r = future.result().result
         return dict(success=r.success, failure_kind=r.failure_kind, failure_reason=r.failure_reason,
                     evidence=json.loads(r.evidence_json or "{}"))
 
@@ -170,14 +193,18 @@ class Agent:
         for effect in verify(name, args, r["evidence"], self.cfg["verification"], held,
                              look["value"] if look and look["success"] else None):
             self.event("effect_verified", capability=name, **effect)
+        self.event("verification_finished", capability=name)
 
     def run(self, mission: str | None) -> None:
         f = self.store.facts
         if f["mission"] is None:
             self.event("mission_received", text=mission)
         self.event("reasoner_attached", model=self.client.model_id, endpoint=self.client.base_url)
-        if f["site"] is None:
-            self.event("site_knowledge", site=self.query("site_map", {})["value"])
+        # Refresh the published site/equipment revision on attachment. This is
+        # prior knowledge; it never overwrites verified movable-object state.
+        site = self.query("site_map", {})
+        if site["success"]:
+            self.event("site_knowledge", site=site["value"])
         step = sum(ev["kind"] in ("tool_proposed", "reasoner_step_failed") for ev in self.store.events)
         while f["terminal"] is None:
             if step >= self.max_steps:

@@ -40,12 +40,25 @@ def attempt_summary(ev: dict) -> dict:
     sk = ev["evidence"]["skill"]
     out = {"seq": ev["seq"], "operation": ev["capability"], "args": ev["args"], "success": ev["success"],
            "stage": sk.get("failed_stage") or sk.get("stage"), "why": sk.get("why", ""), "sim_s": sk.get("sim_s")}
-    tries = [{k: a.get(k) for k in ("attempt", "outcome")} for a in sk.get("attempts", [])]
+    tries = [{k: a[k] for k in ("attempt", "outcome", "vlm") if k in a} for a in sk.get("attempts", [])]
     if tries:
         out["tries"] = tries
-    saw = sorted({v["vlm"]["what_is_visible"] for v in (sk.get("find") or {}).get("views", []) if v.get("vlm", {}).get("what_is_visible")})
+    find = sk.get("find") or {}
+    views = [v.get("vlm", {}) for v in find.get("views", [])] + [find.get("locate", {}), find.get("select", {})]
+    saw = sorted({v["what_is_visible"] for v in views if v.get("what_is_visible")})
     if saw:
         out["vision_model_saw"] = saw[:3]
+    out["measurements"] = {k: {name: value for name, value in sk[k].items()
+                               if name not in ("before", "after", "before_depth", "gripper_mask")}
+                           for k in ("hold_check", "bring_in") if k in sk}
+    out["base_pose"] = ev["evidence"].get("base_pose")
+    # Preserve the physical execution conditions across reasoner restarts. These
+    # are evidence, not held facts or a prescribed recovery sequence.
+    out["execution_conditions"] = {
+        key: sk[key] for key in ("contact_scene", "target_lock", "last_ik", "last_state_validity",
+                                "contact_path_observation", "closure_precondition", "decision_required")
+        if key in sk
+    }
     return out
 
 
@@ -97,12 +110,12 @@ def apply(f: dict, ev: dict) -> None:
             elif f["objects"].get(ev["target"], {}).get("state") == "in_gripper" or ev["jaw"] == "holding_object":
                 f["objects"][ev["target"]] = {"state": "unknown", "seq": ev["seq"], "by": "item_held did not verify"}
         if ev["effect"] == "item_still_held" and not ev["holds"]:
-            # the jaws no longer hold what the record says they carry: the fact goes back to unknown with the reading
-            # that unseated it. Where the item went, and what the mission does about it, are the agent's to work out.
+            # Failed confirmation invalidates the held fact; it does not prove the item fell or the jaws are empty.
+            # Preserve the observation so the agent can resolve the uncertainty.
             seen = f" -- the gripper's camera shows {ev['seen']}" if ev.get("seen") else ""
             for name in ev["items"]:
                 f["objects"][name] = {"state": "unknown", "seq": ev["seq"],
-                                      "by": f"nothing in the jaws after {ev['capability']}{seen} (jaw {ev['jaw_rad']} rad)"}
+                                      "by": f"holding not confirmed after {ev['capability']}{seen} (jaw {ev['jaw_rad']} rad)"}
         if ev["effect"] == "item_placed":
             held = [name for name, o in f["objects"].items() if o["state"] == "in_gripper"]
             for name in held:

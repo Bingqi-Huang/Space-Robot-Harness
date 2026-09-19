@@ -3220,3 +3220,508 @@ precisely because it was "just" tooling.
 started, and one whole run (g6d) was spent on a failure that existed only because the resume was silently wrong. A
 development loop that cannot restore a known state is not faster than booting from scratch; it is slower, because it
 looks like it worked.
+
+
+### F66 — The development resume restarted the client, not the skill owner
+
+2026-09-19, diagnosis from g6c/g6e; validation in progress in g7a.
+
+`capability_server/node.py:call_rskill` sends an ExecuteRskill action. The independent
+`openral_rskill_ros/runtime_node` owns execution; `_import_procedural_entrypoint` uses
+`importlib.import_module`, with no reload. The original runtime PID 273922 started at 09:34:32,
+before `procedural_pick.py` was modified at 09:55:47 (commit 5171284, 09:56:24).
+The runner had already loaded pick before that change. `D0_RESTART_BOUNDARY=1` only restarted
+its client. Thus g6d/g6e cannot validate the unranged-frame fix; conclusions assigning all
+remaining failures to base stance were premature. No new grasp algorithm follows from this finding.
+
+Development tooling now accepts `D0_RESTART_RUNTIME_PID=<explicit PID>` on attach.
+`restart_runtime.py` checks that PID belongs to the named graph and is runtime_node,
+restarts it with its actual launch configuration, and records the process provenance without
+logging credentials. Isaac, HAL and the independent safety kernel are retained. g7a restores
+g6e's jaws-open snapshot before step 7. This is a development continuation, not a frozen
+autonomous experiment or an autonomous-success result.
+
+**Resume validation correction:** editing the live attach script let its old bash process resume
+at an obsolete byte offset and start its check again after the original check was killed. Two
+agents therefore overlapped in g7a; it is invalid. The unintended old check truncated g6e's
+`check.log` and restarted its `events.jsonl` from step 7. The original capability log and appended
+agent log retain the earlier failures, but g6e's original event journal is no longer intact.
+The attach script now executes a frozen per-run copy, as run_d0 already did. Old attach parents,
+checks and agents were explicitly stopped before g7b resumed the unchanged g6c step-7 snapshot.
+
+**Scope audit before g7b:** the pick manifest contained a site-specific standard-handle grasp
+instruction. It was removed; the selector retains its generic image-based instruction and the
+caller's target/part. Separately, place's settling evidence omitted `fx`, although the independent
+verifier indexes `settle["fx"]`. The producer now records the actual frame's calibrated focal
+length, consistent with pick's hold evidence. No tolerance, stand-off or mission sequence changed.
+Both changes are generic contract/prompt corrections; placement is still unvalidated live.
+
+
+### F67 — Starting place implicitly released the item; evidence must survive retries
+
+2026-09-19, source audit while g7b pick was running. The shared EyeInHandSkill initialized
+`_jaw_open=True` and emitted GRIPPER_BINARY on every tick. With the real place/robot manifests
+and g5m's recorded held jaw (0.169 rad), its first tick emitted `gripper: [1.0]`, before place
+reached release. This is a generic operation-state bug, not a scene-specific grasp problem.
+The initial gripper command is now absent until set_jaw explicitly requests one. Two targeted
+command-semantics tests passed: startup/arm hold preserve the grasp, explicit release emits open.
+Physics validation is still required. Place also now declares the joint-position actuator its
+servo uses, and supplies calibrated `settle.fx` to the independent verifier.
+
+The first approach in g7b failed and entered a local retry. Retrying overwrote the original
+servo images and replaced approach evidence in the result, preventing reliable diagnosis.
+Pick now writes separate attempt directories, records each attempt's selection/approach evidence,
+and writes attempt.json after the attempt. This changes evidence retention only, not candidates,
+controllers, retries, tolerances or strategy. g7b still uses the earlier loaded implementation;
+these changes require the next runtime restart.
+
+
+### F68 — A verified lift was followed by an unverified carry retraction
+
+2026-09-19, g7b step 7. With the actual current tracker loaded and the site-specific grasp
+hint removed, attempt 2 selected the 12.1 mm stem from image evidence. Lift 0.139 m, jaw
+0.1696 rad and recomputed image flow 1.5 px vs 406.9 px expected for a left-behind item
+supported holding at the end of lift. The later bring_in moved TCP from [-1.109,-0.009,1.159]
+to [-0.808,-0.039,1.151]; final jaw was 0.100 rad (empty). The skill said success/held, but
+Ours' independent verifier rejected item_held. No authoritative held fact was created.
+
+The carry retraction code called plan_to with only an endpoint joint goal despite documenting
+constant tool orientation. Intermediate orientation was unconstrained and the trajectory was
+not retained, so its exact rotation during this failed run cannot be reconstructed. This is a
+confirmed mismatch in path semantics; it is not yet proof that rotation alone caused the slip.
+Retraction now uses the existing place carry servo: fixed TCP orientation, per-step MoveIt
+state-validity checks, and the same carry tolerances/rate/time budget relocated from place
+into both manifests (not tuned to this mission). It checks the jaw after retraction and sets
+outcome=held only afterwards. A failed optional retraction can still return a held item if
+the measured jaw supports that; an empty jaw returns a typed bring_in failure.
+
+g7c restores the original jaws-open g6c step-7 snapshot with runtime PID 912950 and all current
+changes, including F67. It stops at the first failed capability/effect for development diagnosis.
+No altered run here is a frozen-campaign autonomous success.
+
+g7c outcome: failed at bring_in with empty jaw, correctly reported by the new check. Lift
+was 0.079 m (jaw 0.1703 rad, image flow 7.8 px versus 632 px expected). Retraction moved
+0.25 m in 8.14 s, endpoint error 0.0073 m / 0.0198 rad, final jaw 0.100 rad. Maintaining
+orientation did not suffice. Hold-before/after images show relative sliding, and grasp-close
+jaw was 0.3672 rad before it narrowed to 0.1703. Existing traces do not retain the whole
+motion, so the exact loss time and mechanical cause remain unresolved.
+
+g7d continues the full g7c record/current physics without teleporting. Its robot-motion bag
+records clocks, TF, joint state and actual arm/gripper commands; no truth topics enter the
+agent. The harness attempt summary previously omitted current-schema VLM descriptions,
+selection reasons, operation base estimate and hold/retraction measurements. It now retains
+those existing facts for the model to interpret. No recovery plan or handle hint is added.
+Development attach can now omit OURS_RESUME_BEFORE_STEP to continue a stopped live graph's
+full record without restoring physics. This is still a development continuation, not a
+frozen autonomous campaign result.
+
+
+### F69 — Reproduce successful contact before replacing the grasp interface
+
+2026-09-19. Active scope is r3 of `manipulation_contracts_proposal.md`: compatible success
+reference → generic reproduction → complete the mission. No full NBV or control-ownership
+framework. Details, provenance and limits: `docs/success_reference_reproduction.md`.
+
+The current unchanged assets support grasp and transport: reference_r3_pregrasp restored an
+open-jaw snapshot, executed the existing D0 reference from MoveIt pregrasp, lifted and carried
+through destination docking. Jaw 0.174 at closure, 0.169 after lift, about 0.172 at destination.
+Thus a jaw reading near 0.17 alone is not evidence of loss. Release completed; retreat stalled.
+The next check, before any restore, independently reported the ORU delivered on PDU-1's shelf.
+No stow/dock or initial-state autonomous success is claimed. Oracle coordinates remain evaluator-only.
+The original straight-joint READY reference first failed before grasp; the recovery is explicitly
+recorded, not hidden as a complete clean reference run.
+
+A more specific g7c discrepancy precedes bring_in: chosen candidate 1 is on the wider mounting
+pedestal. Recomputing the original depth reproduces its 26.2 mm span; nearby visible neck rows
+measure about 12 mm. The VLM called it the neck, and a separate VLM confirmation repeated that
+mistake. That confirmation layer was discarded. Replaying selection with both old and clarified
+part wording chose candidate 22 once; this does not establish a prompt-only reliability improvement.
+
+The generic candidate chain tracked only centre and depth, allowing a narrow neck and coaxial
+wide base to join. Requiring continuity of both contour boundaries, using the existing pixel
+continuity tolerance, exposes a 12.1 mm neck candidate in that same frame. Twelve archived depth
+frames retain before/after candidates. This is offline geometry evidence, not physical success.
+The shared equipment catalogue now exposes sourced contact-region relationships and dimensions
+from the equipment specification, separate from observed poses; Ours refreshes it on reattachment.
+No per-object grasp coordinates, tuned numerical threshold, or simulator asset change was added.
+
+g8a validates these changes on the same held graph, with a new skill runtime and robot/TF/RGB-D
+recording started before the verified open-jaw restore. The reasoner independently used the catalogue
+to request the neck between head and pedestal. Minimal stage feedback reaches the journal.
+Live cancellation and successful completion of the new pick remain to be measured.
+
+
+### F70 — A committed neck contact drifted into background before closure
+
+2026-09-19, g8a. The reasoner used the sourced interface catalogue to request the narrow neck,
+excluding the head and mounting pedestal. The VLM selected candidate 15, width 12.0 mm, on the
+neck midsection. The first approach nevertheless failed at 6.9 cm with lost visibility, before
+closing. Its own images show the match moving from the neck to the lower-right background while
+scores remained near 1.0. The automatic next observation was explicitly canceled to analyze the
+first divergence. It is not a slip experiment: the jaws never closed on this attempt.
+
+Replay of the recorded wrist RGB-D and robot TF reproduces 5.3 cm target-estimate drift with the
+loaded adaptive-template implementation. Independent simulator TF records 663 object samples
+with zero translation during this approach; truth is used only to establish stationarity, not
+as tracker input. Freezing the template alone still permits association with the adjacent base.
+A fixed reference template/depth, association inside the measured contact's projected half-width,
+and a spatial contact committed in odom preserve matches over all 109 replayed approach frames.
+This is a counterfactual replay on the recorded camera trajectory, not proof of a new physical grasp.
+
+The fix uses no object-specific numbers or oracle pose. Robot pose feedback re-expresses the
+same odom contact and axes each cycle; visual matches check visibility and report discrepancy,
+not overwrite the point. Losing visibility before terminal self-occlusion invalidates the lock
+and returns a typed failure. One pick call now selects one contact; automatic full re-observation
+and re-selection were removed, leaving recovery strategy with the caller. The shared contract
+explicitly describes stationary targets and the controller's actual feedback source.
+
+The g8a cancellation exercised the minimal feedback/stop chain: final result was cancelled,
+worker_stopped=true and hold_command_applied=true; the harness then independently reported
+item_held=false. Jaws were already open and remained open. This does not test cancellation while
+holding a payload or establish a physical-rest acknowledgement; physical_stop_confirmed=false.
+
+g8b reloads the runtime and restores the same open-jaw initial state for physical validation.
+Evidence: g8a/offline_reference/{tracking_replay.json,object_stationarity.json}; replay script
+artifacts/perception/oracle_grasp_review/replay_g8a_tracking.py; g8b/source_snapshot and development.json.
+
+
+### F71 — Visual neck grasp survives lift and retraction; carry handoff exposed a reporting bug
+
+2026-09-19, g8b, development restore from g6c step 7. The model independently chose arm_ready,
+observe, locate_feature, then pick with the catalogue's neck description. Candidate 8 spans
+12.1 mm. Approach retained 46 matched frames without a miss; last reported match discrepancy
+was 1.68 mm. Closure jaw 0.1711, measured TCP lift 0.100 m, retraction 0.250 m, final jaw 0.172;
+the harness independently verified item_held=true. Closed robot/RGB-D bag and offline TF
+confirm handle world height 1.015 → 1.100 → 1.102 m through lift/retraction. The current assets
+therefore do not require modification to achieve this grasp. This is one successful development
+pick, not a frozen initial-state Mission B success or a controlled reliability comparison.
+
+The first navigation request failed before dispatch: drive_limits successfully sent carrying
+parameters, then indexed every evidence value as an array. The newly included scalar lever_m
+raised TypeError. The boundary now returns the complete configured arrays and scalar evidence
+unchanged. g8c continues the same physical grasp and complete journal without restoring a held
+snapshot or restarting skills. Its recording starts before the continuation.
+
+Evidence: g8b/ours/events.jsonl seq 48–65; g8b/offline_reference/phase_samples.json and
+relative_pose.csv; g8b/capability_server.log traceback; g8c/development.json.
+
+
+### F72 — Carry and destination docking retain grip; single-frame held query gives a false negative
+
+2026-09-19, g8c. After the scalar drive-limit evidence correction, navigate_to_pose completed
+81.64 sim seconds of transport; the harness then confirmed held=true. dock_at_feature reached
+the shelf work pose (1.3 cm reported error). The following VLM held query returned false despite
+a jaw angle of 0.175 rad, and the development stop-on-failure check stopped the agent.
+
+Closed-bag evaluator TF confirms retained grip: handle in TCP approximately [0.0005,0.0113,0.0153] m
+at departure, [0.0003,0.0059,0.0187] at arrival, [0.0009,0.0080,0.0181] after docking; neck/jaw
+axis alignment remains above 0.9995. The saved wrist image also shows the neck between the
+fingers. Thus this failure is a perception/verification false negative, not another physical slip.
+Simulator truth remains diagnostic-only and is not injected into the continuation.
+
+The authoritative object fact already transitions to unknown after failed confirmation, but its
+explanation asserted empty jaws. Corrected that wording to 'holding not confirmed'. g8d preserves
+the complete record/current physics and lets the model resolve the conflict. Its first chosen
+tool was held_item, which returned true on a fresh image. No repeated offline prompt trials or
+physical modification were used to force a positive result. Place/stow/dock still pending.
+
+A separate development-check defect was observed in g8b: STOP_ON_FAILURE killed the agent as
+soon as execution_finished=false arrived, before its independent held query completed. A new
+verification_finished event now marks completion of effect verification; subsequent checks
+wait for it before stopping/snapshotting. These edits were made after g8d's processes loaded
+and are not part of its executing source snapshot; they need validation on the next launch.
+
+Evidence: g8c/ours/events.jsonl seq 75–86; g8c/offline_reference/relative_pose.csv;
+g8c/evidence/wrist_0001945.92.jpg; g8d/ours/events.jsonl seq 89–90.
+
+
+### F73 — Placement was initially within bounds; upward withdrawal disturbed the released item
+
+2026-09-19, g8d/e. Do not infer the cause from the final outboard/tilted pose alone. At release
+entry the ORU root was [11.7611,4.3954,0.5150] m, 8.5 degrees from upright; the surveyed support
+is [11.75,4.4065,0.5]. Just after opening, it settled to root z=0.5097, up cosine 0.9986.
+Then during retreat it rose again to z=0.5725, moved outboard and ultimately settled near
+[11.6843,4.2307,0.5032], tilted 19.1 degrees. That endpoint fails both along-support location
+and upright criteria. The evaluator was not relaxed. g8e drove clear, inspected and was stopped
+after sufficient diagnostic evidence; no successful place/stow/dock is claimed.
+
+The direct geometric discrepancy from the successful reference: reference tool pitch at release
+was about +0.6 degrees, g8d about -21 degrees. Place preserves the measured wrist orientation
+after transport. Its axial withdrawal therefore commanded +53.7 mm upward motion over a
+150 mm retreat. The object's renewed lift starts during that movement, consistent with the
+open fingers catching the overhanging head. No contact-force trace identifies the exact colliding
+body; this contact explanation is an inference from synchronized motion and interface geometry.
+The later extra upward stroke also stalled; the first axial stroke itself reached its goal.
+
+Minimal shared correction: equipment knowledge for a neck with an overhanging head states a
+release constraint, below_overhang. The mission caller can pass this semantic constraint to
+place (default unconstrained retains axial withdrawal). The skill computes a support-parallel
+withdrawal for a side grasp, followed by its existing upward clearance. No new distances, object
+coordinates, asset changes, or mission-specific branch. The selected constraint and retreat
+goal are returned as evidence. Every method uses the same capability/metadata.
+
+Executing the actual modified geometric code on recorded robot TF preserves the 150 mm stroke
+and removes the 53.7 mm rise. This is counterfactual goal evidence, not proof of collision-free
+withdrawal or successful placement. Both constraint values validate through the real shared
+contract, lowering function, and RSkillManifest. Physical validation pending.
+
+Evidence: g8d/offline_reference/{relative_pose.csv,support_relation.json,withdrawal_replay.json};
+artifacts/perception/oracle_grasp_review/replay_release_withdrawal.py; reference_r3_pregrasp
+closed bag and corresponding CSV. g8e/diagnostic_stop.json records the explicit process stop.
+
+
+## F74 — Contact geometry first: oblique closing axis (2026-09-19, development)
+
+User narrowed work to correct approach/contact/closure; lift, bring_in and transport are deferred.
+g8f selected the neck and tracked 91 frames without a reported miss, closed at 0.2174 rad, lifted,
+then slipped during bring_in. This does not invalidate g8b’s success but does invalidate any claim
+that the visual pick is already reliable.
+
+Closed-bag RGB-D replay recovered the selected g8b/g8f observations (image MAE 0.334/0.330;
+RGB/depth receipt differences about 1 ms). The original candidate gave both closing-axis endpoints
+the same depth, imposing camera-frontoparallel closing. Fitting the visible neck surface gives
+a 0.44-degree tangent error for successful g8b and about 7.0 degrees for g8f, consistent with
+g8f's approximately 7.4-degree physical closure misalignment. This identifies an upstream geometric
+defect; it does not prove it is the only determinant of grasp retention.
+
+`refine_contact` now fits the selected part's local RGB-D surface, intersects its image direction
+with that plane, and constructs a tangent closing axis before odom target commitment. Actual-code
+replay changes g8b by 0.44 degrees and g8f by 7.21 degrees; the reconstructed axes are orthogonal
+to the fitted normal. Selection identity/point are unchanged. No object truth, object name,
+asset CAD or target-specific angle enters the control calculation. The hidden cross-section
+depth approximation remains to be evaluated against actual closure, not tuned preemptively.
+
+USD inspection found every EG2 collider inherited `regolith_contact` (0.5/0.5, multiply) from
+the rover. User explicitly authorized a reasonable friction increase. The gripper now has an
+independent 0.8/0.6 material, using the existing equipment-material range as a declared simulation
+assumption, not a hardware measurement. Wheel/body binding is unchanged. With multiply, against
+equipment 0.8/0.6, effective static/dynamic friction is 0.64/0.36 instead of 0.40/0.30.
+Authoring recipe: `space_robotics_bench/assets/lunar_base/process/set_gripper_material.py`.
+PhysX combination semantics: https://nvidia-omniverse.github.io/PhysX/physx/5.1.0/_build/physx/latest/struct_px_combine_mode.html
+
+Contact-only fixture g8g_contact runs production pick through grasp and raises an intentional
+`contact_diagnostic_complete` before hold/lift. It cannot assert held or run bring_in. It is not
+a mission capability or autonomous success. Its temporary manifest is outside the mission library.
+The explicit PhysxMaterialAPI schema was added to the authoring recipe after g8g boot, so g8g
+must not be cited as validation of the final multiply-combined material; reload before that claim.
+Live contact result pending.
+
+
+F74 contact validation update: g8g never reached contact (diagnostic client omitted the normal pick deadline; fixed).
+g8h loaded the final gripper material and selected a neck, but stopped before closure on lost tracking.
+Closed-bag TF shows premature object displacement with jaws still open. Before that, `take_standoff` rejected
+normal-direction IK then substituted a -30-degree approach. It checked only the stand-off, not the final
+contact. Thus tracking loss is not evidence to relax the tracker: the object really moved.
+
+Removed the pitch-search list and tilted-approach substitution. Equally clear sides now preserve both
+antipodal wrist rolls, ordered by current rotational distance; both stand-off and contact IK must succeed
+before the approach starts. The chosen roll remains fixed in odom during servo. Real-frame replay confirms
+contour-sign reversal leaves the same physical side options. g8i_contact validates this on the same
+open-jaw fixture and material; no lift/carry. Result pending.
+
+## F75 — Shared contact geometry and explicit closure conditions (2026-09-19, development)
+
+The solution-focused audit is `contact_closure_audit.md`. g8i ended before motion: contact IK failed.
+Its known-success-pose probe was after skill cleanup, so it did not establish the exact in-call scene.
+Code nevertheless confirmed a solid gripper envelope filling the jaw gap, ground-to-top work-zone columns,
+different planning/servo target exclusions, no consumer acknowledgement, and a close-in failure path that
+could proceed to closure without checking orientation. The two-second declaration expiry does not explain
+g8i's 0.04-s approach; that earlier possibility was explicitly withdrawn.
+
+Implemented: export seven EG2 collision meshes and six authored joints from the existing robot USD into
+the planning model; measured jaw state accompanies IK/whole-robot validity checks. Only authored adjacent
+joint collision exclusions replace the old broad gripper-link exemptions. These are source collision
+meshes, not a claim of identical PhysX cooked convex decomposition. No target geometry or oracle pose is
+embedded. Robot package builds and expanded URDF contains the six real gripper joints.
+
+The local work-zone node now triangulates valid neighbouring depth pixels instead of filling columns,
+with timestamped camera transforms. Long edges cannot bridge the minimum supported feature size.
+No target sphere or item-wide removal is applied. A shared prepare service acknowledges MoveIt's
+ApplyPlanningScene result and retains the stationary scene until release. Invalid/occluded measurements
+remain unknown: pick separately checks observed free rays for actual gripper surface samples along insertion.
+This is not a dynamic obstacle map or a complete concurrent ownership protocol.
+
+Pick's close-in uses the existing per-step joint servo and shared whole-robot collision checks, preserving
+the previous Cartesian speed limits. The separate height-map target authorization functions were removed.
+Close-in stalls no longer count as completion; actual position/orientation and target validity are checked
+again before closure. Pose error alone does not prove retained grasp. No lift or bring_in validation here.
+
+Read-only evidence in `artifacts/perception/contact_revision/`: the recorded g8b successful preclosure
+configuration now passes whole-robot validity and collision-aware IK in the acknowledged measured scene,
+with target_excluded=false; the old model rejected it. Five g8h configurations from the strongest recorded
+object-motion increments were compared against the currently undisturbed fixture: one reports eg2_base
+contact with measured/work_zone (~0.056 mm), four do not. This is a useful counterexample to blanket
+permission, not exact replay of the moving object's collision history or a robust contact-margin claim.
+Actual depth-surface replay on g8b/g8f passed; four existing command/cancellation tests passed.
+
+Harness attempt summaries/context retain scene, target validity, collision/IK, observation and closure
+conditions without creating held facts or prescribing recovery. The old g8i result survives reducer replay.
+The more specific final failure classification was edited after g8j runtime loaded: it is not physically
+validated by that run. g8j is contact-only; setup first corrected a temporary diagnostic manifest ID and
+reissued a stranded client request, before any pick execution. Its physical result is recorded below.
+
+F75 live update: g8j selected a neck and acknowledged measured_scene_144; contact IK and whole-robot
+validity succeeded. It stopped before insertion/closure on free-ray coverage (best candidates: 294
+unobserved samples), and released the scene normally. Closed-bag view recovery localizes the deficit
+to fingertips in the last portion of insertion; replay differs slightly because frames/TF are recovered
+by nearest recorded samples. This is no longer the old contact-IK failure.
+
+The added observability check initially conflated positive infinity with invalid depth. Installed IsaacLab
+CameraCfg documents clipping behavior 'none' as returning inf for ranges beyond the maximum; the current
+wrist camera has an authored far clip, while the ROS Image relay previously omitted this semantics.
+See the [official CameraCfg documentation](https://isaac-sim.github.io/IsaacLab/v2.2.0/source/api/lab/isaaclab.sensors.html#isaaclab.sensors.CameraCfg.depth_clipping_behavior)
+and installed `/home/bingqi/isaaclab/source/isaaclab/isaaclab/sensors/camera/camera_cfg.py`.
+
+SRB now publishes its actual CameraCfg near/far and positive-infinity meaning as sensor metadata;
+the bridge relays it unchanged, and Frame preserves it. Only explicitly declared beyond-far returns
+certify rays inside that sensor range. NaN, zero, missing metadata and out-of-image samples remain unknown.
+No numeric clipping distance is embedded in pick. Counterfactual replay on g8j's closed RGB-D using
+the unchanged authored camera configuration passes the same insertion coverage check without changing
+the grasp or coverage threshold. This was not metadata recorded live in g8j; g8m fresh boot validates
+the producer/relay/consumer path. Gripper FK also now computes TCP and fingers in one requested state,
+avoiding the current TF of a moving TCP as the reference for recorded-state geometry.
+
+Integration bookkeeping: g8k failed during sensor startup because the new publisher call passed one
+Publisher to an existing Sequence-based subscriber check; corrected. g8l's live metadata stayed unknown
+because the producer omitted IsaacLab's documented `depth` alias; corrected and raw data_types/clipping
+behavior retained. Neither executed pick. g8m fresh boot publishes the real `rgb/depth`, clipping='none',
+near=0.001/far=1.999, positive_infinity=beyond_far_clip metadata end to end (depth_semantics_live.yaml).
+These bounds come from the running sensor config, not skill constants.
+
+g8m reached closure: 2.86 mm / 0.0226 rad controller error, jaw 0.1825 rad. Closed-bag TF evaluation
+shows no object displacement during approach and the neck between the fingers. See contact_evaluation.json
+and the contact_closed.png image. This is contact evidence, not a held/lift result.
+
+**Run-isolation correction:** the previous statement that g8k/l never executed pick was only true at
+their initial teardown. Their check clients were not tagged and survived the simulator teardown. g8l
+subsequently issued another joints action immediately after g8m closure (bag wall 631.509 s), then failed
+find on the displaced scene. Thus g8m postclosure motion is contaminated, not evidence against friction
+or the stop action. The recorded stop command itself matches measured joints. Pending g8k client and
+launcher were explicitly terminated. run_d0 and attach_d0 now tag the timeout/check clients with their
+graph, so teardown owns actuator clients as well as ROS servers. g8n repeats from the other existing
+open-jaw fixture with unchanged capability code; only its active check remains.
+
+
+g8n completed observation (6 views, 28 candidates) and selected the neck, but stopped before motion:
+all offered stand-offs returned IK -31. The evidence preserved ik_no_solution and explicitly did not
+claim physical impossibility. Comparison with g8m isolates a remaining second feasibility rule:
+free_sides sampled one point 60 mm along either part-axis sign, kept only the highest visibility vote,
+and therefore pruned the opposite antipodal roll before the shared geometry could check it.
+The generic fix enumerates both mathematical jaw symmetries; current orientation orders them, while
+IK, whole-robot collision and observed insertion coverage authorize them. No new pitch, target point,
+IK seed list or scene-specific pose is introduced. Read-only replay checks this before another motion.
+
+Read-only g8n replay confirms the pruned opposite roll has both stand-off/contact IK and whole-robot
+validity, with zero missing sampled free-ray evidence; the original roll still fails IK. Stored at
+`artifacts/perception/contact_revision/g8n_antipodal_probe.json`. The attached bag missed the bridge's
+volatile TF because of subscriber QoS; replay reconstructs those robot-only frames using the actual
+sensor bridge calibration and recorded robot body TF. It does not read object transforms for solving.
+The same graph's startup bag provides the static frame roots. g8o records explicit TF QoS and reloads
+the skill runtime (1050798), then repeats the g8b step-10 fixture. Result below.
+
+
+g8o selected the neck and passed shared stand-off/contact IK, whole-robot endpoint checks and insertion
+observation coverage. It reached close-in, then stopped 13 mm / ~2 degrees before its goal: the next
+joint state collided between measured/work_zone and eg2_link6 (0.382 mm reported penetration).
+Jaws remained open. Closed-bag robot/object TF confirms zero object displacement during approach;
+final_wrist.png and contact_evaluation.json retain the actual stopped geometry. Endpoint feasibility
+is therefore not a physical trajectory success. Do not loosen collision tolerance or reinstate the
+old near-enough closure path. Exact collision position/normal and tested joints were missing from this
+result; state_validity now returns those fields for the harness (source change after g8o, not loaded
+in its runtime). No claim yet whether the hit is permissible contact, reconstruction error or trajectory
+tracking error. No stable contact/closure claim and no lift/bring-in execution in these diagnostics.
+
+Final state: only g8m graph retained, runtime 1050798; all recorders/checks finished. Temporary diagnostic
+skill symlink removed from the palette. All source changes remain uncommitted. The next investigation
+is the last insertion corridor/contact identity using the recorded state, not another whole pick sweep.
+
+
+## F76 — Formal grasp/transport attempt still stops before closure (2026-09-19)
+
+User authorized attempting full pick and transport after the audit corrections. g8p restores g8b's
+open-jaw before_step_10 fixture in g8m's graph; runtime 1054384 reloads the collision evidence additions,
+and the capability boundary is restarted. The mission agent issues the semantic pick through the normal
+boundary; STOP_ON_FAILURE waits for independent verification. No motion/control/friction changes in this attempt.
+
+Six views / 28 candidates, selected neck candidate 7. The applied scene, stand-off/contact endpoint IK,
+whole-robot endpoint validity and sampled insertion visibility pass. Stand-off settles to 1.7 mm / 0.0253 rad.
+Final approach fails about 20 mm / 3 degrees from its estimated goal. The rejected configuration reports
+measured/work_zone vs eg2_link2, penetration 0.0387 mm, with contact position, normal and tested joints now
+retained. This is a planning collision, not proof of an actual physical impact. Jaws remain 0.82 rad/open;
+independent item_held=false. No closure, lift, bring-in, navigation or transport is executed.
+
+Closed-bag evaluation: zero object displacement after approach starts. The reported planning contact
+transforms near the neck's front/side corner: relative to authored handle center approximately
+[+6.45, -15.23, -17.66] mm. Robot/object truth is used only for this evaluation, never for control.
+Final actual closing-axis error against the neck axis is about 15.9 degrees. The controller's 3-degree
+error is relative to its estimated goal, not to the true contact frame. Candidate 7's local surface fit
+has RMS 1.59 mm and rotates the image proposal by 20.52 degrees; earlier successful flat-face fit g8m
+had RMS ~7e-8 m. Mixed-face fitting is a plausible direction-estimation cause, not yet a proven exclusive
+root cause. The next targeted analysis is the selected contact surface/frame and executed orientation;
+do not expand this into friction tuning or a transport-slip diagnosis before grasp is established.
+
+Evidence: g8p/{pick_result,physical_evaluation,collision_evaluation}.json, ours/events.jsonl,
+offline_reference/, and closed robot_motion/. Source/assets and development metadata retained.
+This restored development attempt is not a frozen paper-campaign trial. Only g8m graph is retained;
+g8p agent/check/recorder ended, no competing client remains.
+
+
+## F77 — Expected contact is a scoped permission, not absent geometry (2026-09-19)
+
+**Trigger and scope.** User identified the over-strong final-approach requirement:
+a grasp must establish contact. g8p's predicted 0.039 mm intersection alone does not
+prove physical infeasibility or a false positive. Its reported body was eg2_link2,
+not a distal jaw. Implement expected contact without globally ignoring the gripper
+or deleting the target, and retain the same capability for every mission/method.
+
+**Implementation.** The locked RGB-D candidate supplies an oriented region in odom:
+measured width/length and the existing gripper perception depth-discontinuity span.
+The shared scene labels only whole measured triangles within that region as
+`measured/contact`; every other triangle (including crossing boundaries), surveyed
+structure and robot collision model stays in place. Robot geometry identifies
+`eg2_link5/6` as distal jaw bodies. Only those two link/patch pairs are allowed for
+contact endpoint IK/validity and final insertion/closure. Free-space standoff motion
+retains strict checks; free-ray coverage separately counts expected-contact samples
+for the same link/region predicate. Permission is revoked before lift. Every phase
+waits for ApplyPlanningScene and records its evidence; all operation exits restore
+the original ACM and unsplit scene before releasing the scene owner.
+
+**Integration evidence.** `artifacts/perception/contact_permission/integration.json`
+records a real idle-graph MoveIt check: immutable registration, endpoint_check,
+insertion, two revocations, and release. All **26,455 measured triangles** and
+unrelated ACM pairs were preserved. Release restored the original ACM and removed
+the temporary label. No motion was sent. The check accounts for MoveIt's serialized
+object pose/mesh poses and omission of all-false ACM rows. The four existing gripper
+command/cancellation tests pass. `openral_msgs` rebuilt successfully.
+
+The same integration exposed images arriving 20 ms ahead of their robot TF. The
+scene now selects the newest timestamp-matched frame in the sensor QoS history,
+not a latest-pose substitution or a guessed time offset. Registration rejection
+also exercises cleanup without attempting to remove a never-created object.
+
+**Limits.** Permission uses distal-jaw-body granularity, not isolated pad meshes.
+The regional box labels observed surfaces; it is not an object shape or evidence
+that insertion is physically correct. eg2_link2 remains protected. This change
+neither proves g8p would grasp if allowed nor repairs a 16-degree estimated-axis
+error. No contact-force guarantee, crash recovery, or held-object attachment is
+claimed. Full physical validation is g8q, a development continuation, not a frozen
+campaign run.
+
+**g8q physical result.** Resumed g8b before step 10 through the production harness,
+with runtime 1079879. Candidate 8 measured 12 mm wide; registration split 785
+triangles into the contact patch. Endpoint permission, revocation before standoff,
+and final insertion permission were all acknowledged. Standoff reached 1.2 mm /
+0.0342 rad error. Final insertion stalled 27 mm / about 1 degree from its commanded
+goal, with last MoveIt state validity **true** and no reported contacts. The final
+command-minus-measured joints were approximately [0.01, 0, -0.01, -0.02, -0.07,
+0.03, -0.05] rad. No closure or transport occurred; independent item_held=false,
+jaw=0.82. This is a servo no-progress result, not another collision veto; physical
+interference versus controller/model/tracking cause is **not yet established**.
+Failure cleanup acknowledged geometry/permission restoration. Agent/check ended;
+recorder 1079792 closed cleanly. Preserve the sole g8m_contact graph.
+
+Artifacts: `artifacts/runs/g8q/{pick_result.json,ours/events.jsonl,robot_motion/,
+source_snapshot/}`. Next session should analyze the closed bag and compare actual
+versus commanded joint/TCP motion with g8b, before another modification or run.
+Do not infer stable grasp from the permission check or the absence of a collision
+veto. OpenRAL commits 6154482 + 56ce9b8; SRB 1928821.

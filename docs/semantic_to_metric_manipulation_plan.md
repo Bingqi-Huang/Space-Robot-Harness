@@ -1,5 +1,10 @@
 # Manipulation capabilities: design and validation plan
 
+**2026-09-19 execution notice:** The user approved the narrowed
+[r3 success-reference plan](manipulation_contracts_proposal.md): reproduce compatible successful grasp/carry
+conditions, then complete Mission B; diagnose the first divergence if reproduction fails.
+Full C1/C3 construction is deferred. This historical v4 text does not authorize restoring hidden scan/retry loops.
+
 Status: plan v4 (2026-09-17, user decision). Supersedes v3, which kept the right internals (no object models, VLM
 chooses among image grasp candidates, on-board tracking + visual servo, image/encoder checks, harness facts and
 verification) but put the *composition* at the wrong level: it made the agent call seven tools in a fixed order to

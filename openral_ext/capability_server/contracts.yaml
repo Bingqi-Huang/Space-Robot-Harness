@@ -219,18 +219,20 @@ effects:
 
   pick:
     description: >-
-      Pick up an item described in words, holding it by the part you name, with the arm and the wrist RGB-D camera,
+      Pick up a stationary item described in words, holding it by the part you name, with the arm and the wrist RGB-D camera,
       and lift it clear of where it stood. The arm needs no preparation: the skill takes its own views and plans its
       own way there from wherever the arm is. The item must be within the arm's reach behind the rover (dock at the
       item's work pose first). The skill looks over the work area, finds possible grasps in the image, has the
-      vision-language model choose the one on the described part of the described item, servoes to it, closes the
-      jaws and checks the hold while lifting; it retries on the same item only. On failure it reports the stage it
+      vision-language model choose the one on the described part of the described item, commits that contact in odom,
+      approaches using robot pose feedback while checking visual visibility, closes the
+      jaws and checks the hold while lifting. One call commits one contact; failure returns to the caller before
+      another observation/selection. On failure it reports the stage it
       reached (find, select, approach, grasp, hold), why, and what the camera and the vision model saw. It ends with
       the item held clear of where it stood and the arm in that carrying posture: the rover can drive like this, and
       the arm must not be folded (stow, arm_ready) until the item is set down.
     inputs:
       target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
-      part: [string, true, "the part to hold it by (e.g. its carry handle)"]
+      part: [string, true, "the contact region to hold, described semantically; include applicable interface constraints from the equipment catalogue"]
     default_deadline_s: 900
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-pick
@@ -243,8 +245,11 @@ effects:
       support takes its weight, open the jaws, retreat clear and check that the item stays put. The support must be
       within the arm's reach behind the rover (dock at the support's work pose first). On failure it reports the stage
       reached (over, lower, release, retreat, settle) and why.
+      For a side grasp beneath an overhanging head, select below_overhang so withdrawal stays parallel to the
+      horizontal support before lifting clear; unconstrained withdraws along the current tool axis.
     inputs:
       support: [string, true, "a surveyed place point of type place from the site map, e.g. pdu_1_shelf/shelf"]
+      release_constraint: ["string(unconstrained|below_overhang)", false, "the grasp interface's release constraint from equipment knowledge; default unconstrained"]
     default_deadline_s: 600
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-place
@@ -279,7 +284,7 @@ queries:
     description: >-
       The surveyed site (fixed infrastructure, `map`): every named interaction point with its type, position and
       outward normal, the camera view poses of the equipment, the graded road network the rover drives on, and the
-      rover dock. Movable objects are not in it.
+      rover dock. Includes sourced equipment catalogue/interface descriptions, but no current movable-object poses.
     inputs: {}
   observe:
     description: >-
@@ -303,7 +308,9 @@ queries:
   manifest:
     description: >-
       Mission control's logistics manifest: what each depot staging slot is recorded to hold, and the catalogue data of
-      the standard items (size, mass, carry handle and its height above the item's base). It is the record, not an
+      the standard items (size, mass, carry handle, documented contact regions and interface dimensions with source).
+      Catalogue descriptions are prior equipment knowledge; current location and contact identity require observation.
+      It is the record, not an
       observation: it can be out of date.
     inputs: {}
   arm_state:
