@@ -1,0 +1,50 @@
+// EUROPA->PLEXIL execution bridge (execution_plan §11.2): a generic activity-dispatch plan. It holds no mission
+// logic -- no orderings, retries or recoveries; those are EUROPA's (the host replans). Loop: take the next activity
+// from the host (HostLink adapter), run it as one capability call of the common boundary (the PLEXIL baseline's
+// ros/plexil_capability_adapter), hand the raw result back to the host. An empty capability name ends the run.
+
+String Command NextActivity();
+String Lookup ActivityArgs();
+Boolean Command ReportResult(String);
+Boolean Command ExecuteCapability(String, String);
+String Lookup LastCapabilityResult();
+
+ActivityDispatch: Sequence
+{
+  Boolean done = false;
+
+  Loop: Sequence
+  {
+    String capability;
+    String args;
+    Boolean ok;
+    Boolean sent;
+    RepeatCondition !done;
+
+    Next: { EndCondition isKnown(capability); capability = NextActivity(); }
+    Finish: { SkipCondition capability != ""; done = true; }
+    Run: Sequence
+    {
+      SkipCondition done;
+      GetArgs: args = Lookup(ActivityArgs);
+      // a call the boundary never accepted returns no value: the host then gets an empty result
+      Execute:
+      {
+        EndCondition isKnown(ok) || Execute.command_handle == COMMAND_DENIED || Execute.command_handle == COMMAND_FAILED;
+        ok = ExecuteCapability(capability, args);
+      }
+      Report:
+      {
+        SkipCondition !isKnown(ok);
+        EndCondition isKnown(sent);
+        sent = ReportResult(Lookup(LastCapabilityResult));
+      }
+      ReportNotRun:
+      {
+        SkipCondition isKnown(ok);
+        EndCondition isKnown(sent);
+        sent = ReportResult("");
+      }
+    }
+  }
+}
