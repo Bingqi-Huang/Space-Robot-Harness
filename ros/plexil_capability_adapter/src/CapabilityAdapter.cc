@@ -20,9 +20,16 @@
 //                                                                       (pick, place, stow, arm_ready, press, ...)
 //                                                                       reported reaching, extracted from its evidence;
 //                                                                       "" when the result carried none
-// Both are a mechanical read of the last ExecuteCapability result already held for LastCapabilityResult -- no
-// per-capability interpretation, no recovery choice: what recovery a kind/stage means belongs in the PLEXIL plan
-// library, never here.
+//   Command String RequestOperator(String question)                  -> the operator's answer
+//     -> publishes openral_msgs/PromptStamped {text: question, metadata_json: {"request_id"}} on
+//        /space/operator/request (the same topic space_runtime/agent.py and baselines/europa/host.py use), the
+//        Command stays EXECUTING (no Command Ack yet) until a matching request_id comes back on
+//        /space/operator/reply, published by experiments/operator_console/console.py; a plan escalates with this
+//        and reads the answer as a plain String -- no mission logic here about when to call it or what the answer
+//        means, that is the plan library's.
+// Both LastFailureKind/LastFailureStage are a mechanical read of the last ExecuteCapability result already held for
+// LastCapabilityResult -- no per-capability interpretation, no recovery choice: what recovery a kind/stage means
+// belongs in the PLEXIL plan library, never here.
 // No mission logic: no orderings, retries or recoveries -- those belong in the PLEXIL plan library (the baseline's
 // pre-engineered knowledge), never in the adapter.
 //
@@ -42,16 +49,21 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <openral_msgs/msg/prompt_stamped.hpp>
 #include <space_harness_msgs/action/execute_capability.hpp>
 #include <space_harness_msgs/srv/query_capability.hpp>
 
+#include <atomic>
 #include <chrono>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
 
 using ExecuteCapability = space_harness_msgs::action::ExecuteCapability;
 using QueryCapability = space_harness_msgs::srv::QueryCapability;
+using PromptStamped = openral_msgs::msg::PromptStamped;
+namespace { char const *kRequestTopic = "/space/operator/request"; char const *kReplyTopic = "/space/operator/reply"; }
 
 namespace
 {
@@ -112,6 +124,19 @@ std::string last_stage(std::string const &evidence_json)
   auto end = evidence_json.find('"', pos);
   return end == std::string::npos ? "" : evidence_json.substr(pos, end - pos);
 }
+
+// The `"<key>": "<value>"` string field in a small flat JSON object (PromptStamped's own metadata_json here) --
+// a plain text scan like last_stage(), not a JSON parse. "" when the key is absent.
+std::string json_string_field(std::string const &json, std::string const &key)
+{
+  std::string const needle = "\"" + key + "\"";
+  auto pos = json.find(needle);
+  if (pos == std::string::npos) return "";
+  pos = json.find('"', pos + needle.size());  // opening quote of the value, past the key and the ':'
+  if (pos == std::string::npos) return "";
+  auto end = json.find('"', pos + 1);
+  return end == std::string::npos ? "" : json.substr(pos + 1, end - pos - 1);
+}
 }  // namespace
 
 class CapabilityAdapter : public PLEXIL::InterfaceAdapter
@@ -128,6 +153,9 @@ public:
     node_ = std::make_shared<rclcpp::Node>("plexil_capability_adapter");
     execute_ = rclcpp_action::create_client<ExecuteCapability>(node_, "/space/capability/execute");
     query_ = node_->create_client<QueryCapability>("/space/capability/query");
+    request_pub_ = node_->create_publisher<PromptStamped>(kRequestTopic, 10);
+    reply_sub_ = node_->create_subscription<PromptStamped>(
+      kReplyTopic, 10, [this](PromptStamped::SharedPtr msg) { onOperatorReply(msg); });
     config->registerCommandHandlerFunction(
       "ExecuteCapability",
       [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) {
@@ -140,6 +168,9 @@ public:
         }
         send(cmd, intf, capability, args_json);
       });
+    config->registerCommandHandlerFunction(
+      "RequestOperator",
+      [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) { requestOperator(cmd, intf); });
     // every other Command is a capability with positional arguments (the Utility adapter's print/pprint keep theirs)
     config->setDefaultCommandHandlerFunction(
       [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) {
@@ -237,6 +268,49 @@ private:
     execute_->async_send_goal(goal, opts);
   }
 
+  // RequestOperator(String question) -> String answer. No action server/goal handshake here (the console is a plain
+  // subscriber): ack SENT_TO_SYSTEM once the request is published, then leave the command EXECUTING -- exactly the
+  // async pattern send()/result_callback use above -- until a reply with a matching request_id arrives.
+  void requestOperator(PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf)
+  {
+    std::vector<PLEXIL::Value> const &args = cmd->getArgValues();
+    std::string question;
+    if (args.size() < 1 || !args[0].getValue(question)) {
+      intf->handleCommandAck(cmd, PLEXIL::COMMAND_FAILED);
+      intf->notifyOfExternalEvent();
+      return;
+    }
+    std::string request_id = std::to_string(++request_seq_);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      pending_operator_[request_id] = {cmd, intf};
+    }
+    PromptStamped m;
+    m.text = question;
+    m.metadata_json = "{\"request_id\": \"" + json_escape(request_id) + "\"}";
+    request_pub_->publish(m);
+    intf->handleCommandAck(cmd, PLEXIL::COMMAND_SENT_TO_SYSTEM);
+    intf->notifyOfExternalEvent();
+  }
+
+  void onOperatorReply(PromptStamped::SharedPtr msg)
+  {
+    std::string request_id = json_string_field(msg->metadata_json, "request_id");
+    PLEXIL::Command *cmd;
+    PLEXIL::AdapterExecInterface *intf;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto it = pending_operator_.find(request_id);
+      if (it == pending_operator_.end()) return;  // a reply to a report, or one already resolved
+      cmd = it->second.first;
+      intf = it->second.second;
+      pending_operator_.erase(it);
+    }
+    intf->handleCommandReturn(cmd, PLEXIL::Value(msg->text));
+    intf->handleCommandAck(cmd, PLEXIL::COMMAND_SUCCESS);
+    intf->notifyOfExternalEvent();
+  }
+
   void queryCapability(PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr)
   {
     std::string q, args_json = "{}";
@@ -266,12 +340,16 @@ private:
   rclcpp::Node::SharedPtr node_;
   rclcpp_action::Client<ExecuteCapability>::SharedPtr execute_;
   rclcpp::Client<QueryCapability>::SharedPtr query_;
+  rclcpp::Publisher<PromptStamped>::SharedPtr request_pub_;
+  rclcpp::Subscription<PromptStamped>::SharedPtr reply_sub_;
   std::unique_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;  // after rclcpp::init
   std::thread spinner_;
   std::mutex mutex_;
   std::string last_result_ = "{}";
   PLEXIL::Integer last_failure_kind_ = 0;
   std::string last_failure_stage_;
+  std::atomic<int> request_seq_{0};
+  std::map<std::string, std::pair<PLEXIL::Command *, PLEXIL::AdapterExecInterface *>> pending_operator_;  // request_id -> the Command awaiting its answer
 };
 
 extern "C" {
