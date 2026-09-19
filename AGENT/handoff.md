@@ -24,15 +24,15 @@ Current order: **finish Mission B → press live → Mission A → baselines/fre
 - Real MoveIt integration passed: 26,455 triangles preserved, other ACM pairs unchanged, release restores original.
 - g8q finished: 785 patch triangles, permission applied, last MoveIt validity=true; servo stalled 27 mm out.
 - No closure/transport; independent held=false. Next: offline bag comparison of commanded/measured motion and g8b success.
-- g8j contact IK/validity passed; free-ray evidence stopped insertion. Sensor no-return metadata fixes recorded deficit offline.
-- Selected surface fit corrects observed g8f closing-axis error (~7.2 degrees), using recorded RGB-D only.
 - EG2 now has independent static/dynamic 0.8/0.6 material; wheels retain 0.5/0.5. Fresh graph required.
 
 - Research branch `feat/manipulation-contracts`, continuing prior uncommitted `fix/mission-operation-evidence` work.
 - OpenRAL branch `feat/manipulation-contracts`, 6154482 (manipulation fixes) + 56ce9b8 (method documentation).
 - SRB `feat/lunar-base-scene`: 1928821 commits shared gripper friction and sensor depth-return semantics.
 - GUI Isaac had already exited; stale agent/check/launch and tagged graph processes were torn down explicitly.
-- Only graph g8m_contact retained; runtime 1079879, scene 1077336. g8q agent/check ended; recorder closed.
+- F78: close-in fix (no sag integral / posture pull, pick only) uncommitted in openral. g8s: pick→carry→dock PDU-1 held;
+  place `over` stalled 1.1 cm, item still in jaws. g8r: VLM chose 27 mm pedestal; no width-vs-catalogue check yet.
+- Only graph g8m_contact retained; runtime 1093996, scene 1077336. g8r/g8s agents/checks ended; recorders closed.
 - g8p/g8q bags closed; no diagnostic skill. g8q cleanup restored geometry/ACM. Recheck PIDs before control.
 - g8p: eg2_link2 collision near neck, ~16-degree axis error, no closure/push. Link2 remains protected by F77.
 - Original reference stopped before grasp at obsolete straight-joint READY; restored g6c step 7 in the same graph.

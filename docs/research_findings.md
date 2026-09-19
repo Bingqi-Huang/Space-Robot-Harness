@@ -3725,3 +3725,30 @@ source_snapshot/}`. Next session should analyze the closed bag and compare actua
 versus commanded joint/TCP motion with g8b, before another modification or run.
 Do not infer stable grasp from the permission check or the absence of a collision
 veto. OpenRAL commits 6154482 + 56ce9b8; SRB 1928821.
+
+
+## F78 — Empty-jaw close-in fixed; one pick → carry → dock chain; selection and loaded servo remain (2026-09-19)
+
+**g8q cause (closed-bag replay).** Object and base never moved. At sim 2315.5–2316.3 the distal jaws straddled
+the neck (jaw centre ~3 mm from the ORU axis, evaluator TF only). The TCP was then ~15 mm past the skill's own
+goal; the servo carried it 26 mm sideways, ~20 mm back and 10 mm up, then declared no progress 27 mm out.
+Measured joints followed commands: not an obstruction. Offline replay of the servo law through the live graph's
+MoveIt FK, with per-joint lags fitted from the bag (0.34–1.44 s), reproduces it: as-is 11.7 s, 12 mm overshoot,
+23.5 mm lateral; without the sag integral no overshoot but 18.5 mm lateral; without integral and null-space
+posture pull 5.5 s, 8 mm lateral. Fix: `servo(sag_integral=False, posture_gain=0.0)` for pick's close-in only
+(empty jaws, short straight insertion). Other servo users unchanged.
+
+**g8r (same code, runtime 1093996, g8b before_step_10).** VLM chose candidate 10, 27.4 mm wide, ~10 cm below the
+neck: the pedestal (as g7c). Its p30 view offered no neck mark; p20's neck mark 2 was ignored. Contact IK then
+failed correctly; nothing touched. The catalogue lists the neck thickness, pick measures each candidate's width,
+and nothing compares them: C2's "semantic choice and geometry refer to the same part" is not implemented.
+STOP_ON_FAILURE ended the agent, so model recovery was not exercised; the failure text would not have told it why.
+
+**g8s (same code).** Neck candidate 12 (12.1 mm). Close-in 2 mm / 0.004 rad in 9.2 s, 88 frames, 0 missed.
+Jaw 0.170, lift 0.061 m, flow 0.3 px vs 412 px expected; independent held=true. bring_in stalled at joint4's
+limit, jaw retained. navigate_to_feature and dock_at_feature to PDU-1 with item_still_held verified after each.
+place failed at `over`: stalled 1.1 cm / 2 deg from goal (carry tolerance 1.0 cm), jaw 0.173, item_placed=false,
+item still in the jaws. Throughout the carry after bring_in the held joint command differed from measured by
+0.3–0.75 rad on joints 1/3/5/7 (arm against joint4's stop): the servo command integrates from itself and winds
+up at a joint stop. Loaded `over` also lagged (joint6 ~0.1 rad). Cause of the `over` stall not yet established.
+Development continuations, not campaign trials. Evidence: g8q/g8r/g8s `robot_motion/` (closed), `ours/events.jsonl`.
