@@ -89,7 +89,7 @@ Attach executes a frozen copy in the run directory: never edit a script that is 
 - Ours completed Mission A covered before the new manipulation stack (oa2); record-based restart worked (rs1).
 - g8d earlier placed and released on the old shelf; the release retreat constraint `below_overhang` exists (F73).
 - Press is built but has never pressed a button live; Mission A's ready/stand deadlock is unresolved (F62 §3).
-- PLEXIL Release 6 builds and runs Mission A covered through the common boundary (F52); EUROPA not started.
+- PLEXIL Release 6 builds and runs Mission A covered through the common boundary (F52); EUROPA builds and replans offline (F80).
 
 ## Operational rules and locations
 
