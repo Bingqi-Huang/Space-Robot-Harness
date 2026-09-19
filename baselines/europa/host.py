@@ -7,21 +7,30 @@
   5 dispatch the next activity through PLEXIL (plexil/plans/ActivityDispatch.plx over the HostLink adapter)
   6 turn the raw capability result into plan-database facts (facts_from_result: this baseline's artifact)
   7 an activity that ended as planned advances the plan; one that did not makes the host replan from the updated facts
-The domain stays frozen: a situation it cannot plan for ends the run with "no plan" (operator assistance required).
+The domain stays frozen: a situation it cannot plan for needs an operator. It asks through the same console channel
+`space_runtime`/the PLEXIL adapter use (`/space/operator/{request,reply}`, matched by request_id) and waits; the
+answer is logged, and only an explicit "continue" resumes the loop (anything else stops the run) -- what a "no plan"
+means and whether the operator can actually fix it is baseline logic, not this mechanism's.
 
   python host.py --run-dir <dir> --goal depot_stand/slot_0@work --goal dock --final dock
 """
 import argparse
 import json
 import math
+import queue
 import re
 import socket
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
 import rclpy
+from openral_msgs.msg import PromptStamped
 from space_harness_msgs.srv import QueryCapability
+
+REQUEST_TOPIC = "/space/operator/request"
+REPLY_TOPIC = "/space/operator/reply"
 
 HERE = Path(__file__).resolve().parent
 PLANNER = HERE / "planner/build/europa_plan"
@@ -157,6 +166,20 @@ def query(node, client, name):
     return json.loads(f.result().value_json)
 
 
+def ask_operator(node, pub, inbox, question):
+    """Publish `question` on REQUEST_TOPIC and block (spinning `node`) for the console's reply on
+    REPLY_TOPIC, matched by request_id. Returns (answer_text, {authority_level, interaction_id})."""
+    request_id = uuid.uuid4().hex[:12]
+    pub.publish(PromptStamped(text=question, metadata_json=json.dumps({"request_id": request_id})))
+    while True:
+        rclpy.spin_once(node, timeout_sec=0.1)
+        while not inbox.empty():
+            msg = inbox.get()
+            meta = json.loads(msg.metadata_json or "{}")
+            if meta.get("request_id") == request_id:
+                return msg.text, meta
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
@@ -178,6 +201,17 @@ def main():
     node = rclpy.create_node("europa_host")
     client = node.create_client(QueryCapability, "/space/capability/query")
     client.wait_for_service()
+    request_pub = node.create_publisher(PromptStamped, REQUEST_TOPIC, 10)
+    reply_inbox = queue.SimpleQueue()
+    node.create_subscription(PromptStamped, REPLY_TOPIC, reply_inbox.put, 10)
+
+    def needs_operator(question):
+        """Ask, log the exchange, and say whether the operator's answer was an explicit "continue"."""
+        answer, meta = ask_operator(node, request_pub, reply_inbox, question)
+        log("operator_answered", question=question, answer=answer, authority_level=meta.get("authority_level"),
+            interaction_id=meta.get("interaction_id"))
+        return answer.strip().lower() == "continue"
+
     site = query(node, client, "site_map")
     site_lines, names = instance(site)
     loc = {v: k for k, v in names.items()}
@@ -197,6 +231,9 @@ def main():
             activities=[(x["type"], x["params"]) for x in plan["activities"]])
         if not plan["solved"]:
             log("no_plan", state=state, goals=goals)
+            if needs_operator(f"EUROPA found no plan from state {state} for goals {goals}. "
+                              "Reply 'continue' to retry planning, anything else to abort."):
+                continue
             break
         for act in plan["activities"]:
             cap, args = capability_call(act, names, site)
@@ -214,6 +251,9 @@ def main():
                 break
         if any(v >= ATTEMPTS for v in failures.values()):
             log("no_plan", reason="attempts exhausted", failures=failures)
+            if needs_operator(f"Repeated failures, no plan around them: {failures}. "
+                              "Reply 'continue' to retry, anything else to abort."):
+                continue
             break
     link.finish()
 
