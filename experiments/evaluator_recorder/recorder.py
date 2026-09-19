@@ -30,15 +30,21 @@ What this subscribes and why (sources in docs/evaluator_violations.md):
     is the counted signal; these are corroborating).
   - `/clock` (rosgraph_msgs/Clock) -- sim time to stamp the above (Float32/SafetyStatus/Empty carry no
     header of their own); kept as `self.sim_t`, same pattern as `openral_ext/capability_server/node.py`.
+  - `/tf`, `/tf_static` (via a `tf2_ros.Buffer`/`TransformListener`, not a raw subscription) -- filtered
+    to `TRACKED_POSE_FRAMES`: the two Mission B manipulable objects
+    (`srb/env0/lb_spare_oru`, `srb/env0/lb_spare_crate`, `OBJECT_PREFIX = "lb_"` in
+    `srb/assets/scenery/lunar_base.py`) and the arm's `srb/env0/robot/Link7` (the body
+    `lunar_base_mission_b/task.py::tcp_pos_env` itself measures the TCP offset from -- ground truth, no
+    AMCL). Looked up in the common `srb/env0` frame (`Buffer.lookup_transform`, the same pattern
+    `openral_ext/capability_server/node.py::_tf()` already uses) once per `mission_state` message
+    (~5 Hz), logged as a `pose` event per frame found. A frame a mission structurally has no object for
+    (Mission A has no `lb_spare_*`) raises `tf2_ros.LookupException` -- caught and simply not logged for
+    that tick, not a defensive corner case: it is the expected shape of a run without that object.
+    `evaluation/violations.py` computes the actual TCP (Link7 pose + the mission task's own local
+    `_TCP_OFFSET`) and the held/rest/displacement judgements from these raw poses; this node only
+    records them.
 
 What this deliberately does NOT subscribe (see docs/evaluator_violations.md "what's missing"):
-  - object poses (`/tf`) -- already published (`srb/interfaces/interface/ros.py::_broadcast_transforms`)
-    and, when the run's launch enables the `robot_motion` rosbag (confirmed against
-    `artifacts/runs/{g9b,g8v}/robot_motion/metadata.yaml`: `/tf`, `/tf_static`, `/srb/env0/mission_state`
-    and joint/camera topics are already recorded there), captured for free. Re-subscribing and
-    re-decimating the full TF tree here would duplicate that bag for no new information; `rows.py`
-    reads the bag directly when it exists for the run and leaves the pose-dependent half of classes 2/3
-    `None` (not guessed) when it does not, matching every other `None` in `NormalizedRunRow`.
   - the in-progress capability call and its target -- already recorded, per call, by
     `capability_server.log` (the shared `/space/capability/execute` boundary's own log line,
     `CAPABILITY {"capability": ..., "args": {...}, ...}`, one line per *completed* call with the
@@ -71,6 +77,14 @@ ESTOP_TOPIC = "/openral/estop"
 ESTOP_CLEARED_TOPIC = "/openral/estop_cleared"
 CLOCK_TOPIC = "/clock"
 
+# The frames docs/evaluator_violations.md's classes 2/3 need, looked up in this common frame -- every
+# scene rigid object and articulation is broadcast as a direct child of its env frame
+# (`srb/interfaces/interface/ros.py::_broadcast_transforms`), so `srb/env0` is the right common frame
+# for the two tracked objects; `srb/env0/robot/Link7` needs the `Buffer` to compose through
+# `srb/env0/robot` (the fused WheeledManipulator's own root), same as any tf2 consumer would.
+POSE_REFERENCE_FRAME = "srb/env0"
+TRACKED_POSE_FRAMES = ("srb/env0/lb_spare_oru", "srb/env0/lb_spare_crate", "srb/env0/robot/Link7")
+
 # SRB's own undesired-contact penalty term (WEIGHT_UNDESIRED_ROBOT_CONTACTS = -1.0 in every task file
 # that computes it): a violation tick publishes -1.0, a clean tick publishes 0.0. Comparing against the
 # midpoint keeps this robust to float round-off without adding a new tuned number of our own.
@@ -101,6 +115,8 @@ def run_cli(run_dir: Path) -> None:
     Assumes `rclpy.init()` has already been called by the caller (so a self-test publisher can share
     one context, as in `operator_console.console`)."""
     import rclpy
+    import rclpy.time
+    import tf2_ros
     from openral_msgs.msg import SafetyStatus
     from rclpy.node import Node
     from rosgraph_msgs.msg import Clock
@@ -108,6 +124,8 @@ def run_cli(run_dir: Path) -> None:
 
     log = EvaluatorEventLog(run_dir)
     node = Node("space_evaluator_recorder")
+    tf_buffer = tf2_ros.Buffer()
+    tf2_ros.TransformListener(tf_buffer, node)
     state = {"sim_t": None, "contact_violation_active": False}
 
     def on_clock(msg: Clock) -> None:
@@ -120,12 +138,18 @@ def run_cli(run_dir: Path) -> None:
         state["contact_violation_active"] = active
         log.append("contact_violation_start" if active else "contact_violation_end", sim_t=state["sim_t"])
 
+    def log_tracked_poses() -> None:
+        for frame in TRACKED_POSE_FRAMES:
+            try:
+                tr = tf_buffer.lookup_transform(POSE_REFERENCE_FRAME, frame, rclpy.time.Time())
+            except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException):
+                continue  # this mission has no object on this frame (e.g. Mission A has no lb_spare_*)
+            t, q = tr.transform.translation, tr.transform.rotation
+            log.append("pose", sim_t=state["sim_t"], frame=frame, x=t.x, y=t.y, z=t.z, qw=q.w, qx=q.x, qy=q.y, qz=q.z)
+
     def on_mission_state(msg: String) -> None:
-        try:
-            parsed = json.loads(msg.data)
-        except json.JSONDecodeError:
-            return
-        log.append("mission_state", sim_t=state["sim_t"], state=parsed)
+        log.append("mission_state", sim_t=state["sim_t"], state=json.loads(msg.data))
+        log_tracked_poses()
 
     def on_safety_status(msg: SafetyStatus) -> None:
         log.append("safety_status", sim_t=state["sim_t"], latched=bool(msg.latched), drop_reason=int(msg.drop_reason),
@@ -144,7 +168,7 @@ def run_cli(run_dir: Path) -> None:
     node.create_subscription(Empty, ESTOP_TOPIC, on_estop, 10)
     node.create_subscription(Empty, ESTOP_CLEARED_TOPIC, on_estop_cleared, 10)
     print(f"space_evaluator_recorder: logging to {log.path}, listening on {CONTACT_TOPIC}, {MISSION_STATE_TOPIC}, "
-          f"{SAFETY_STATUS_TOPIC}, {ESTOP_TOPIC}, {ESTOP_CLEARED_TOPIC}")
+          f"{SAFETY_STATUS_TOPIC}, {ESTOP_TOPIC}, {ESTOP_CLEARED_TOPIC}, and /tf for {TRACKED_POSE_FRAMES}")
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -154,13 +178,18 @@ def run_cli(run_dir: Path) -> None:
 
 
 def _selftest(run_dir: Path) -> None:
-    """Proves the subscribe/parse/log mechanism with synthetic publishers on all five topics -- never
-    the simulation. Publishes one contact-violation on/off pair, one mission_state, one safety_status
-    (latched) and one estop/estop_cleared pair, then checks the five resulting lines are on disk."""
+    """Proves the subscribe/parse/log mechanism with synthetic publishers -- never the simulation.
+    Publishes one contact-violation on/off pair, one `/tf` transform for one tracked frame, one
+    mission_state (which triggers the tracked-pose lookup), one safety_status (latched) and one
+    estop/estop_cleared pair, then checks the resulting lines are on disk (one `pose` line for the
+    tracked frame that was published; the other two `TRACKED_POSE_FRAMES` legitimately have no
+    transform in this synthetic graph and are skipped, same as a real Mission A run)."""
     import threading
 
     import rclpy
+    import tf2_ros
     from builtin_interfaces.msg import Time
+    from geometry_msgs.msg import TransformStamped
     from openral_msgs.msg import SafetyStatus
     from rclpy.node import Node
     from rosgraph_msgs.msg import Clock
@@ -173,6 +202,7 @@ def _selftest(run_dir: Path) -> None:
     pub_safety = pub_node.create_publisher(SafetyStatus, SAFETY_STATUS_TOPIC, 10)
     pub_estop = pub_node.create_publisher(Empty, ESTOP_TOPIC, 10)
     pub_estop_cleared = pub_node.create_publisher(Empty, ESTOP_CLEARED_TOPIC, 10)
+    tf_broadcaster = tf2_ros.TransformBroadcaster(pub_node)
 
     def publish_sequence():
         time.sleep(1.0)
@@ -182,6 +212,14 @@ def _selftest(run_dir: Path) -> None:
         time.sleep(0.2)
         pub_contact.publish(Float32(data=0.0))  # violation ends
         time.sleep(0.2)
+        tr = TransformStamped()
+        tr.header.stamp = Time(sec=10, nanosec=0)
+        tr.header.frame_id = POSE_REFERENCE_FRAME
+        tr.child_frame_id = TRACKED_POSE_FRAMES[0]
+        tr.transform.translation.x, tr.transform.translation.y, tr.transform.translation.z = 5.8, -14.4, 0.55
+        tr.transform.rotation.w = 1.0
+        tf_broadcaster.sendTransform(tr)
+        time.sleep(0.3)  # let the TransformListener pick it up before the mission_state-triggered lookup
         pub_mission.publish(String(data=json.dumps({"scenario": "covered", "success": False})))
         time.sleep(0.2)
         status = SafetyStatus()
@@ -195,8 +233,9 @@ def _selftest(run_dir: Path) -> None:
         pub_estop_cleared.publish(Empty())
 
     threading.Thread(target=publish_sequence, daemon=True).start()
-    print("(selftest) publishing one synthetic message on each of the five topics -- Ctrl+C to stop once "
-          f"{run_dir / 'evaluator' / 'events.jsonl'} shows 5 lines")
+    print("(selftest) publishing one synthetic message on each topic, incl. one /tf transform -- Ctrl+C to stop once "
+          f"{run_dir / 'evaluator' / 'events.jsonl'} shows 7 lines (contact x2, pose, mission_state, safety_status, "
+          "estop x2)")
     try:
         run_cli(run_dir)
     finally:
