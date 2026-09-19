@@ -247,7 +247,7 @@ def goal_summary(p: dict) -> dict:
         return {"frame": p["frame_id"], "position": [round(v, 4) for v in p["position"]]}
     if "joint_targets" in p:
         return {"joint_targets": p["joint_targets"]}
-    return {k: v for k, v in p.items() if k in ("mode", "target", "part", "support")}
+    return {k: v for k, v in p.items() if k in ("mode", "target", "part", "support", "held_item")}
 
 
 class CapabilityServer(Node):
