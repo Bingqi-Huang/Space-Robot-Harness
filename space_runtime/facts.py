@@ -96,6 +96,13 @@ def apply(f: dict, ev: dict) -> None:
                 f["objects"][ev["target"]] = {"state": "in_gripper", "seq": ev["seq"], "by": "verified item_held"}
             elif f["objects"].get(ev["target"], {}).get("state") == "in_gripper" or ev["jaw"] == "holding_object":
                 f["objects"][ev["target"]] = {"state": "unknown", "seq": ev["seq"], "by": "item_held did not verify"}
+        if ev["effect"] == "item_still_held" and not ev["holds"]:
+            # the jaws no longer hold what the record says they carry: the fact goes back to unknown with the reading
+            # that unseated it. Where the item went, and what the mission does about it, are the agent's to work out.
+            seen = f" -- the gripper's camera shows {ev['seen']}" if ev.get("seen") else ""
+            for name in ev["items"]:
+                f["objects"][name] = {"state": "unknown", "seq": ev["seq"],
+                                      "by": f"nothing in the jaws after {ev['capability']}{seen} (jaw {ev['jaw_rad']} rad)"}
         if ev["effect"] == "item_placed":
             held = [name for name, o in f["objects"].items() if o["state"] == "in_gripper"]
             for name in held:

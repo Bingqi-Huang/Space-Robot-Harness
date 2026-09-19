@@ -163,7 +163,12 @@ class Agent:
         self.event("execution_started", capability=name, args=args)
         r = self.execute(name, args)
         self.event("execution_finished", capability=name, args=args, **r)
-        for effect in verify(name, args, r["evidence"], self.cfg["verification"]):
+        held = [n for n, o in self.store.facts["objects"].items() if o["state"] == "in_gripper"]
+        # what the record says is carried is looked at again, through the boundary's own read-only query. A query that
+        # does not answer leaves the fact as it was: a service outage is not evidence that the payload is gone (F58).
+        look = self.query("held_item", {}) if held and name not in ("place", "release") else None
+        for effect in verify(name, args, r["evidence"], self.cfg["verification"], held,
+                             look["value"] if look and look["success"] else None):
             self.event("effect_verified", capability=name, **effect)
 
     def run(self, mission: str | None) -> None:

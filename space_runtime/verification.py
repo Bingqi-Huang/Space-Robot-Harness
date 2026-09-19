@@ -39,8 +39,29 @@ def jaw_state(jaw: float, cfg: dict) -> str:
     return "open" if jaw >= cfg["jaw"]["open_min_rad"] else "closed_empty" if jaw <= cfg["jaw"]["empty_max_rad"] else "holding_object"
 
 
-def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]:
+def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[str] | None = None,
+           look: dict | None = None) -> list[dict]:
     goal, out = evidence.get("goal") or {}, []
+    # An effect that was verified once is not a fact for the rest of the mission. Whatever the record says is being
+    # carried is looked at again after each call (`look`, the boundary's `held_item`): a payload that leaves the jaws
+    # while the rover drives is a mission fact, and without this nothing notices until something unrelated fails for
+    # a reason that hides it -- in run g4s the ORU dropped back onto the depot stand as the rover pulled away, and
+    # `place` reached out at the shelf holding nothing and stalled against the panel.
+    # The jaw angle is not the evidence: it measures how far apart the fingers are, not whether anything is between
+    # them, and a payload that slips out leaves them wherever the grasp left them. The picture is, and it is the same
+    # picture a person would be shown; the angle rides along in the record. `place` and `release` exist to let go --
+    # their own effects say what happened, and this check would only contradict them.
+    if held and capability not in ("place", "release") and look is not None:
+        # The picture says what is between the fingers; the encoder says whether they are apart at all. Jaws closed on
+        # nothing cannot be holding anything, whatever is in the frame behind them -- the model called a solar panel
+        # in the background a held item once (g5m), and the harness let a dropped payload through on that answer. The
+        # angle cannot confirm a grip (a thin edge and an empty jaw are 0.17 and 0.10), but it can refuse one.
+        shut = jaw_state(float(look["jaw_rad"]), cfg) == "closed_empty"
+        out.append({"effect": "item_still_held", "holds": bool(look["holding"]) and not shut, "items": list(held),
+                    "seen": look["what"], "jaw_rad": look["jaw_rad"], "image": look["image"],
+                    "jaw": "closed_empty" if shut else "open_or_holding",
+                    "source": "the gripper's own camera read by the vision model, refused by the jaw encoder when the "
+                              "fingers are shut on nothing; against what the record says is carried"})
     if capability in BASE_NAV | BASE_DOCK and isinstance(evidence.get("base_pose"), dict):
         band = cfg["base"]["navigate" if capability in BASE_NAV else "dock"]
         b = evidence["base_pose"]
@@ -101,6 +122,22 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict) -> list[dict]
             still = n >= cfg["hold"]["min_pixels"] and flow < limit
             m.update(tool_clear_of_release_m=round(clear, 3), image_flow_px=round(flow, 2), item_still=bool(still))
             m["holds"] = state == "open" and clear >= cfg["place"]["min_clear_m"] and bool(still)
+        else:
+            m["holds"] = False
+        out.append(m)
+    if capability == "press":
+        # A press is over when the tool met the face and came back off it. Both halves are the robot's own
+        # kinematics against the point the skill's own view measured -- never the skill's success flag: it went in
+        # far enough to make contact where the target was seen, and it is clear of that point again afterwards.
+        sk = evidence.get("skill") or {}
+        contact, target = sk.get("contact"), sk.get("target_rover")
+        m = dict(effect="pressed", target=args.get("target"),
+                 source="arm kinematics against the point the wrist view measured (contact depth and retreat)")
+        if contact and target and isinstance(evidence.get("tcp_pose"), dict):
+            past = float(contact.get("past_face_m", 0.0))
+            back = math.dist(evidence["tcp_pose"]["position"], contact["tcp"])
+            m.update(past_face_m=round(past, 4), retreated_m=round(back, 3))
+            m["holds"] = past >= cfg["press"]["min_contact_m"] and back >= cfg["press"]["min_retreat_m"]
         else:
             m["holds"] = False
         out.append(m)
