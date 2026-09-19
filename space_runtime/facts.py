@@ -107,6 +107,14 @@ def apply(f: dict, ev: dict) -> None:
                                      "sim_s": evd.get("sim_s"), "goal": evd.get("goal")}
         if "skill" in evd:  # an operation's own record: the stage it reached and what its camera / vision model saw
             f["attempts"].append(attempt_summary(ev))
+            # A disagreement between sources is an anomaly naming them (plan v4 §5), not a detail inside the attempt
+            for r in f["attempts"][-1].get("reconciliation", []):
+                if not r["consistent"]:
+                    f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": (
+                        f"source disagreement: the vision model reported mark {r['selected_mark']} as the requested part; "
+                        f"the skill measured it {r['measured_width_m'] * 1000:.1f} mm across; the equipment catalogue's "
+                        f"closing width is {r['catalogue_closing_width_m'] * 1000:.1f} mm (measurement resolution "
+                        f"±{r['measurement_resolution_m'] * 1000:.1f} mm)")})
         f["robot"].update({key: evd[src] for key, src in (("base", "base_pose"), ("tcp", "tcp_pose"), ("arm", "arm")) if isinstance(evd.get(src), dict)})
         # a capability that now succeeds resolves its own earlier failures
         f["anomalies"] = [a for a in f["anomalies"] if not (ev["success"] and a["capability"] == ev["capability"])]
