@@ -76,13 +76,37 @@ VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "deepseek-flash")
 VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://api.deepseek.com")
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
+#: How gently the rover drives while the jaws hold something. Nav2's smoother otherwise ramps at 2.5 m/s^2, which is
+#: what every base move used regardless of what the arm was carrying; a payload held by the interlock of a handle's
+#: head on the closed fingers comes off its neck when the base snatches like that (runs g4s, g5h, both dropped on the
+#: first drive after a verified grasp). The scripted oracle carries at 0.2 m/s^2 for the same reason (F49 §3), and
+#: these are the shared substrate's limits, applied by the boundary to every method's base moves, not Ours' guard
+#: (plan v4 §2: hardware-protecting limits while driving or holding belong to the low-level safety everyone shares).
+#: A turn puts `alpha * r` of acceleration on a load held `r` from the base's own centre of rotation, so the angular
+#: limit is not a number to pick: it is whatever keeps that within the straight-line limit the load is known to take.
+#: In g5m the payload rode 19 m of straight driving at 0.5 m/s^2 and came off while the rover slowed and turned to
+#: dock, where 1.0 rad/s^2 on the 0.84 m lever it was carried at was 0.84 m/s^2 -- more than the straight line it had
+#: just survived. `r` is measured from the tool each time, because how far in the arm brought the load is not fixed.
+CARRY_LINEAR = 0.5
+CARRY_MAX_SPEED = [0.25, 0.0, 1.0]
+FREE_MAX_VELOCITY = [0.5, 0.0, 2.0]
+FREE_MAX_ACCEL = [2.5, 0.0, 3.2]
+FREE_MAX_DECEL = [-2.5, 0.0, -3.2]
+BASE_MOVES = ("navigate_to_pose", "navigate_to_feature", "dock_to_pose", "dock_at_feature", "move_base_delta")
+
+HELD_PROMPT = ("This camera is mounted on a robot's own gripper and looks out past its fingers; the fingers are the "
+               "dark shapes along the bottom of the frame. Say whether anything is held between them, and what it is. "
+               'Reply with JSON only: {"holding": true or false, "what": "<what is between the fingers, a few words, '
+               'or an empty string>"}')
 VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; how many must find the target
 DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
 ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
 ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # same datasheet, joint1..7
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
-JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD = 0.13, 0.78  # EG2: 0.10 closed on nothing, ~0.17 on a 12 mm neck, 0.82 open
+# the jaw bands come from the skills' own definition (openral_rskill._eye_in_hand): the boundary and the skills must
+# read one gripper the same way, or an open jaw is a held item on one side of the call and not the other (run g4p)
+from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD  # noqa: E402
 #: how high above a support the tool works: the item is held by its handle, so the tool never goes to the shelf itself
 ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.get("handle"))
 
@@ -186,6 +210,10 @@ def lower(capability: str, a: dict) -> dict:
     if capability == "place":
         # a named support is fixed infrastructure: its surveyed point goes to the skill, which puts it in the rover frame
         return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"]}
+    if capability == "press":
+        # nothing to lower: the skill finds the target in its own camera, and where to stand off and how far to press
+        # past the face are its own defaults
+        return {"target": a["target"]}
     raise KeyError(capability)
 
 
@@ -228,6 +256,12 @@ class CapabilityServer(Node):
         self._stands: dict[str, float] = {}  # where the rover parks for a feature, settled once with the arm's own IK
         self.evidence_dir = Path(os.environ.get("SPACE_EVIDENCE_DIR", os.environ.get("D0_LOG", "/tmp"))) / "evidence"
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
+        from rcl_interfaces.srv import SetParameters  # noqa: E402  (ROS message packages import at node construction)
+
+        # reentrant like every other client here: this is called from inside an action's own execution, and a client
+        # on the default group would wait on a future its own executor thread is blocked from completing
+        self._smoother_params = self.create_client(SetParameters, "/velocity_smoother/set_parameters", callback_group=cb)
+        self._drive_limits: dict | None = None  # what the smoother was last set to (see drive_limits)
         from openai import OpenAI
         self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=120)
         self.vlm_pool = ThreadPoolExecutor(8)
@@ -310,6 +344,59 @@ class CapabilityServer(Node):
         f = self.frame(camera)
         answer = self.ask_vlm(f["path"], f"{question}\nAnswer from this camera image only, briefly. If it cannot be seen clearly, say so.")
         return {"camera": camera, "answer": answer, "frame_stamp_s": round(f["stamp"], 2), "image": str(f["path"]), "model": VLM_MODEL}
+
+    def drive_limits(self, carrying: bool) -> dict:
+        """Set Nav2's velocity smoother to the carrying or the free limits, and say what was set.
+
+        Read from the jaw alone -- the robot's own state, not any method's record of what it is doing -- so every
+        method's base moves are ramped the same way."""
+        from rcl_interfaces.msg import Parameter as ParamMsg, ParameterType, ParameterValue
+        from rcl_interfaces.srv import SetParameters
+
+        if carrying:
+            p = self.tcp_pose()["position"]
+            lever = max(math.hypot(p[0], p[1]), 0.2)  # how far out the load is riding, measured
+            az = round(CARRY_LINEAR / lever, 2)
+            want = {"max_velocity": CARRY_MAX_SPEED, "max_accel": [CARRY_LINEAR, 0.0, az],
+                    "max_decel": [-CARRY_LINEAR, 0.0, -az], "lever_m": round(lever, 3)}
+        else:
+            want = {"max_velocity": FREE_MAX_VELOCITY, "max_accel": FREE_MAX_ACCEL, "max_decel": FREE_MAX_DECEL}
+        if want == self._drive_limits:
+            return {"carrying": carrying, "changed": False}
+        cli = self._smoother_params
+        if not cli.wait_for_service(timeout_sec=2.0):
+            return {"carrying": carrying, "changed": False, "why": "the velocity smoother is not accepting parameters"}
+        req = SetParameters.Request(parameters=[
+            ParamMsg(name=n, value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=v))
+            for n, v in want.items() if n != "lever_m"])  # the lever is evidence, not a smoother parameter
+        fut = cli.call_async(req)
+        t0 = time.time()
+        while not fut.done() and time.time() - t0 < 3.0:
+            time.sleep(0.02)
+        if not fut.done():
+            return {"carrying": carrying, "changed": False, "why": "the velocity smoother did not answer"}
+        self._drive_limits = want
+        self.get_logger().info(f"drive limits: {'carrying' if carrying else 'free'} {want['max_velocity'][0]} m/s, "
+                               f"{want['max_accel'][0]} m/s^2")
+        return {"carrying": carrying, "changed": True, **{k: v[0] for k, v in want.items()}}
+
+    def held_item(self) -> dict:
+        """What the gripper has between its fingers, from its own camera, with the jaw angle beside it.
+
+        The jaw angle measures how far apart the fingers are, not whether anything is between them: closed on nothing
+        reads 0.10 rad and closed on a thin edge 0.17, and an item that has slipped out leaves the jaws exactly where
+        the grasp left them. The picture settles it. Nothing is said to the model about what is expected to be there:
+        an answer shaped by the question is not evidence (research repo F57, F58), and the comparison with what the
+        record says is carried belongs to whoever asked, not to the model.
+        """
+        f = self.frame("wrist")
+        reply = self.ask_vlm(f["path"], HELD_PROMPT)
+        found = re.search(r"\{.*\}", reply, re.S)
+        if not found:
+            raise ValueError(f"the model did not answer with JSON: {reply[:200]!r}")
+        j = json.loads(found.group(0))
+        return {"holding": bool(j.get("holding")), "what": str(j.get("what") or ""), "jaw_rad": round(self.jaw, 3),
+                "frame_stamp_s": round(f["stamp"], 2), "image": str(f["path"]), "model": VLM_MODEL}
 
     def detect(self, camera: str, target: str) -> dict:
         """Where a target described in words is in the current image of a camera: pixel, and its 3-D point in `odom` from the
@@ -556,6 +643,7 @@ class CapabilityServer(Node):
             value = {"observe": lambda: self.observe(args["camera"], args["question"]),
                      "locate_in_view": lambda: self.locate_in_view(args["camera"], args["target"]), "site_map": self.site_map,
                      "manifest": self.manifest, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
+                     "held_item": self.held_item,
                      "locate_feature": lambda: self.locate_feature(args["name"])}[req.query]()
             res.success, res.value_json = True, json.dumps(value)
         except Exception as exc:  # reason: every failure is a typed answer to the caller, not a dead service
@@ -583,6 +671,8 @@ class CapabilityServer(Node):
             return res
         # folding the arm with something in the jaws puts the item through the rover: a hardware limit, shared by every
         # method, so it is refused here and not in any one method's guard
+        # how hard the base may be driven is decided by what the jaws hold, for every method and every base move
+        drive = self.drive_limits(JAW_EMPTY_MAX_RAD < self.jaw < JAW_OPEN_MIN_RAD) if g.capability in BASE_MOVES else None
         if g.capability in ("stow", "arm_ready") and JAW_EMPTY_MAX_RAD < self.jaw < JAW_OPEN_MIN_RAD:
             handle.succeed()
             res.success, res.failure_kind = False, REJECTED
@@ -620,6 +710,8 @@ class CapabilityServer(Node):
             except Exception as exc:  # reason: evidence is best-effort; a missing TF must not hide the skill result
                 evidence[key] = f"unavailable: {exc}"
         evidence["arm"] = self.arm_state()
+        if drive is not None:
+            evidence["drive_limits"] = drive
         handle.succeed()
         res.success, res.failure_kind, res.failure_reason = bool(r.success), int(r.failure_kind), r.failure_reason
         res.evidence_json = json.dumps(evidence)

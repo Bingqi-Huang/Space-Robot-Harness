@@ -250,6 +250,23 @@ effects:
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-place
     records_evidence: true
 
+  press:
+    description: >-
+      Press something described in words -- a button, a latch, a switch on a panel: find it in the wrist camera,
+      stand off in front of it facing the surface, close in along the tool axis until the face takes the load, then
+      withdraw. Describe the target by appearance and position; the equipment carries no readable labels. The target
+      must be within the arm's reach behind the rover (dock at the feature's work pose first). The arm does not need
+      to be in any particular posture: this plans its own way from wherever the arm is, so `arm_ready` beforehand is
+      neither required nor useful -- at a work pose close enough to reach the panel, the ready posture may well not
+      fit. On failure it reports the stage reached (locate, approach, press, retreat) and why.
+    inputs:
+      target: [string, true, "what to press, described by appearance and position"]
+    default_deadline_s: 420
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-press
+    records_evidence: true
+    requires_remote_service: vision_language_model  # it finds the target by looking; a non-answer fails the call
+
   release:
     description: Open the jaws fully.
     inputs: {}
@@ -300,6 +317,15 @@ queries:
     inputs: {}
   jaw:
     description: Jaw joint angle, rad (0.10 = closed on nothing, 0.82 = open).
+    inputs: {}
+  held_item:
+    description: >-
+      Whether the gripper has anything between its fingers, and what it looks like, read from the wrist camera
+      (vision-language model on the current frame), with the jaw angle beside it. The jaw angle alone cannot tell a
+      jaw closed on nothing from one closed on a thin edge, and says nothing about what is being held or how; a
+      payload that has dropped out leaves the jaws exactly where the grasp left them. Use it to check a grasp, to
+      find out whether something is still being carried, or to see what the gripper is actually on when a call
+      failed for a reason that does not say. The answer is an observation, not ground truth; the frame is evidence.
     inputs: {}
   locate_feature:
     description: >-
