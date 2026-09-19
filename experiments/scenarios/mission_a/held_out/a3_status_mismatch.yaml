@@ -1,0 +1,56 @@
+# execution_plan.md §12 scenario manifest. Catalog ref: docs/lunar_task_catalog.md §3 "A3".
+manifest_version: 1
+scenario_id: mission_a/held_out/a3_status_mismatch
+mission_family: mission_a
+coverage: held_out
+
+mission_brief: >
+  Power distribution unit {reported_pdu} reported a fault. Inspect the power field, identify the
+  failed unit, restore it if within your authority, verify the result, and return the rover to the
+  dock with the arm stowed.
+# reported_pdu names a PDU whose lamp is actually green; the real fault is on a different PDU.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_a.yaml
+  task_variant: lunar_base_mission_a_visual
+  env_overrides: {env.scenario: heldout_status_mismatch}
+  scenery_override: null
+  seed: 0
+  faulted_pdu: pdu_2
+  reported_pdu: auto   # task.py __post_init__: heldout_status_mismatch -> reported_pdu = PDUS[(faulted_index+2)%3]
+  episode_length_s: 900.0
+
+required_capabilities:   # no new capability vs A1 -- the held-out part is deciding to check every PDU, not one new skill
+  - navigate_to_feature
+  - dock_at_feature
+  - arm_ready
+  - press
+  - stow
+  - observe
+  - locate_in_view
+
+mission_deadline_s: 900.0
+space_context_profile: null
+perturbations_semantic_conditions:
+  - "the reported PDU's status lamp is green (nominal); the actually-faulted PDU is a different unit, unreported"
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_a.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "not any(faults.values()) and at_dock(<=0.6m) and stowed(<=0.35rad) and cover_free(>0.30m)"
+  fields_used: [faulted_pdu, reported_pdu, faults, success]
+
+held_out_basis: >
+  §3.3: the required inference ("the report may be wrong, verify on site before acting") is not encoded in
+  any frozen baseline artifact. lunar_task_catalog.md §4 rates literature support "medium" -- a specific
+  precedent for a misreported unit id was not found; the recommended combination (catalog §5) reframes this
+  as a lunar-dust-obscured-lamp case (A3+A4 fusion) for stronger literature grounding. This manifest instance
+  is the plain status_mismatch as implemented in task.py today; the dust-fusion variant is NOT implemented in
+  SRB code yet (no separate scenario= value) and is out of scope for this manifest set.
+
+notes: >
+  Exists today: SRB TaskCfg.scenario Literal includes "heldout_status_mismatch" (task.py:65).
+  D0_SCENARIO=heldout_status_mismatch via run_d0.sh. See .certificate.yaml.

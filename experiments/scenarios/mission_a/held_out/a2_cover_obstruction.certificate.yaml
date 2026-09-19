@@ -1,0 +1,24 @@
+# execution_plan.md §13.2 "Closed-capability validator" certificate. Evaluator-only: never read by any
+# method (prompts/contracts/playbook/guard/verifier). Stored beside the scenario manifest, solution not exposed.
+scenario_id: mission_a/held_out/a2_cover_obstruction
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: >
+      F52 §2 (docs/research_findings.md) shows this solved live (run ac5) with grasp/place/release/press/
+      navigate/dock -- all pre-freeze capabilities. OPEN because that run predates any actual freeze commit
+      (none exist yet); re-confirm once §13.1 step 6 tags a real freeze.
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: >
+      Cover-vs-button occlusion is camera-observable in principle (front/wrist RGB); today's D0 checks read
+      simulator truth for this (Phase E perception stand-in per d0_common.py), not the shared VLM query path.
+      OPEN pending Phase E semantic-query landing (locate_in_view / VLM scene query wired to this judgment).
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: "No PLEXIL plan or EUROPA domain element for this case exists yet (baselines/plexil/plans/ has only MissionA_Covered). Confirm at freeze time by audit (docs/freeze_audit.md)."
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: "The missing piece is the decompose-diagnose-clear-retry sequence, not a controller or sensor; needs user sign-off before campaign admission."
+evaluator_only: true
+solution_sequence: null   # deliberately never filled in here
