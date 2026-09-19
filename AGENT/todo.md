@@ -1,72 +1,68 @@
 # TODO
 
-Order: `execution_plan` §21 (revised 2026-09-17) — the proposed method before the external baselines.
+Order: `execution_plan` §21 — the proposed method before the external baselines.
 Goal of this phase: Ours completes Mission A/B covered and the held-out situations, then a 1x-sim-time video.
 
-**Sequence in force (user, F63 §4): finish Mission B → then `press` live → then Mission A as a regression.**
-Do not open the next one while the previous one has an unverified fix in it.
+**Sequence in force (user): finish Mission B → then `press` live → then Mission A.** Do not open the next one
+while the previous one still has an unverified fix in it.
 
-## Done
+**Before anything: read `handoff.md`'s first section.** Iterating on a skill costs ~20 s (attach + resume), not
+half an hour (new graph). Three graphs were booted before this was noticed.
 
-- LunarBot stack on SRB; common capability boundary; PLEXIL Mission A through it (F51–F52).
-- Ours runtime (facts, context, guard, verification, trace, restart/switch) and Mission A `covered` with vision-only
-  contact (F53–F54). Tasks grounded in `docs/lunar_task_catalog.md`.
-- Manipulation design **v4** (`docs/semantic_to_metric_manipulation_plan.md`): `pick` / `place` / `press` are single
-  skills; the model composes operations, never stages (F56).
-- G0–G2 offline; `pick`/`place` as procedural rSkills; G3 live; `pick` inside the agent loop (g4m).
-- **Scheduling and verification defects cleared (F60)**: the jaw band defined once and read from the picture, not the
-  angle; `select` judges every view at once; a blocked view / an unreachable candidate / a failed retreat are local,
-  not fatal; `item_held` re-checked after every call; `held_item` query; `OURS_RESET=1`.
-- **Where to look is computed, not written down (F61)**: the item is found once on the overview, every working view
-  aims at its own top, the viewing direction includes the horizontal. `pick` then took the 12 mm neck four times
-  running (g5h, g5i, g5k, g5m).
+## Now: Mission B end to end — the whole blocker is `pick`'s last 10 cm
 
-## Now: G4 — Mission B end to end
-
-- [ ] **Verify the turn limit** (F63 §2) — the one unexercised fix: the boundary derives Nav2's angular limit from
-      the measured lever (α = 0.5 / lever) so a turn puts the same 0.5 m/s² on the payload that the straight leg
-      survived. **g6a is running for this.** Look for `drive limits: carrying … lever_m` in `capability_server.log`
-      and `item_still_held` after the dock at PDU-1.
-- [x] **The carry holds for a drive** (F63 §1): `bring_in()` (lever 1.144 → 0.838 m) plus carrying drive limits;
-      g5m completed the depot → PDU-1 leg with the payload verified held on arrival.
-- [ ] **`pick` is not yet reliable**: g5p failed twice at `approach` — "lost sight of the chosen grasp 8 frames
-      running while still 6 cm away" and "the close-in stopped 14.6 cm from the grasp". Both are the tracker or the
-      guard giving up near the target, where the item fills the frame. Read `g5p/evidence/pick_*/servo_*.jpg`.
-- [ ] `place` live: never yet reached with a payload in the jaws. Then stow + dock, and Mission B is end to end.
+- [ ] **Read `artifacts/runs/g6e/` first.** It is a resume at step 7 with all three F64 fixes, and its last servo
+      frame read `hit 0.87 d 0.317 left 9.3cm` with the neck square between the fingers — nearer than any approach
+      has held. Either it grasped (then go to the carry) or it did not (then the failure is new evidence).
+- [x] **Three `pick` defects behind one error message** (F64), all fixed, offline-verified, committed:
+      the goal orientation was a function of the tool's own pose (180° bang-bang limit cycle → `set_view_dir`);
+      a 12 mm neck against sky gives no depth at a pixel matched at 1.00 (eight such frames ended the call);
+      and my own regression — returning the predicted range as measured let the part walk down the line of sight
+      (10.0 → 36.4 cm in 19 s). An unranged frame now says "still there, still matched" and nothing about where.
+- [ ] **Verify the turn limit** (F63 §2) — still never exercised, because every run since g5m has failed in `pick`:
+      the boundary derives Nav2's angular limit from the measured lever (α = 0.5 / lever). Look for
+      `drive limits: carrying … lever_m` in `capability_server.log` and `item_still_held` after the dock at PDU-1.
+- [x] The carry holds for a drive (F63 §1): `bring_in()` (lever 1.144 → 0.838 m) plus carrying drive limits; g5m
+      completed the depot → PDU-1 leg with the payload verified held on arrival.
+- [ ] `place` live: never yet reached with a payload in the jaws.
+- [ ] Stow + dock at the far end: never reached either, and likely to hit the same wall as Mission A (below).
 - [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.
 
 ## Next: `press` live, then Mission A
 
-- [x] `press(target)` built and wired (F62): procedural rSkill (locate → approach → press → retreat),
-      `locate_point` for a target that is a patch on a surface, one contract line, `pressed` verified from the
-      robot's own kinematics. `actions: ["push"]` — the controlled vocabulary has no `press` (F63 §3).
+- [x] `press(target)` built and wired (F62): locate → approach → press → retreat, `locate_point` for a target that
+      is a patch on a surface, one contract line, `pressed` verified from the robot's own kinematics.
+      `actions: ["push"]` — the controlled vocabulary has no `press` (F63 §3).
 - [ ] **`press` has never pressed anything live.** ma4 photographed empty sky; `face_the_work_zone()` derives a
-      looking posture from where a dock puts the work instead of assuming one. Untested.
-- [ ] **Mission A deadlocks before it presses** (F62 §3) and no part of it is wrong: the reach model stands the rover
-      0.905 m out; at 0.905 m the written-down `ready` posture has no collision-free path; raising the arm 1.5 m out
-      and driving in stops 7 cm short because Nav2 will not push a raised arm into a panel; from there the arm can
-      neither rise nor stow. **Nothing owns the joint feasibility of arm posture and base position** — the reach
-      model asks only about the arm, Nav2 only about the hull, and `READY`/`STOW` are constants from when the rover
-      parked further back. Same disease as F61 §1 and F63 §3: a posture constant is a bug until proven otherwise.
+      looking posture instead of assuming one. Untested.
+- [ ] **Mission A deadlocks before it presses** (F62 §3) and no part of it is wrong: the reach model stands the
+      rover 0.905 m out; at 0.905 m the written-down `ready` posture has no collision-free path; raising the arm
+      1.5 m out and driving in stops 7 cm short because Nav2 will not push a raised arm into a panel; from there
+      the arm can neither rise nor stow. **Nothing owns the joint feasibility of arm posture and base position** —
+      the reach model asks only about the arm, Nav2 only about the hull, and `READY`/`STOW` are constants from when
+      the rover parked further back. Same disease as F61 §1, F63 §3 and F64 §2: **a written-down constant that does
+      not know what is around it is a bug until proven otherwise.**
 
-## Harness gaps found on the way — infrastructure, not this mission
+## Harness gaps — infrastructure, not this mission
 
-- [x] Reasoner and VLM on DeepSeek's own endpoint; `openral_ext/workspace/` (the robot's own reach decides the
-      stand); `/space/manipulation_target` (what a skill works on is not an obstacle); `held_item` + continuous
-      held-check; carrying drive limits at the boundary (shared substrate).
-- [ ] Effects need the query path's error handling: an exception inside `_execute` leaves `failure_reason` empty and
-      the agent gets a blank failure (F62 §2 — it cost five steps of re-wording against a `KeyError`).
-- [ ] `item_cells` finds ~6 of the ~70 cells the grasped lid occupies, so most of the item the robot is holding is
+- [x] Reasoner and VLM on DeepSeek's own endpoint; `openral_ext/workspace/` (the robot's reach decides the stand);
+      `/space/manipulation_target`; `held_item` + continuous held-check; carrying drive limits at the boundary;
+      **snapshot restore now verified, arm included** (F65).
+- [ ] **Cache the views within a `pick` call.** Six views are re-taken on every attempt; one `pick` costs 15–40 min
+      of wall time, and that cost is what pushes everyone (me included) toward "run it again" instead of reading
+      the evidence. This is the single biggest speed-up left.
+- [ ] Effects need the query path's error handling: an exception inside `_execute` leaves `failure_reason` empty
+      and the agent gets a blank failure (F62 §2 — it cost five steps of re-wording against a `KeyError`).
+- [ ] `item_cells` finds ~6 of the ~70 cells the grasped lid occupies, so most of what the robot is holding is
       still an obstacle to its own clearance check.
-- [ ] Views are re-taken on every attempt, and there are six of them: one `pick` costs 15–40 min of wall time.
-      Cache the views per call and re-ask only the choice.
 - [ ] `OURS_RESET=1` leaves AMCL without a pose (the reset teleports the rover, and the check re-seeds
       `/initialpose` after reading TF): the run dies with `no TF map <- chassis_base_link`. Seed first, then read.
-- [ ] The `REACH` table in the scene generator is superseded — **still to delete**, with `interaction.json`'s
+      (Resume-by-step works; only the reset-to-start path has this bug.)
+- [ ] The `REACH` table in the scene generator is superseded — still to delete, with `interaction.json`'s
       `robot.reach_m` and `d0_common`'s copy; regenerate the site's work poses from the reach model.
-- [ ] **Two features have no legal stand at all** (`depot_stand/slot_1`, the crate on it): the hull cannot clear the
-      stand at any distance from which the arm reaches the handle.
-- [ ] The guard has never fired — every effect is `routine`, `invariants: []`. H3 has no evidence yet.
+- [ ] **Two features have no legal stand at all** (`depot_stand/slot_1` and the crate on it): the hull cannot clear
+      the stand at any distance from which the arm reaches the handle.
+- [ ] The guard has never fired — every effect `routine`, `invariants: []`. H3 has no evidence yet.
 
 ## Then
 
@@ -87,12 +83,13 @@ Do not open the next one while the previous one has an unverified fix in it.
 
 - Branch or worktree per task; delete after merge (AGENT.md §1). Clean debug/pilot artifacts.
 - Overwrite-update this file and `handoff.md`; ≤150 lines each; update at every milestone.
-- No pytest beyond upstream suites; offline checks before one decisive live run.
+- No pytest beyond upstream suites; **offline checks before one decisive live run** — every F64 fix was settled
+  offline first, and that is the only reason three of them could be separated at all.
 - No defensive coding, no corner-case guards, no hash checks, no ad-hoc patches (AGENT.md §4, F55 §5).
 - Ours gets generic improvements only; never a situation-specific solution hint (§13.1).
 - Model-facing tools are operations, not stages; no mechanical parameters in contracts (execution_plan §8.2).
-- Never rerun a whole mission after a failure: restore the snapshot before the failed step, fix, rerun that step.
-  **Only a jaws-open snapshot is a valid resume point** — a restore cannot rebuild a grasp (F60 §1).
+- **Never rerun a whole mission after a failure**: restore the snapshot before the failed step, fix, rerun that
+  step. Only a jaws-open snapshot is a valid resume point (F60 §1), and check `RESTORED_ARM` (F65).
 - One simulation at a time. Never navigate on truth. Measure motion in sim time.
-- Kill only your own run's processes by explicit PID — **and check afterwards that none survived** (F60 §8).
+- **Kill only your own run's processes by explicit PID, and check afterwards that none survived** (F60 §8).
 - Replies to the user: always Simplified Chinese, plain words, concise; design choices are the user's to make.
