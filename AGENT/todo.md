@@ -33,9 +33,12 @@ Worktrees `.worktree/<name>`, branches `p/<name>`, collected on `p/integration` 
        failure kinds settle); [ ] Mission A on `press` only after `press` is fixed (user).
 3. [x] Experiment infrastructure (F81). [ ] review fixes (false-completion = reports claiming success only; drop
        smoke tests) → re-merge into `p/integration`.
-3b. [ ] Operator mechanism (user: run pauses for the answer; researcher is the campaign operator, script in
-       development) on `p/operator-mechanism`; PLEXIL node trace persisted. [ ] Protocol from literature
-       (`docs/operator_protocol.md`, `p/operator-protocol`), then the user reviews it.
+3b. [x] Operator mechanism (request pauses Ours/PLEXIL/EUROPA until the console answers; PLEXIL node trace kept) and
+       the literature-grounded protocol (`docs/operator_protocol.md`), both offline-verified. [ ] At merge: the
+       operator answer is read from the event record, not `facts.py`'s reducer (Session M's file) — add the reducer
+       branch in `docs/operator_console.md` then. [ ] Answer-policy script text once the scenes are fixed.
+       [ ] `report_to_operator` could carry a structured "mission complete" field (false-completion count now reads
+       the final ledger).
 3c. [ ] Evaluator violation list (`docs/evaluator_violations_draft.md`): explained to the user, awaiting decision.
 3d. [ ] **Merge `p/integration` into `feat/manipulation-contracts` after Session M finishes Mission B** (user), rebuild
        the PLEXIL adapter, then delete merged `p/*` branches/worktrees and stale `feat/g0-wrist-rgbd`,
