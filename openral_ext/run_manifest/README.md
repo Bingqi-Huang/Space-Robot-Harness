@@ -82,8 +82,6 @@ one and why — never silently missing, never a fabricated stand-in):
   with `dry_run=False` -- no freeze tag exists yet. See `docs/freeze_audit.md`
   for the checklist to run before it ever is.
 - `__main__.py` — `python -m openral_ext.run_manifest --config <scene.yaml>`.
-- `smoke_test_logic.py` — offline checks (no ROS/sim/pytest) against real
-  fixtures: `python3 openral_ext/run_manifest/smoke_test_logic.py`.
 
 ## Running it
 
@@ -99,8 +97,7 @@ python3 -m openral_ext.run_manifest \
 Needs `openral_core`, `openral_observability`, `pydantic`, and `PyYAML`
 importable — i.e. run through the same environment `openral`'s own tools
 use (`openral`'s `.venv`, with this repo's root also on `PYTHONPATH` so
-`openral_ext` resolves). See `smoke_test_logic.py`'s own header for the
-exact invocation used to verify it during development.
+`openral_ext` resolves).
 
 Output lands in `experiments/manifests/<run_id>/` (§19's suggested
 top-level location, already scaffolded with a `.gitkeep`), one directory
