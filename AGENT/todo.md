@@ -31,8 +31,7 @@ Worktrees `.worktree/<name>`, branches `p/<name>`, collected on `p/integration` 
        "near" distance into config — after the manipulation contracts settle; live check on Session M's sim.
 2. [x] PLEXIL Mission B covered on library nodes, nominal path (F79). [ ] predefined recovery set (after pick/place
        failure kinds settle); [ ] Mission A on `press` only after `press` is fixed (user).
-3. [x] Experiment infrastructure (F81). [ ] review fixes (false-completion = reports claiming success only; drop
-       smoke tests) → re-merge into `p/integration`.
+3. [x] Experiment infrastructure (F81), review fixes merged (false completion = final ledger claims all done).
 3b. [x] Operator mechanism (request pauses Ours/PLEXIL/EUROPA until the console answers; PLEXIL node trace kept) and
        the literature-grounded protocol (`docs/operator_protocol.md`), both offline-verified. [ ] At merge: the
        operator answer is read from the event record, not `facts.py`'s reducer (Session M's file) — add the reducer

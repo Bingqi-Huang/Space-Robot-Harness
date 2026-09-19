@@ -32,8 +32,8 @@ Order in force: **finish Mission B → press live → Mission A → baselines/fr
 - EUROPA (F80): native build in `~/Programs/europa`, deps `~/Programs/europa-deps`; generic host/bridge verified on a
   base-only skeleton domain. Mission B domain waits for the manipulation contracts.
 - Evaluation (F81): manifests, run manifest/freeze (dry-run), metrics rows/tables, console, PLEXIL normalizer, worklog.
-- Running (offline): `p/operator-mechanism` (pause-for-answer for Ours/PLEXIL/EUROPA, PLEXIL node trace),
-  `p/operator-protocol` (literature-grounded protocol draft), `p/eval-infra` review fixes.
+- Also merged: operator pause-for-answer mechanism + protocol (`docs/operator_protocol.md`), evaluator violations
+  (`docs/evaluator_violations.md`, `experiments/evaluator_recorder/`). Nothing running. Merge-time work: todo 3b–3d.
 
 ## Where Mission B stands (F78, `docs/research_findings.md`)
 
