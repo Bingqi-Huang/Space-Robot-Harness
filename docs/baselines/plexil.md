@@ -31,3 +31,72 @@ No mission logic. Verified (offline boundary, domain 91): a plan calling `Execut
 Open for §21.5: the `QueryCapability` lookup stalls (the plan's second print never appears; exec killed at 45 s) --
 lookup threading vs the executor; typed per-capability Commands (NavigateToPose(Real, Real, Real) …); the Mission A
 covered plan library; run through the live graph.
+
+## Mission B: library and adapter Lookups (2026-09-19, offline; nominal path)
+
+Scope for this pass (coordinator decision): infrastructure first -- the authoring rule (docs/baselines/authoring_spec.md),
+the adapter's typed failure Lookups, and reusable library-node skeletons verified on the nominal path only. The
+predefined recovery set and the live check script (`d0_plexil_mission_b_check.py`) are **not** written yet: pick/place's
+reported failure kinds and stages are still moving in a parallel session, and writing recovery against them now would
+be redone.
+
+### Adapter: two typed failure Lookups
+
+`ros/plexil_capability_adapter/src/CapabilityAdapter.cc` gained, beside the existing `LastCapabilityResult`:
+
+- `Integer Lookup LastFailureKind()` -- the last result's `failure_kind` (`openral_msgs/ExecuteRskill`: 0 = none/success,
+  1 config, 2 capability mismatch, 3 runtime, 4 e-stop, 5 perception stale, 6 planning, 7 deadline, 8 cancelled, 255
+  unknown; 20 = boundary rejection, `capability_server/node.py`), read directly off the action result -- no parsing.
+- `String Lookup LastFailureStage()` -- the last `"stage": "<value>"` field in the result's `evidence_json` (a staged
+  skill -- pick, place, stow, arm_ready, press -- reports its stages as an ordered array; this is the last one, i.e.
+  where it stopped), found with a plain text scan (`last_stage()`), not a JSON parse. `""` when the evidence carries
+  none.
+
+Both are a mechanical read of state the adapter already held for `LastCapabilityResult`; no interpretation of what a
+kind/stage means for recovery -- that stays in the plan library, never the adapter. Built offline: `colcon build
+--packages-select space_harness_msgs plexil_capability_adapter` (PLEXIL_HOME set, conda off PATH) compiles clean; not
+run against the live boundary in this pass.
+
+### Reusable library (`baselines/plexil/plans/lib/`)
+
+`DriveAndDock(feature, standoff_m, approach_m, ok)`, `PickItem(target, part, item, ok)`, `PlaceItem(support,
+release_constraint, item, ok)`, `StowAndReturn(dock_x, dock_y, dock_yaw, ok)` -- each a `LibraryAction` composed of
+the model-facing capabilities Ours uses (never `engineering: true`), positional arguments in `contracts.yaml`'s
+declared order. **Nominal path only**: one call per capability, `PostCondition ok` on each, no retry/back-off/stage
+branching yet.
+
+Result convention -- `ok` is an explicit `InOut Boolean`, not the `LibraryCall` node's own outcome. Verified against
+6.1.3 (`plexiltest`, injected `command-failed` on `dock_at_feature`): a `LibraryCall` node's default outcome does
+**not** mirror its callee's outcome (a library whose root node computed `FAILURE` still left the calling node
+`SUCCESS`); PLEXIL's own regression suite works around exactly this with an explicit
+`PostCondition <call>.outcome == SUCCESS` (`compilers/plexil/test/input/CallWithPostCondition.ple`), but that pattern
+did not propagate through a further level of nesting here either. The tested, robust pattern is the one PLEXIL's own
+`library-call1.ple`/`array-library-call.ple` regression tests use: an explicit `InOut` result parameter. Every call
+site in `MissionB_Covered.ple` carries `PreCondition ok` before the next `LibraryCall`, so once a leg's `ok` goes
+`false` no further capability call is issued (all later nodes `SKIPPED`) -- the plan's safe state until a real
+recovery ladder replaces it.
+
+### Mission B covered plan (`baselines/plexil/plans/MissionB_Covered.ple`)
+
+"Deliver the spare ORU staged at the depot stand (slot 0 per the manifest) to the spares shelf of PDU-1, then return
+the rover to the dock with the arm stowed." `ToDepot` (DriveAndDock on `depot_stand/slot_0`) -> `Pick` (PickItem,
+target/part/item) -> `ToShelf` (DriveAndDock on `pdu_1_shelf/shelf`) -> `Place` (PlaceItem, `below_overhang`) ->
+`Return` (StowAndReturn to the map origin).
+
+### Traceability (nominal path; format: docs/baselines/authoring_spec.md)
+
+| Plan element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| `ToDepot`: `feature` | `depot_stand/slot_0` | site_knowledge, `R/artifacts/runs/g4a/ours/events.jsonl:3` (`points`) | (a) |
+| `ToShelf`: `feature` | `pdu_1_shelf/shelf` | site_knowledge, same event; mission brief names PDU-1 | (a) |
+| `Return`: `dock_x/y/yaw` | `(0.0, 0.0, 0.0)` | site_knowledge `dock`, same event; matches `MissionA_Covered`'s `ReturnToDock` | (a) |
+| `DriveAndDock`: `standoff_m` / `approach_m` defaults | `1.5` | `contracts.yaml` `navigate_to_feature.standoff_m` / `dock_at_feature.approach_m` documented defaults | (b) |
+| `PickItem`/`StowAndReturn`: tolerance args | `0.08` | `contracts.yaml` `arm_ready.tolerance_rad` / `stow.tolerance_rad` documented default | (b) |
+| `Pick`: `target`, `part` | ORU / bail-neck description | Ours' own covered-instance calls, `R/artifacts/runs/g8d,g8e/ours/events.jsonl` (`tool_proposed` `pick`), read-only | (a) |
+| `Pick`/`Place`: `item` | `"spare_oru"` | `openral_ext/capability_server/node.py` `ITEM_NAMES`; capability added F78 | (b) |
+| `Place`: `support` | `pdu_1_shelf/shelf` | site_knowledge; mission brief | (a) |
+| `Place`: `release_constraint` | `"below_overhang"` | `contracts.yaml` `place.release_constraint` (T-shaped bail = overhanging head); matches Ours' covered calls `R/artifacts/runs/g8s,g8t/ours/events.jsonl` | (a)/(b) |
+| `PickItem`: `arm_ready` before `pick` | ordering | not required by `pick`'s contract; matches Ours' covered-instance call order, `R/artifacts/runs/g8d/ours/events.jsonl` | (a) |
+
+No row cites a held-out run or scenario name. Recovery rows (failure kind/stage -> branch) are deferred to the next
+pass, once pick/place's reported kinds and stages stop moving.
