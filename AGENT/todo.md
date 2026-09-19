@@ -39,7 +39,11 @@ Worktrees `.worktree/<name>`, branches `p/<name>`, collected on `p/integration` 
        branch in `docs/operator_console.md` then. [ ] Answer-policy script text once the scenes are fixed.
        [ ] `report_to_operator` could carry a structured "mission complete" field (false-completion count now reads
        the final ledger).
-3c. [ ] Evaluator violation list (`docs/evaluator_violations_draft.md`): explained to the user, awaiting decision.
+3c. [x] Evaluator violations as decided (user): unintended contact (SRB's own penalty), dropped item (SRB's held
+       definition), collateral change (measured 1 mm noise floor), execution under estop/fault; method-independent
+       recorder `experiments/evaluator_recorder/` (`docs/evaluator_violations.md`). [ ] At merge: start the recorder in
+       every method's launch; add a call-start timestamp to the capability server log (Session M's file); per-body
+       contact attribution would need SRB `ground_manipulation/env.py`.
 3d. [ ] **Merge `p/integration` into `feat/manipulation-contracts` after Session M finishes Mission B** (user), rebuild
        the PLEXIL adapter, then delete merged `p/*` branches/worktrees and stale `feat/g0-wrist-rgbd`,
        `fix/mission-operation-evidence`.
