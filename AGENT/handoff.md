@@ -58,7 +58,6 @@ Current order: **finish Mission B → press live → Mission A → baselines/fre
 - Shared below_overhang release constraint now enables support-parallel withdrawal; no tuned numbers/assets.
 - Actual-code replay removes 53.7 mm rise from the same 150 mm stroke; both enum values validate, 4 tests pass.
 - g8f ended: correct neck selected, lifted, then lost during bring_in; recorder closed. Place fix not reached.
-- g8f also loads verification_finished; development stopping/snapshots wait for independent verification.
 - Do not read active SQLite bags; close recorder before offline analysis.
 - g6c and gui_verified artifacts/snapshots remain available. Comparison: `docs/success_reference_reproduction.md`.
 - Recheck process identities with `ps -eo pid,ppid,args` before stopping anything. Kill explicit PIDs only.
