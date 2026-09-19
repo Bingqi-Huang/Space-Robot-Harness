@@ -64,10 +64,9 @@ viewing geometry and arm reach: the reach model answers only for the arm, Nav2 o
 search only within whatever stand it is given, and `READY`/`STOW` are constants from when the rover parked further
 back. This is the same root cause as F62 §3 (Mission A's deadlock), F61 §1 (the written-down overview posture) and
 F63 §3 (`press` looking at empty sky): **a posture or a stand written down in advance does not know what is around
-it.** It is now the blocker for both missions, and it is a harness question, not a `pick` question.
-
-The agent recovered its way through all four by itself (drive in, split the difference, back off to
-`standoff_m 0.5`) — the model layer responds to the conflict; no component can answer it in advance.
+it.** It is now the blocker for both missions, and it is a harness question, not a `pick` question. The agent
+worked its own way through all four (drive in, split the difference, back off to `standoff_m 0.5`): the model layer
+responds to the conflict; no component can answer it in advance.
 
 **One geometry computed but never yet the cause of a failure** (do not change it without a run that fails there):
 the wrist camera is 0.12 m off the tool axis, 0.22 m behind the TCP, vertical half-FOV 21.3°, so the target's angle
