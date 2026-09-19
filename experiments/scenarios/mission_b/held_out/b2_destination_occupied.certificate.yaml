@@ -1,0 +1,16 @@
+scenario_id: mission_b/held_out/b2_destination_occupied
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: "grasp/carry/place/release/navigate/dock are all pre-freeze; no live run recorded against this exact scenario= value yet."
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: "Occupancy judgment ('is the shelf already holding a crate') needs the shared perception path; today's D0 checks use simulator truth (Phase E stand-in)."
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: "No PLEXIL/EUROPA artifact for this case yet; confirm at freeze time (docs/freeze_audit.md)."
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: "Missing piece is 'clear the occupant before placing', a mission-level decomposition step, not a controller/sensor gap; needs user sign-off."
+evaluator_only: true
+solution_sequence: null

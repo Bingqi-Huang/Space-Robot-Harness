@@ -1,0 +1,52 @@
+# execution_plan.md §12 scenario manifest. Catalog ref: docs/lunar_task_catalog.md §3 "B2".
+manifest_version: 1
+scenario_id: mission_b/held_out/b2_destination_occupied
+mission_family: mission_b
+coverage: held_out
+
+mission_brief: >
+  Deliver the spare ORU staged at the depot stand (slot 0 per the manifest) to the spares shelf of
+  {destination}, then return the rover to the dock with the arm stowed.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_b.yaml
+  task_variant: lunar_base_mission_b_visual
+  env_overrides: {env.scenario: heldout_destination_occupied}
+  scenery_override: null
+  seed: 0
+  destination: pdu_1
+  episode_length_s: 1200.0
+
+required_capabilities:   # same set as B1 -- clearing the crate uses grasp/carry/place/release, all pre-freeze
+  - navigate_to_feature
+  - dock_at_feature
+  - arm_ready
+  - grasp
+  - place
+  - release
+  - stow
+  - observe
+
+mission_deadline_s: 1200.0
+space_context_profile: null
+perturbations_semantic_conditions:
+  - "the returned cargo crate already sits on the destination PDU's spares shelf; the ORU cannot be placed there until it is cleared"
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_b.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "delivered and crate_stowed(on any OTHER support) and at_dock(<=0.6m) and stowed(<=0.35rad)"
+  fields_used: [oru_on, crate_on, delivered, success]
+
+held_out_basis: >
+  §3.3: clearing an occupied destination before placing is not pre-authored; capabilities (grasp/carry/
+  place/release) are shared and pre-freeze. lunar_task_catalog.md §4 rates literature support "medium"
+  (ISS off-nominal cargo configuration precedent, [14]; exact "shelf occupied by a returned crate" precedent
+  not found -- noted honestly there).
+
+notes: >
+  Exists today: SRB TaskCfg.scenario Literal includes "heldout_destination_occupied" (task.py:68).
+  D0_SCENARIO=heldout_destination_occupied via run_d0.sh. See .certificate.yaml.

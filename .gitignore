@@ -35,3 +35,6 @@ experiments/manifests/
 /ros/build/
 /ros/install/
 /ros/log/
+
+# git worktrees (AGENT.md §1)
+.worktree/

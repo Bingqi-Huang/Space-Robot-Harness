@@ -1,0 +1,82 @@
+"""Table generation from normalized rows -- execution_plan.md §13.2 "The main result table is
+generated directly from these rows", §15 (Wilson CI for rates, bootstrap for ratios, pairing by
+scenario seed). No hand-edited CSV: `main()` reads a directory of row JSON files (as written by
+`evaluation/rows.py::extract_row`) and prints a Markdown table.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import random
+from pathlib import Path
+
+from evaluation.rows import NormalizedRunRow
+
+__all__ = ["wilson_ci", "bootstrap_ci", "success_rate_table", "load_rows"]
+
+
+def wilson_ci(successes: int, n: int, *, z: float = 1.96) -> tuple[float, float, float]:
+    """§15 "confidence intervals for autonomous success rates". `(point, low, high)`, all in [0, 1].
+    `n == 0` returns `(0.0, 0.0, 1.0)` -- no data, not a fabricated interval."""
+    if n == 0:
+        return 0.0, 0.0, 1.0
+    p = successes / n
+    denom = 1 + z * z / n
+    centre = p + z * z / (2 * n)
+    spread = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
+    return p, max(0.0, (centre - spread) / denom), min(1.0, (centre + spread) / denom)
+
+
+def bootstrap_ci(values: list[float], *, statistic=lambda xs: sum(xs) / len(xs), n_resamples: int = 2000,
+                  alpha: float = 0.05, seed: int = 0) -> tuple[float, float, float]:
+    """§15 "bootstrap ... confidence intervals for HIR and continuous timing measures". `(point, low, high)`.
+    Empty `values` returns `(0.0, 0.0, 0.0)` -- no data, not a fabricated interval."""
+    if not values:
+        return 0.0, 0.0, 0.0
+    rng = random.Random(seed)
+    point = statistic(values)
+    n = len(values)
+    resamples = sorted(statistic([values[rng.randrange(n)] for _ in range(n)]) for _ in range(n_resamples))
+    lo_idx, hi_idx = int(n_resamples * alpha / 2), int(n_resamples * (1 - alpha / 2)) - 1
+    return point, resamples[max(lo_idx, 0)], resamples[min(hi_idx, n_resamples - 1)]
+
+
+def load_rows(rows_dir: Path) -> list[NormalizedRunRow]:
+    return [NormalizedRunRow.model_validate_json(p.read_text()) for p in sorted(rows_dir.glob("*.json"))]
+
+
+def success_rate_table(rows: list[NormalizedRunRow]) -> str:
+    """Markdown table: one line per (method, coverage), stratified per §15 ("stratification by
+    covered versus held_out and by mission family"). Rows with `autonomous_mission_success is None`
+    (no MISSION verdict -- an infrastructure failure, §15 "not counted as scientific failures") are
+    excluded from the denominator and reported separately."""
+    groups: dict[tuple[str, str | None], list[NormalizedRunRow]] = {}
+    excluded = 0
+    for r in rows:
+        if r.autonomous_mission_success is None:
+            excluded += 1
+            continue
+        groups.setdefault((r.method, r.coverage), []).append(r)
+    lines = ["| method | coverage | n | successes | rate | 95% Wilson CI |", "|---|---|---|---|---|---|"]
+    for (method, coverage), grp in sorted(groups.items(), key=lambda kv: kv[0]):
+        n = len(grp)
+        succ = sum(1 for r in grp if r.autonomous_mission_success)
+        p, lo, hi = wilson_ci(succ, n)
+        lines.append(f"| {method} | {coverage or '?'} | {n} | {succ} | {p:.2f} | [{lo:.2f}, {hi:.2f}] |")
+    if excluded:
+        lines.append("")
+        lines.append(f"({excluded} run(s) excluded: no MISSION verdict found -- infrastructure failure, not a scientific result)")
+    return "\n".join(lines)
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--rows-dir", type=Path, required=True, help="Directory of *.json files written by rows.extract_row")
+    args = ap.parse_args()
+    rows = load_rows(args.rows_dir)
+    print(success_rate_table(rows))
+
+
+if __name__ == "__main__":
+    main()

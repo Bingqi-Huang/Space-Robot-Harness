@@ -1,0 +1,16 @@
+scenario_id: mission_b/held_out/b3_spare_swapped
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: "grasp/carry/place/release/navigate/dock are pre-freeze; no live run recorded against this exact scenario= value yet."
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: "Object-identity judgment ('which item is the real ORU') needs the planned VLM semantic-query capability (catalog B5), not registered yet -- this is the strongest blocker for this case."
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: "No PLEXIL/EUROPA artifact for this case yet; confirm at freeze time (docs/freeze_audit.md)."
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: "Missing piece is 'verify identity, don't trust the manifest', mission-level; needs user sign-off, and B5's VLM capability lands before this can be admitted."
+evaluator_only: true
+solution_sequence: null
