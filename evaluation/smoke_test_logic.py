@@ -5,6 +5,7 @@ Run: python3 evaluation/smoke_test_logic.py
 """
 from pathlib import Path
 
+from evaluation.baselines.plexil_normalize import normalize_capability_server_log, normalize_plexil_check_log
 from evaluation.rows import extract_row
 from evaluation.scenario_schema import iter_manifests, load_certificate
 from evaluation.tables import bootstrap_ci, success_rate_table, wilson_ci
@@ -78,6 +79,31 @@ def test_success_rate_table_end_to_end():
     assert "4" in table  # 4 ours/covered rows go into one stratum
 
 
+# ── baselines.plexil_normalize: real capability_server.log fixture (same boundary format PLEXIL uses) ──
+def test_plexil_capability_log_normalizes_real_fixture():
+    events = normalize_capability_server_log(_REPO_ROOT / "artifacts/runs/pf1/capability_server.log")
+    assert len(events) >= 3
+    assert all(e.method == "plexil" for e in events)
+    assert all(e.kind == "execution_finished" for e in events)
+    assert any(e.capability == "navigate_to_feature" for e in events)
+    assert all(e.plan_node_id is None for e in events)  # honest -- no node-level data in this log format
+
+
+def test_plexil_check_log_normalizes_synthetic_fixture(tmp_path=Path("/tmp/eval_smoke_plexil_fixture")):
+    tmp_path.mkdir(exist_ok=True)
+    log = tmp_path / "check.log"
+    log.write_text(
+        'PLAN {"t": 1.0, "executive": "PLEXIL universalExec 6.1.3", "plan": "MissionA_Covered.plx"}\n'
+        'EXEC {"t": 45.9, "exit": 0, "wall_s": 44.9, "sim_s": 43.9, "tail": ["Plan complete."]}\n'
+        'STEP {"t": 46.0, "n": 1, "name": "navigate_to_feature", "success": true, "failure_kind": 0, '
+        '"failure_reason": "", "args": {"feature": "pdu_2_panel"}, "sim_s": 43.9}\n'
+        'DOCK {"t": 46.5, "pos_err_m": 0.127}\n'
+    )
+    events = normalize_plexil_check_log(log)
+    assert [e.kind for e in events] == ["plan_started", "plan_finished", "execution_finished"]
+    assert events[2].capability == "navigate_to_feature" and events[2].success is True
+
+
 check("all_scenario_manifests_load", test_all_scenario_manifests_load)
 check("extract_row_success_run", test_extract_row_success_run)
 check("extract_row_failure_run", test_extract_row_failure_run)
@@ -85,4 +111,6 @@ check("extract_row_no_mission_verdict_is_honest", test_extract_row_no_mission_ve
 check("wilson_ci_matches_known_values", test_wilson_ci_matches_known_values)
 check("bootstrap_ci_is_centred_on_the_mean", test_bootstrap_ci_is_centred_on_the_mean)
 check("success_rate_table_end_to_end", test_success_rate_table_end_to_end)
+check("plexil_capability_log_normalizes_real_fixture", test_plexil_capability_log_normalizes_real_fixture)
+check("plexil_check_log_normalizes_synthetic_fixture", test_plexil_check_log_normalizes_synthetic_fixture)
 print("ALL SMOKE CHECKS PASSED")
