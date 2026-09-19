@@ -130,7 +130,7 @@ class PlanningSceneNode(Node):
         scene = PlanningScene(is_diff=True)
         scene.allowed_collision_matrix = self.original_acm
         scene.world.collision_objects = [self.measured_object]
-        if self.contact_region is not None:
+        if self.contact_region is not None and self.contact_region["contact_triangles"] > 0:
             scene.world.collision_objects.append(
                 CollisionObject(id="measured/contact", operation=CollisionObject.REMOVE))
         result = await self.apply_client.call_async(ApplyPlanningScene.Request(scene=scene))
@@ -150,6 +150,9 @@ class PlanningSceneNode(Node):
             evidence["reason"] = "selected region is immutable until operation release"
         elif phase != "register" and self.contact_region is None:
             evidence["reason"] = "no selected measured contact region"
+        elif phase != "register" and self.contact_region["contact_triangles"] == 0:
+            evidence.update(applied=True, reason="nothing exempted for this region")
+            response.success = True
         else:
             scene = PlanningScene(is_diff=True)
             if phase == "register":
@@ -184,7 +187,11 @@ class PlanningSceneNode(Node):
                                 evidence_ref=request.evidence_ref, contact_triangles=count,
                                 contact_links=list(GripperGeometry().contact_links))
                 if count == 0:
-                    evidence["reason"] = "selected region contains no complete measured surface triangles"
+                    # No measured surface there means nothing to exempt, not an unsafe contact: every other
+                    # check stays in force, and the later phases have no permission to change (g8u, F78).
+                    evidence.update(applied=True, reason="no measured surface in the selected region; nothing exempted")
+                    self.contact_region = evidence
+                    response.success = True
                     response.evidence_json = json.dumps(evidence)
                     return response
                 scene.world.collision_objects = [remainder, target]

@@ -8,31 +8,17 @@ while the previous one still has an unverified fix in it.
 
 **Before anything: read `handoff.md`'s first section.** Skill edits need a new runtime_node process, plus attach/resume; restarting only the capability server is insufficient.
 
-## Now: reproduce a compatible successful reference (r3, user approved)
+## Now: pick + carry robust through the harness (F78, user principle)
 
-- [x] Draft `docs/manipulation_contracts_proposal.md`: observation success, target lock/invalidation,
-      feedback and physical control handoff; literature support, v4 conflicts, offline validation obligations.
-- [x] User-requested self-review: r2 fixes contract circularity, ownership handoff and effect/knowledge boundaries.
-- [x] Scope reduced: success-reference reproduction first; no full C1/C3 build. Implementation/simulation authorized.
-- [x] Current-asset oracle reference reproduced grasp/carry; delayed evaluator confirmed delivery. Reference retreat failed; no stow/dock.
-- [x] Offline comparison isolated g7c pedestal selection and contour-merging defect; no VLM-reconfirmation layer.
-- [x] g8a selected the 12 mm neck; approach then lost lock at 6.9 cm. Recording closed after cooperative cancellation.
-- [x] Fixed template/contact (odom) + geometry-bounded association checked on 109 recorded frames; truth confirms static object.
-- [x] g8b physical pick validation: neck selected, lift/retraction completed, independent held=true; no hidden re-selection.
-- [x] g8c carried and docked at PDU-1; bag confirms retained grip, VLM false negative stopped development check.
-- [x] g8d model resolved contradictory held observation and performed over/lower/release. Retreat stalled.
-- [x] g8e moved clear/inspected; stopped to analyze recorded placement divergence rather than search blindly.
-- [x] F73: release was initially in bounds, tilted axial withdrawal lifted/dragged ORU; semantic below_overhang correction passes offline geometry/contract checks.
-- [x] g8f ended: correct neck selected, lifted, slipped at bring_in; place correction not reached.
-- [ ] Grasp/transport: g8q permission applied, last validity=true, servo stalled 27 mm out; no closure, held=false.
-- [ ] Next: read closed g8q bag; compare commanded/measured TCP/joints against g8b success before any new change.
-- [x] F77: immutable measured patch + distal jaw contact permission; contact IK/servo/free-ray semantics aligned.
-- [x] Real MoveIt integration: all triangles/unrelated ACM entries preserved; phases/revocation/cleanup pass.
-- [x] Depth/TF acquisition uses latest timestamp-matched frame within sensor QoS history.
-- [x] Solution-focused audit: `docs/contact_closure_audit.md`; confirmed incompatible collision representations and permissive close-in exit.
-- [x] Shared geometry/scene acknowledgement and closure conditions implemented; g8j contact IK passes, g8m closes.
-- [ ] If non-contact linkage collision persists, analyze selected frame (g8p ~16 degrees); never exempt the whole gripper.
-- [x] Offline direction error vs evaluator truth: g8f 7.44 → 0.80 degrees, g8b 0.55 → 0.35 degrees.
+- Principle: a skill check that cannot certify is evidence, not a veto; confirmed problems return typed facts and
+  the model recovers (retry / re-observe / re-dock). No per-task tuning, no mechanical parameters to the model.
+- [x] g8q stall = sag integral + posture pull in empty-jaw close-in (bag + FK replay); fixed, openral f925430.
+- [x] g8s/g8t: neck picked, carried, docked at PDU-1 held. g8r: VLM chose 27 mm pedestal. g8u: 0-triangle permission veto.
+- [x] Fragile vetoes → evidence (zero-triangle permission, insertion free-rays); selected mark width/range in context.
+- [ ] g8v (no STOP_ON_FAILURE, g8b before_step_10): does the model recover pick failures and reach PDU-1 holding?
+- [ ] Repeat pick+carry from the same snapshot to judge stability at mission level (recoveries counted).
+- [ ] bring_in drives joint4 to its stop; servo command winds up 0.4–0.75 rad at a stop (release to measured).
+- [ ] Carry: ORU pivots 16–32 deg on the neck, swings pry jaw to 0.23; head interlock retains it. Watch only.
 
 ## Mission B backlog
 
@@ -49,7 +35,7 @@ while the previous one still has an unverified fix in it.
       `drive limits: carrying … lever_m` in `capability_server.log` and `item_still_held` after the dock at PDU-1.
 - [x] The carry holds for a drive (F63 §1): `bring_in()` (lever 1.144 → 0.838 m) plus carrying drive limits; g5m
       completed the depot → PDU-1 leg with the payload verified held on arrival.
-- [ ] `place` live: g8d reached over/lower/release with payload; retreat stalled and settle not reached. F73 correction in g8f.
+- [ ] `place` (deferred until pick is stable): `over` sweeps at carry height; hanging ORU hits the 0.50 m shelf (g8s stall, g8t drop). Raise item clear of support first, from re-measured hang.
 - [x] Removed the pick manifest’s site-specific standard-handle grasp hint; choice must use the image and caller intent.
 - [ ] Stow + dock at the far end: never reached either, and likely to hit the same wall as Mission A (below).
 - [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.

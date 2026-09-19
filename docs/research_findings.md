@@ -3752,3 +3752,28 @@ item still in the jaws. Throughout the carry after bring_in the held joint comma
 0.3–0.75 rad on joints 1/3/5/7 (arm against joint4's stop): the servo command integrates from itself and winds
 up at a joint stop. Loaded `over` also lagged (joint6 ~0.1 rad). Cause of the `over` stall not yet established.
 Development continuations, not campaign trials. Evidence: g8q/g8r/g8s `robot_motion/` (closed), `ours/events.jsonl`.
+
+**Place and carry (g8s/g8t closed bags, evaluator TF only).** place's `over` goal is the support's x/y at the
+current TCP height; nothing checks that the hanging item clears the support. Entering place the ORU base rode at
+0.56 m (g8s) / 0.52 m (g8t) over a 0.50 m shelf. g8s: the ORU came to rest on the shelf (0.505 m) with jaws
+closed; the arm stalled 1.1 cm short. g8t: the ORU struck the shelf, jaw 0.231 then 0.100 (empty), item fell onto
+the shelf (evaluator delivered=true by accident). Carry: rigid after lift (0.4–3.6 deg), but from bring_in the ORU
+pivots 16–32 deg about the jaw closing axis and the neck slides 16–18 mm until the head rests on the fingers;
+swings pry the jaw from 0.17 to 0.18–0.23 during driving/docking. Retention is the head interlock, not clamp force.
+g8t without STOP_ON_FAILURE: the model observed, backed off, confirmed empty jaws and searched; the wrist VLM
+wrongly reported the item on the ground. Stopped by the user.
+
+**g8u.** Model re-docked (approach 2.0 m) before pick; VLM chose the neck correctly (15.5 mm, 0.74 m range).
+pick failed at contact_scene/register: "selected region contains no complete measured surface triangles" (F77
+permission precondition). Cause of zero triangles not yet established. Evidence of g8s–g8u is written under
+g8r/evidence (runtime restarted during g8r keeps its log dir).
+
+**Fragile vetoes removed (user principle: checks fall back to the harness; no per-task tuning).** A skill check that
+cannot certify something is evidence, not a veto; a confirmed problem returns a typed reason with the facts the model
+needs, and the model chooses the next operation (never mechanical parameters). (1) Contact permission with zero
+measured triangles in the selected region now registers "nothing exempted" and continues; every other collision
+check remains (planning_scene/node.py). (2) Insertion free-ray observation is recorded, not blocking (openral
+2a24b9c). (3) Pick attempt summaries carry the selected mark's id, measured width and range into the context, so a
+27 mm pick against the catalogue's 12 mm neck is visible to the model. Kept: target-drift gate, closure pose check,
+empty-jaw and lift checks (confirmed problems). `restart_runtime.py` also restarts the planning_scene node.
+g8v runs without STOP_ON_FAILURE from g8b before_step_10, stopping after a verified dock at PDU-1.

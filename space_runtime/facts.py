@@ -40,7 +40,9 @@ def attempt_summary(ev: dict) -> dict:
     sk = ev["evidence"]["skill"]
     out = {"seq": ev["seq"], "operation": ev["capability"], "args": ev["args"], "success": ev["success"],
            "stage": sk.get("failed_stage") or sk.get("stage"), "why": sk.get("why", ""), "sim_s": sk.get("sim_s")}
-    tries = [{k: a[k] for k in ("attempt", "outcome", "vlm") if k in a} for a in sk.get("attempts", [])]
+    tries = [{k: a[k] for k in ("attempt", "outcome", "vlm") if k in a}
+             | ({"selected_mark": {k: a["candidate"][k] for k in ("id", "width_m", "depth_m")}} if a.get("candidate") else {})
+             for a in sk.get("attempts", [])]
     if tries:
         out["tries"] = tries
     find = sk.get("find") or {}
