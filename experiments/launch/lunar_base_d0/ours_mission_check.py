@@ -48,18 +48,8 @@ def snapshot(op, path):
         spin(0.1)
 
 
-RESUME_FROM = os.environ.get("OURS_RESUME_FROM")
-if RESUME_FROM:
-    before = int(os.environ["OURS_RESUME_BEFORE_STEP"])
-    keep, n_steps = [], 0
-    for line in (Path(RESUME_FROM) / "ours/events.jsonl").read_text().splitlines():
-        if '"kind": "tool_proposed"' in line or '"kind": "reasoner_step_failed"' in line:
-            n_steps += 1
-        if n_steps >= before:
-            break
-        keep.append(line)
-    (run_dir / "events.jsonl").write_text("\n".join(keep) + "\n")
-    snap = Path(RESUME_FROM) / f"snapshots/before_step_{before}.pt"
+def put_scene_back(snap: Path) -> dict:
+    """Put the simulator back to a saved state, and give the rover's localization its estimate from then."""
     snapshot("restore", snap)
     est = json.loads(snap.with_suffix(".json").read_text())
     ip = PoseWithCovarianceStamped()
@@ -82,6 +72,36 @@ if RESUME_FROM:
         if math.hypot(p_est[0] - est["x"], p_est[1] - est["y"]) < 0.03:
             break
     log("RESTORED", snapshot=str(snap), estimate=est, truth_error=base_err([est["x"], est["y"]], est["yaw"]))
+    return est
+
+
+# The graph's own starting state, saved once while the scene is still untouched. A later run on the same held graph
+# puts the site back to the start with OURS_RESET=1 instead of booting Isaac again, which costs minutes every time a
+# mission is tried from the top. The scene starts with the jaws open and nothing in them, which is the only kind of
+# state a restore can return to honestly: the contact that holds a payload is not in the saved state, so an item
+# restored in the jaws falls straight out of them (research repo F60).
+INITIAL = Path(os.environ.get("D0_GRAPH_LOG", os.environ["D0_LOG"])) / "snapshots/initial.pt"
+if not os.environ.get("D0_ATTACH"):
+    INITIAL.parent.mkdir(parents=True, exist_ok=True)
+    p0, yaw0, _ = est_pose()
+    INITIAL.with_suffix(".json").write_text(json.dumps(dict(x=float(p0[0]), y=float(p0[1]), yaw=float(yaw0), sim_t=sim["t"])))
+    snapshot("save", INITIAL)
+    log("INITIAL", snapshot=str(INITIAL))
+
+RESUME_FROM = os.environ.get("OURS_RESUME_FROM")
+if os.environ.get("OURS_RESET"):
+    put_scene_back(INITIAL)
+elif RESUME_FROM:
+    before = int(os.environ["OURS_RESUME_BEFORE_STEP"])
+    keep, n_steps = [], 0
+    for line in (Path(RESUME_FROM) / "ours/events.jsonl").read_text().splitlines():
+        if '"kind": "tool_proposed"' in line or '"kind": "reasoner_step_failed"' in line:
+            n_steps += 1
+        if n_steps >= before:
+            break
+        keep.append(line)
+    (run_dir / "events.jsonl").write_text("\n".join(keep) + "\n")
+    put_scene_back(Path(RESUME_FROM) / f"snapshots/before_step_{before}.pt")
 STOP_ON_FAILURE = bool(os.environ.get("OURS_STOP_ON_FAILURE"))
 log("PLAN", method="ours", brief=BRIEF, run_dir=str(run_dir))
 t0, sim0 = time.time(), sim["t"]
