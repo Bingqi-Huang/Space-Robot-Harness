@@ -3,73 +3,83 @@
 Order: `execution_plan` §21 (revised 2026-09-17) — the proposed method before the external baselines.
 Goal of this phase: Ours completes Mission A/B covered and the held-out situations, then a 1x-sim-time video.
 
+**Sequence in force (user, F63 §4): finish Mission B → then `press` live → then Mission A as a regression.**
+Do not open the next one while the previous one has an unverified fix in it.
+
 ## Done
 
 - LunarBot stack on SRB; common capability boundary; PLEXIL Mission A through it (F51–F52).
 - Ours runtime (facts, context, guard, verification, trace, restart/switch) and Mission A `covered` with vision-only
   contact (F53–F54). Tasks grounded in `docs/lunar_task_catalog.md`.
-- Mission B pick analysis, step-wise snapshot workflow, reasoner/VLM choice, patches reverted (F55).
 - Manipulation design **v4** (`docs/semantic_to_metric_manipulation_plan.md`): `pick` / `place` / `press` are single
   skills; the model composes operations, never stages (F56).
+- G0–G2 offline; `pick`/`place` as procedural rSkills; G3 live; `pick` inside the agent loop (g4m).
+- **Scheduling and verification defects cleared (F60)**: the jaw band defined once and read from the picture, not the
+  angle; `select` judges every view at once; a blocked view / an unreachable candidate / a failed retreat are local,
+  not fatal; `item_held` re-checked after every call; `held_item` query; `OURS_RESET=1`.
+- **Where to look is computed, not written down (F61)**: the item is found once on the overview, every working view
+  aims at its own top, the viewing direction includes the horizontal. `pick` then took the 12 mm neck four times
+  running (g5h, g5i, g5k, g5m).
 
-## Now: manipulation skills (plan v4, gates G0–G5)
+## Now: G4 — Mission B end to end
 
-- [x] G0–G2 offline: wrist RGB-D recorder (29 views), classical candidates (28/29 with a correct neck grasp),
-      VLM set-of-mark selection (20/28; a single ask scores the same as the majority of three).
-- [x] `pick(target, part)` and `place(support)` as procedural rSkills in the fork; one contract line each at the
-      boundary; Ours-side object facts, automatic `item_held` / `item_placed`, attempt record.
-- [x] G3: `pick` live, one call per trial — nominal holds, out-of-envelope placements return the stage (g3bn, g3br).
-      Read with hindsight (F59): that gate passed on a dock that landed 6 cm short, which hid two defects.
-- [x] **`pick` works inside the agent loop (g4m)**: one call, two attempts on the same target, `item_held` verified
-      independently (jaw 0.327 rad, 11.7 cm lift, 19.5 px of item motion against 315 px expected if left behind).
-- [ ] **G4**: Mission B `covered` end to end. The agent composes it correctly and pick now works; what is left is
-      carry → `place` (never run live) → stow → dock, from g4m's snapshot before step 9.
-- [ ] `place` live, then the pick→place pair on one snapshot.
+- [ ] **Verify the turn limit** (F63 §2) — the one unexercised fix: the boundary derives Nav2's angular limit from
+      the measured lever (α = 0.5 / lever) so a turn puts the same 0.5 m/s² on the payload that the straight leg
+      survived. **g6a is running for this.** Look for `drive limits: carrying … lever_m` in `capability_server.log`
+      and `item_still_held` after the dock at PDU-1.
+- [x] **The carry holds for a drive** (F63 §1): `bring_in()` (lever 1.144 → 0.838 m) plus carrying drive limits;
+      g5m completed the depot → PDU-1 leg with the payload verified held on arrival.
+- [ ] **`pick` is not yet reliable**: g5p failed twice at `approach` — "lost sight of the chosen grasp 8 frames
+      running while still 6 cm away" and "the close-in stopped 14.6 cm from the grasp". Both are the tracker or the
+      guard giving up near the target, where the item fills the frame. Read `g5p/evidence/pick_*/servo_*.jpg`.
+- [ ] `place` live: never yet reached with a payload in the jaws. Then stow + dock, and Mission B is end to end.
+- [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.
 
-## Harness gaps found on the way (F58/F59) — infrastructure, not this mission
+## Next: `press` live, then Mission A
 
-- [x] Reasoner and scene/grasp VLM both on DeepSeek's own endpoint (`deepseek-flash`); the shared gateway is gone.
-- [x] `openral_ext/workspace/`: the robot's own reach (arm kinematics sampled from the live URDF) + footprint
-      clearance decide where the rover parks; `dock_at_feature` settles each candidate with the robot's own IK.
-      The `REACH` table in the scene generator is superseded — **still to delete, with `interaction.json`'s
-      `robot.reach_m` and `d0_common`'s copy**, and the site's own work poses regenerated from the reach model.
-- [x] A skill declares the volume its tool is about to be inside (`/space/manipulation_target`); the world model
-      stops calling that measurement an obstacle. Without it no arm configuration was allowed at the ORU's handle.
+- [x] `press(target)` built and wired (F62): procedural rSkill (locate → approach → press → retreat),
+      `locate_point` for a target that is a patch on a surface, one contract line, `pressed` verified from the
+      robot's own kinematics. `actions: ["push"]` — the controlled vocabulary has no `press` (F63 §3).
+- [ ] **`press` has never pressed anything live.** ma4 photographed empty sky; `face_the_work_zone()` derives a
+      looking posture from where a dock puts the work instead of assuming one. Untested.
+- [ ] **Mission A deadlocks before it presses** (F62 §3) and no part of it is wrong: the reach model stands the rover
+      0.905 m out; at 0.905 m the written-down `ready` posture has no collision-free path; raising the arm 1.5 m out
+      and driving in stops 7 cm short because Nav2 will not push a raised arm into a panel; from there the arm can
+      neither rise nor stow. **Nothing owns the joint feasibility of arm posture and base position** — the reach
+      model asks only about the arm, Nav2 only about the hull, and `READY`/`STOW` are constants from when the rover
+      parked further back. Same disease as F61 §1 and F63 §3: a posture constant is a bug until proven otherwise.
+
+## Harness gaps found on the way — infrastructure, not this mission
+
+- [x] Reasoner and VLM on DeepSeek's own endpoint; `openral_ext/workspace/` (the robot's own reach decides the
+      stand); `/space/manipulation_target` (what a skill works on is not an obstacle); `held_item` + continuous
+      held-check; carrying drive limits at the boundary (shared substrate).
+- [ ] Effects need the query path's error handling: an exception inside `_execute` leaves `failure_reason` empty and
+      the agent gets a blank failure (F62 §2 — it cost five steps of re-wording against a `KeyError`).
+- [ ] `item_cells` finds ~6 of the ~70 cells the grasped lid occupies, so most of the item the robot is holding is
+      still an obstacle to its own clearance check.
+- [ ] Views are re-taken on every attempt, and there are six of them: one `pick` costs 15–40 min of wall time.
+      Cache the views per call and re-ask only the choice.
+- [ ] `OURS_RESET=1` leaves AMCL without a pose (the reset teleports the rover, and the check re-seeds
+      `/initialpose` after reading TF): the run dies with `no TF map <- chassis_base_link`. Seed first, then read.
+- [ ] The `REACH` table in the scene generator is superseded — **still to delete**, with `interaction.json`'s
+      `robot.reach_m` and `d0_common`'s copy; regenerate the site's work poses from the reach model.
 - [ ] **Two features have no legal stand at all** (`depot_stand/slot_1`, the crate on it): the hull cannot clear the
-      stand at any distance from which the arm reaches the handle. The depot needs items staged where this arm can
-      take them, or a shallower stand.
-- [ ] The PDU presses are approached from 0.20 m too far (Mission A's own record has a `move_tool` failing at 1.127 m
-      and succeeding at 1.082 m). Re-dock them from the reach model and re-run Mission A as a regression.
-- [ ] **Open and unexplained: the wrist view in `servo_*.jpg` is upside down** while `view_*.jpg` / `candidates_*.jpg`
-      are uprighted (`upright(bgr, up_cam)`). Either the servo frames merely miss that call, or the camera-above-tool
-      branch is being entered where it should not be. Settle it from the images before trusting another approach run.
-
-## Architecture follow-ups (plan v4 §2, when touched — no big refactor)
-
-- [ ] `press(target)` folds `approach_target` + `move_tool` + `grasp`; then `approach_target`, `move_tool`,
-      `plan_ee_*`, `move_ee_*`, `move_joints`, `grasp` leave the model palette; regression: Mission A `covered`.
-- [ ] Move VLM `observe` / `locate_in_view` and feature-pose lowering out of `capability_server`; fixed-infrastructure
-      places into OpenRAL world state.
-- [ ] Hardware-protecting limits while driving/holding (arm posture, base speed) into the kernel envelope / Nav2
-      parameters, shared by all methods.
-- [ ] PLEXIL adapter Lookups expose the same raw evidence (capability results, jaw, poses, availability) — not Ours'
-      verified facts. Evaluator counts constraint violations and false success declarations for all methods.
-- [ ] `requires_remote_service` availability metadata for VLM-backed capabilities.
+      stand at any distance from which the arm reaches the handle.
+- [ ] The guard has never fired — every effect is `routine`, `invariants: []`. H3 has no evidence yet.
 
 ## Then
 
-- [ ] G4: Mission B `covered` with the agent (snapshot workflow); G5 held-out: destination_occupied, spare_swapped,
-      cover_obstruction, status_mismatch, route_block. Failures → mission-generic changes only.
 - [ ] Space context variables only if the chosen scenarios exercise them.
 - [ ] 1x video run + `experiments/video/overlay.py`.
-- [ ] Baselines (§21 items 5–6: PLEXIL Mission B with `pick`/`place` as Commands, EUROPA→PLEXIL), scenario manifests
-      and freeze, Experiment I, Ours-internal ablations (research_content §5.7), Experiment II.
+- [ ] Baselines (§21 items 5–6: PLEXIL Mission B, EUROPA→PLEXIL), scenario manifests and freeze, Experiment I,
+      Ours-internal ablations (research_content §5.7), Experiment II.
 
 ## Known stack issues (fix only when a run fails on them)
 
 - Wedged rover with spinning wheels defeats AMCL; Nav2/MPPI cuts the charging station's corner.
 - MoveIt plans 15–77 s sim; an arm pushing a structure moves the rover (vc3: 7 cm).
-- Movable objects are not in MoveIt's planning scene.
+- Movable objects are not in MoveIt's planning scene (a skill declares its own working volume instead).
 
 ---
 
@@ -82,6 +92,7 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
 - Ours gets generic improvements only; never a situation-specific solution hint (§13.1).
 - Model-facing tools are operations, not stages; no mechanical parameters in contracts (execution_plan §8.2).
 - Never rerun a whole mission after a failure: restore the snapshot before the failed step, fix, rerun that step.
+  **Only a jaws-open snapshot is a valid resume point** — a restore cannot rebuild a grasp (F60 §1).
 - One simulation at a time. Never navigate on truth. Measure motion in sim time.
-- Kill only your own run's processes by explicit PID. Never edit a script a live run executes.
+- Kill only your own run's processes by explicit PID — **and check afterwards that none survived** (F60 §8).
 - Replies to the user: always Simplified Chinese, plain words, concise; design choices are the user's to make.

@@ -2912,3 +2912,236 @@ last centimetre.
 **4. Why G3 looked fine.** The G3 gate passed at a dock that landed 6 cm short of its work pose, which was enough for
 the measured-obstacle problem to stay hidden behind a stand-off that happened to be reachable. A gate that only ever
 runs one placement measures the luck of one dock; the reach model is what turns that into a statement about the site.
+
+### F60 — A grasp cannot be restored, a jaw angle is not a grip, and one blocked view should not end a pick
+
+2026-09-18, runs g4m–g4w. `openral_rskill.{procedural_pick,grasp_perception,_eye_in_hand}`,
+`openral_ext/capability_server/{contracts.yaml,node.py}`, `space_runtime/{verification,facts,agent}.py`,
+`experiments/launch/lunar_base_d0/ours_mission_check.py`.
+
+**1. The simulator's snapshot cannot restore a grasp, so no run may resume from one.** `envs/snapshot` writes back every
+joint angle, every joint target and every object pose, but the contact that holds a payload is not state — PhysX
+rebuilds it from the geometry, and a 1 kg item hanging from a bail does not survive the rebuild. Measured: the
+snapshot held the ORU at (6.133, −14.347, **0.668**) with all six jaw joints at 0.325 rad; after the restore the ORU
+sat at (5.958, −14.103, **0.193**) — 0.475 m straight down, 0.30 m sideways, on the ground where the rover stood.
+Two runs (g4n, g4o) were spent on a payload that had never been carried: g4o drove the length of the site with empty
+jaws and reached for the shelf. Only snapshots taken with the jaws open are honest resume points; `before_step_<n>`
+before a `pick` is one, `before_step_<n>` after it is not.
+
+**2. A jaw angle measures how far the fingers are apart, not whether anything is between them.** `JAW_OPEN_MIN_RAD`
+was 0.78, four hundredths under the commanded 0.82 — and the jaws come to rest at 0.776. Every open jaw therefore read
+as a held item: the boundary refused `arm_ready` in g4p ("the jaws are holding something (jaw 0.776 rad)"), and the
+same constant would have failed `place` at its own settle check. It was written down twice, in `_eye_in_hand.py` and
+in `node.py`, for one gripper. Now 0.6, defined once, read by the boundary from the skills (the harness config already
+used 0.6). The deeper point is that the angle was never the right evidence: 0.10 rad is closed on nothing, 0.175 is
+closed on a 13.6 mm edge, and a payload that slips out leaves the jaws exactly where the grasp left them.
+
+**3. `held_item`: what the gripper has, read from its own camera.** A new read-only query at the shared boundary asks
+the vision model what is between the fingers and answers `{holding, what}` with the jaw angle beside it as a number,
+not as the verdict. Offline on four frames whose answer was known it scored 4/4 in 1.8–2.6 s (`hold_after.png` →
+"white T-shaped block"; the frame where g4s reached for the shelf → not holding). Nothing is said to the model about
+what is expected to be there: an answer shaped by the question is not evidence (F57 §4, F58 §2), and comparing it with
+the record is the caller's job. Being a perception service it is shared with the baselines, like `observe`; using it
+to keep authoritative facts honest is Ours' mechanism (research_content §3.2).
+
+**4. An effect verified once is not a fact for the rest of the mission.** `item_held` held after `pick` and was never
+questioned again. In g4s the ORU dropped back onto the depot stand as the rover pulled away; the jaw read 0.1 rad in
+the evidence of *every* call from there to the shelf, and nothing compared it with the record, so `place` reached out
+holding nothing and stalled against the PDU panel — a failure that looks like a manipulation failure and is not one.
+The harness now looks again after every call that is not `place` or `release` (`item_still_held`, through `held_item`),
+and an item that is no longer there goes back to `unknown` with the picture that unseated it. Where it went, and what
+the mission does about it, stay the agent's to work out. A query that does not answer leaves the fact alone: a service
+outage is not evidence that the payload is gone (F58 §3).
+
+**5. The first view that answered was deciding the grasp.** F58 §2 cut `select` to one marked view per question and
+stopped at the first view with a choice — a concession to a gateway that timed out on anything larger. On DeepSeek's
+own endpoint a marked view is read in 1–6 s, and the concession had become the defect: this model essentially always
+answers, so the first view always won. In g4q that was the only view taken from above, and the mark it chose lay on
+the depot stand 42 cm behind the ORU's handle, reported as "the narrow neck directly under the T-shaped head"; the
+approach then failed 99 cm short. `select` now takes every view first and judges all of them in one question (the
+numbering already ran across views). Offline on g4m's own two views it chose the low view's mark 7 — the grasp that
+actually held — in 2 of 3 asks, where the high view's mark 6 had slipped out of the jaws on the lift.
+
+**6. What holds the payload is interlock, not friction** (user, 2026-09-18): the grasp goes across the neck *just*
+under the T-head, so the head rests on the closed fingers. This is why a static lift check cannot predict a carry.
+In g4s the chosen candidate was 13.6 mm wide (jaw closed to 0.175 rad, exactly as predicted), it passed `item_held`
+with a 7.2 cm lift, and it dropped as soon as the rover moved. A lift proves friction; only the head sitting on the
+fingers survives a drive.
+
+**7. A blocked view, or an unreachable candidate, should not end the call.** Taking every view before choosing means
+more views, and the lowest of them stand close in: g4v stopped 0.12 rad short against contact on the way to one and
+failed the whole `pick`. Three places treated a local obstruction as a fatal one, and all three are now local: a view
+the arm cannot reach is one view fewer; a candidate the arm cannot stand in front of goes into `tried` and the next
+one is asked for (plan v4 §4's own rule — g4q's was 99 cm away on the wrong structure, g4u's 21 cm away on the ORU
+itself); and the retreat back to the view's posture is a convenience, not a requirement. Also removed: the move back
+to the chosen view's posture before approaching. It was a no-op while the chosen view was the one the arm stood in;
+with every view taken first it became a move across the work zone, and in g4r it stalled and failed the call —
+`approach` works from the frame's own TF and plans to the stand-off from wherever the tool is.
+
+**8. Operational.** A `pgrep -f` kill left one agent of a stopped run alive; it drove the robot alongside the next
+run's agent for twenty minutes (g4u), which knocked the ORU off its stand mid-`pick`. The rule was already in the
+handoff — kill explicit PIDs — and the missing half is: verify afterwards that the domain is clean. The scene's own
+starting state is now saved as `snapshots/initial.pt` when a graph boots, so a mission can be retried from the top
+with `OURS_RESET=1` instead of rebooting Isaac; it is a jaws-open state, the only kind a restore can honestly return
+to (§1).
+
+### F61 — Where to look was written down, and looking from above made the grasp that holds unmeasurable
+
+2026-09-19, runs g4w, g5a–g5e. `openral_rskill.{procedural_pick,grasp_perception}`, `rskill-procedural-pick`.
+
+**1. Three constants decided where the camera looked, and none of them knew what it was looking for.** The overview
+posture was one written-down pose (`overview_pose: [-0.85, 0, 1.10, 50, 0]`); the working views came from
+`aim_points`, which picks whatever stands above its surroundings -- its own docstring says "nothing here knows where
+it was put" -- and their direction came from `side_view_pitch_deg: [10, 20, 30, 40]`, every one of them looking down.
+In g4w four of the five views went to other structures, and the one that did find the handle saw it from above.
+
+**2. From above, the grasp that holds cannot be measured at all.** The ORU's lifting interface is a 12 mm neck under
+a 90x45x14 mm head with 55 mm of free height (F49 §2): the jaws take the neck and the head rests on them. A row-wise
+depth profile of g4w's top view finds the neck exactly where F49 says it is -- **12.3 mm wide at 0.629 m, both sides
+100% clear** -- and the candidate generator still produced nothing near it. Not a defect in the generator: seen from
+above, the neck's 55 mm of free height projects to about **8 px ≈ 8 mm**, below `pad_height_m` (14 mm), and a grasp
+face that short is correctly refused. At the handle's own distance every candidate in all 26 was 19-27 mm, which is
+the handle's *other* axis -- the one F49 recorded as squeezing out of the jaws at 28 mm. The vision model was never
+choosing badly; the grasp that holds was not in the list to choose.
+
+**3. What replaced the constants.** The overview is now a place to look from, not a posture: lower and shallower
+poses are offered in turn until one is actually reached (g5b stopped 0.13 m short of the written-down one, "blocked
+by contact", and failed the call). The item is then found *once*, on the overview, with `find_regions` +
+`locate_region` -- three functions that had been written and never called -- and every working view is a view of it,
+aimed at the item's own top (a lifting handle stands on top of its payload; the overview's height map says how high
+it stands, no model of the item). The viewing directions now include the horizontal (`pitch 0, 5`). Asking the model
+to point at the *part* in the top view was dropped: it answered "dot 14 lies on the gray carry handle" about a
+surface 0.2 m behind the handle. The overview finds the item; the part is looked for from the side.
+
+**4. Measured.** On the same scene, with the views aimed at the item and taken from the side (g5d): a candidate
+**12.4 mm at 0.554 m** in the pitch-5 view and **12.6 mm at 0.551 m** at pitch 10 -- their graspable length 16 mm,
+just over the 14 mm the pads need, where the top view had 8 mm. The vision model chose across the neck, and the
+grasp held: **jaw 0.172 rad** (F57's own figure for a 12 mm neck between the pads), lift 7.5 cm, 34 px of item
+motion against the 285 px of a scene left behind. In g5e the model again chose the thin axis twice out of three.
+
+**5. Still open: the tool body against a 2.5-D height map.** `approach` is where it now fails: of five attempts across g5d and g5e, one held, two were refused
+for a surface the tool body would touch on the way in, one stalled 2.4 cm short and one lost the track 10 cm out.
+Reaching a neck under an overhanging head means putting the fingers into 55 mm of free height from the side, and the
+path is narrow. The successful grasp is worth reading twice: the candidate it approached was 26 mm, and the jaws
+still closed to 12 mm -- the item settled onto the neck as they closed. Form closure is what holds, and it is not
+only decided by which candidate is chosen.
+
+Measured in g5f, with the grasp point at [-1.086, 0.014, 0.94]: the tool point the guard refuses is
+[-0.907, 0.010, 0.89] -- the tool's own body 17.9 cm behind the grasp, correctly outside the 0.10 m the guard
+excludes around it -- and the cell it crosses measures a surface at 0.913 m, so the body is 2.3 cm *below* what was
+measured there, not short of a margin. Reaching a neck that sits in 55 mm of free height means putting the tool
+body over the payload it is picking up, and `surface_heights` is a 2.5-D map on 5 cm cells: it keeps the highest
+point of each cell and no shape, so it cannot tell a tool passing beside the box from one driven into it. The
+oracle's `pinch_pick` makes the same horizontal move and succeeds -- it checks nothing. Two ways out, both real
+work: leave the *target's own* measured surface out of the guard (F59's rule, which `working_on` applies to MoveIt's
+scene but not to the skill's own check), or give the check a representation that can hold an overhang.
+
+
+**6. The grasp holds a lift and does not hold a drive, and that is not a speed setting.** With the observation
+strategy fixed, `pick` succeeded three times running inside full Mission B runs (g5h, g5i, g5k), each time across the
+12 mm neck: jaw 0.171-0.184 rad, lifts of 6-13 cm, 0.2-4.9 px of item motion against the 225-423 px a scene left
+behind would have shown. Each time the payload came out of the jaws on the first drive afterwards, and the harness
+said so at once (`item_still_held`, §4) instead of letting the mission reach the shelf empty. Nav2's smoother was
+then set to ramp at 0.5 m/s^2 instead of 2.5 while the jaws hold something -- a shared-substrate limit applied by the
+boundary to every method's base moves, read from the jaw alone (plan v4 §2) -- and the payload still came out, *on
+the first metre*: measured at (5.887, -14.356, 0.548) against the slot it started in at (5.820, -14.390, 0.555), so
+7.5 cm sideways and no height lost. The jaw went 0.171 -> 0.100, closed on nothing, and the gripper's own camera
+showed an empty hand: the item slid from between the pads rather than the jaws opening. The head resting on the
+fingers constrains the item downwards, which is what makes a *lift* hold; it constrains nothing against the moment a
+horizontal acceleration puts on a 1 kg body hanging from a 12 mm neck, and the pads are 14 mm tall (`pad_height_m`)
+-- too short a purchase on a 55 mm neck to stop it tilting out. Where this goes next is a question about the grasp
+and the payload interface, not about a parameter: how deep the neck sits between the pads (F49 §2 measured a flange
+jamming at 50 mm of depth and squeezing out at 28 mm), or whether carrying should hold the arm in a posture that
+turns the moment into a push against the pads.
+
+### F62 — `press` exists; Mission A now deadlocks between three parts that are each right
+
+2026-09-19, runs ma1–ma2. `openral_rskill.{procedural_press,grasp_perception}`, `rskill-procedural-press`,
+`capability_server/{contracts.yaml,node.py}`, `space_runtime/verification.py`.
+
+**1. The fold is built.** `press(target)` is a procedural rSkill of the shape plan v4 §3/§4 asked for: locate (the
+target's pixel from the vision model in the wrist view, its depth from the same frame, the point those give in the
+rover frame) → approach (stand off facing the surface, look again from there and correct once) → press (guarded
+straight close-in until the face takes the load, read the way `place` reads a support taking a payload) → retreat.
+The model's palette gains one operation and loses nothing: `approach_target`, `move_tool` and `grasp` were already
+`engineering: true`, which had left the model with **no contact capability at all** since that change. The harness
+verifies `pressed` from the robot's own kinematics against the point the view measured -- far enough past the face,
+and clear of it again afterwards -- never the skill's success flag. One new perception function was needed:
+`locate_point` asks the vision model for a pixel, because a button is a patch on a panel and `find_regions` will not
+separate it from the panel for set-of-mark selection. Offline on a real wrist frame of the PDU it found the button
+twice (128,322 and 125,325 for two different wordings) and correctly answered "not visible" for a thing that was not
+there; the pixel round-trip through every quarter turn of the gravity-up view is exact.
+
+**2. Two defects of my own, both in the wiring rather than the skill.** `contracts.yaml` gained `press` while
+`lower_effect` did not, so the boundary raised `KeyError: 'press'` **and the agent was told nothing**: the action's
+own exception path leaves `failure_reason` empty, unlike the query path, which turns any exception into a typed
+answer ("every failure is a typed answer to the caller, not a dead service"). The agent spent five steps re-wording
+its target and re-docking against a blank failure. Effects need the same treatment as queries.
+
+**3. Mission A now deadlocks, and every part of the deadlock is correct.** With `press` wired, ma2 surveyed all three
+PDUs from their view poses, read the lamps (pdu_1 green, pdu_2 red) and went to the faulted one -- and then never
+pressed anything in 23 steps:
+- `dock_at_feature` stands where **the reach model** says the arm can work: 0.905 m from the point, 0.20 m closer
+  than the old hand-set distance (F59 §3 measured that the old one was too far). Right.
+- At 0.905 m, `arm_ready` fails -- twice, the second time with the tolerance relaxed: "no collision-free path". The
+  **ready posture is a written-down set of joint angles** that assumes the rover is parked further out. Right, for
+  where it was written.
+- The agent worked the cause out by itself, retreated 1.5 m, raised the arm there (it succeeded), and drove back in
+  -- and `dock` stopped 7 cm short: **Nav2 will not push a raised arm into a panel**. Right.
+- It then diagnosed *that* correctly too ("the raised arm blocks the final approach"), and tried to stow -- "no
+  collision-free path". The arm can now neither be raised nor stowed where it stands. **Deadlock.**
+
+No part is at fault and the mission cannot proceed, because **nothing owns the joint feasibility of arm posture and
+base position**. The reach model answers "can the arm reach the work from here", Nav2 answers "can the hull get
+there", the postures are constants from an era of standing further back, and the agent is left to discover the
+interaction empirically -- which it did, twice, and still could not escape. `press` itself needs none of it: it
+plans from wherever the arm is. Its contract now says so, which avoids entering the state; it does not dissolve it.
+
+### F63 — The carry is a moment problem, not a speed problem; and three ways a new capability fails to arrive
+
+2026-09-19, runs g5h–g5p, ma1–ma4, g6a. `openral_rskill.{procedural_pick,procedural_press}`,
+`capability_server/node.py`, `rskill-procedural-press/rskill.yaml`, `space_runtime/`.
+
+**1. What the carry actually needed.** F61 §6 left the payload coming out of the jaws in the first metre of every
+drive and recorded the wrong conclusion — that ramping Nav2 down had not changed it. Two things had to change
+together, and both are about the *moment* on a 12 mm neck held by 14 mm pads, not about speed:
+
+- **The lever.** After a successful lift the arm was left wherever the grasp ended — the tool 1.144 m out from the
+  chassis origin. `bring_in()` now walks the held item in along the tool axis before anything else moves: 1.144 →
+  0.838 m in g5m. The same angular acceleration at the base becomes a third less tangential acceleration at the
+  payload, and it costs one arm move.
+- **The drive limits.** Nav2's velocity smoother is retuned at the boundary whenever a base move is issued while the
+  jaws hold something (0.25 m/s, 0.5 m/s² carrying; 0.5 m/s, 2.5 m/s² free), and restored after. This is **shared
+  substrate, not Ours' method**: it reads the jaw alone, applies to every method's base moves, and is recorded in the
+  boundary's own log. A baseline that carries a payload gets it too.
+
+With both, g5m drove the whole depot → PDU-1 leg with `item_still_held` verified true on arrival — the first carry
+this project has ever completed. It came out on the **dock** at the far end.
+
+**2. What is still open, and the fix that has never run.** The dock is where the rover turns. The carrying limits
+capped linear acceleration but left angular acceleration at the free-driving constant, so on a 0.84 m lever the turn
+delivered ~0.84 m/s² to the payload — worse than the straight-line ramp the 19-metre leg had just survived. The
+boundary now derives it: `α = 0.5 / max(lever, 0.2)`, the lever read from the actual tool pose, so the tangential
+acceleration at the payload stays at the 0.5 m/s² that is known to hold. **This has never been exercised** (g6a was
+started for exactly this and is still running at the time of writing). Everything in §1 above is measured; this
+sentence is the one claim in F63 that is not.
+
+**3. A capability can fail to arrive three times before it is ever called.** Wiring `press` in cost more than
+writing it, and each failure was silent in a different way:
+
+- `actions: ["press"]` is not in `openral_core`'s controlled action vocabulary. Pydantic rejected the manifest, the
+  **local rSkill index silently skipped it**, and the runner fell through to HF Hub — reporting "network
+  unreachable" for a file sitting on disk. The vocabulary's word for pushing a face is `push`; the capability the
+  model sees is still `press` (that mapping lives in `contracts.yaml`, which is where it belongs).
+- `lower_effect` had no `press` branch (F62 §2), and the action path turns an exception into a blank failure.
+- `procedural_press` began with the same disease F61 diagnosed in `pick`: it looked wherever the arm happened to be
+  left, and ma4's first `press` photographed "the gripper against a dark starfield". `face_the_work_zone()` now
+  derives a looking posture — the tool pointed out of the rover's back, where a `dock` puts the work, at whatever
+  height and pitch the arm can actually hold — instead of a written-down posture. This is the third time the same
+  root cause has been fixed in a different place; a posture constant is a bug until proven otherwise.
+
+**4. Process, on the record.** Mission B was not finished when I started Mission A: the turn-limit fix of §2 had
+never been run, and I moved on to build `press` and then to run ma1–ma4 on top of an unverified carry. The user
+stopped it. The standing rule — finish the thing under test before opening the next one — is not a style preference;
+it is what keeps a claim like §1's attached to a run that actually happened. Both halves of this finding exist
+because the rule was applied late rather than early.

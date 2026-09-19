@@ -1,8 +1,9 @@
 # Handoff
 
-State as of 2026-09-18 evening. Research goal and plan: `AGENT/research_content.md`, `AGENT/execution_plan.md` (§21 order:
-the proposed method before the baselines; §8.2 granularity rule). Findings F1–F57 in `docs/research_findings.md` —
-**read F53–F57**. Tasks: `AGENT/todo.md`. Current design: **`docs/semantic_to_metric_manipulation_plan.md` (v4)**.
+State as of 2026-09-19 morning. Research goal and plan: `AGENT/research_content.md`, `AGENT/execution_plan.md`
+(§21 order: the proposed method before the baselines; §8.2 granularity rule). Findings F1–F63 in
+`docs/research_findings.md` — **read F60–F63**. Tasks: `AGENT/todo.md`. Design:
+**`docs/semantic_to_metric_manipulation_plan.md` (v4)**.
 
 **The picture in one line:** Claude Code for a lunar robot. The model owns the mission (what to observe, where to go,
 what to pick, what to try after a failure); tools are whole operations (`navigate`, `dock`, `pick`, `place`, `press`,
@@ -11,134 +12,118 @@ boundaries; OpenRAL is the borrowed tool runner / skill format.
 
 ## Where the research stands
 
-- Ours (`space_runtime/`, on OpenRAL `ReasonerCore`) runs Mission A `covered` end to end with vision-only contact (oa2,
-  verifier success). Restart/model switch on the same record works (rs1).
-- Mission B (fetch the spare ORU, deliver to PDU-1): plan v4 is **implemented** — `pick(target, part)` and
-  `place(support)` are procedural rSkills in the fork (`openral/python/rskill/src/openral_rskill/{procedural_pick,
-  procedural_place,grasp_perception,_eye_in_hand}.py`, manifests in `openral/rskills/rskill-procedural-{pick,place}`),
-  the boundary has one contract line each, the model's palette is operations only, and the harness verifies
-  `item_held` / `item_placed` from the raw evidence. **G0–G3 passed**, and on 2026-09-18 evening **`pick` worked
-  inside the agent loop for the first time (g4m)**: one call, two attempts on the same target, `item_held` verified
-  independently (jaw 0.327 rad, 11.7 cm lift, 19.5 px of item motion against the 315 px it would have shown if left
-  behind). G3 had passed on a dock that landed 6 cm short, which hid the two defects G4 then hit — the item was an
-  obstacle to its own grasp, and the approach direction was fixed (both fixed, F59). **What is left of G4**: carry →
-  `place` (never run live) → stow → dock, resumable from `artifacts/runs/g4m` before step 9. Branch
-  `feat/pick-place-rskills` (fork), `feat/g0-wrist-rgbd` (research repo).
-- Rule that keeps costing runs (F57–F59): **no geometry may be a constant** — not the camera–gripper mount, not how
-  far the rover parks, not which way the tool comes at a part. `tool_in_view()` derives the self-occlusion depth and
-  the free image band from TF; `openral_ext/workspace/` derives where the rover stands from the arm's own kinematics
-  (reach map from the live URDF + footprint clearance, each candidate settled with the robot's own IK); the skill
-  searches the approach direction about the jaws' closing axis instead of taking the free-side one as given.
-- **What a skill is working on is not an obstacle** (F59): measured obstacles made the ORU unpickable — no arm
-  configuration was allowed at its handle. A skill now declares the volume its tool is about to be inside (a sphere
-  the size of the gripper, `/space/manipulation_target`, renewed while it works, expires when it stops); the world
-  model leaves the measurement inside it out. Verified live: IK at the handle -31 → 1 → -31 as the declaration is
-  made and dropped.
-- When a run fails, read the evidence pictures first — F57's three defects were each visible in one image and
-  invisible in the numbers.
-- Baselines: PLEXIL runs Mission A through the common boundary (F52); PLEXIL Mission B, EUROPA→PLEXIL, Experiments I/II
-  not started.
+- Ours (`space_runtime/`, on OpenRAL `ReasonerCore`) runs Mission A `covered` end to end (oa2). Restart/model switch
+  on the same record works (rs1).
+- **`pick` works.** Four times inside full Mission B runs (g5h, g5i, g5k, g5m), each across the bail's 12 mm neck:
+  jaw 0.171–0.184 rad, lifts 6–13 cm, verified independently. What had to change was **where the camera looks**
+  (F61): the overview is a place to look *from*, not a written-down posture; the item is found once with
+  `find_regions`/`locate_region`; every working view aims at the item's own top; the viewing direction includes the
+  horizontal; and a blocked view, an unreachable candidate or a failed retreat is one fewer of something rather than
+  a failed call. It is not yet reliable — g5p failed twice at `approach` (lost sight of the grasp at 6 cm; close-in
+  stalled at 14.6 cm).
+- **The carry works for a drive and fails on the dock** (F63 §1–2). Two things fixed it, both about the moment on a
+  12 mm neck, not about speed: `bring_in()` shortens the lever after the lift (1.144 → 0.838 m), and the boundary
+  retunes Nav2's smoother whenever the jaws hold something (0.25 m/s, 0.5 m/s²). g5m drove the whole depot → PDU-1
+  leg with `item_still_held` verified true on arrival — the first completed carry in this project. The payload came
+  out on the **dock** at the far end, where the rover turns; the boundary now derives the angular limit from the
+  actual lever (α = 0.5 / lever) so the payload sees the same 0.5 m/s² it survived in a straight line.
+  **That fix has never been exercised — g6a is running for exactly this.**
+- `place` has never run with a payload in the jaws. Baselines: PLEXIL runs Mission A through the common boundary
+  (F52); PLEXIL Mission B, EUROPA→PLEXIL, Experiments I/II not started.
+- **`press` is built and wired** (F62, F63 §3): a procedural rSkill of the plan v4 shape (locate → approach → press →
+  retreat), `locate_point` for a target that is a patch on a surface, one contract line, `pressed` verified by the
+  harness from the arm's own kinematics. It has **never pressed a button live**: ma4 showed it looking at empty sky,
+  and `face_the_work_zone()` (derive a looking posture instead of assuming one) is the untested fix.
+- **Mission A deadlocks before it presses anything**, and every part of the deadlock is correct on its own (F62 §3):
+  the reach model parks the rover 0.905 m out so the arm can work; there the written-down `ready` posture has no
+  collision-free path; raising the arm 1.5 m out and driving in stops 7 cm short, because Nav2 will not push a raised
+  arm into a panel; and from there the arm can neither rise nor stow. **Nothing owns the joint feasibility of arm
+  posture and base position.**
 
 ## User decisions (keep)
 
-- Ours before the baselines; tasks from `docs/lunar_task_catalog.md`; Ours may meet held-out situations before the
-  freeze with mission-generic changes only; freeze = git commits/tags, **no hash checks anywhere**.
-- **Everything model-facing runs on DeepSeek's own endpoint**: reasoner and scene/grasp VLM are both `deepseek-flash`
-  (`https://api.deepseek.com`, the second key in `AGENT/VLM_provider.md`, exported as both `SPACE_REASONER_API_KEY`
-  and `SPACE_LLM_API_KEY`). The shared gateway is gone: it answered a `select` in 2-9 s from a shell and hung for the
-  full 300 s deadline from inside the runner, run after run (F58). deepseek-flash reads the marked frames (different
-  mark per view, null on a blank image) and answers in 1-14 s. Keys are never in code. Which reasoner the
-  *experiments* are run with is still open; the offline replay compares them on recorded decision points.
-- **Method boundary (research_content §3.2/§5.2–5.3/§5.7, revised):** baselines share robot, capabilities,
-  perception sources, raw evidence, low-level safety and the external evaluator — not Ours' mechanisms. Ours' facts,
-  context reconstruction, guard, internal effect verification and traces are the method; attribution by Ours-internal
-  ablations. **Architecture (plan v4 §2):** physical-effect capabilities = OpenRAL rSkills; perception control and
-  read-only queries = perception / world-state services; thin method-neutral capability contract. Fixed infrastructure
-  may use surveyed named places; movable objects only via perception → tracking → visual servo inside the skill.
-  No playbook-style decision rSkills. No big refactor: move logic out of `capability_server` when new work touches it.
-- **Granularity (plan v4, 2026-09-17):** model-facing tools are whole operations with mission-level arguments
-  (`pick(target, part)`, `place(support)`, `press(target)`); stages (candidates, VLM selection, tracking, servo,
-  close-in, hold check) and mechanical parameters live inside the skill. A skill retries only on the same target;
-  changing target, moving the base, another operation or asking the operator returns to the model with the stage and
-  evidence. Harness verifies `held` / `placed` automatically. Hardware-protecting limits while driving/holding go to
-  the shared low-level safety; the v3 guard rule "no base motion while holding" is withdrawn (Mission B carries).
-- **Manipulation internals (kept from v3):** no object models, no world-coordinate targets; grasp candidates from the
-  wrist RGB-D view (classical first), VLM set-of-mark choice, KLT/depth tracking + IBVS, guarded close-in, image
-  checks. Isaac ROS FoundationPose rejected (needs meshes, ROS 2 Jazzy).
-- Ad-hoc patches are not acceptable; fix causes or redesign (F55 §5 lists what was reverted).
-- **Step-wise development:** never rerun a mission from scratch after a failure; restore the snapshot before the failed
-  step, fix, rerun that step. One simulation at a time.
+- Ours before the baselines; tasks from `docs/lunar_task_catalog.md`; freeze = git commits/tags, **no hash checks**.
+- **Finish what is under test before opening the next thing** (F63 §4). Mission B → then `press` → then Mission A.
+- **Everything model-facing runs on DeepSeek's own endpoint** (`deepseek-flash`, `https://api.deepseek.com`, the
+  second key in `AGENT/VLM_provider.md`, exported as `SPACE_REASONER_API_KEY` and `SPACE_LLM_API_KEY`). The shared
+  gateway is gone (F58). **Its latency is no longer a design constraint**: a marked view is read in 1–6 s, so the VLM
+  may be given several images at once — which is what fixed `select` (F60 §5).
+- **Method boundary (research_content §3.2):** baselines share robot, capabilities, perception sources and services,
+  raw evidence, low-level safety and the external evaluator — not Ours' mechanisms. `held_item` and the carrying
+  drive limits are shared substrate; using them to keep authoritative facts honest is Ours'.
+- **Granularity (plan v4):** model-facing tools are whole operations with mission-level arguments; stages and
+  mechanical parameters live inside the skill. A skill retries only on the same target.
+- **Manipulation internals:** no object models, no world-coordinate targets; candidates from the wrist RGB-D view,
+  VLM set-of-mark choice over *every* view at once, KLT/depth tracking + IBVS, guarded close-in, image checks.
+- Ad-hoc patches are not acceptable; fix causes or redesign.
+- **Step-wise development:** restore the snapshot before the failed step, fix, rerun that step. One simulation at a
+  time. **Only a jaws-open snapshot is a valid resume point** (F60 §1).
 - Replies to the user: Simplified Chinese, plain words, concise; ask before deciding design questions for the user.
 
 ## How to run
 
-- Mission dev run with snapshots (from `openral/`):
-  `D0_HOLD=1 OURS_STOP_ON_FAILURE=1 D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_CHECK=ours_mission_check.py
-  D0_CAPABILITY_SERVER=1 OURS_MISSION=b setsid nohup ../experiments/launch/lunar_base_d0/run_d0.sh <log>
-  > <log>/runner.out 2>&1 < /dev/null &` (`OURS_MISSION=a` for Mission A; `D0_TRACE_OBJECT=spare_oru` logs the object).
-- Snapshots: `<log>/snapshots/before_step_<n>.{pt,json}` (SRB `envs/snapshot` + the AMCL estimate). Resume after a fix:
-  `[D0_RESTART_BOUNDARY=1] OURS_MISSION=b OURS_STOP_ON_FAILURE=1 OURS_RESUME_FROM=<log> OURS_RESUME_BEFORE_STEP=<n>
-  setsid nohup experiments/launch/lunar_base_d0/attach_d0.sh <graph log> <new log> &` (works on a held graph or a fresh one).
-- Take a held graph down: `experiments/launch/lunar_base_d0/teardown_d0.sh <graph log>` — **the absolute path** the
-  run was started with (the tag is matched exactly; a relative path finds nothing and reports `TREE 0 pids`).
-- One `pick` trial per placement (G3): `D0_CAPABILITY_SERVER=1 D0_HOLD=1 D0_CHECK=../../perception/g3_pick.py
-  G3_TRIALS="0,0,0,0;0.08,0,20,0" setsid nohup experiments/launch/lunar_base_d0/run_d0.sh <log> &` (a trial is
-  `dx,dy,dyaw_deg,rover_dx`). Changing skill code needs a new graph: the runner imports it once per process.
-- Read a pick failure from its pictures, not its numbers: `<log>/evidence/pick_*/` has the overview, each side view
-  with its numbered candidates, and `servo_NN.jpg` per approach frame with the tracked point and the match score
-  (`evidence.approach_track` lists them even when the stage fails).
+- Mission dev run, graph held afterwards (from the repo root):
+  `D0_HOLD=1 [OURS_STOP_ON_FAILURE=1] D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_CHECK=ours_mission_check.py
+  D0_CAPABILITY_SERVER=1 OURS_MISSION=b setsid nohup experiments/launch/lunar_base_d0/run_d0.sh <log> > <log>/runner.out 2>&1 &`
+  (`OURS_MISSION=a` for Mission A; `D0_TRACE_OBJECT=spare_oru` logs the object). **Leave `OURS_STOP_ON_FAILURE` out
+  when the point is to watch the agent recover.**
+- Another check on the held graph, without booting Isaac again:
+  `[D0_RESTART_BOUNDARY=1] OURS_MISSION=b [OURS_RESUME_FROM=<log> OURS_RESUME_BEFORE_STEP=<n> | OURS_RESET=1]
+  setsid nohup experiments/launch/lunar_base_d0/attach_d0.sh <graph log> <new log> &`
+  — `OURS_RESET=1` puts the scene back to the graph's own start (`<graph log>/snapshots/initial.pt`, saved at boot).
+  `D0_RESTART_BOUNDARY=1` when `capability_server` changed. **Changing skill code needs a new graph** (the runner
+  imports it once per process); changing `space_runtime/` needs only a new attach.
+- Take a held graph down: `experiments/launch/lunar_base_d0/teardown_d0.sh <graph log>` — **the absolute path**.
+- Read a pick failure from its pictures, not its numbers: `<log>/evidence/pick_*/` has the overview, each view with
+  its numbered candidates, `servo_NN.jpg` per approach frame, `stall_*.jpg` where an arm stopped short, and
+  `hold_before/after.png`.
 - Record: `<log>/ours/{events.jsonl,report.md,agent.log}`; boundary `capability_server.log`; frames `evidence/`.
 - Offline reasoner comparison on recorded decision points: `experiments/reasoner_replay/replay.py`.
-- Scripted checks: `D0_CHECK=d0_mission_{a,b}_check.py`, `vision_check.py`, `d0_plexil_mission_a_check.py`; options
-  `D0_VIDEO`, `D0_SCENARIO=<heldout_…>`, `D0_SCENERY=lunar_base_route_block`, `D0_STEPS`, `D0_PLANNING_SCENE=0`.
-- Video: `D0_VIDEO=<mp4>` + `SRB_VIDEO_SPEEDUP=1` → `<mp4>.times`; `python3 experiments/video/overlay.py`.
-- Speed: sim ≈ 0.25–0.375× wall (Isaac's PhysX runs on the CPU at ~900%; the GPU sits near idle and GPU PhysX
-  crashes in SRB). Reasoner steps are ~1 s on deepseek-flash, so a dev run's wall time is the simulation, not the model.
+- Speed: sim ≈ 0.25–0.375x wall. A `pick` takes six views and their rolled shots — 15–40 min of wall time — and an
+  attempt after a failure re-takes all of them (cache them — `todo.md`).
 
 ## Stack facts (don't rediscover)
 
 - `/odom` wheel-inertial; AMCL on a lidar-surveyed map; Nav2 goals in `map`; SLAM off; truth only for evaluation
-  (and dev-only snapshot restore). Cameras D435i front + wrist, 15 Hz, work lights; wrist image level in `grip`.
-- Capability boundary: `openral_ext/capability_server/{contracts.yaml,node.py}` (`/space/capability/execute`, `/query`);
-  PLEXIL adapter `ros/plexil_capability_adapter`. Today it still implements `approach_target`, VLM `observe` /
-  `locate_in_view` and feature-pose lowering (to move per plan v3 §2). Effect verification and the guard live in
-  `space_runtime/` (Ours' harness — correct per the method boundary).
-- Arm: RM-75 (`docs/lunar_bot_rm75_spec.md`); MoveIt plans end 0.9–3 cm from goal; 1 kg payload sags ~4.5 cm — a held
-  item settles back after the call returns, so read the lift *during* it (the truth track), not after.
-- Wrist camera (changed 2026-09-18, F57 §6): 0.12 m off the tool axis, 0.22 m behind the TCP, aimed 0.15 m beyond it,
-  D435i colour intrinsics at 640×480 (fx = fy = 616). The numbers live in SRB's `lunarbot.py` and, identically, in the
-  HAL's `CAMERA_MOUNTS`. Nothing in the skills may hard-code them: `tool_in_view()` derives the self-occlusion depth
-  and the free image band from TF.
-- OpenRAL rSkill manifests: `openral/rskills/*/rskill.yaml` (kinds procedural, ros_action, detector, segmenter, vlm,
-  playbook); entrypoints `openral/python/rskill/src/openral_rskill/`; reasoner palette/tools in
-  `openral/python/reasoner`; integration notes `docs/openral_integration_notes.md`.
+  (and dev-only snapshot restore). Cameras D435i front + wrist, 15 Hz, work lights.
+- Capability boundary: `openral_ext/capability_server/{contracts.yaml,node.py}`. Effect verification and the guard
+  live in `space_runtime/` (Ours' harness).
+- Arm: RM-75 (`docs/lunar_bot_rm75_spec.md`); MoveIt plans end 0.9–3 cm from goal; 1 kg payload sags ~4.5 cm.
+- Wrist camera: 0.12 m off the tool axis, 0.22 m behind the TCP, aimed 0.15 m beyond it, D435i colour intrinsics at
+  640x480 (fx = fy = 616). Nothing in the skills may hard-code them: `tool_in_view()` derives what it needs from TF.
+- **Jaw bands are defined once**, in `openral_rskill._eye_in_hand` (0.13 empty / 0.6 open); the boundary imports them.
+  The angle is never the evidence for a grip — `held_item` (wrist image, vision model) is.
+- **`actions:` in an rSkill manifest must come from `openral_core`'s controlled vocabulary** (`push`, not `press`) —
+  otherwise the local index skips the skill silently and the runner reports "network unreachable" (F63 §3).
+- OpenRAL rSkill manifests: `openral/rskills/*/rskill.yaml`; entrypoints `openral/python/rskill/src/openral_rskill/`.
 
 ## Things that bit (keep)
 
 - `openral deploy sim` reaps openral processes → `OPENRAL_SKIP_ORPHAN_REAP=1` (run_d0.sh).
 - Runs execute a frozen copy of `run_d0.sh`; checks load at start — never edit a script a live run executes.
-- Kill only explicit PIDs; `pgrep -f`/`pkill -f`/pattern `case` matches have killed the calling shell.
-- Stale agents ignore SIGTERM → kill -9; check the ROS domain is clean before a run. Parallel sims → 0.05×.
+- **Kill only explicit PIDs, then check none survived.** `pgrep -f` matches the calling shell; one stale agent of a
+  stopped run drove the robot alongside the next run's agent for twenty minutes (F60 §8).
+- Stale agents ignore SIGTERM → kill -9; check the ROS domain is clean before a run.
+- **Fast-DDS leaks shared memory across graphs.** A dozen boots left 528 `fastrtps*` files in `/dev/shm` and the next
+  graph could not come up (`Failed init_port`, then Nav2's `smoother_server` timing out `configure` after 120 s).
+  `teardown_d0.sh` does not clear them. With no ROS process running:
+  `find /dev/shm -maxdepth 1 -name "fastrtps*" -delete`.
+- A ROS service client called from inside another callback needs its own `callback_group` or it deadlocks — that is
+  what made the first carrying-limits call hang.
 - A publisher's first message is lost before discovery (AMCL `/initialpose`): wait for the match.
-- Verifier `oru_on: ""` can mean knocked off, not grasped — check jaw and handle height.
-- `move_group` can wedge: idle (1% CPU) and answering nobody after a planning request that never completes. Every
-  service call in the skills now has a deadline, so this ends the call with its stage instead of hanging a run
-  (one run lost 40 minutes to an `fk` call with no deadline).
-- Teardown takes the run's **absolute** path (the tag is matched exactly); a relative one reports `TREE 0 pids`.
+- `move_group` can wedge; every service call in the skills has a deadline.
+- A snapshot restore cannot rebuild a grasp: an item restored in the jaws drops out (F60 §1).
 
 ## Where things are
 
-- Research repo `main` (feature branch merged 2026-09-17). openral fork `master` (camera mounts, wrist depth relay,
-  servo zero-twist fix). SRB `feat/lunar-base-scene` (lunar base, 15 Hz cameras, work lights, lidar 10 Hz,
-  publish-on-new, video `.times`, `envs/snapshot`); SRB `main` untouched.
-- Runs (not in git): `artifacts/runs/` (oa*, ob*, vc*, rs1, pf*, g3*, g4*); replay results `artifacts/reasoner_replay/`.
-  **g4m is the one to resume from**: the ORU is in the jaws there, and the mission stopped before step 9 (the carry).
+- Research repo working branch `feat/g0-wrist-rgbd`; openral fork `feat/pick-place-rskills`; SRB
+  `feat/lunar-base-scene`. Everything through F63 is **committed** on both.
+- Runs (not in git): `artifacts/runs/` — **g5m is the one to read** (the completed carry), g5p for the two `pick`
+  approach failures, ma2/ma4 for the Mission A deadlock and the press that saw only sky. g4n/g4o are void.
 
 ## Open, unsettled (read before the next run)
 
-- The wrist view in `servo_*.jpg` comes out upside down while `view_*.jpg` / `candidates_*.jpg` are uprighted with
-  `upright(bgr, up_cam)`. Either the servo frames simply never call it (a recording difference), or the camera is
-  being taken to the branch below the tool axis somewhere. Settle it from the images first: the whole of F57 was
-  camera-geometry conventions read wrongly, and this looks like the same family.
-- Two depot features have no legal stand (see `AGENT/todo.md`); the PDU presses stand 0.20 m too far. Both come from
-  the reach model, and both are scene facts, not skill bugs.
+- `item_cells` (the flood fill that excludes the grasped item's own surface from the clearance guard) finds ~6 of
+  the ~70 cells the lid actually occupies. The guard has not blocked a good grasp because of it yet.
+- The guard has never fired: every effect is `routine` and `invariants: []` — an evidence gap for H3.
+- Whether the `shoulder` measurement filters candidates or is told to the VLM alongside them is the user's call.
