@@ -1,0 +1,41 @@
+// PLEXIL baseline -- Mission B, model-covered case (execution_plan §11.1, §21.5).
+//
+// "Deliver the spare ORU staged at the depot stand (slot 0 per the manifest) to the spares shelf of PDU-1, then
+// return the rover to the dock with the arm stowed." Site features (depot_stand/slot_0, pdu_1_shelf/shelf, the
+// dock at the map origin) are site_knowledge (R/artifacts/runs/g4a/ours/events.jsonl); the covered scenario puts
+// the spare ORU on slot_0 (space_robotics_bench/srb/tasks/mobile_manipulation/lunar_base_mission_b/task.py). Target
+// / part text and the "spare_oru" catalogue item match what Ours actually called on this instance
+// (R/artifacts/runs/g8d, g8e, g8s, g8t, read-only). Composed from the reusable library
+// (baselines/plexil/plans/lib/): DriveAndDock, PickItem, PlaceItem, StowAndReturn -- every Command is a capability
+// of the common boundary (openral_ext/capability_server/contracts.yaml), positional arguments in the contract's
+// input order; the adapter (ros/plexil_capability_adapter) adds no logic.
+//
+// `ok` carries the running result explicitly (InOut) rather than through node outcome -- see
+// lib/DriveAndDock.ple's header -- and every leg's PreCondition on `ok` is this plan's safe state: once a leg
+// fails, no further capability call is issued and the plan ends reporting the failure.
+//
+// Nominal path only. The predefined recovery set (execution_plan §11.1, research_content §5.3 item 4) is not yet
+// written into the library: pick/place's reported failure kinds and stages are still moving in a parallel session,
+// and writing recovery against them now would be redone. See docs/baselines/plexil.md.
+
+LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
+LibraryAction PickItem(In String target, In String part, In String item, InOut Boolean ok);
+LibraryAction PlaceItem(In String support, In String release_constraint, In String item, InOut Boolean ok);
+LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
+String Lookup LastCapabilityResult();
+Command pprint(...);
+
+MissionB_Covered: Sequence
+{
+  String Item = "spare_oru";
+  String OruTarget = "the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand";
+  String OruPart = "the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)";
+  Boolean ok = true;
+
+  ToDepot: { PreCondition ok; LibraryCall DriveAndDock(feature = "depot_stand/slot_0", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  Pick:    { PreCondition ok; LibraryCall PickItem(target = OruTarget, part = OruPart, item = Item, ok = ok); }
+  ToShelf: { PreCondition ok; LibraryCall DriveAndDock(feature = "pdu_1_shelf/shelf", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  Place:   { PreCondition ok; LibraryCall PlaceItem(support = "pdu_1_shelf/shelf", release_constraint = "below_overhang", item = Item, ok = ok); }
+  Return:  { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }
+  Done: { pprint("MissionB_Covered ok:", ok, "last:", Lookup(LastCapabilityResult())); }
+}

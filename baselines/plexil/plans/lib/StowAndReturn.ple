@@ -1,0 +1,21 @@
+// Reusable library node (execution_plan §11.1): fold the arm into its travel pose (jaws must already be empty --
+// contracts.yaml `stow`) and drive back to the dock. Mirrors MissionA_Covered's StowArm + ReturnToDock legs.
+//
+// Result comes back through `ok` (InOut); see lib/DriveAndDock.ple for why not node outcome.
+//
+// Nominal path only -- no retry yet. stow's reported failure kind/stage (planner error, joint blocked) is still
+// moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD.
+
+Boolean Command stow(Real);
+Boolean Command navigate_to_pose(Real, Real, Real);
+
+StowAndReturn:
+{
+  In Real dock_x;
+  In Real dock_y;
+  In Real dock_yaw;
+  InOut Boolean ok;
+
+  Stow:   { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+  Return: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(dock_x, dock_y, dock_yaw); }
+}

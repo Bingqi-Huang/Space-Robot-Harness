@@ -12,6 +12,17 @@
 //   Lookup  jaw()                                                     -> Real jaw angle, rad
 //   Lookup  LastCapabilityResult()                                   -> String {capability, success, failure_kind,
 //                                                                       failure_reason, evidence}
+//   Lookup  LastFailureKind()                                        -> Integer, the last result's failure_kind
+//                                                                       (openral_msgs/ExecuteRskill; 0 = success/none,
+//                                                                       20 = boundary rejection); typed so a plan can
+//                                                                       branch without parsing LastCapabilityResult's JSON
+//   Lookup  LastFailureStage()                                       -> String, the last "stage" a staged skill
+//                                                                       (pick, place, stow, arm_ready, press, ...)
+//                                                                       reported reaching, extracted from its evidence;
+//                                                                       "" when the result carried none
+// Both are a mechanical read of the last ExecuteCapability result already held for LastCapabilityResult -- no
+// per-capability interpretation, no recovery choice: what recovery a kind/stage means belongs in the PLEXIL plan
+// library, never here.
 // No mission logic: no orderings, retries or recoveries -- those belong in the PLEXIL plan library (the baseline's
 // pre-engineered knowledge), never in the adapter.
 //
@@ -88,6 +99,19 @@ std::string json_escape(std::string const &s)
   }
   return out;
 }
+
+// The last `"stage": "<value>"` field in an evidence JSON blob (a staged skill's evidence carries its stages as an
+// ordered array; the last one is where it stopped). A text scan, not a JSON parse: evidence_json's shape is the
+// skill's own, and this reads only the one field every staged skill happens to share.
+std::string last_stage(std::string const &evidence_json)
+{
+  static std::string const key = "\"stage\": \"";
+  auto pos = evidence_json.rfind(key);
+  if (pos == std::string::npos) return "";
+  pos += key.size();
+  auto end = evidence_json.find('"', pos);
+  return end == std::string::npos ? "" : evidence_json.substr(pos, end - pos);
+}
 }  // namespace
 
 class CapabilityAdapter : public PLEXIL::InterfaceAdapter
@@ -150,6 +174,18 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         rcvr->update(last_result_);
       });
+    config->registerLookupHandlerFunction(
+      "LastFailureKind",
+      [this](PLEXIL::State const &, PLEXIL::LookupReceiver *rcvr) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        rcvr->update(last_failure_kind_);
+      });
+    config->registerLookupHandlerFunction(
+      "LastFailureStage",
+      [this](PLEXIL::State const &, PLEXIL::LookupReceiver *rcvr) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        rcvr->update(last_failure_stage_);
+      });
     return true;
   }
 
@@ -191,6 +227,8 @@ private:
                        (r.success ? "true" : "false") + ", \"failure_kind\": " + std::to_string(r.failure_kind) +
                        ", \"failure_reason\": \"" + json_escape(r.failure_reason) + "\", \"evidence\": " +
                        (r.evidence_json.empty() ? "{}" : r.evidence_json) + "}";
+        last_failure_kind_ = static_cast<PLEXIL::Integer>(r.failure_kind);
+        last_failure_stage_ = last_stage(r.evidence_json);
       }
       intf->handleCommandReturn(cmd, PLEXIL::Value(static_cast<bool>(r.success)));
       intf->handleCommandAck(cmd, r.success ? PLEXIL::COMMAND_SUCCESS : PLEXIL::COMMAND_FAILED);
@@ -232,6 +270,8 @@ private:
   std::thread spinner_;
   std::mutex mutex_;
   std::string last_result_ = "{}";
+  PLEXIL::Integer last_failure_kind_ = 0;
+  std::string last_failure_stage_;
 };
 
 extern "C" {

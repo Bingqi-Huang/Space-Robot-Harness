@@ -1,0 +1,23 @@
+// Reusable library node (execution_plan §11.1): ready the arm, then pick a named item. `arm_ready` before `pick` is
+// not required by pick's own contract (it plans its own way from wherever the arm is), but is what Ours actually
+// does on this covered instance (R/artifacts/runs/g8d, g8e) -- a good posture before the skill's own views. `item`
+// is the optional catalogue name (openral_ext/capability_server/node.py ITEM_NAMES), added F78.
+//
+// Result comes back through `ok` (InOut); see lib/DriveAndDock.ple for why not node outcome.
+//
+// Nominal path only -- no retry/re-observe yet. pick's reported failure kinds and stages (find, select, approach,
+// grasp, hold) are still moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD.
+
+Boolean Command arm_ready(Real);
+Boolean Command pick(String, String, String);
+
+PickItem:
+{
+  In String target;
+  In String part;
+  In String item;
+  InOut Boolean ok;
+
+  Ready: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = arm_ready(0.08); }
+  Pick:  { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = pick(target, part, item); }
+}
