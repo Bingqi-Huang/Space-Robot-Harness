@@ -364,13 +364,17 @@ queries:
   work_stands:
     description: >-
       Where the rover can stand to work at a surveyed point, and how squarely the arm can look at it from each
-      distance. For every stand the reach model offers this reports whether the tool can be at the work, and the
-      shallowest angle above horizontal the wrist camera can look from -- the camera rides behind the tool, so
-      looking at all means standing off. The angle decides what can be measured: a graspable neck with a head
+      distance. For every stand the reach model offers, `reaches_the_work` is whether the tool can end up **at the
+      grasp** -- `reach_is_checked_at_m` says where that is, the work point plus the depth the jaws seat a contact
+      at, because a stand that reaches the point can still be short of the grasp by that much. `shallowest_look_
+      deg_above_horizontal` is the flattest angle the wrist camera can look from; the camera rides behind the tool,
+      so looking at all means standing off. The angle decides what can be measured: a graspable neck with a head
       overhanging it reads as its own width only from a level look, and from above the head hides it, so a stand
       that allows no level look cannot serve a grasp on such a part however well it reaches. Which parts are like
-      that is in the equipment catalogue's grasp interface. Choosing the stand is yours: each stand carries the
-      standoff_m to pass to dock_at_feature to park there.
+      that is in the equipment catalogue's grasp interface. Neither answer carries a margin for where the rover
+      actually lands: docking is verified to 0.06 m, so a stand whose reach or look is only just available is one
+      the rover may miss. Choosing the stand is yours: each stand carries the standoff_m to pass to
+      dock_at_feature to park there.
     inputs:
       feature: [string, true, "site interaction point, e.g. depot_stand/slot_0"]
       grasp_height_m: [number, false, "how high above the site frame the part sits; defaults to the boundary's own work height, which is the tallest catalogued handle over any support"]

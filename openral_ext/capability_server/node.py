@@ -143,6 +143,7 @@ JAW_JOINT = "eg2_joint1"
 # the jaw bands come from the skills' own definition (openral_rskill._eye_in_hand): the boundary and the skills must
 # read one gripper the same way, or an open jaw is a held item on one side of the call and not the other (run g4p)
 from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD  # noqa: E402
+from openral_rskill.grasp_perception import GripperGeometry  # noqa: E402
 #: how high above a support the tool works: the item is held by its handle, so the tool never goes to the shelf itself
 ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.get("handle"))
 
@@ -600,9 +601,16 @@ class CapabilityServer(Node):
         behind = float(np.linalg.norm(self._tf("tcp_frame", "wrist_camera_optical_frame")[0]))
         back = float(PICK_GOAL["view_part_depth_m"][0]) - behind
         out, base = [], None
+        # Where the tool has to *end up*, not where the part is. The close-in drives the contact to the middle of
+        # the pads, so the tool finishes that much further out than the work point, and a stand that reaches the
+        # point can still be short of the grasp: gb2 docked where this query said the work was reached and the
+        # approach stalled 2.6 cm out (F88). The depth is the gripper's own, from the same place the skill takes
+        # it, the way `view_part_depth_m` is already shared.
+        seat = float(GripperGeometry().seat_depth_m)
         for d, _room in reach_map().stand_candidates([z], near)[:12]:
             at = np.array([-d, 0.0, z])
-            reaches = any(self.ik_reaches(at, R) for R in approach_rotations())
+            grasp_at = np.array([-(d + seat), 0.0, z])
+            reaches = any(self.ik_reaches(grasp_at, R) for R in approach_rotations())
             shallowest = None
             for deg in (0.0, 10.0, 20.0, 30.0, 40.0):
                 R = approach_rotations((-deg,))[0]
@@ -611,6 +619,7 @@ class CapabilityServer(Node):
                     break
             base = d if base is None else min(base, d)
             out.append({"distance_m": round(d, 3), "reaches_the_work": reaches,
+                        "reach_is_checked_at_m": round(d + seat, 3),
                         "shallowest_look_deg_above_horizontal": shallowest,
                         "level_look": shallowest == 0.0})
         out.sort(key=lambda r: r["distance_m"])
