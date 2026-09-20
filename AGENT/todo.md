@@ -15,11 +15,15 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
       envelope swept over every yaw, and the stand's box took its back lip's height over the whole table.
 - [x] Fixes in: held envelope = measured footprint + measured pivot (openral 81ada8f); prop bounded at its declared
       working surface (SRB 90e5804). Shrinking the ORU was tried and reverted (SRB 9546407) — it moves the rover.
-- [ ] **g9q**: does bring_in's ladder now start `raise 0.00 → clear: true` (it was `false` in g9m/g9o), does the
-      servo run to the arm's limit, and does `oru_on` stay empty after the pick? Then place → stow → return dock.
-- [ ] **Harness gap, real and worth fixing**: `stand_distance` validates the work heights but never the skill's own
-      observation poses, which are the tighter constraint (behind and above the target). It can return a stand from
-      which the item can be grasped but not seen — g9p. Generic robot geometry, so it belongs in the stand choice.
+- [x] **pick is solved** (g9x): one level view, 5.7 s, the neck selected, bring_in over 0.30 m without stalling,
+      `item_held` verified. `raise 0.00` is clear, the prediction the stand-table fix implied.
+- [x] The stand is reasoned about, not chosen quietly: `work_stands` reports what each distance allows and
+      `dock_at_feature` says its default is for reach alone; the model asks, and docks where it can look level.
+- [x] The body is a published fact (`env0/space_context`): the carry limits are `g tan(theta/2)` over the gravity
+      in force, so Moon/Mars/asteroid need no code change, and an unknown body buys the gentlest driving.
+- [ ] **ga1: does the carry hold now?** g9x lost it at 51 deg of swing with the old written-down limits. Watch the
+      `drive_limits` evidence (expect ~0.071 m/s^2, ~0.43 rad/s, gravity 1.625) and `item_still_held` at the shelf.
+- [ ] Then place on the new shelf (never reached), stow, return dock, and full Mission B covered from the start.
 - [ ] Then place with the new shelf (never reached), stow, return dock, and full Mission B covered from the start.
 - [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.
 - [ ] Then `press` live (never pressed a button), then Mission A's ready/stand deadlock (F62 §3).
