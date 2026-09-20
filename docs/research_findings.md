@@ -4131,3 +4131,32 @@ gives how much twist a heading change costs: 23.5 deg of lag for 181 deg of turn
 the heading change this grasp can take in one move at roughly **30 deg** -- which would have refused the 180 deg
 turn. The ratio is one measurement from one run and is owed a second before it is trusted as a number; the geometry
 is not.
+
+## F84 -- the lifting interface takes the roll by geometry too, and the gripper is 3x its own datasheet
+
+F49 established the principle and applied half of it: a payload interface must give **form closure, not friction**,
+so the T-handle's head rests on the fingers and a vertical pull is taken by geometry. Rotation was left to friction,
+and rotation is what F83 measured coming apart -- 23.7 deg of roll about the approach axis while the two drives that
+held moved 4.9 and 4.8 on that same axis.
+
+With 55 mm of free neck the fingers had 27 mm of empty travel below them. The head is the upper stop; there was no
+lower one. The handle now has a **collar** of the head's own footprint below a slot, and the fingers sit in the slot:
+to roll, one finger must rise out of it and the other drop into it, and both are stopped within the slack. Neither
+number is picked for this payload -- the slot is the gripper's own finger height (18 mm, `eg2_link5/6` span
+y +-0.009 in their meshes) plus 3 mm each side, and the collar reaches as far across as those fingers touch (27 mm):
+
+    roll allowed = asin(3/27) = 6.4 deg     measured: 4.9 and 4.8 held, 23.7 lost it
+
+The handle frame stays at 0.4669 above the item's base, so the catalogue height, `work_stands` and the reasoner's
+own 0.55 + 0.467 = 1.017 are untouched. The column also used to start at the item's *bounding* top -- the highest
+point anywhere on it -- and hung in the air above the surface under its own footprint; it now starts at what is
+measured beneath that footprint and sinks 20 mm into it.
+
+**A measurement that stands against the simulation, not against the run.** The gripper's drives were at their
+4.0 N.m limit on all six joints for every sample the item was held, and the load still pried them from 0.188 to
+0.232 rad -- so grip force is genuinely the binding term. But the Inspire-Robots EG2-4C2 this robot names is a
+**0-20 N** gripper (manufacturer's own page), and 4.0 N.m over the 0.045-0.06 m finger lever is 65-90 N: the
+simulated gripper is **three to four times the hardware**. F49's note that 65 N is "inside the EG2-4C2 band" is
+wrong, and F49 itself recorded that at the physically faithful 0.9 N.m the payload levered the jaws open. The user's
+decision is to keep the simulated force -- lunar equipment is not a commercial catalogue part -- and fix the
+interface, which is the right way round: a grasp that needs three times its gripper's rated force is not a grasp.
