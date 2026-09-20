@@ -4317,3 +4317,68 @@ What a query does is in its own contract. The three that go out to the vision mo
 the long wait; everything the boundary answers from its own state is resent after 4 s.
 
 Unverified: no run has started since.
+
+## F91 -- the robot looked once, and 6 cm of docking error decided the mission
+
+gb2 called `pick` three times at the same handle and lost all three, and the model's side is again blameless. It
+asked `work_stands`, docked at the level-look stand (1.08 m) and the approach stalled 2.6 cm short of the grasp; it
+reasoned that the neck was beyond reach, docked at the nearest stand (0.93 m), and the view measured nothing; it
+split the difference at 1.035 m, and the view measured nothing again. Three stands, 15 cm apart end to end, and the
+part was in plain sight in all of them.
+
+**The picture the stage saved settles it.** At 1.035 m, looking 10 deg above the horizontal, the ORU's T-handle
+fills the upper third of the frame: head bar, slot, collar bar, against black sky. Replayed offline on that run's
+own saved depth, the candidate search returns **nothing** -- and returns **five candidates** the moment one gate is
+removed, the best of them **12.9 mm across at 0.418 m**, which is the 12 mm neck, on the slot, with clear air both
+sides. The view was never the problem.
+
+**Defect 1: the image was made to certify what the catalogue declares.** `find_candidates` dropped any candidate
+whose measured extent along the pads was under `pad_height_m` (14 mm). The width already takes the honest route --
+the interface declares `closing_width_m` and the image confirms it to four pixels -- but the length did not, and the
+two are not measured alike. A width is a cut across the part in the image plane and reads true from any direction
+the part is seen in the round from. A length runs *up* the part: any look off its own square foreshortens it, and
+whatever overhangs it cuts into it. At 10 deg above the horizontal a 28 mm slot read **9.5 mm**, and the part was
+thrown away for being short. The catalogue had already said the interface takes the pads. The floor is now what the
+perception can resolve at all when the length is declared, and the pads' own height when it is not.
+
+**Defect 2: the stage looked once.** `find` pointed the camera straight back along the rover's own axis, tried three
+elevations, took the first one the arm could reach, and made whatever that single frame measured the outcome of the
+mission. Nothing retried, nothing moved, nothing looked again -- with seven joints and a wrist camera, and with the
+part in the picture. That is what turned a 6 cm docking band into a mission outcome. The stage now takes the views
+the arm can reach, in order of what each costs the measurement, and a pose out of reach, a view that measures
+nothing and a view whose marks are all on something else are each one view fewer, not the end of the operation.
+
+**What the azimuth is and is not worth, computed rather than assumed.** The first version of this fix ordered the
+side looks before the steeper ones, on the reasoning that an elevation decides what can be measured and an azimuth
+does not. The robot's own kinematics agree about reach -- straight back, a level look at this handle exists only
+from 1.08 m, past where the arm reaches the grasp, while 30 deg round the side it exists from **0.92 m to 1.14 m**,
+and the grasp with it. The *asset* disagrees about measurement. The neck is a rib, 12 mm across the jaws and 30 mm
+along the approach, so seen from phi round the side it presents `12 cos(phi) + 30 sin(phi)`: **17 mm at 10 deg**,
+against a declared 12 mm the search accepts to 2.7 mm. A level look from the side is a look that cannot measure this
+part. So the order is the other way round -- every elevation from where the rover is facing, then the azimuths --
+and the azimuths are there for a contact that is not facing the way the survey said. Two hours of plausible
+reasoning, one line of arithmetic over the asset file.
+
+**And the harness stopped promising what its own error rate breaks.** `work_stands` answered about the stand as a
+point and then said, in words, that docking is verified to 0.06 m -- leaving the caller to carry a margin it has no
+way to compute. That is not a fact; it is a fact plus a footnote that cancels it. Each promise is now answered at
+the end of the docking band where it is hardest to keep: reach runs out with distance, so it is asked at `d + 0.06`,
+and the look shallows with distance, so it is asked at `d - 0.06`. Both are monotone in the distance, so one point
+bounds each and it costs nothing. Computed on the arm's own model, that leaves stands from **0.99 m to 1.08 m** that
+both reach the grasp and offer a look wherever the dock lands -- where the old answer offered a level look at
+exactly one distance, 1.08 m, at which the arm cannot reach the grasp at all.
+
+    stand   reaches the grasp at d+6cm     shallowest look at d-6cm
+    0.960   yes                            none
+    0.990   yes                            30 deg
+    1.035   yes                            20 deg
+    1.080   yes                            20 deg
+    1.095   no                             10 deg
+
+Two rules come out of this, and they are the same rule twice. **A promise the harness makes must survive the error
+the harness itself admits** -- it owns both numbers, and handing the caller a fact and a caveat that cancels it is
+handing over nothing. And **a capability that gives up after one observation is weaker than the robot it runs on**:
+the mechanics belong inside the skill, so looking again belongs inside the skill too, not in the model's head as a
+re-dock.
+
+Unverified: no run has started since.

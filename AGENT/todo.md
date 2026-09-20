@@ -4,36 +4,32 @@ Order: `execution_plan` §21 — the proposed method before the external baselin
 **Sequence in force (user): Mission B reliable → `press` live → Mission A → baselines/freeze/experiments.**
 One simulation at a time. Experiments from here on record video (`D0_VIDEO`).
 
-## Blocking — `pick` is not reliable, and this is the only thing that matters now
+## Blocking — nothing has run since ga8; the next thing is a run
 
-`pick` succeeded first try in ga8 and failed three times in gb2 with the same code and the same target. It is not
-a perception problem and not a reach problem: it is a hard gate on a measurement that scales with distance.
+gb2's three `pick` failures are answered (F91) and the answer is proven offline on the run's own data, not live.
+The pick, the carry, the place, the stow and the video panel all now stand on offline evidence alone.
 
-- [ ] **The candidate search rejects the part for being short in the image.**
-      `grasp_perception.find_candidates` drops any candidate whose *measured* length along the part is under
-      `geom.pad_height_m` (14 mm). The ORU's slot is 28 mm and the catalogue says so — `held_item.neck_height_m`
-      is already in the pick skill's goal — but the image has to prove it again, and at 1.035 m the neck reads
-      **11.6 mm**. gb2 attempt 3: the search found the neck at exactly 12 mm wide with clear air on both sides
-      and threw it away. Same handle at 1.08 m in ga8: 22.4 mm, accepted.
-      The width already takes the honest route (`contact_width_m` declared, image confirms). The length does not.
-      **Do the same for length: pass the declared contact length and let the image locate the part rather than
-      re-certify what the catalogue states.** Then check the other two failures go with it.
-- [ ] gb2's other two: at 1.08 m the approach stalled 2.6 cm short (`work_stands` now checks reach at the seat,
-      `9bbb981`, unverified); at 0.93 m the gripper's own body covered the slot in its own camera.
-- [ ] After the gate: three clean runs of Mission B from the start, with video, before anything else.
+- [ ] **Three clean runs of Mission B from the start, with video.** Watch for, in this order: the 3-minute stall at
+      the start (F90) is gone; `find` takes more than one view and says which; `pick` succeeds without the model
+      having to re-dock; the carry survives a turn with the load (F83/F84, never met); `place` steps along the
+      normal if it has to (F85, never triggered).
 
 ## Changed but never run — nothing below has a successful run behind it
 
 ga8 is the only end-to-end success (F87) and it predates all of this.
 
+- [ ] `find` takes the views the arm can reach instead of one (F91), and the declared contact length is no longer
+      re-certified from the image. Only the offline replay on gb2's two failed views: 0 candidates → 5, the neck
+      at 12.9 mm.
+- [ ] `work_stands` answers each promise at the end of the docking band where it is hardest (F91). Computed on the
+      arm's model, not asked of the live boundary — check the answer is not empty on the first run.
 - [ ] The handle: slot 28 mm, bars 12 mm deep (F86). Only the offline replay on ga8's depth.
 - [ ] The shelf 0.6 → 0.75 m, prop boxes at their real height (F86). Only the offline geometry.
 - [ ] `place` steps along the support's outward normal when its own collision check refuses (F85). Never triggered.
 - [ ] The arm holds its posture from step 0 (`hold_action`), and stow is level and rearward (F89). Never run.
-- [ ] Non-model queries resend after 4 s instead of 180 (F90) — **this is the 3-minute stall at the start of
-      every run**. Never run.
+- [ ] Non-model queries resend after 4 s instead of 180 (F90) — **the 3-minute stall at the start of every run.**
 - [ ] An orphaned contact-scene freeze is reclaimed instead of refusing everything after it. Never triggered.
-- [ ] The video panel rewrite (`747e68c`). Never rendered.
+- [ ] The video panel: four things, at four sizes, in one accent and two verdicts. Rendered on gb2's frames only.
 
 ## Then
 
@@ -45,5 +41,5 @@ ga8 is the only end-to-end success (F87) and it predates all of this.
 
 ## Numbers still owed a measured source
 
-`bring_in`'s 5 cm sag margin (`held_drop_m`); the 0.10 rad posture margin. Everything else in the carry and the
-grasp now has one. `CARRY_SUSTAINED_YAW_RAD_S` was removed rather than left undeclared.
+`bring_in`'s 5 cm sag margin (`held_drop_m`); the 0.10 rad posture margin; `max_views` = 6, which is a deadline on
+the search and not a measurement. Everything else in the carry and the grasp now has one.
