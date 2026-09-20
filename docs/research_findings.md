@@ -3921,3 +3921,28 @@ skill's own observation poses are reachable from there, and those are the tighte
 above the target, folding toward the rover. So the boundary can hand back a stand from which the item can be
 grasped but not seen. That is a property of the robot's geometry, not of any mission, and belongs in the stand
 choice.
+
+**The overview is written in the chassis frame, and the stand-off is not a constant (g9p, g9q).** Bounding the
+depot stand at its table moved the boundary's parking place from 1.096 m to 0.950 m — a closer stand now passes
+`arm_reaches`, and candidates are offered roomiest first. Both pick failures that followed come from that 14 cm,
+and they are different failures:
+
+*g9p* — every working view unreachable. The views sit 0.15–0.34 m behind the aim and pitched down at it, so a
+nearer target folds them into the rover. Swept on the live MoveIt, 96 poses per aim: 15–20 survive at aim
+x = −1.02, 3–8 at −0.95, **none** at −0.91, and the aim's height barely matters.
+
+*g9q* — the views were reachable, and the aim still landed on the ORU's body (0.910) instead of its handle (1.022).
+Not framing: measured through the robot's own camera-in-tool transform, the closer stand frames the handle *better*
+(image row 210 against 11, depth 0.318 against 0.372). The overview's own regions prove it was seen — one sits at
+chassis z = 1.059, the handle's head, 0.023 m from the located dot and well inside the 0.2 m window the aim
+searches. What discarded it is `surface_heights`, which drops every measured point within 0.15 m of an arm link as
+the arm's own body. The overview is taken at a **fixed chassis pose** `[-0.85, 0, 1.10, 50, 0]`: at the 1.096 m
+stand the tool sits 0.258 m from the handle and the handle survives; at 0.950 m it sits **0.135 m** from it and the
+skill deletes the thing it came to find.
+
+**What the measurement says the fix is.** Taking the same overview relative to the item instead of to the chassis
+makes its geometry identical at both stand-offs (handle at 0.411 m, 47.6 deg down) — the property wanted, since the
+stand-off is chosen by the boundary and will keep changing. And the stand choice itself asks only whether the arm
+reaches the *work*; the poses it must observe from are the tighter constraint, and a stand that fails them is one
+the skills arrive at and cannot start from. Both follow from the robot's own geometry — the arm's self-filter
+radius, the camera's place on the gripper — not from any mission.
