@@ -36,7 +36,11 @@ SCENE=${D0_SCENE:-scenes/deploy/srb_lunar_base_mission_b.yaml}
 if [ -n "$D0_VIDEO$D0_GPU$D0_SCENERY$D0_SCENARIO$D0_PROFILE$D0_GPU_PHYSICS" ]; then
   # A copy of the scene, adjusted for this run:
   #   D0_VIDEO=<file.mp4>  SRB streams a robot-following viewer camera to that file (srb/utils/video_stream.py);
-  #                        rendering costs wall time, so only for runs already known to pass.
+  #                        rendering costs wall time, so only for runs already known to pass. D0_VIDEO_RES ("W,H",
+  #                        default 960,540), D0_VIDEO_STRIDE (env steps per frame, 5 = 10 fps of sim time) and
+  #                        D0_VIDEO_SPEEDUP (1 = played at sim time) go with it. Raise the resolution before the
+  #                        frame rate: bv1 rendered enough to drag the sim to 0.06x real time and the arm's hold
+  #                        sagged 15 cm until `servo over shelf` stalled -- the render broke the run, not the skill.
   #   D0_GPU=1             SRB on the second GPU (a parallel graph; pair with D0_DOMAIN=78).
   #   D0_SCENERY=<name>    another SRB scenery for the same task (e.g. lunar_base_route_block).
   #   D0_SCENARIO=<name>   the task's env.scenario (e.g. heldout_cover_obstruction).
@@ -51,7 +55,8 @@ if video:
     argv.insert(argv.index("--env"), "--video")
     d["simulator"].setdefault("env_set", {}).update(SRB_VIDEO_PATH=video, SRB_VIDEO_FOLLOW="robot",
                                                    SRB_VIDEO_STRIDE=os.environ.get("D0_VIDEO_STRIDE", "5"),
-                                                   SRB_VIDEO_SPEEDUP=os.environ.get("D0_VIDEO_SPEEDUP", "1"))
+                                                   SRB_VIDEO_SPEEDUP=os.environ.get("D0_VIDEO_SPEEDUP", "1"),
+                                                   SRB_VIDEO_RES=os.environ.get("D0_VIDEO_RES", "960,540"))
     d["simulator"]["boot_timeout_s"] = 1800.0
 if gpu_physics:
     d["simulator"].setdefault("env_set", {})["SRB_SIM_DEVICE"] = "cuda"
