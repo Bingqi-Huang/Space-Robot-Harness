@@ -19,7 +19,9 @@ proc = Path(f"/proc/{pid}")
 argv = proc.joinpath("cmdline").read_bytes().rstrip(b"\0").decode().split("\0")
 env = dict(s.split("=", 1) for s in proc.joinpath("environ").read_bytes().rstrip(b"\0").decode().split("\0"))
 name = "planning_scene" if any(a.endswith("planning_scene/node.py") for a in argv) else "runtime"
-if env.get("D0_RUN_TAG") != str(graph) or not (name == "planning_scene" or any(Path(a).name == "runtime_node" for a in argv)):
+# the tag is compared as a resolved path on both sides: the graph can be launched through a symlinked
+# home while this is called with the real one, and the two spellings name the same run
+if str(Path(env.get("D0_RUN_TAG", "/nonexistent")).resolve()) != str(graph) or not (name == "planning_scene" or any(Path(a).name == "runtime_node" for a in argv)):
     raise SystemExit(f"PID {pid} is not this graph's runtime_node or planning_scene node")
 cwd = proc.joinpath("cwd").resolve()
 executable = str(proc.joinpath("exe").resolve())
