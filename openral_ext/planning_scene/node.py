@@ -113,16 +113,29 @@ class PlanningSceneNode(Node):
     async def prepare_contact(self, request, response):
         # This service returns only after the collision consumer applied the scene.
         # Frozen geometry is a stationary-workpiece snapshot for one serial operation.
+        #
+        # A freeze that is still held when the next operation asks for one is orphaned, not contended: the robot runs
+        # one operation at a time, so whoever held it is gone. Refusing outright ended the run -- ga3 lost the whole
+        # mission to a freeze left behind when the first pick's measurement failed on a startup TF race, and every
+        # pick after it was answered "already owned by an operation" (the reasoner read that correctly and had no
+        # tool to clear it). Restore the previous operation's geometry and permissions first, and say so in the
+        # evidence, so the reclaim is visible rather than silent.
+        reclaimed = False
         if self.frozen:
-            response.message = "contact scene already owned by an operation"
-            return response
+            restored = Trigger.Response()
+            await self.release_contact(Trigger.Request(), restored)
+            if not restored.success:
+                response.message = "contact scene held by a previous operation and its geometry cannot be restored"
+                return response
+            reclaimed = True
         request = GetPlanningScene.Request()
         request.components.components = PlanningSceneComponents.ALLOWED_COLLISION_MATRIX
         snapshot = await self.get_scene_client.call_async(request)
         self.original_acm = snapshot.scene.allowed_collision_matrix
         response.success = await self.measure()
         self.frozen = response.success
-        response.message = json.dumps(self.scene_evidence)
+        response.message = json.dumps({**self.scene_evidence, "reclaimed_from_previous_operation": reclaimed}
+                                      if reclaimed else self.scene_evidence)
         return response
 
     async def release_contact(self, request, response):
