@@ -1,83 +1,85 @@
 # Handoff
 
-Updated 2026-09-20 (F79/F80). First read `AGENT/research_content.md` and `AGENT/execution_plan.md`.
+Updated 2026-09-20 (F81-F87). First read `AGENT/research_content.md` and `AGENT/execution_plan.md`.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence, verification
 and hard boundaries. No Mission B-specific skill/tool, hidden solution hint, numeric tuning or recovery graph.
-Order in force: **finish Mission B → press live → Mission A → baselines/freeze/experiments**.
+Order in force: **Mission B done → press live → Mission A → baselines/freeze/experiments**.
 
 ## Heads (all clean)
 
 research `feat/manipulation-contracts`, openral `feat/manipulation-contracts`, SRB `feat/lunar-base-scene`.
 
-## What changed today, and why it matters to the paper
+## Mission B is complete end to end (ga8, F87)
 
-Three of the day's four faults were measurements; the fourth was the architecture, and that is the contribution.
+    RESULT {"oru_on": "pdu_1_shelf/shelf", "delivered": true, "success": true}   CHECK_EXIT 0
 
-1. **`site/depot_stand` was bounded at its back lip's height** (0.610) rather than its table (0.55), so an item on a
-   slot began 6 cm inside the obstacle. A prop that declares a working surface is now bounded there.
-2. **The held item was checked as a prism swept over every yaw** (0.597 m square against a 0.45 x 0.392 unit). Four
-   bags say the ORU does not turn in the jaws and pivots at most 15.4 deg; it is checked as the box it is.
-3. **`find` guessed where to point the camera** -- a fixed chassis overview, a 5 cm height map, the tallest cell
-   within 0.2 m of a blob, 24 viewpoints aimed at that. One level view now, because an upright neck shows the width
-   the jaws close on from the side and not at all from above. 5.7 s against 92 s. 99 lines of dead code removed.
-4. **The boundary chose where to park and never said what the choice cost.** It takes the roomiest stand its reach
-   model offers: 0.96 m at the depot, where the arm reaches the handle and can only look from 20 deg above, and from
-   above the head hides the neck. Four predicates over the nominal work point could not tell that stand from the
-   1.10 m one every successful pick had used. **`work_stands`** reports instead of deciding: per distance, whether
-   the tool reaches and the shallowest look, and the `standoff_m` that parks there. `dock_at_feature` says its
-   default is chosen for reach alone.
-5. **The body the robot stands on is now a published fact.** `env0/space_context` (SRB, latched) carries the domain
-   and its gravity; the boundary derives the carry limits from it (`a = g tan(theta/2)`, theta the swing the grasp
-   was measured to take) and exposes the same fact for reasoning. Moon 0.071 m/s^2, Mars 0.163, asteroid 0.006, no
-   code change. Unknown bodies fall back to the *least* gravity, never Earth's.
+pick 179.52 (`item_held`, jaw 0.170, first attempt) -> carry (`item_still_held`, jaw 0.171) -> place 332.92
+(`item_placed`, jaw 0.82) -> stow -> dock, map error 0.019 m. Before today: pick worked, carry always lost the
+load inside the first metre, `place` had never been reached.
 
-**The model uses all of it, unprompted.** It computes the grasp height as the place frame's z plus the catalogued
-handle height (1.017, exact, offline and live), reads "a neck under an overhanging head", asks `work_stands`, docks
-at `standoff_m` 0.12, and writes the reason into its own ledger. In g9x that produced the first pick that works end
-to end: one view, one candidate, `bring_in` over **0.30 m without stalling** (0.228 was the best before, 0 in g9m),
-`item_held` verified.
+## The ten defects, by kind (F81-F86 carry the detail)
 
-## Where it stands
+- **The simulator's action boundary.** Every `cmd_vel` rebuilt the whole action vector through the *teleoperation*
+  mapping and kept only `_held_mask` dimensions; only the Bool gripper was masked, so the first cmd_vel of each
+  drive switched the arm out of joint-position mode and zeroed its targets. `hold = True` for every term. **This
+  was the carry.** (F81)
+- **The harness withholding what it knew.** `held_item` answered with a camera clamped to the handle, which cannot
+  see the payload; the boundary's own record of the pick it dispatched is now returned beside it (F82). Every place
+  point carries a surveyed outward normal that `place` was never given, so a refused over-pose had no direction to
+  move in (F85).
+- **Geometry, found by computing not inferring** (F86). A prop's box was built from how tall it is rather than where
+  it is (shelf 16 cm low, PDU panel 60 cm low); the shelf was 0.6 m deep against a 0.485 m envelope with a wall
+  behind it; the handle's bars occluded the slot they bound, leaving 8.7 mm of neck where the search needs 14.
+- **The harness's own numbers wrong about themselves.** One constant serving as both the seat depth and its
+  tolerance; a transient swing tolerance spent as a sustained one; a turn taking the whole budget the comment above
+  it split in half; an orphaned contact-scene freeze refusing every later operation.
+- **The payload interface.** F49 gave the T-handle form closure against a vertical pull and left rotation to
+  friction; ga4 rolled it 23.7 deg round the neck during a turn and lost it. A collar below the slot makes the
+  fingers captive (F83/F84).
 
-- **pick: solved and verified** (g9x).
-- **carry: was the day's last failure and is what ga1 tests.** g9x lost the ORU on the first drive: the jaw was
-  never commanded open, the load swung to 51 deg and came off the neck 0.44 m from the slot. The bag says why --
-  0.5 m/s^2 is 17 deg of lean at lunar gravity, the angular allowance added another 0.50 m/s^2 at the 0.787 m lever
-  and 1 rad/s of turn another 0.79, and the jaw was untouched to 10.7 deg and opening by 16.3. The limits are
-  derived now; ga1 is the run that says whether that is enough.
-- **Never reached yet:** place on the new shelf, stow, return dock.
+The model's side needed no correction at any point.
 
-## Method rules earned today (both are now memory)
+## Not verified yet
 
-- **Settle it offline before a simulator runs.** The IK rule and the view sweep against the live MoveIt; the
-  detector replayed on the run's own saved depth; the reasoner's inference asked of the real model with the real
-  records (`$CLAUDE_JOB_DIR/tmp/ask_reasoner.py`, `ask_stand.py`, `ask_plan.py`, `ask_gravity.py`). Each found
-  something in seconds that a run would have cost 20 minutes to find -- including an ambiguous query interface the
-  model reasoned correctly about and then mis-filled.
-- **Read your own code back before running it.** Two runs were lost to a `#` comment inside an embedded JSON block
-  and a path passed where an image array was expected. Both were visible on a second reading.
+- **The collar through a turn.** ga8's route did not pivot with the load. The stop is geometric (roll limited to
+  10.5 deg, where the neck still presents 14.3 mm to jaws holding 14.95) but it has not met the 23.7 deg case.
+- **`CARRY_SUSTAINED_YAW_RAD_S = 0.15`** is a separation read off one failure and two successes, not a derivation.
+  With the collar in place it may not be needed at all; it is owed either a second measurement or removal.
+- **The contact-scene reclaim** has not been triggered since it was written.
+- **The PDU panel's box grew from 0..0.52 to 0..1.12** (its real extent). That is correct, and it is a new obstacle
+  in front of Mission A's `press`, which has not run since.
 
-## Live processes
+## Method rules earned (both are memory)
 
-Graph `artifacts/runs/ga1` (held), run `ga1`. Isaac, runtime_node, planning_scene, capability_server, recorder.
-Recheck with `ps -eo pid,ppid,args` before any control; stop the attach parent, then check, then agent, by PID.
-Skill evidence lands in the *graph's* log dir, not the run's.
+- **Look at the pictures first, then measure.** Four wrong hypotheses came out of the bags in one day; 44 wrist
+  frames showed the load being flung in one glance (F81). Record the chassis camera too -- the wrist camera cannot
+  see the rover.
+- **A question about whether one solid fits on another is arithmetic over data the repository holds.** Three of
+  ga8's ten defects were sitting in the asset files (F86). `$CLAUDE_JOB_DIR/tmp/shelf_fit.py`, `jaw_pocket.py`,
+  `jaw_width.py`, `replay_find.py` are the instruments; keep using them before a simulator.
+- **Read your own code back before running it.** This session it caught a collar placed off the old pedestal
+  origin, `self.geom` undefined in the place skill, and a mesh bound taken after the scale proxy joined the scene.
 
 ## Development loop without rebooting Isaac (F65/F66)
 
 Skills run in `openral_rskill_ros/runtime_node`, which caches imports: restarting the capability server alone does
-not reload them, and an SRB change needs the whole graph rebooted.
+not reload them, and an SRB or asset change needs the whole graph rebooted.
 
-1. Stop the attach parent, check and agent by explicit PID; confirm none survived.
-2. Recorder first (topics as in `ga1/`, QoS file `record_qos.yaml`), then
-   `D0_RESTART_RUNTIME_PID=<pid> [D0_RESTART_BOUNDARY=1] D0_CHECK=ours_mission_check.py OURS_MISSION=b`
+1. Stop the attach parent, check and agent by explicit PID; confirm none survived. **Then confirm `ros2 node list`
+   is empty** -- a leftover `planning_scene` from an earlier graph published TF frozen at its last clock and cost
+   ga3 the whole run. Clear the ros2 daemon too; it caches a node list that no longer exists.
+2. Recorder first (topics as in `ga8/`, QoS file `record_qos.yaml`, **including `/openral/cameras/front/image`**).
+3. Attach: `D0_RESTART_RUNTIME_PID=<pid> [D0_RESTART_BOUNDARY=1] D0_CHECK=ours_mission_check.py OURS_MISSION=b`
    `[OURS_RESUME_FROM=<log> OURS_RESUME_BEFORE_STEP=<n>] setsid nohup attach_d0.sh <graph> <newlog>`.
-3. A fresh graph: `D0_CAPABILITY_SERVER=1 D0_HOLD=1 D0_CHECK=ours_mission_check.py OURS_MISSION=b`
-   `setsid nohup run_d0.sh <newlog>`. Teardown by tag: `teardown_d0.sh <graph log>`.
-4. Only jaws-open snapshots are valid restore points, so a failure after the grasp costs the whole pick again.
-5. Analyse only closed bags. `/usr/bin/python3.10` for rosbag2; `openral/.venv/bin/python` for anything importing
-   the skills. ROS env: `ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` plus `fastdds_large_shm.xml`.
-Attach and run execute a frozen copy in the run directory: never edit a script that is executing.
+4. Fresh graph: `D0_CAPABILITY_SERVER=1 D0_HOLD=1 D0_CHECK=ours_mission_check.py OURS_MISSION=b`
+   `setsid nohup run_d0.sh <absolute log dir>`. Teardown by tag: `teardown_d0.sh <graph log>`.
+5. Only jaws-open snapshots restore: ga8's `before_step_9` (sim_t 96.4) is the point before the pick.
+6. Analyse only closed bags. `/usr/bin/python3.10` for rosbag2; `openral/.venv/bin/python` for the skills.
+   ROS env: `ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` plus `fastdds_large_shm.xml`.
+
+Asset or scene change: `process/process.py --only <names>` then `scene/build_scene.py`, then a full graph reboot.
+The scene builder's `problems` list is a real check -- it refused a deeper shelf that reached into the rover's
+own work pose.
 
 ## Established context
 
@@ -86,7 +88,9 @@ Attach and run execute a frozen copy in the run directory: never edit a script t
 - PLEXIL Release 6 builds and runs Mission A covered through the common boundary (F52); EUROPA not started.
 - `oru_on`/`crate_on` name a support only when the item is **not** in the gripper (`on_support`'s `free` term).
 - The gripper command is a Bool, not a position: the jaw reading is what the fingers close on, and it rising means
-  something is prying them apart.
+  something is prying them apart. Its drives sit at their 4.0 N.m limit the whole time an item is held -- which is
+  3-4x the real EG2-4C2's 0-20 N. The user's decision is to keep it (lunar equipment is not a catalogue part) and
+  give the interface form closure instead.
 
 ## Operational rules and locations
 
@@ -95,7 +99,7 @@ Attach and run execute a frozen copy in the run directory: never edit a script t
 - Simulator truth is evaluator/diagnosis only, never control, prompts, guards or verifiers.
 - Whole-operation tools only; mechanics stay inside skills. A skill retries the same target, never moves the base.
 - Model-facing services use DeepSeek's own endpoint; keys in `AGENT/VLM_provider.md` never enter logs or output.
-- Boundary: `openral_ext/capability_server/{contracts.yaml,node.py}`. Ours: `space_runtime/`.
+- Boundary: `openral_ext/capability_server/{contracts.yaml,contracts.py,node.py}`. Ours: `space_runtime/`.
 - Logs: `<log>/ours/events.jsonl`, `capability_server.log`, `runtime.log`, `check.log`, `snapshots/`,
   `robot_motion/` (bag); skill evidence under `<graph log>/evidence/`.
 - Development resumes/edits are not campaign results; never count them in paper metrics.
