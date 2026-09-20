@@ -3946,3 +3946,55 @@ stand-off is chosen by the boundary and will keep changing. And the stand choice
 reaches the *work*; the poses it must observe from are the tighter constraint, and a stand that fails them is one
 the skills arrive at and cannot start from. Both follow from the robot's own geometry — the arm's self-filter
 radius, the camera's place on the gripper — not from any mission.
+
+## F80 — The stand is reasoned about, and the pick works (2026-09-20, development)
+
+**What was wrong.** Three scene/skill faults and one architectural one, all measured:
+
+1. `site/depot_stand` took the prop's bounding height, 0.610, while the asset that authors it says its table is
+   0.55 and its front edge is left free for the arm; the 6 cm is a lip along the back. An ORU standing on a slot
+   began 6 cm *inside* the obstacle, so the held envelope had to rise 0.115 m before the arm's own checks would let
+   it move, where physics asks 0. Bounding a prop at its declared working surface gives 0.093 m of clearance at the
+   hold lift instead of 0.035.
+2. The held item was checked as a prism swept over every yaw, 0.597 m square against a 0.45 x 0.392 m unit. Four
+   carry bags say the ORU does not turn in the jaws (yaw within 14 deg of where it started, modulo the box's own
+   symmetry) and pivots at most 15.4 deg about the jaw axis. It is now checked as the box it is, widened across
+   that axis by the measured pivot.
+3. `find` opened with an overview from a pose fixed in the chassis frame, built a 5 cm height map, took the tallest
+   cell within 0.2 m of a located blob for "the item's top", and aimed 24 viewpoints at that guess. All of it was
+   machinery for deciding where to point the camera, and it assumed a parking distance the boundary decides. It is
+   one view now, level with the part, because an upright handle neck shows the width the jaws close on from the
+   side and not at all from above (F60). Where that is comes from the caller.
+4. **The boundary chose where to park and said nothing about what it gave up.** `stand_distance` takes the roomiest
+   stand its reach model offers and settles it with kinematics: 0.96 m at the depot, where the arm reaches the
+   handle and can only look at it from 20 deg above -- and from above the head hides the 12 mm neck, so five
+   candidates came back at 19-27 mm, the pedestal, and none at the declared width (g9t, reproduced offline on the
+   saved depth). Four predicates over the nominal work point failed to tell 0.96 from the 1.10 every successful
+   pick had used: standing off by the camera's set-back, reach-map room at the point and at that remove, the
+   working-branch rule, an insertion from a stand-off. A **level look** tells them apart cleanly, because that is
+   what the measurement needs.
+
+**What was done about (4) is the part that matters.** Not a predicate inside `stand_distance`. `work_stands`
+reports, per distance, whether the tool reaches the work and the shallowest angle above horizontal the wrist camera
+can look from, with the stand-off taken from the pick skill's own manifest so both answer with one number; each row
+carries the `standoff_m` that parks there. `dock_at_feature` now says its default distance is chosen for reach
+alone. What each part needs is already in the catalogue's grasp interface. The model reads both and decides.
+
+**It does.** Offline against the real reasoner, with the real records and no hint: it computes the grasp height as
+the place frame's z plus the catalogued handle height (1.017, exact), reads "a neck under an overhanging head" and
+concludes it needs a level look, asks `work_stands`, and docks with `standoff_m` 0.12 -- 1.08 m, the nearest stand
+that allows one. Live in g9w and g9x it did the same, unprompted, and wrote the reason into its own task ledger.
+An earlier interface where the query reported what the standoff counted *from* had it pass 0.96 and park at 1.92:
+the inference was right and the interface was ambiguous, which is the sort of thing the offline check finds in
+seconds.
+
+**g9x, the first pick that works end to end.** One level view, 5.7 s of sim time against the old flow's 92 s, one
+candidate, the VLM naming it as the neck between head and pedestal. `bring_in` then ran **without stalling at all**
+-- no `why` -- over **0.30 m**, against 0.228 m in the best previous run and 0 m in g9m, with six usable heights
+starting at `raise 0.00` clear, the falsifiable prediction fault (1) implied. `item_held` verified, jaw 0.174,
+lift 0.152. The evaluator's `oru_on` stayed empty through the drive that follows.
+
+**Method.** Every step above was settled offline before a simulator ran: the IK rule and the view sweep against the
+live MoveIt, the detector replayed on the run's own saved depth, the reasoner's inference asked of the real model
+with the real records. Two runs were still lost to code that a read-back would have caught (a `#` comment inside an
+embedded JSON block; a path passed where an image array was expected), which is why that read-back is now a rule.
