@@ -47,7 +47,14 @@ from space_runtime.tools import DECOMPOSE, REPORT_TOPIC, SET_TASK_STATUS, Harnes
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
-QUERY_RESEND_S = 180.0  # wall seconds before a query is sent again (a VLM localisation takes up to a minute)
+#: How long to wait for a query's answer before sending it again. Humble drops the response to the first service
+#: call after discovery, and a read-only query is free to repeat -- but one timer served two unrelated things: how
+#: long a lost response costs, and how long the slowest legitimate answer takes. At 180 s every run paid three
+#: minutes at the start for one dropped `site_map`, with the rover standing still (F90). What a query actually does
+#: is in its own contract: the three that go out to the vision model declare `uses_model`, and nothing else can take
+#: longer than the boundary needs to read its own state.
+QUERY_RESEND_S = 180.0      # a query answered by the remote vision model
+QUERY_RESEND_FAST_S = 4.0   # a query the boundary answers from its own state
 
 
 def wait(future):
@@ -93,10 +100,11 @@ class Agent:
         # queries are read-only: a request whose response is lost (Humble's first call right after discovery can drop it,
         # run ob1 hung 30 min on site_map) is simply sent again
         req = QueryCapability.Request(query=name, args_json=json.dumps(args))
+        resend = QUERY_RESEND_S if (CONTRACTS["queries"].get(name) or {}).get("uses_model") else QUERY_RESEND_FAST_S
         future = self.qry.call_async(req)
         while not future.done():
             t = time.time()
-            while not future.done() and time.time() - t < QUERY_RESEND_S:
+            while not future.done() and time.time() - t < resend:
                 time.sleep(0.05)
             if not future.done():
                 future = self.qry.call_async(req)
