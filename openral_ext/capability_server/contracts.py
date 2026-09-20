@@ -30,6 +30,12 @@ def item_catalogue(record: dict) -> dict:
                 "contact_region": "narrow neck between the transverse head and the wider mounting pedestal",
                 "engagement": "fingers close on opposite sides of the neck below the head; the head supports the lifted load",
                 "release_constraint": "below_overhang: after opening, withdraw sideways below the head before lifting clear",
+                "carry_constraint": (
+                    "the head takes a vertical pull and the pads take a sideways swing, but against a twist about "
+                    "the neck's own upright axis there is only friction on a flat rectangle. Turned by phi the neck "
+                    "presents neck_thickness*cos(phi) + neck_width*sin(phi) to jaws closed on its thickness, so a "
+                    "few degrees of slip widens what they hold by half again. A turn is the move that does this: it "
+                    "asks for the torque continuously, and the slip accumulates instead of swinging back"),
                 "not_clamping_regions": ["transverse head", "wider mounting pedestal"],
                 "observation_requirement": "distinguish the neck from both the head and pedestal, and see clearance for both fingers",
                 "closing_width_m": handle["neck_thickness_m"],  # the neck thickness is what the jaws close across
