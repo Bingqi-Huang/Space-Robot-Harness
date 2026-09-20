@@ -33,8 +33,7 @@ PANEL_W, PAD, MAP_W, OUT_W = 560, 22, 360, 1600  # OUT_W is the default; --width
 #: sim ran at 0.324x real time with a 960x540 stream against 0.353x with none at all (gb1 against ga8).
 INK = (238, 240, 244)
 DIM = (168, 176, 188)
-ROLE = {"reasoner": (128, 196, 255), "vlm": (196, 160, 255), "tool": (150, 230, 170),
-        "skill": (240, 206, 120), "harness": (150, 230, 170), "operator": (255, 176, 120)}
+# (the log colours its own lines; see panel())
 
 
 def wrap(text: str, width: int) -> list[str]:
@@ -45,81 +44,67 @@ def wrap(text: str, width: int) -> list[str]:
 
 
 def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
-    """The state of the mission after every event, and the simulation time it took effect."""
-    state = {"mission": "", "phase": "waiting for the mission", "plan": [], "chat": [], "reasoner": "", "vlm": "",
-             "call": "", "guard": "", "result": "", "verified": [], "held": "none", "stage": "", "report": ""}
+    """The state of the mission after every event, and the simulation time it took effect.
+
+    One plain line per thing that happened, in the words the run itself used. What is deliberately not here: the
+    raw arguments of every call, the stage feedback of every skill, the guard's assent, and the queries the
+    boundary answers from its own state. Those are in `events.jsonl` for anyone reading the record; on a video
+    they crowd out the four things a viewer needs -- the mission, the plan, what is happening now, and what has
+    happened.
+    """
+    state = {"mission": "", "plan": [], "log": [], "now": "", "stage": "", "held": "nothing"}
     times, states, step = [], [], 0
 
-    def say(role: str, text: str, detail: str = "") -> None:
-        state["chat"] = state["chat"][-40:] + [{"role": role, "text": str(text), "detail": str(detail)}]
+    def note(text: str, kind: str = "plain") -> None:
+        state["log"] = state["log"][-40:] + [{"t": e["sim_t"], "text": str(text), "kind": kind}]
 
     for e in events:
         k = e["kind"]
         if k == "mission_received":
-            state.update(mission=e["text"], phase="mission received")
-            say("operator", "mission control", e["text"])
-        elif k == "reasoner_attached":
-            state["reasoner"] = e["model"]
-            state["phase"] = f"reasoner attached ({e['model']})"
+            state["mission"] = e["text"]
         elif k == "tool_proposed":
             step += 1
-            args = json.dumps(e.get("args", {}), separators=(",", ":"))
-            state.update(call=f"#{step} {e['tool']} {args}", guard="", result="", verified=[], stage="",
-                         phase="the model chose the next operation")
-            if e.get("rationale"):
-                say("reasoner", f"step {step}", e["rationale"])
-            say("tool", f"{e['tool']}", args)
+            state.update(now=f"{e['tool']}", stage="")
+            note(f"{e['tool']} — {textwrap.shorten(e.get('rationale') or 'no reason given', 90)}", "call")
         elif k == "reasoner_step_failed":
-            step += 1
-            say("reasoner", "output rejected, fed back", e.get("detail", "")[:300])
-            state["phase"] = "the model's output was not an executable call"
-        elif k == "guard_decision":
-            state.update(guard=f"{e['outcome'].upper()}: {e['reason']}", phase="invariant / authority guard")
-            say("harness", f"guard {e['outcome']}", e["reason"])
-        elif k == "execution_started":
-            state["phase"] = "executing through the capability boundary"
+            note("the model's answer was not a usable call; fed back to it", "bad")
+        elif k == "guard_decision" and e.get("outcome") != "allow":
+            note(f"refused: {e.get('reason', '')}", "bad")
         elif k == "execution_feedback":
             phase = e.get("phase") or ""
-            if phase not in ("dispatched", "executing") and phase != state["stage"]:
+            if phase not in ("dispatched", "executing"):
                 state["stage"] = phase
-                say("skill", f"{e.get('capability')} · {phase}", "")
         elif k == "execution_finished":
-            ok = e.get("success")
-            state["result"] = "success" if ok else f"FAILED {e.get('failure_reason','')[:200]}"
-            state["phase"] = "the capability returned"
-            say("skill" if ok else "harness", f"{e.get('capability')} {'completed' if ok else 'failed'}",
-                "" if ok else e.get("failure_reason", "")[:300])
+            state["stage"] = ""
+            if e.get("success"):
+                note(f"{e.get('capability')} finished", "good")
+            else:
+                note(f"{e.get('capability')} failed — {textwrap.shorten(e.get('failure_reason', ''), 120)}", "bad")
         elif k == "effect_verified":
             holds = e.get("holds")
-            state["verified"] = state["verified"][-3:] + [f"{e['effect']}: {'HOLDS' if holds else 'does not hold'}"]
-            state["phase"] = "independent effect verification"
+            note(f"{e['effect']}: {'verified' if holds else 'NOT verified'}", "good" if holds else "bad")
             if e["effect"] in ("item_held", "item_still_held"):
-                state["held"] = e.get("target", "the item") if holds else "none (not confirmed)"
-            say("harness", f"verified {e['effect']}", "holds" if holds else "does not hold")
+                state["held"] = (e.get("target") or "the item") if holds else "nothing"
+            if e["effect"] == "item_placed" and holds:
+                state["held"] = "nothing"
         elif k == "query_answered":
-            value = e.get("value") or {}
-            if e.get("query") == "observe" and value:
-                say("vlm", f"observe · {value.get('camera','')} camera ({value.get('model','')})", value.get("answer", ""))
-            elif e.get("query") == "held_item" and value:
-                o = value.get("observed") or {}
-                say("vlm", "held_item", f"holding={o.get('holding')} what={o.get('what','')}")
+            v = e.get("value") or {}
+            if e.get("query") == "observe":
+                note(f"camera: {textwrap.shorten(v.get('answer', ''), 110)}", "look")
+            elif e.get("query") == "held_item":
+                o = v.get("observed") or {}
+                note(f"camera on the jaws: {textwrap.shorten(o.get('what') or 'nothing', 70)}", "look")
             else:
-                say("tool", f"{e.get('query')} answered", json.dumps(value, separators=(",", ":"))[:220])
-            state["phase"] = f"query answered: {e.get('query')}"
-        elif k == "local_tool":
-            say("tool", e.get("tool", "working plan"), str(e.get("detail", ""))[:220])
+                continue
         elif k == "ledger_changed":
-            mark = {"done": "[x]", "abandoned": "[-]", "active": "[>]", "pending": "[ ]", "verifying": "[?]"}
-            state["plan"] = [f"{mark.get(t['status'], '[ ]')} {t['text']}" for t in e["ledger"]["tasks"]]
+            mark = {"done": "done", "abandoned": "left", "active": "now", "verifying": "check"}
+            state["plan"] = [(mark.get(t["status"], ""), t["text"]) for t in e["ledger"]["tasks"]]
         elif k in ("operator_report", "operator_request"):
-            state["report"] = e["text"]
-            state["phase"] = "report to mission control"
-            say("operator", "report to mission control", e["text"])
+            note("reported to mission control", "good")
         else:
             continue
         times.append(e["sim_t"])
-        states.append({**state, "plan": list(state["plan"]), "chat": list(state["chat"]),
-                       "verified": list(state["verified"])})
+        states.append({**state, "plan": list(state["plan"]), "log": list(state["log"])})
     return times, states
 
 
@@ -198,62 +183,56 @@ def devices(track: list[dict], stamps: list[float], sim_t: float) -> list[str]:
 
 
 def panel(state: dict, sim_t: float, title: str, height: int, fonts, dev: list[str] | None = None) -> Image.Image:
+    """Four things: the mission, the plan, what is happening now, and what has happened."""
     f, fb, fm = fonts
     img = Image.new("RGBA", (PANEL_W, height), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, PANEL_W - 1, height - 1], radius=14, fill=(22, 25, 31, 168), outline=(120, 130, 150, 120))
-    y = 14
+    d.rounded_rectangle([0, 0, PANEL_W - 1, height - 1], radius=14, fill=(22, 25, 31, 178), outline=(120, 130, 150, 110))
+    y = 16
 
-    def line(text, font=f, fill=INK, dx=0, gap=4):
+    def line(text, font=f, fill=INK, dx=0, gap=5):
         nonlocal y
-        d.text((14 + dx, y), text, font=font, fill=fill)
+        d.text((16 + dx, y), text, font=font, fill=fill)
         y += font.size + gap
 
-    line(title, fb, (255, 255, 255), gap=8)
-    line(f"sim t {sim_t:8.1f} s", fm, (255, 214, 102), gap=10)
-    line("MISSION", fb, DIM)
-    for t in wrap(state["mission"], 66)[:3]:
-        line(t, f)
-    y += 6
-    line("DEVICES", fb, DIM)
-    for t in (dev or ["(no telemetry track)"]):
-        line(t, fm, INK)
-    y += 6
-    line("STATE", fb, DIM)
-    line(f"phase   {textwrap.shorten(state['phase'], 58)}", fm, INK)
-    line(f"held    {textwrap.shorten(str(state['held']), 58)}", fm, INK)
-    if state["call"]:
-        for i, t in enumerate(wrap(f"call    {state['call']}", 62)[:2]):
-            line(t, fm, (150, 230, 170))
-    if state["guard"]:
-        line(textwrap.shorten(f"guard   {state['guard']}", 62), fm, (255, 176, 120))
-    if state["result"]:
-        for t in wrap(f"result  {state['result']}", 62)[:2]:
-            line(t, fm, INK if state["result"] == "success" else (240, 140, 140))
-    for v in state["verified"][-3:]:
-        line(textwrap.shorten(f"verify  {v}", 62), fm, (150, 230, 170) if "HOLDS" in v else (240, 140, 140))
-    y += 6
-    if state["plan"]:
-        line("WORKING PLAN (the agent's own)", fb, DIM)
-        for t in state["plan"][-6:]:
-            line(textwrap.shorten(t, 64), fm, INK if t.startswith("[>") else DIM)
-        y += 6
-    line("REASONER / VISION MODEL / CALLS", fb, DIM)
-    top = y
-    entries = []
-    for m in state["chat"]:
-        head = f"{m['role']}: {m['text']}"
-        block = [(ROLE.get(m["role"], INK), t, fb if i == 0 else f) for i, t in enumerate(wrap(head, 60)[:2])]
-        block += [(DIM, "    " + t, f) for t in wrap(m["detail"], 62)[:4]] if m["detail"] else []
-        entries.append(block)
-    lines = [ln for block in entries for ln in block + [(None, "", f)]]
-    room = (height - top - 14) // (f.size + 4)
-    for colour, text, font in lines[-room:]:
-        if colour is not None:
-            d.text((14, y), text, font=font, fill=colour)
-        y += f.size + 4
-    return img
+    line(title, fb, (255, 255, 255), gap=4)
+    line(f"{sim_t:.0f} s", fm, (255, 214, 102), gap=14)
 
+    line("MISSION", fb, DIM)
+    for t in wrap(state["mission"], 62)[:3]:
+        line(t)
+    y += 12
+
+    if state["plan"]:
+        line("PLAN", fb, DIM)
+        for mark, text in state["plan"][:6]:
+            here = mark == "now"
+            line(f"{mark:5s} {textwrap.shorten(text, 56)}", fm, INK if here else DIM)
+        y += 12
+
+    line("NOW", fb, DIM)
+    doing = state["now"] or "thinking"
+    if state["stage"]:
+        doing += f"  ·  {state['stage']}"
+    line(doing, fb, (150, 230, 170))
+    line(f"holding {textwrap.shorten(state['held'], 52)}", fm, DIM)
+    for t in (dev or [])[:1]:
+        line(t, fm, DIM)
+    y += 12
+
+    line("WHAT HAPPENED", fb, DIM)
+    top = y
+    colours = {"good": (150, 230, 170), "bad": (240, 140, 140), "call": (128, 196, 255),
+               "look": (196, 160, 255), "plain": INK}
+    rows = []
+    for m in state["log"]:
+        body = wrap(m["text"], 52)
+        rows.append((colours[m["kind"]], f"{m['t']:6.0f}  {body[0]}"))
+        rows += [(DIM, "        " + t) for t in body[1:2]]
+    room = max(1, (height - top - 16) // (f.size + 5))
+    for colour, text in rows[-room:]:
+        line(text, f, colour, gap=5)
+    return img
 
 def main() -> None:
     ap = argparse.ArgumentParser()
