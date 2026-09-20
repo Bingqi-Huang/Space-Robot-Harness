@@ -4066,3 +4066,35 @@ the fingertips at tool z +0.006 and the pads' clamping ridges back to -0.030, wi
 was inside budget. Target and tolerance are now two quantities from one measurement of the pads (`pad_band_m`):
 seat at their middle, accept half their length. The seat moves 6 mm deeper, which lengthens the escape the load must
 travel from 33 mm to 40 mm. It is hardening, not the cause.
+
+## F82 -- the carry holds, and what it cost the mission next
+
+With the action-ownership fix in (F81), ga4 carried the ORU twice without losing it. `pick` verified at sim_t
+184.88 on the first attempt (`item_held`, jaw 0.199); the rover drove depot -> PDU-1 over 86 s of sim time and
+`item_still_held` verified at jaw 0.182; it later drove PDU-1 -> depot over 77 s and `item_still_held` verified at
+jaw 0.194. Six earlier runs had lost the load inside the first metre. The jaw never approached the 0.13 that means
+closed on nothing.
+
+The jaw angle also measures the fix to the seat. ga1 closed at 0.170 with the neck 3.2 mm inside the fingertips;
+ga4 closed at 0.199. The fingers turn about a proximal pivot, so for the same 12 mm neck a larger angle is a
+contact nearer that pivot -- the deeper seat, read straight off the encoder.
+
+**The mission still did not finish, and the reason is a harness gap worth the paper.** At PDU-1 the model asked
+what was in the jaws. The wrist camera is on the gripper, and the gripper is clamped to the T-handle: the handle's
+head fills the frame and the ORU's gold body hangs below it, out of view. The model answered accurately -- "a
+smooth light-grey case, flat matte top, no lifting eye, no gold MLI foil" -- which is exactly what the head looks
+like. From two such observations the model concluded it was carrying the white cargo crate, wrote itself a recovery
+task, and drove the correct payload back to the depot to put it down.
+
+Nothing in that chain is a mistake by the model. It asked a reasonable question; the only instrument the harness
+offered was one that physically cannot answer it. The boundary's `held_item` query was *defined* as a camera
+reading, with the comment that the comparison against "what the record says is carried" belongs to the caller --
+but the record was never given to any caller. The boundary dispatched the `pick`, saw it succeed, and knew the
+catalogued item and the support it came from.
+
+`held_item` now returns both, labelled and unreconciled: `observed` (the camera, still asked blind, because an
+answer shaped by the question is not evidence) and `record` (the item and support of the last pick that succeeded,
+with the jaw at that moment). The contract states the geometry that makes them disagree -- a load held by a handle
+puts its body below the wrist camera's frame -- and leaves which to act on to the caller. That is the pattern the
+paper argues for: the harness owns the authoritative fact and the honest observation, and the agent owns the
+judgement between them.

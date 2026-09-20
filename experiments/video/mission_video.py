@@ -97,7 +97,8 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
             if e.get("query") == "observe" and value:
                 say("vlm", f"observe · {value.get('camera','')} camera ({value.get('model','')})", value.get("answer", ""))
             elif e.get("query") == "held_item" and value:
-                say("vlm", "held_item", f"holding={value.get('holding')} what={value.get('what','')}")
+                o = value.get("observed") or {}
+                say("vlm", "held_item", f"holding={o.get('holding')} what={o.get('what','')}")
             else:
                 say("tool", f"{e.get('query')} answered", json.dumps(value, separators=(",", ":"))[:220])
             state["phase"] = f"query answered: {e.get('query')}"

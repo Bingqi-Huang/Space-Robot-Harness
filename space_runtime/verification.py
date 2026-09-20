@@ -56,9 +56,10 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         # nothing cannot be holding anything, whatever is in the frame behind them -- the model called a solar panel
         # in the background a held item once (g5m), and the harness let a dropped payload through on that answer. The
         # angle cannot confirm a grip (a thin edge and an empty jaw are 0.17 and 0.10), but it can refuse one.
+        seen = look["observed"]
         shut = jaw_state(float(look["jaw_rad"]), cfg) == "closed_empty"
-        out.append({"effect": "item_still_held", "holds": bool(look["holding"]) and not shut, "items": list(held),
-                    "seen": look["what"], "jaw_rad": look["jaw_rad"], "image": look["image"],
+        out.append({"effect": "item_still_held", "holds": bool(seen["holding"]) and not shut, "items": list(held),
+                    "seen": seen["what"], "jaw_rad": look["jaw_rad"], "image": seen["image"],
                     "jaw": "closed_empty" if shut else "open_or_holding",
                     "source": "the gripper's own camera read by the vision model, refused by the jaw encoder when the "
                               "fingers are shut on nothing; against what the record says is carried"})

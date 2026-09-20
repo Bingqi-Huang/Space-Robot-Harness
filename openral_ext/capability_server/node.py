@@ -297,6 +297,9 @@ class CapabilityServer(Node):
         self.jaw, self.arm_q, self.sim_t, self.calls = None, None, 0.0, 0
         self.infos, self.depths = {}, {}
         self._space_context: dict = {}
+        #: what the last pick that succeeded took, and from where. The boundary dispatched that call and saw it
+        #: succeed, so this is its own record, not an observation and not simulator truth.
+        self._picked: dict | None = None
         self.create_subscription(
             String, "/srb/env0/space_context", lambda m: self._space_context.update(json.loads(m.data)),
             QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL),
@@ -454,6 +457,10 @@ class CapabilityServer(Node):
         the grasp left them. The picture settles it. Nothing is said to the model about what is expected to be there:
         an answer shaped by the question is not evidence (research repo F57, F58), and the comparison with what the
         record says is carried belongs to whoever asked, not to the model.
+
+        That record is returned beside the observation, because withholding it left the caller with only a camera
+        that cannot answer: held by a handle, the item's body hangs below the wrist camera's frame and what fills
+        it is the handle head. The two are labelled separately and are not reconciled here.
         """
         f = self.frame("wrist")
         reply = self.ask_vlm(f["path"], HELD_PROMPT)
@@ -461,8 +468,10 @@ class CapabilityServer(Node):
         if not found:
             raise ValueError(f"the model did not answer with JSON: {reply[:200]!r}")
         j = json.loads(found.group(0))
-        return {"holding": bool(j.get("holding")), "what": str(j.get("what") or ""), "jaw_rad": round(self.jaw, 3),
-                "frame_stamp_s": round(f["stamp"], 2), "image": str(f["path"]), "model": VLM_MODEL}
+        return {"observed": {"holding": bool(j.get("holding")), "what": str(j.get("what") or ""),
+                             "frame_stamp_s": round(f["stamp"], 2), "image": str(f["path"]), "model": VLM_MODEL},
+                "record": self._picked or "no pick has succeeded since the last place or release",
+                "jaw_rad": round(self.jaw, 3)}
 
     def detect(self, camera: str, target: str) -> dict:
         """Where a target described in words is in the current image of a camera: pixel, and its 3-D point in `odom` from the
@@ -833,6 +842,17 @@ class CapabilityServer(Node):
                 evidence["skill"] = json.loads(r.evidence_json)  # the skill's own record: raw evidence, not a verdict
             if not r.success and "position" in evidence["goal"]:  # a planner error code does not say what was wrong (ob5, ob6)
                 r.failure_reason += " (" + self.explain_arm_goal(params) + ")"
+        # What the robot is carrying is something the boundary knows and the wrist camera cannot see: at the carry
+        # pose that camera looks straight at the handle head the jaws are clamped to, and the item's body hangs
+        # below, out of frame. In ga4 the model carried the ORU the whole way, asked what was in the jaws, was told
+        # (accurately) "a smooth light-grey case, no lifting eye, no gold foil" -- the handle head -- concluded it
+        # had the wrong payload and drove back to put it down. The record of the call it made itself settles it.
+        if r.success and g.capability == "pick":
+            self._picked = {"item": args.get("item") or args.get("target"), "from_support": args.get("support"),
+                            "jaw_rad_at_pick": None if self.jaw is None else round(self.jaw, 3),
+                            "picked_at_sim_s": round(self.sim_t, 2)}
+        elif r.success and g.capability in ("place", "release"):
+            self._picked = None
         evidence["sim_s"] = round(self.sim_t - sim0, 2)
         for key, fn in (("base_pose", self.base_pose), ("tcp_pose", self.tcp_pose)):
             try:

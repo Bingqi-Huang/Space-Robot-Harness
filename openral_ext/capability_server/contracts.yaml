@@ -339,12 +339,17 @@ queries:
     inputs: {}
   held_item:
     description: >-
-      Whether the gripper has anything between its fingers, and what it looks like, read from the wrist camera
-      (vision-language model on the current frame), with the jaw angle beside it. The jaw angle alone cannot tell a
-      jaw closed on nothing from one closed on a thin edge, and says nothing about what is being held or how; a
-      payload that has dropped out leaves the jaws exactly where the grasp left them. Use it to check a grasp, to
-      find out whether something is still being carried, or to see what the gripper is actually on when a call
-      failed for a reason that does not say. The answer is an observation, not ground truth; the frame is evidence.
+      Two separate things about the gripper, not reconciled with each other. `observed`: whether anything is between
+      the fingers and what it looks like, from the wrist camera (vision-language model on the current frame), asked
+      without being told what to expect. `record`: what the last pick that succeeded took and from which support,
+      with the jaw angle at that moment -- the boundary's own record of a call it made, not an observation.
+      `jaw_rad` is the jaw now. The jaw angle alone cannot tell a jaw closed on nothing from one closed on a thin
+      edge, and a payload that has dropped out leaves the jaws exactly where the grasp left them, so neither number
+      identifies a load. Nor does the camera, when the load hangs from a handle: the jaws are clamped to the handle
+      and the wrist camera looks straight at it, so the item's own body is below the frame and the head fills it.
+      An `observed` description that does not match the `record` is more likely that geometry than a wrong payload;
+      which of the two to act on is the caller's judgement. Use it to check a grasp, to find out whether something
+      is still being carried, or to see what the gripper is on when a call failed for a reason that does not say.
     inputs: {}
   space_context:
     description: >-
