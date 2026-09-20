@@ -32,6 +32,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import yaml
+
 import cv2
 import numpy as np
 import rclpy
@@ -40,6 +42,12 @@ from openral_msgs.action import ExecuteRskill
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from workspace.footprint import DOCK_ERROR_M, clear_distance  # noqa: E402
 from workspace.reach import reach_map  # noqa: E402
+
+#: the pick skill's own goal defaults: the boundary and the skill must answer "how far off does the camera stand"
+#: with the same number, the way they already share the gripper's jaw bands
+PICK_GOAL = json.loads(yaml.safe_load(
+    (Path(__file__).resolve().parents[2] / "openral/rskills/rskill-procedural-pick/rskill.yaml"
+     ).read_text())["procedural"]["default_goal_json"])
 from rclpy.action import ActionClient, ActionServer, CancelResponse
 from rclpy.duration import Duration
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -502,6 +510,52 @@ class CapabilityServer(Node):
         return {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in p], "normal": [round(float(v), 4) for v in n],
                 "source": "site survey placed by the rover's localization (expect several cm of error)"}
 
+    def work_stands(self, feature: str, grasp_height_m: float | None = None):
+        """Where the rover can stand to work at a site point, and how squarely the arm can look at it from each.
+
+        The arm's own answer, not a table. For every distance the reach model offers, this reports whether the tool
+        can be at the work, and the shallowest angle above horizontal from which the wrist camera can look at it --
+        the camera rides behind the tool, so looking at all means standing the tool off by that much and more.
+
+        The angle matters because an upright graspable feature is measured across: a handle neck with a head
+        overhanging it reads as its own width only from the side, and from above the head hides it (research F60).
+        Which parts need that is in the equipment catalogue's grasp interface, and choosing the stand is the
+        caller's: `dock_at_feature` adds its `standoff_m` to the nearest distance reported here.
+        """
+        p, n_out = self.feature_geometry(feature)
+        z = float(grasp_height_m) if grasp_height_m is not None else work_heights(feature)[0]
+        near = clear_distance(p[:2], n_out[:2])
+        # The stand-off the skill will actually use, from the one place it is written: the depth this wrist measures
+        # a part at, less the distance the camera rides behind the tool. Asking the question at any other distance
+        # would answer about a look nobody takes.
+        behind = float(np.linalg.norm(self._tf("tcp_frame", "wrist_camera_optical_frame")[0]))
+        back = float(PICK_GOAL["view_part_depth_m"][0]) - behind
+        out, base = [], None
+        for d, _room in reach_map().stand_candidates([z], near)[:12]:
+            at = np.array([-d, 0.0, z])
+            reaches = any(self.ik_reaches(at, R) for R in approach_rotations())
+            shallowest = None
+            for deg in (0.0, 10.0, 20.0, 30.0, 40.0):
+                R = approach_rotations((-deg,))[0]
+                if self.ik_reaches(at - R[:, 2] * back, R):
+                    shallowest = deg
+                    break
+            base = d if base is None else min(base, d)
+            out.append({"distance_m": round(d, 3), "reaches_the_work": reaches,
+                        "shallowest_look_deg_above_horizontal": shallowest,
+                        "level_look": shallowest == 0.0})
+        out.sort(key=lambda r: r["distance_m"])
+        try:  # what standoff_m counts from; "none" is the answer this query exists to be able to give
+            chosen = round(self.stand_distance(feature), 3)
+        except self.NoStand:
+            chosen = None
+        return {"feature": feature, "work_height_m": round(z, 4), "camera_behind_tool_m": round(behind, 4),
+                "nearest_stand_m": round(base, 3) if base is not None else None,
+                "standoff_m_is_added_to": chosen,
+                "stands": out,
+                "note": "a part whose head overhangs the neck the jaws close on can only be measured from a level "
+                        "look; from above the head hides it"}
+
     def feature_target(self, a: dict) -> dict:
         """TCP target for a feature capability, in the rover frame, from the surveyed feature and the rover's localization."""
         p, n = self.to_rover(*self.feature_geometry(a["feature"]))
@@ -671,6 +725,7 @@ class CapabilityServer(Node):
                      "locate_in_view": lambda: self.locate_in_view(args["camera"], args["target"]), "site_map": self.site_map,
                      "manifest": self.manifest, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
                      "held_item": self.held_item,
+                     "work_stands": lambda: self.work_stands(args["feature"], args.get("grasp_height_m")),
                      "locate_feature": lambda: self.locate_feature(args["name"])}[req.query]()
             res.success, res.value_json = True, json.dumps(value)
         except Exception as exc:  # reason: every failure is a typed answer to the caller, not a dead service
