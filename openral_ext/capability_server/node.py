@@ -140,6 +140,8 @@ JAW_JOINT = "eg2_joint1"
 # read one gripper the same way, or an open jaw is a held item on one side of the call and not the other (run g4p)
 from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD  # noqa: E402
 from openral_rskill.grasp_perception import GripperGeometry  # noqa: E402
+from openral_rskill.procedural_pick import PickRskill  # noqa: E402
+from openral_rskill.procedural_pick import tool_rotation as look_rotation  # noqa: E402
 #: how high above a support the tool works: the item is held by its handle, so the tool never goes to the shelf itself
 ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.get("handle"))
 
@@ -588,6 +590,9 @@ class CapabilityServer(Node):
         overhanging it reads as its own width only from the side, and from above the head hides it (research F60).
         Which parts need that is in the equipment catalogue's grasp interface, and choosing the stand is the
         caller's: `dock_at_feature` adds its `standoff_m` to the nearest distance reported here.
+
+        The look is asked for over the same poses the skill will take it from (`PickRskill.LOOK_*`), which is every
+        direction round the point the arm can reach, not the rover's own axis alone -- see `work_stands`' loop.
         """
         p, n_out = self.feature_geometry(feature)
         z = float(grasp_height_m) if grasp_height_m is not None else work_heights(feature)[0]
@@ -604,19 +609,31 @@ class CapabilityServer(Node):
         # approach stalled 2.6 cm out (F88). The depth is the gripper's own, from the same place the skill takes
         # it, the way `view_part_depth_m` is already shared.
         seat = float(GripperGeometry().seat_depth_m)
+        # ...and where the rover has to end up, not where it was aimed. This query used to answer about the stand as
+        # a point and then say in words that docking is only verified to 6 cm, leaving the caller to carry a margin
+        # it cannot compute. A fact that holds only if the dock lands exactly is not a fact, and the harness owns
+        # both numbers: each promise is answered at the end of the docking band where it is hardest to keep. Reach
+        # runs out with distance, so it is asked at the far end; the look shallows with distance, so it is asked at
+        # the near end. Both are monotone in the distance, so one point bounds each and this costs nothing (F91).
         for d, _room in reach_map().stand_candidates([z], near)[:12]:
-            at = np.array([-d, 0.0, z])
-            grasp_at = np.array([-(d + seat), 0.0, z])
+            at = np.array([-(d - DOCK_ERROR_M), 0.0, z])
+            grasp_at = np.array([-(d + DOCK_ERROR_M + seat), 0.0, z])
             reaches = any(self.ik_reaches(grasp_at, R) for R in approach_rotations())
+            # The shallowest look, over the elevations the skill will actually take one from and in the direction the
+            # dock faces the feature. Not round the side as well, although the arm can look from there and the skill
+            # will try: a contact is recognised by the width the jaws close across, and a rib 12 mm across and 30 mm
+            # along the approach presents 17 mm from 10 degrees round it. A level look from the side would be a look
+            # that cannot measure the part, which is not what this query is asked for.
             shallowest = None
-            for deg in (0.0, 10.0, 20.0, 30.0, 40.0):
-                R = approach_rotations((-deg,))[0]
+            for deg in PickRskill.LOOK_PITCH_DEG:
+                R = look_rotation(deg, 0.0, 180.0)
                 if self.ik_reaches(at - R[:, 2] * back, R):
                     shallowest = deg
                     break
             base = d if base is None else min(base, d)
             out.append({"distance_m": round(d, 3), "reaches_the_work": reaches,
-                        "reach_is_checked_at_m": round(d + seat, 3),
+                        "reach_is_checked_at_m": round(d + DOCK_ERROR_M + seat, 3),
+                        "look_is_checked_at_m": round(d - DOCK_ERROR_M, 3),
                         "shallowest_look_deg_above_horizontal": shallowest,
                         "level_look": shallowest == 0.0})
         out.sort(key=lambda r: r["distance_m"])
@@ -630,8 +647,11 @@ class CapabilityServer(Node):
                 "nearest_stand_m": round(base, 3) if base is not None else None,
                 "standoff_m_the_boundary_would_choose_on_its_own": chosen,
                 "stands": out,
-                "note": "a part whose head overhangs the neck the jaws close on can only be measured from a level "
-                        "look; from above the head hides it"}
+                "dock_error_m": DOCK_ERROR_M,
+                "note": "both answers already carry where the rover actually lands: reach is checked at the far end "
+                        "of the docking band and the look at the near end. A look from above costs the length of the "
+                        "contact that is visible, not the width the jaws close across; null is a stand the arm "
+                        "cannot look at the work from at all"}
 
     def feature_target(self, a: dict) -> dict:
         """TCP target for a feature capability, in the rover frame, from the surveyed feature and the rover's localization."""

@@ -371,12 +371,15 @@ queries:
       grasp** -- `reach_is_checked_at_m` says where that is, the work point plus the depth the jaws seat a contact
       at, because a stand that reaches the point can still be short of the grasp by that much. `shallowest_look_
       deg_above_horizontal` is the flattest angle the wrist camera can look from; the camera rides behind the tool,
-      so looking at all means standing off. The angle decides what can be measured: a graspable neck with a head
-      overhanging it reads as its own width only from a level look, and from above the head hides it, so a stand
-      that allows no level look cannot serve a grasp on such a part however well it reaches. Which parts are like
-      that is in the equipment catalogue's grasp interface. Neither answer carries a margin for where the rover
-      actually lands: docking is verified to 0.06 m, so a stand whose reach or look is only just available is one
-      the rover may miss. Choosing the stand is yours: each stand carries the standoff_m to pass to
+      so looking at all means standing off. What the angle costs is how much of the contact is *seen*: a grasp is
+      recognised by the width the jaws close across, and from above whatever overhangs the contact cuts into its
+      length. It is not a precondition -- a lifting interface is built to stand proud of its own head, and the
+      catalogue says how deep that head is -- so a stand offering only a look from above is a worse stand, not an
+      unusable one, and `null` means the arm cannot look at the work from there at all. Both answers already carry
+      where the rover actually lands rather than where it aimed: docking is verified to `dock_error_m`, so reach is
+      checked at the far end of that band and the look at the near end -- the end where each is hardest to keep --
+      and `reach_is_checked_at_m` / `look_is_checked_at_m` say where. A stand offered here is one the rover can work
+      from wherever the dock puts it. Choosing the stand is yours: each stand carries the standoff_m to pass to
       dock_at_feature to park there.
     inputs:
       feature: [string, true, "site interaction point, e.g. depot_stand/slot_0"]
