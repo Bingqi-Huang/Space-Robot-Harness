@@ -4300,3 +4300,20 @@ hull, on the branch -- rather than adjusted until it looked right.
 
 Seven files carried a copy of that pose and an eighth carried it as the spawn state. That they all had to be
 found by grep is its own finding.
+
+## F90 -- three minutes at the start of every run, for one dropped response
+
+Every run stood still for the first minute of sim time. Measured from gb2's bag and events: the base first moves
+at sim 79.7 s, and between `reasoner_attached` and the first thing the agent does there are **180.1 s of wall
+clock** -- against 3 to 25 s for every LLM call after it.
+
+`QUERY_RESEND_S = 180.0`, to the tenth of a second. Humble drops the response to the first service call after
+discovery (`wait_for_service` returning is not enough), so the agent resends a read-only query when no answer
+comes. One timer set that interval, and it had been set for the slowest thing a query can legitimately do -- a
+vision-model localisation, up to a minute. So the cost of a lost response was pinned to the duration of the
+slowest answer, two quantities with nothing to do with each other.
+
+What a query does is in its own contract. The three that go out to the vision model declare `uses_model` and keep
+the long wait; everything the boundary answers from its own state is resent after 4 s.
+
+Unverified: no run has started since.
