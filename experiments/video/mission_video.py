@@ -15,25 +15,33 @@ import argparse
 import bisect
 import json
 import math
+import re
 import subprocess
 import textwrap
 from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_M = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-PANEL_W, PAD, MAP_W, OUT_W = 560, 22, 360, 1600  # OUT_W is the default; --width overrides it
+PANEL_W, PAD, MAP_W, OUT_W = 440, 24, 300, 1600  # OUT_W is the default; --width overrides it
 #: The panel and the map are fixed pixel sizes, so a wider output gives them proportionally less of the frame
 #: and the follow camera proportionally more. Record the follow camera at the width you compose at: scaling it
 #: up is the only thing here that costs picture quality, and rendering it larger costs almost nothing -- the
 #: sim ran at 0.324x real time with a 960x540 stream against 0.353x with none at all (gb1 against ga8).
-INK = (238, 240, 244)
-DIM = (168, 176, 188)
-# (the log colours its own lines; see panel())
+
+#: One accent, two verdicts, three greys. A panel that colours nine kinds of line has told the eye that nothing
+#: in particular is happening; the amber is the robot's own now, and green and red are the harness's verdict on
+#: what it did. Everything else is text.
+INK = (236, 238, 242)
+DIM = (152, 160, 174)
+FAINT = (106, 114, 128)
+AMBER = (255, 196, 90)
+GREEN = (126, 214, 150)
+RED = (236, 124, 124)
 
 
 def wrap(text: str, width: int) -> list[str]:
@@ -46,30 +54,32 @@ def wrap(text: str, width: int) -> list[str]:
 def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
     """The state of the mission after every event, and the simulation time it took effect.
 
-    One plain line per thing that happened, in the words the run itself used. What is deliberately not here: the
-    raw arguments of every call, the stage feedback of every skill, the guard's assent, and the queries the
-    boundary answers from its own state. Those are in `events.jsonl` for anyone reading the record; on a video
-    they crowd out the four things a viewer needs -- the mission, the plan, what is happening now, and what has
-    happened.
-    """
-    state = {"mission": "", "plan": [], "log": [], "now": "", "stage": "", "held": "nothing"}
-    times, states, step = [], [], 0
+    Two channels, and the split is the point. **What the robot is doing now** carries the operation and the model's
+    own reason for it -- that sentence is the whole claim of the method, so it is read where the eye already is,
+    under the operation, and not as one more line scrolling past. **What has happened** carries outcomes only:
+    finished, failed, verified, refused. Nothing appears in both, which is what made the old log twice as long as
+    it needed to be, every call once as a call and again as a result.
 
-    def note(text: str, kind: str = "plain") -> None:
-        state["log"] = state["log"][-40:] + [{"t": e["sim_t"], "text": str(text), "kind": kind}]
+    Deliberately absent: the raw arguments of every call, the stage feedback of every skill, the guard's assent,
+    and the queries the boundary answers from its own state. Those are in `events.jsonl` for anyone reading the
+    record; on a video they crowd out the four things a viewer needs.
+    """
+    state = {"mission": "", "plan": [], "log": [], "now": "", "why": "", "stage": "", "held": "nothing"}
+    times, states = [], []
+
+    def note(text: str, kind: str = "plain", detail: str = "") -> None:
+        state["log"] = state["log"][-8:] + [{"t": e["sim_t"], "text": str(text), "kind": kind, "detail": detail}]
 
     for e in events:
         k = e["kind"]
         if k == "mission_received":
             state["mission"] = e["text"]
         elif k == "tool_proposed":
-            step += 1
-            state.update(now=f"{e['tool']}", stage="")
-            note(f"{e['tool']} — {textwrap.shorten(e.get('rationale') or 'no reason given', 90)}", "call")
+            state.update(now=str(e["tool"]), why=str(e.get("rationale") or ""), stage="")
         elif k == "reasoner_step_failed":
-            note("the model's answer was not a usable call; fed back to it", "bad")
+            note("the model's answer was not a usable call", "bad")
         elif k == "guard_decision" and e.get("outcome") != "allow":
-            note(f"refused: {e.get('reason', '')}", "bad")
+            note(f"refused — {e.get('reason', '')}", "bad")
         elif k == "execution_feedback":
             phase = e.get("phase") or ""
             if phase not in ("dispatched", "executing"):
@@ -79,26 +89,20 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
             if e.get("success"):
                 note(f"{e.get('capability')} finished", "good")
             else:
-                note(f"{e.get('capability')} failed — {textwrap.shorten(e.get('failure_reason', ''), 120)}", "bad")
+                # the whole reason is the failure's own sentence, which is the one thing a viewer wants when
+                # something goes wrong; the error class and the skill's package name in front of it are not
+                why = str(e.get("failure_reason", ""))
+                m = re.search(r"failed at stage (\w+): (.*)", why, re.S)
+                note(f"{e.get('capability')} failed", "bad", f"{m[1]} — {m[2]}" if m else why)
         elif k == "effect_verified":
             holds = e.get("holds")
-            note(f"{e['effect']}: {'verified' if holds else 'NOT verified'}", "good" if holds else "bad")
+            note(f"{e['effect']} {'verified' if holds else 'not verified'}", "good" if holds else "bad")
             if e["effect"] in ("item_held", "item_still_held"):
                 state["held"] = (e.get("target") or "the item") if holds else "nothing"
             if e["effect"] == "item_placed" and holds:
                 state["held"] = "nothing"
-        elif k == "query_answered":
-            v = e.get("value") or {}
-            if e.get("query") == "observe":
-                note(f"camera: {textwrap.shorten(v.get('answer', ''), 110)}", "look")
-            elif e.get("query") == "held_item":
-                o = v.get("observed") or {}
-                note(f"camera on the jaws: {textwrap.shorten(o.get('what') or 'nothing', 70)}", "look")
-            else:
-                continue
         elif k == "ledger_changed":
-            mark = {"done": "done", "abandoned": "left", "active": "now", "verifying": "check"}
-            state["plan"] = [(mark.get(t["status"], ""), t["text"]) for t in e["ledger"]["tasks"]]
+            state["plan"] = [(t["status"], t["text"]) for t in e["ledger"]["tasks"]]
         elif k in ("operator_report", "operator_request"):
             note("reported to mission control", "good")
         else:
@@ -114,31 +118,52 @@ PLACES = {"depot_stand/slot_0": "depot", "pdu_1_shelf/shelf": "PDU-1 shelf"}
 class Map:
     """A plan view of the site: surveyed structures, the rover's path, where it is now, and the carried item."""
 
-    def __init__(self, structures: Path, size: int, track: list[dict], points: dict | None = None):
+    def __init__(self, structures: Path, size: int, track: list[dict], points: dict | None = None, font=None):
         self.size = size
         self.boxes = json.loads(structures.read_text())["structures"]
-        xs = [b["center"][0] for b in self.boxes] + [t["robot"][0] for t in track]
-        ys = [b["center"][1] for b in self.boxes] + [t["robot"][1] for t in track]
-        pad = 6.0
+        # Fit the map to what the mission uses -- everywhere the rover goes and everywhere it works -- rather than
+        # to every surveyed structure on the site. Drawn to the whole site the route was a thumbnail in one corner.
+        xs = [t["robot"][0] for t in track] + [p["xyz"][0] for p in (points or {}).values()]
+        ys = [t["robot"][1] for t in track] + [p["xyz"][1] for p in (points or {}).values()]
+        pad = 8.0  # enough of the base around the route to place it, without shrinking the route to a thumbnail
         self.lo = np.array([min(xs) - pad, min(ys) - pad])
         self.hi = np.array([max(xs) + pad, max(ys) + pad])
-        self.scale = size / max(self.hi - self.lo)
+        span = float(max(self.hi - self.lo))
+        self.lo -= (span - (self.hi - self.lo)) / 2  # square, so a metre is a metre in both directions
+        self.hi = self.lo + span
         self.base = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(self.base)
-        d.rounded_rectangle([0, 0, size - 1, size - 1], radius=12, fill=(14, 17, 22, 168))
+        d.rounded_rectangle([0, 0, size - 1, size - 1], radius=16, fill=(13, 15, 19, 224),
+                            outline=(255, 255, 255, 30), width=1)
         for b in self.boxes:
             c, (sx, sy), yaw = np.array(b["center"]), b["size_xy"], b["yaw"]
             r = np.array([[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]])
             pts = [tuple(self.px(c + r @ np.array([dx * sx / 2, dy * sy / 2]))) for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
-            tall = min(255, 90 + int(b.get("z1", 1.0) * 60))
-            d.polygon(pts, fill=(tall // 3, tall // 3, tall // 2, 230), outline=(120, 130, 150, 255))
-        for key, label in (points or {}).items():
-            q = self.px(np.array(points[key]["xyz"][:2]))
-            d.ellipse([q[0] - 3, q[1] - 3, q[0] + 3, q[1] + 3], fill=(120, 190, 255, 255))
-            d.text((q[0] + 6, q[1] - 7), points[key].get("label", key), fill=(190, 210, 235, 255))
-        d.ellipse([self.px([0, 0])[0] - 4, self.px([0, 0])[1] - 4, self.px([0, 0])[0] + 4, self.px([0, 0])[1] + 4],
-                  outline=(255, 214, 102, 255), width=2)
-        d.text((self.px([0, 0])[0] + 7, self.px([0, 0])[1] - 7), "dock", fill=(255, 214, 102, 255))
+            tall = min(120, 46 + int(b.get("z1", 1.0) * 26))  # taller structures read lighter
+            d.polygon(pts, fill=(tall, tall + 4, tall + 12, 255), outline=(150, 160, 176, 200))
+        def marked(q, label, colour):
+            """A surveyed place: a ring, and its name on a plate of its own so it reads over a structure or the
+            route rather than through them."""
+            d.ellipse([q[0] - 4, q[1] - 4, q[0] + 4, q[1] + 4], outline=(*colour, 255), width=2)
+            wide = font.getlength(label) if font else 6 * len(label)
+            x = q[0] + 10 if q[0] + 12 + wide < size - 10 else q[0] - 10 - wide  # one that would run off goes left
+            y = q[1] - 8
+            d.rounded_rectangle([x - 4, y - 2, x + wide + 4, y + 14], radius=4, fill=(13, 15, 19, 210))
+            d.text((x, y), label, font=font, fill=(*colour, 255))
+
+        for key, p in (points or {}).items():
+            marked(self.px(np.array(p["xyz"][:2])), p.get("label", key), (150, 200, 250))
+        marked(self.px([0, 0]), "dock", AMBER)
+        d.text((16, 14), " ".join("SITE"), font=font, fill=FAINT)
+        metres = next(m for m in (20, 10, 5) if m * size / span <= size * 0.42)  # the picture carries its own scale
+        bar = int(metres * size / span)
+        d.line([(16, size - 20), (16 + bar, size - 20)], fill=(190, 198, 210, 210), width=2)
+        for x in (16, 16 + bar):
+            d.line([(x, size - 24), (x, size - 16)], fill=(190, 198, 210, 210), width=2)
+        d.text((24 + bar, size - 27), f"{metres} m", font=font, fill=(190, 198, 210, 210))
+        #: the structures are drawn to their own corners, so the card's are cut back to shape when it is composed
+        self.mask = Image.new("L", (size, size), 0)
+        ImageDraw.Draw(self.mask).rounded_rectangle([0, 0, size - 1, size - 1], radius=16, fill=255)
         self.track = track
         self.t = [s["t"] for s in track]
 
@@ -150,88 +175,120 @@ class Map:
         img = self.base.copy()
         d = ImageDraw.Draw(img)
         i = min(bisect.bisect_left(self.t, sim_t), len(self.track) - 1)
-        path = [tuple(self.px(s["robot"][:2])) for s in self.track[max(0, i - 3000):i + 1]]
+        path = [tuple(self.px(s["robot"][:2])) for s in self.track[:i + 1]]
         if len(path) > 1:
-            d.line(path, fill=(90, 160, 240, 200), width=2)
+            d.line(path, fill=(110, 170, 245, 230), width=2)
         s = self.track[i]
         p, yaw = self.px(s["robot"][:2]), s["robot"][2]
-        nose = np.array([math.cos(yaw), math.sin(yaw)]) * 14
-        side = np.array([-nose[1], nose[0]]) * 0.55
+        nose = np.array([math.cos(yaw), math.sin(yaw)]) * 12
+        side = np.array([-nose[1], nose[0]]) * 0.6
         d.polygon([tuple(p + np.array([nose[0], -nose[1]])), tuple(p - np.array([nose[0], -nose[1]]) + np.array([side[0], -side[1]])),
-                   tuple(p - np.array([nose[0], -nose[1]]) - np.array([side[0], -side[1]]))], fill=(255, 214, 102, 255))
+                   tuple(p - np.array([nose[0], -nose[1]]) - np.array([side[0], -side[1]]))], fill=(*AMBER, 255))
         if s.get("item"):
             q = self.px(s["item"][:2])
             held = float(np.linalg.norm(np.array(s["item"][:2]) - np.array(s["robot"][:2]))) < 1.2  # riding with the rover
-            d.ellipse([q[0] - 5, q[1] - 5, q[0] + 5, q[1] + 5], fill=(120, 230, 140, 255) if held else (240, 120, 120, 255))
+            d.ellipse([q[0] - 4, q[1] - 4, q[0] + 4, q[1] + 4], fill=(*GREEN, 255) if held else (*RED, 255))
+        img.putalpha(ImageChops.multiply(img.getchannel("A"), self.mask))
         return img
 
 
-def devices(track: list[dict], stamps: list[float], sim_t: float) -> list[str]:
-    """The robot's own state around this moment: where it is, how fast, what the jaws read."""
+def moving(track: list[dict], stamps: list[float], sim_t: float) -> str:
+    """One line of the robot's own state: how fast it is going and what the jaws are doing. Where it is, the plan
+    view says better than six decimals can."""
     if not track:
-        return []
+        return ""
     i = min(bisect.bisect_left(stamps, sim_t), len(track) - 1)
     s = track[i]
     j = max(i - 5, 0)
     dt = max(s["t"] - track[j]["t"], 1e-3)
     speed = float(np.linalg.norm(np.array(s["robot"][:2]) - np.array(track[j]["robot"][:2])) / dt)
     jaw = s.get("jaw")
-    grip = "" if jaw is None else ("open" if jaw > 0.6 else "closed, empty" if jaw < 0.13 else "closed on something")
-    return [f"base    x {s['robot'][0]:6.2f}  y {s['robot'][1]:6.2f}  yaw {math.degrees(s['robot'][2]):6.1f} deg",
-            f"drive   {speed:4.2f} m/s",
-            f"gripper {jaw:5.3f} rad  {grip}" if jaw is not None else "gripper  -"]
+    grip = "" if jaw is None else ("jaws open" if jaw > 0.6 else "jaws empty" if jaw < 0.13 else "jaws holding")
+    return "  ·  ".join(x for x in (f"{speed:.2f} m/s" if speed > 0.01 else "stopped", grip) if x)
 
 
-def panel(state: dict, sim_t: float, title: str, height: int, fonts, dev: list[str] | None = None) -> Image.Image:
-    """Four things: the mission, the plan, what is happening now, and what has happened."""
-    f, fb, fm = fonts
-    img = Image.new("RGBA", (PANEL_W, height), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, PANEL_W - 1, height - 1], radius=14, fill=(22, 25, 31, 178), outline=(120, 130, 150, 110))
-    y = 16
+#: how a task in the agent's own ledger is drawn: a glyph and whether it is the line being worked on
+LEDGER = {"done": ("✓", False), "active": ("▸", True), "verifying": ("▸", True), "abandoned": ("✕", False)}
 
-    def line(text, font=f, fill=INK, dx=0, gap=5):
-        nonlocal y
-        d.text((16 + dx, y), text, font=font, fill=fill)
-        y += font.size + gap
 
-    line(title, fb, (255, 255, 255), gap=4)
-    line(f"{sim_t:.0f} s", fm, (255, 214, 102), gap=14)
+def elide(text: str, font, width: int) -> str:
+    """One line, cut at the last word that fits rather than at a character count -- the panel knows its own width
+    and the font knows its own metrics, so nothing needs a guess at how many characters fit."""
+    text = " ".join(str(text).split())
+    if font.getlength(text) <= width:
+        return text
+    out = ""
+    for word in text.split(" "):
+        if font.getlength(f"{out} {word}…".strip()) > width:
+            break
+        out = f"{out} {word}".strip()
+    return (out + "…") if out else text[:1] + "…"
 
-    line("MISSION", fb, DIM)
-    for t in wrap(state["mission"], 62)[:3]:
-        line(t)
-    y += 12
+
+def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") -> Image.Image:
+    """Four things, in the order a viewer needs them: what the robot is doing and why, where that sits in its own
+    plan, what the harness has just ruled on, and -- once, quietly at the top -- the mission it was given.
+
+    The card is as tall as what it has to say. The full-height slab this replaced held forty log lines at one
+    size in five colours, wrapped and cut with `[...]` mid-sentence, and the one thing a viewer actually needs --
+    the operation running right now -- was a small green line in the middle of it.
+    """
+    small, body, head, mono = fonts
+    inner = PANEL_W - 2 * 18
+    rows: list[tuple] = []  # (font, colour, text, indent, gap after, an optional (text, font, colour) at the margin)
+
+    def row(font, colour, text, dx=0, gap=6, lead=None):
+        rows.append((font, colour, text, dx, gap, lead))
+
+    def caption(text):
+        row(small, FAINT, " ".join(text.upper()), gap=8)  # letter-spaced: a label, read as a label, not as a line
+
+    row(small, FAINT, elide(title, small, inner), gap=6)
+    row(mono, AMBER, f"{sim_t:.0f} s" + (f"   {moving_now}" if moving_now else ""), gap=20)
+
+    caption("mission")
+    said = wrap(state["mission"], 56)
+    for i, t in enumerate(said[:2]):
+        row(body, DIM, t + ("…" if i == 1 and len(said) > 2 else ""), gap=4)
+    rows[-1] = (*rows[-1][:4], 22, None)
 
     if state["plan"]:
-        line("PLAN", fb, DIM)
-        for mark, text in state["plan"][:6]:
-            here = mark == "now"
-            line(f"{mark:5s} {textwrap.shorten(text, 56)}", fm, INK if here else DIM)
-        y += 12
+        caption("plan")
+        for status, text in state["plan"][:6]:
+            glyph, here = LEDGER.get(status, ("·", False))
+            row(body, INK if here else FAINT, f"{glyph}  {elide(text, body, inner - 22)}", gap=7)
+        rows[-1] = (*rows[-1][:4], 22, None)
 
-    line("NOW", fb, DIM)
-    doing = state["now"] or "thinking"
-    if state["stage"]:
-        doing += f"  ·  {state['stage']}"
-    line(doing, fb, (150, 230, 170))
-    line(f"holding {textwrap.shorten(state['held'], 52)}", fm, DIM)
-    for t in (dev or [])[:1]:
-        line(t, fm, DIM)
-    y += 12
+    caption("now")
+    # the agent's own bookkeeping calls are named for the tool table they live in; on a video that prefix is noise
+    row(head, AMBER, (state["now"] or "thinking").split("/")[-1], gap=4)
+    under = "  ·  ".join(x for x in (state["stage"], f"holding {state['held']}") if x)
+    row(body, DIM, elide(under, body, inner), gap=6)
+    if state["why"]:
+        said = wrap(state["why"], 58)
+        for i, t in enumerate(said[:2]):
+            row(small, FAINT, t + ("…" if i == 1 and len(said) > 2 else ""), gap=3)
+    rows[-1] = (*rows[-1][:4], 22, None)
 
-    line("WHAT HAPPENED", fb, DIM)
-    top = y
-    colours = {"good": (150, 230, 170), "bad": (240, 140, 140), "call": (128, 196, 255),
-               "look": (196, 160, 255), "plain": INK}
-    rows = []
-    for m in state["log"]:
-        body = wrap(m["text"], 52)
-        rows.append((colours[m["kind"]], f"{m['t']:6.0f}  {body[0]}"))
-        rows += [(DIM, "        " + t) for t in body[1:2]]
-    room = max(1, (height - top - 16) // (f.size + 5))
-    for colour, text in rows[-room:]:
-        line(text, f, colour, gap=5)
+    caption("what happened")
+    for m in state["log"][-4:]:
+        colour = {"good": GREEN, "bad": RED}.get(m["kind"], INK)
+        row(body, colour, elide(m["text"], body, inner - 46), dx=46, gap=7 if not m.get("detail") else 3,
+            lead=(f"{m['t']:5.0f}", mono, FAINT))
+        if m.get("detail"):
+            row(small, FAINT, elide(m["detail"], small, inner - 46), dx=46, gap=7)
+
+    height = 18 + sum(font.size + gap for font, _, _, _, gap, _ in rows) + 12
+    img = Image.new("RGBA", (PANEL_W, height), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([0, 0, PANEL_W - 1, height - 1], radius=16, fill=(15, 17, 22, 194),
+                        outline=(255, 255, 255, 30), width=1)
+    y = 18
+    for font, colour, text, dx, gap, lead in rows:
+        if lead is not None:
+            d.text((18, y + font.size - lead[1].size), lead[0], font=lead[1], fill=lead[2])
+        d.text((18 + dx, y), text, font=font, fill=colour)
+        y += font.size + gap
     return img
 
 def main() -> None:
@@ -272,8 +329,10 @@ def main() -> None:
         places = {k: ix[k] for k, _ in PLACES.items() if k in ix}
         places = {k: {**v, "label": PLACES[k]} for k, v in places.items()}
     track_t = [s["t"] for s in track]
-    site = Map(a.structures, MAP_W, track, {k: v for k, v in places.items()}) if track and a.structures.exists() else None
-    fonts = (ImageFont.truetype(FONT, 15), ImageFont.truetype(FONT_B, 16), ImageFont.truetype(FONT_M, 14))
+    # one scale: a caption, a line of text, the thing happening now, and the clock
+    fonts = (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 15), ImageFont.truetype(FONT_B, 27),
+             ImageFont.truetype(FONT_M, 14))
+    site = Map(a.structures, MAP_W, track, places, font=fonts[0]) if track and a.structures.exists() else None
 
     scale = a.width / w
     out_w, out_h = a.width, int(round(h * scale / 2) * 2)
@@ -290,15 +349,9 @@ def main() -> None:
         canvas = Image.fromarray(cv2.cvtColor(cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_CUBIC),
                                               cv2.COLOR_BGR2RGB)).convert("RGBA")
         j = max(bisect.bisect_right(stamps, sim_t) - 1, 0)
-        canvas.alpha_composite(panel(states[j], sim_t, a.title, out_h - 2 * PAD, fonts,
-                                     devices(track, track_t, sim_t)), (PAD, PAD))
+        canvas.alpha_composite(panel(states[j], sim_t, a.title, fonts, moving(track, track_t, sim_t)), (PAD, PAD))
         if site is not None:
-            m = site.frame(sim_t)
-            canvas.alpha_composite(m, (out_w - MAP_W - PAD, out_h - MAP_W - PAD))
-            d = ImageDraw.Draw(canvas)
-            d.rounded_rectangle([out_w - MAP_W - PAD, out_h - MAP_W - PAD, out_w - PAD, out_h - PAD], radius=12,
-                                outline=(120, 130, 150, 160))
-            d.text((out_w - MAP_W - PAD + 12, out_h - MAP_W - PAD + 10), "site plan view", font=fonts[1], fill=(235, 238, 244))
+            canvas.alpha_composite(site.frame(sim_t), (out_w - MAP_W - PAD, out_h - MAP_W - PAD))
         writer.write(cv2.cvtColor(np.array(canvas.convert("RGB")), cv2.COLOR_RGB2BGR))
         written += 1
     cap.release()
