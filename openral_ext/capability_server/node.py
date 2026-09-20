@@ -120,15 +120,6 @@ CARRY_SWING_RAD = math.radians(10.0)  # the largest swing the jaw was never dist
 def carry_budget(gravity_m_s2: float) -> float:
     """The acceleration a load hanging from the jaws may be given, on the body the robot is standing on."""
     return gravity_m_s2 * math.tan(CARRY_SWING_RAD / 2)
-#: A turn is the one move that spends the budget continuously, and `CARRY_SWING_RAD` is a *transient* tolerance --
-#: the largest swing the jaw rode out, measured with the base standing still. Held for seconds it is not ridden
-#: out: the load slips round the neck instead, and the slip does not come back. In ga4 the same grasp carried the
-#: ORU through 185 and 173 deg of heading and held (median yaw rate 0.02 and 0.03 rad/s, brief peaks at 0.35), then
-#: lost it in 9 s of turning at a median of 0.29 -- 23 deg of twist about the neck, jaws pried 0.188 -> 0.232, ORU
-#: on the ground (F83). The two populations separate at 0.15 rad/s: the drives that held spent 8% and 11% of their
-#: samples above it, the one that slipped spent 64%. This is that separation, not a derivation; what sets it is the
-#: friction a flat 12 x 30 mm neck offers against twist, and that is still owed a model.
-CARRY_SUSTAINED_YAW_RAD_S = 0.15
 CARRY_MAX_SPEED = [0.25, 0.0, 1.0]
 FREE_MAX_VELOCITY = [0.5, 0.0, 2.0]
 FREE_MAX_ACCEL = [2.5, 0.0, 3.2]
@@ -443,9 +434,10 @@ class CapabilityServer(Node):
             # A sustained turn is not a step: it holds w^2 * r on the load for as long as it lasts, and 1 rad/s on
             # the 0.787 m lever g9x carried at is 0.79 m/s^2, a 26 deg lean all by itself -- past the angle the bag
             # says this grasp starts opening at. The turn rate comes out of the same budget as the accelerations,
-            # and out of the *half* of it the turn gets, not the whole -- the line above says each gets half and
-            # this did not. Then it is held down to what a grasp survives while the load slips rather than swings.
-            wz = round(min(math.sqrt(linear / lever), CARRY_SUSTAINED_YAW_RAD_S), 2)
+            # and out of the *half* of it the turn gets, not the whole. What a turn does beyond leaning the load --
+            # slipping it round the neck, which is what lost ga4 -- is now stopped by the handle's own collar
+            # rather than by a speed limit read off one failure (F83, F84).
+            wz = round(math.sqrt(linear / lever), 2)
             want = {"max_velocity": [CARRY_MAX_SPEED[0], 0.0, wz], "max_accel": [linear, 0.0, az],
                     "max_decel": [-linear, 0.0, -az], "lever_m": round(lever, 3),
                     "gravity_m_s2": round(self.space_context()["gravity_m_s2"], 4)}
