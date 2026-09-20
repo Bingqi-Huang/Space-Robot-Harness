@@ -3794,3 +3794,100 @@ g8s and g8t struck the back strip (far edge 4.64–4.66 m vs strip 4.627 m). Use
 (the committed ones were skewed min-area rectangles). place's over tolerance 1.0 cm → 3 cm / 0.08 rad (a third of
 the clearance). The evaluator's window (±12 / ±18 cm, 15 deg) already exceeds what the new shelf allows; unchanged.
 Needs a fresh graph (the running Isaac holds the old shelf).
+
+## F79 — The IK acceptance rule: on the working branch, or next to the seed (2026-09-20, development)
+
+**g9m (runtime started 10:33:40, openral b6798bc).** pick reached `held`: the VLM chose the 12.4 mm neck over the
+27 mm pedestal, close-in stalled 1.3 cm out inside every direction's budget, jaw 0.1695, lift 0.1502 m, flow 0.5 px
+against 409.9 px expected, `item_held` verified. **bring_in then moved nothing.** Its own record: `in_by_m 0.25`,
+`raised_by_m 0.02`, and the servo refused at 25.5 cm / 16 deg — the whole distance. The height ladder is the reason:
+`raise 0.00` not clear, `raise 0.02` clear, and **0.04 through 0.20 all `reachable: false`**. The single clear height
+had millimetres of margin; `last_state_validity` shows `held_item` against `site/depot_stand` at 2.7 mm, and the
+held joints sat 0.03–0.07 rad below their commands (the load sagging), so the pull-in's first step was already
+invalid. The evaluator kept reading `oru_on: depot_stand/slot_0` while the model drove off to PDU-1. dde1be6, which
+removes the window that caused those `reachable: false`, was committed at 10:35:30 — 110 s after that runtime
+started. g9m ran code the fix was not in, so it re-ran a known failure rather than testing anything.
+
+**g9n (fresh graph, openral dde1be6).** pick failed at `find`: "the arm cannot take an overview of the work zone
+from where the rover stands (4 postures tried)". `last_ik` says `error_code 1` — MoveIt **did** solve it — refused
+by `branch_jump_rad 1.868 > 1.2`. The model's response was sound (it repositioned the base), but no base pose helps.
+
+**Cause.** dde1be6 replaced the working-branch window with a distance from the seed. Every `ik()` call seeded at
+`READY` is a deliberate reconfiguration — `find`'s overview, `rolled_view`, the working views — and the wrist joints
+carry that change: joint6/joint7 are deliberately absent from `POSTURE` because the tool rotation asked for
+determines them. So the reconfigurations solve *on the working branch* and still land 1.6–2.6 rad from the seed.
+The window alone was equally wrong the other way: it refused poses the arm was already in and made every bring_in
+height unreachable (g9l, b6798bc widened it, dde1be6 removed it). The two criteria each cover one case.
+
+**Rule (fbb33c9).** A solution is this arm's own configuration when it is on the working branch **or** within
+`BRANCH_JUMP_RAD` of the seed; it is refused only when it is neither. Reach, collision and the servo decide the rest.
+`move_to` now reports which of the two happened, because that is what tells the caller whether to move at all.
+
+**Measured offline against the live MoveIt before any run** (`/compute_ik`, `/compute_fk`, read-only):
+
+| case | on branch | jump (rad) | verdict |
+|---|---|---|---|
+| overview dz 0, dpitch 0 | yes | 2.57 | accept |
+| overview dz −0.08, dpitch −10 | no (joint1, joint4) | 4.99 | refuse — the wrist wraps a full turn |
+| overview dz −0.16, dpitch −20 | yes | 1.57 | accept |
+| overview dz 0, dpitch −20 | yes | 1.87 | accept |
+| bring_in raise 0.00 / 0.02 / 0.04 | yes | 0.00 / 0.10 / 0.23 | accept |
+| bring_in raise 0.06 / 0.08 | no (joint4) | 0.39 / 0.65 | accept — next to the seed |
+| bring_in raise 0.10 and above | — | — | IK error −31: a real reach limit, not the rule |
+| mirrored branch (F57) | no (joint1–5) | 2.90 | refuse |
+
+`find` takes the first posture it can also plan to, so one accepted overview is enough. bring_in's usable heights go
+from **0.02 alone** to **0.02/0.04/0.06/0.08**, and the pull-in walks 0.15 m at raise 0.08 before the next step is a
+different configuration. The 1.2 rad threshold now sits in a measured gap: accepted off-branch solutions jump at
+most 0.65, refused ones at least 2.90. That is the first of the three numbers the plan owes a measured source.
+
+**Method note.** g9m and g9n both cost a full graph and a pick to learn something a read-only query of the live
+MoveIt answered in seconds. The IK rule is a pure function of a solution, a seed and `POSTURE`: it belongs in an
+offline bench (`/compute_ik` on the held graph) before a runtime restart, not in a mission run.
+
+**g9o (same graph, same snapshot, openral fbb33c9 — the rule is the only variable against g9n).** `find` took its
+overview and selected candidate 3, the 12.4 mm neck, from three views; g9n's `attempt_01/` had not one image in it.
+bring_in's ladder inverted: `0.00` and **`0.02` both not clear**, `0.04/0.06/0.08/0.10` reachable *and* clear, `0.12`
+and above a real IK limit. It raised 0.04 and stalled 10.9 cm from a 0.25 m goal — about **14 cm of travel, against
+g9m's zero**. pick `held`, lift 0.154 m, flow 0.5 px against 499.5 expected, `item_held` verified.
+
+**The carry still lost the ORU.** During `navigate_to_feature(pdu_1_shelf/shelf)` the jaw went 0.169 → **0.100**
+(closed on nothing) and the evaluator returned `oru_on: depot_stand/slot_0`. That reading is decisive rather than
+noisy: `on_support` requires `free = |handle - tcp| > NOT_HELD_M`, so naming a support *means* the item is out of the
+gripper. 14 cm of retraction did not take the ORU off the stand's support; driving away stripped it from the jaws.
+
+**The harness caught it without being told.** `navigate_to_feature`'s `item_still_held` verified **false** on jaw
+encoder plus wrist image — the skill had reported success — and the model went straight to a front-camera `observe`
+looking for the box on the ground. Independent effect verification and model-owned recovery, both working, on a
+failure nothing had anticipated.
+
+**Open, and not to be guessed at.** Whether the ORU ever left the support, and at which instant it came down, is one
+measurement on the closed bag (`/tf` evaluator poses plus `/srb/env0/mission_state`): the ORU's base height over the
+stand across grasp → hold lift → bring_in → the first metres of the drive. Insufficient raise (the IK ceiling at
+0.10), sag after `hold_here`, and the drive's own acceleration call for different fixes; the trace separates them.
+
+**The carry, measured from the evaluator TF of a successful and a failed bag (g8s, g9m).** The question the code
+could not answer — why two runs carried the ORU and none since — is answered by one quantity: how far the item had
+been moved toward the rover, relative to the stand's near edge, at the moment it sagged. Stand box (live planning
+scene) 0.616 deep x 1.300 x 0.610; slot 0 at (5.82, -14.39, 0.55), so the edge the rover faces is y = -14.192 and
+the slot's inset is 0.198 m — with the 0.392 m deep ORU centred there, its near face is 2 mm from that edge.
+
+| | peak over the slot | travel toward the rover | at its lowest | outcome |
+|---|---|---|---|---|
+| g8s (before the envelope) | 0.102 m | **0.228 m — past the edge** | 0.021 m over slot level, 0.070 m *outside* the stand | held, carried ✓ |
+| g9m (with the envelope) | 0.141 m | **0.105 m — still over the stand** | back on the slot surface | released ✗ |
+
+**Both runs sag, by 8–14 cm within seconds of the lift; sag is not the fault.** What decides the outcome is where
+the item is when it sags: past the stand's edge it keeps hanging in the jaws, over the stand it lands and is let go.
+g9m's ORU was on the slot **before the rover moved at all** — the drive did not tear it out, it left it behind.
+
+**Why the travel collapsed.** `carry_item` models the payload as an upright square prism swept over every yaw:
+`side = hypot(0.45, 0.392) = 0.597`, half 0.298 against the real half depth of 0.196. The evaluator TF refutes the
+sweep: across both runs the ORU's tilt stays 0.5–10 deg and its yaw within a few degrees of where it started — it
+does not turn in the jaws. The phantom 0.102 m per side is exactly the travel that disappeared (0.228 → 0.105).
+
+**The budget, and what closes it.** Travel needed is the item's own half depth plus a margin, `0.196s + 0.03`;
+travel available is the arm's limit minus the envelope's excess, `0.228 - 0.102s` (the arm stops at joint4's limit,
+g8s/g8t both at -2.24/-2.33 rad of ±2.356). They meet at **s ≤ 0.664, i.e. `target: {longest: 0.30}`**; at 0.25 m
+the margin is 3.2 cm. Removing the unjustified yaw sweep instead makes the budget close at full size. The two are
+independent and both are one small change; neither is a tuned constant.

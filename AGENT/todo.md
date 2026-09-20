@@ -2,59 +2,53 @@
 
 Order: `execution_plan` §21 — the proposed method before the external baselines.
 Goal of this phase: Ours completes Mission A/B covered and the held-out situations, then a 1x-sim-time video.
-**Sequence in force (user): finish Mission B → `press` live → Mission A.** Two sessions work in parallel; the split
-and file ownership are in `handoff.md` ("Two sessions"). Only Session M runs a simulation.
+**Sequence in force (user): finish Mission B → `press` live → Mission A.** One simulation at a time.
 
-## Session M — Mission B manipulation (live sim)
+## Now — Mission B carry (live sim, graph g9n / run g9o)
 
-- [x] g8q close-in stall → no sag integral / posture pull in empty-jaw close-in (openral f925430).
-- [x] Fragile vetoes → evidence (zero-triangle permission, insertion free-rays); selected mark width/range in context.
-- [x] Carry root cause (ORU on the rear deck) → catalogue envelope in every validity check; bring_in may raise.
-- [x] Place root cause (sweep at carry height, 2.4 cm shelf clearance) → envelope over support, 3 cm over tolerance,
-      shelf 0.60 x 0.72 m (SRB 6839574).
-- [ ] g8v result on the old graph: does the model recover pick failures and reach PDU-1 holding?
-- [ ] Teardown g8m_contact → fresh graph (new shelf) → pick → carry → place with `item`; check no deck contact,
-      over reached, item_placed, evaluator delivered.
-- [ ] Repeat pick+carry from one snapshot without STOP_ON_FAILURE; count mission-level success and recoveries.
-- [ ] If the VLM keeps choosing the pedestal: decide with the user between a catalogue width filter inside pick
-      (source the tolerance) and leaving it to model recovery.
-- [ ] Servo command wind-up at a joint stop (release command to measured when stalled).
-- [ ] Stow + return dock (never reached), then full Mission B covered from the initial state.
+- [x] Selection by the declared contact width; closure by three direction budgets; lift; place shelf and tolerance;
+      fragile checks as evidence; the carried item in every collision check.
+- [x] IK acceptance rule: on the working branch **or** next to the seed (openral fbb33c9), measured offline first.
+- [x] `find` and bring_in unblocked: heights 0.04–0.10 usable, ~14 cm of retraction (g9m had 0.02 alone and 0 cm).
+- [ ] **The carry still loses the ORU** (g9o: jaw 0.169 → 0.100 on the drive, `oru_on` back to `depot_stand/slot_0`).
+      Answer it with one pass over the closed g9o bag before changing anything: evaluator `/tf` object poses plus
+      `/srb/env0/mission_state`, the ORU's base height over the stand across grasp → hold lift → bring_in → the
+      first metres of the drive. It separates insufficient raise (IK ceiling 0.10) from sag after `hold_here` from
+      drive acceleration; those need different fixes.
+- [ ] Watch how far the model's own recovery gets in g9o (it found the empty jaw, then observed for the box). Its
+      recovery is H1 evidence whether or not it succeeds — record it, do not steer it.
+- [ ] Then place with the new shelf (never reached), stow, return dock, and full Mission B covered from the start.
 - [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.
 - [ ] Then `press` live (never pressed a button), then Mission A's ready/stand deadlock (F62 §3).
 
-## Parallel track — Session P (offline only; no sim, no Session M files)
+## Numbers still owed a measured source
 
-Pick in this order; each gets its own worktree branch, a findings section and a note in `handoff.md`.
+- [x] IK branch jump 1.2 rad — measured: accepted off-branch solutions jump ≤ 0.65, refused ones ≥ 2.90 (F79).
+- [ ] bring_in sag margin 5 cm (`held_drop_m`) — from the bag, the actual sag of a held item after `hold_here`.
+- [ ] Posture margin 0.10 rad.
 
-1. [ ] **EUROPA baseline build** (§21 item 6, execution_plan §11.2): pin/build NASA EUROPA, run its examples, write
-       the minimal NDDL domain for Mission A/B covered, the host with online replanning, and the EUROPA→PLEXIL
-       activity bridge. Live check later through the common boundary (Session M's sim).
-2. [ ] **PLEXIL Mission B** (§21 item 5, §11.1): covered plan, reusable library nodes, predefined recovery set,
-       over the same boundary commands (`pick`/`place` now take the optional catalogue `item`).
-3. [ ] **Experiment infrastructure** (§21 item 7, §12–§14): scenario manifests, evaluator-only success annotations,
-       run-manifest writer (§19 layout), freeze tooling (tags), closed-capability validator, and scripts that
-       compute the ALFUS measures and trustworthiness counts from `events.jsonl` + `check.log` (no hand-edited CSV).
-4. [ ] **Harness gaps in `space_runtime`/boundary** (not Session M's files): an exception inside `_execute` leaves
-       `failure_reason` blank (F62 §2); `OURS_RESET=1` reads TF before seeding AMCL (seed first); the thin guard has
-       never fired — add the explicit hard invariants/approval classes the scenarios need for H3 (§4.3, §10.2).
-5. [ ] **Held-out grounding** (§21 item 1): tie each G5 held-out case to lunar-mission literature in
-       `docs/lunar_task_catalog.md`; list scene changes needed (implemented later by Session M in SRB).
-6. [ ] **Paper drafting**: Introduction, Related Work and Method (research_content §1–§4) as LaTeX for Acta
-       Astronautica, with verified citations; no results language before measurements.
+## Then
 
-## Harness gaps (either session, when a run needs them)
+- [ ] EUROPA baseline build (§21 item 6, execution_plan §11.2); PLEXIL Mission B (§21 item 5, §11.1).
+- [ ] Experiment infrastructure (§21 item 7, §12–§14): scenario manifests, evaluator-only success annotations,
+      run-manifest writer (§19 layout), freeze tooling, closed-capability validator, ALFUS/trustworthiness scripts
+      computed from `events.jsonl` + `check.log` (no hand-edited CSV).
+- [ ] Harness gaps: an exception inside `_execute` leaves `failure_reason` blank (F62 §2); `OURS_RESET=1` reads TF
+      before seeding AMCL (seed first); the thin guard has never fired — add the explicit hard invariants/approval
+      classes the scenarios need for H3 (§4.3, §10.2).
+- [ ] Held-out grounding (§21 item 1) in `docs/lunar_task_catalog.md`; paper drafting of §1–§4 as LaTeX.
+- [ ] Space-context variables only if the chosen scenarios exercise them.
+- [ ] 1x video run (`D0_VIDEO=<file.mp4>`; `experiments/video/mission_video.py` + `track_from_bag.py` are done and
+      tested on real data: follow view, harness panel, model chat with tool/skill calls, site plan).
+- [ ] Freeze, Experiment I, Ours-internal ablations (research_content §5.7), Experiment II.
+
+## Harness gaps (either way, when a run needs them)
 
 - [ ] Single-frame VLM held/identity negatives can contradict visible geometry; unknown is correct, not "empty".
 - [ ] Cache the views within one `pick` call (a pick costs 15–40 min wall; `find` alone ~10 min).
 - [ ] The scene generator's `REACH` table is superseded by the reach model; delete it with `robot.reach_m` copies.
 - [ ] `depot_stand/slot_1` (crate) has no legal stand at any reach distance.
-
-## Then
-
-- [ ] Space-context variables only if the chosen scenarios exercise them.
-- [ ] 1x video run + `experiments/video/overlay.py`.
-- [ ] Freeze, Experiment I, Ours-internal ablations (research_content §5.7), Experiment II.
+- [ ] Servo command wind-up at a joint stop (release command to measured when stalled).
 
 ## Known stack issues (fix only when a run fails on them)
 
@@ -63,6 +57,8 @@ Pick in this order; each gets its own worktree branch, a findings section and a 
 
 ## Rules
 
+- **Exercise changed logic offline against the live graph before restarting a runtime** (F79): `/compute_ik`,
+  `/compute_fk`, closed bags. g9m and g9n each cost a graph and a pick to learn what a query answered in seconds.
 - Branch or worktree per task; delete after merge (AGENT.md §1). Clean debug/pilot artifacts.
 - Overwrite-update this file and `handoff.md`; ≤150 lines each; update at every milestone.
 - No pytest beyond upstream suites; offline checks before one decisive live run.
