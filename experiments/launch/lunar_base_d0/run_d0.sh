@@ -50,7 +50,8 @@ argv = d["simulator"]["argv"]
 if video:
     argv.insert(argv.index("--env"), "--video")
     d["simulator"].setdefault("env_set", {}).update(SRB_VIDEO_PATH=video, SRB_VIDEO_FOLLOW="robot",
-                                                   SRB_VIDEO_STRIDE=os.environ.get("D0_VIDEO_STRIDE", "5"))
+                                                   SRB_VIDEO_STRIDE=os.environ.get("D0_VIDEO_STRIDE", "5"),
+                                                   SRB_VIDEO_SPEEDUP=os.environ.get("D0_VIDEO_SPEEDUP", "1"))
     d["simulator"]["boot_timeout_s"] = 1800.0
 if gpu_physics:
     d["simulator"].setdefault("env_set", {})["SRB_SIM_DEVICE"] = "cuda"
