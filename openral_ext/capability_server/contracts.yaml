@@ -350,8 +350,8 @@ queries:
       looking at all means standing off. The angle decides what can be measured: a graspable neck with a head
       overhanging it reads as its own width only from a level look, and from above the head hides it, so a stand
       that allows no level look cannot serve a grasp on such a part however well it reaches. Which parts are like
-      that is in the equipment catalogue's grasp interface. Choosing the stand is yours: dock_at_feature adds its
-      standoff_m to the nearest distance reported here.
+      that is in the equipment catalogue's grasp interface. Choosing the stand is yours: each stand carries the
+      standoff_m to pass to dock_at_feature to park there.
     inputs:
       feature: [string, true, "site interaction point, e.g. depot_stand/slot_0"]
       grasp_height_m: [number, false, "how high above the site frame the part sits; defaults to the boundary's own work height, which is the tallest catalogued handle over any support"]

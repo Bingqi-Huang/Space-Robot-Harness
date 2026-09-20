@@ -549,9 +549,11 @@ class CapabilityServer(Node):
             chosen = round(self.stand_distance(feature), 3)
         except self.NoStand:
             chosen = None
+        for row in out:  # the number to pass, not a subtraction to do: asked to work it out, the model stood
+            row["standoff_m"] = None if chosen is None else round(row["distance_m"] - chosen, 3)  # at 1.92 m
         return {"feature": feature, "work_height_m": round(z, 4), "camera_behind_tool_m": round(behind, 4),
                 "nearest_stand_m": round(base, 3) if base is not None else None,
-                "standoff_m_is_added_to": chosen,
+                "standoff_m_the_boundary_would_choose_on_its_own": chosen,
                 "stands": out,
                 "note": "a part whose head overhangs the neck the jaws close on can only be measured from a level "
                         "look; from above the head hides it"}
