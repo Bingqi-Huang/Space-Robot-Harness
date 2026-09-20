@@ -95,7 +95,21 @@ LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON 
 #: In g5m the payload rode 19 m of straight driving at 0.5 m/s^2 and came off while the rover slowed and turned to
 #: dock, where 1.0 rad/s^2 on the 0.84 m lever it was carried at was 0.84 m/s^2 -- more than the straight line it had
 #: just survived. `r` is measured from the tool each time, because how far in the arm brought the load is not fixed.
-CARRY_LINEAR = 0.5
+#:
+#: The straight-line limit is not a number to pick either, and 0.5 was one. A load on a handle hangs like a
+#: pendulum, and a base acceleration `a` leans it off vertical by atan(a/g): the same acceleration is six times
+#: the lean here that it is on Earth. 0.5 m/s^2 is 17 deg of lean on the Moon and about twice that after the step
+#: that starts it, which is what g9x measured -- the ORU reached 51 deg and came off the neck with these limits in
+#: force, after sitting through 40 s of the arm's own swinging, base stationary, at up to 16 deg. The same bag puts
+#: the onset of prying between 10.7 deg (jaw 0.170, untouched) and 16.3 deg (0.193, opening). So the swing this
+#: grasp takes is measured, the gravity is where the robot is, and the acceleration follows from the two.
+LUNAR_G_M_S2 = 1.62496  # lunar surface gravity, the domain this scene is built at (SRB Domain.MOON)
+CARRY_SWING_RAD = math.radians(10.0)  # the largest swing the jaw was never disturbed by (g9x, base stationary)
+#: Straight line and turn are not two separate allowances: g9x drove at 0.5 m/s^2 with 0.64 rad/s^2 on a 0.787 m
+#: lever, which is another 0.50 m/s^2 at the load, and 1.0 m/s^2 together leans it 32 deg and overshoots to about
+#: 51 -- the angle the bag recorded when the ORU came off. The budget is what reaches the load, so each gets half.
+CARRY_SWING_BUDGET = LUNAR_G_M_S2 * math.tan(CARRY_SWING_RAD / 2)
+CARRY_LINEAR = round(CARRY_SWING_BUDGET / 2, 3)
 CARRY_MAX_SPEED = [0.25, 0.0, 1.0]
 FREE_MAX_VELOCITY = [0.5, 0.0, 2.0]
 FREE_MAX_ACCEL = [2.5, 0.0, 3.2]
@@ -392,7 +406,11 @@ class CapabilityServer(Node):
             p = self.tcp_pose()["position"]
             lever = max(math.hypot(p[0], p[1]), 0.2)  # how far out the load is riding, measured
             az = round(CARRY_LINEAR / lever, 2)
-            want = {"max_velocity": CARRY_MAX_SPEED, "max_accel": [CARRY_LINEAR, 0.0, az],
+            # A sustained turn is not a step: it holds w^2 * r on the load for as long as it lasts, and 1 rad/s on
+            # the 0.787 m lever g9x carried at is 0.79 m/s^2, a 26 deg lean all by itself -- past the angle the bag
+            # says this grasp starts opening at. The turn rate comes out of the same budget as the accelerations.
+            wz = round(math.sqrt(CARRY_SWING_BUDGET / lever), 2)
+            want = {"max_velocity": [CARRY_MAX_SPEED[0], 0.0, wz], "max_accel": [CARRY_LINEAR, 0.0, az],
                     "max_decel": [-CARRY_LINEAR, 0.0, -az], "lever_m": round(lever, 3)}
         else:
             want = {"max_velocity": FREE_MAX_VELOCITY, "max_accel": FREE_MAX_ACCEL, "max_decel": FREE_MAX_DECEL}
