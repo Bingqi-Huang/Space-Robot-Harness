@@ -128,6 +128,10 @@ effects:
       `standoff_m` further out on that axis (to back away). Entered along the axis. The arm works off the rover's
       rear, so at this pose the rear faces the feature: the front camera looks away from it and the wrist camera can
       see the work area.
+      The distance chosen by default is chosen for reach alone: it is the roomiest stand the arm can put its
+      tool at the work from, and reaching a thing is not the same as being able to look at it squarely.
+      `work_stands` reports, per distance, how shallowly the wrist camera can look from there and the
+      `standoff_m` that parks there; ask it when what must be measured depends on the angle it is seen from.
     inputs:
       feature: [string, true, "site interaction point"]
       standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 0)"]
