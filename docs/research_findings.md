@@ -4098,3 +4098,36 @@ with the jaw at that moment). The contract states the geometry that makes them d
 puts its body below the wrist camera's frame -- and leaves which to act on to the caller. That is the pattern the
 paper argues for: the harness owns the authoritative fact and the honest observation, and the agent owns the
 judgement between them.
+
+## F83 -- the carry budget was a pendulum, and a T-handle does not resist twist
+
+ga4 carried the ORU through two long straight drives and lost it on the first turn. The third move was
+`navigate_to_pose` to a heading 180 deg from the one it held, and the boundary applied the carry limits it derives
+(`max_velocity [0.25, 0, 0.36]`, `max_accel [0.071, 0, 0.06]`, `lever_m 1.109`); the base held ~0.36 rad/s, exactly
+the allowance. The arm did not move -- joint2 stayed at -45.7 deg to a fifth of a degree through the whole event,
+so the action-ownership fix (F81) held. Something else took the load.
+
+The wrist camera shows the handle head tipping further out of square with the jaws frame by frame, and the
+transforms say by how much. The load's yaw lags the base's and the lag grows monotonically through the turn:
++99.2 deg at t=583.0 (the standing offset), +103.1 at 587.4, +107.5 at 588.7, +113.4 at 589.5, **+122.7 at 591.8**
+-- **23.5 deg of twist relative to the jaws**, accumulated over about 181 deg of heading change. The jaw angle
+tracks it: 0.188 held, 0.232 pried at the widest, then 0.164, 0.110, 0.100 and the ORU on the ground.
+
+The catalogue says why. The neck is 12 mm across the jaws and 30 mm along the approach. Turned by phi about its own
+upright axis it presents `12 cos(phi) + 30 sin(phi)` to jaws that closed on 12: at 23 deg that is **22.7 mm**,
+nearly twice the width they hold. A `neck_with_overhanging_head` takes a vertical pull by geometry and a sideways
+swing on the pads. Against twist it has only friction on a thin rectangle, and the rectangle is 2.5 times wider than
+it is thick.
+
+The derived limits could not have prevented this, because they model the load as a point pendulum:
+`a = g tan(theta/2)` bounds the lateral acceleration that leans a hanging mass, and the angular allowance was the
+same budget divided by the lever. Nothing in it is about what the *grasp* can transmit. A straight drive never
+accumulates relative twist, which is why the same grasp survived 86 s and 77 s of driving and failed inside 9 s of
+turning.
+
+Two quantities follow from the measurement, and they are different in kind. The geometry gives the twist a grasp
+tolerates: the jaws give about 2 mm before the neck walks out, so `phi_tol = asin(2/30)` is about **4 deg**. The run
+gives how much twist a heading change costs: 23.5 deg of lag for 181 deg of turn, about **13%**. Together they bound
+the heading change this grasp can take in one move at roughly **30 deg** -- which would have refused the 180 deg
+turn. The ratio is one measurement from one run and is owed a second before it is trusted as a number; the geometry
+is not.
