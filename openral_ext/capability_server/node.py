@@ -221,7 +221,18 @@ def lower(capability: str, a: dict) -> dict:
     if capability == "release":
         return {"mode": "open", "timeout_s": 8.0}
     if capability == "pick":
-        return {"target": a["target"], "part": a["part"], **held_item(a)}
+        # Where the work is, when the caller names it: the same surveyed point `place` already gets. The skill has
+        # to put its camera level with the part to measure what the jaws close on, and a pose written into its
+        # manifest cannot do that -- it assumes a parking distance that this boundary, not the skill, decides, and
+        # it would have to be rewritten for every item and every support (research F79).
+        # Where the work is: the caller's own arithmetic over the catalogue and the site, because only the caller
+        # knows which item this pick is for. The boundary's own work height is a maximum over every catalogued
+        # handle -- right for deciding where a rover can park for any of them, wrong for aiming a camera at one.
+        at = {}
+        if "support" in a:
+            at = {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"]}
+            at["work_z_m"] = float(a["grasp_height_m"]) if "grasp_height_m" in a else work_heights(a["support"])[0]
+        return {"target": a["target"], "part": a["part"], **held_item(a), **at}
     if capability == "place":
         # a named support is fixed infrastructure: its surveyed point goes to the skill, which puts it in the rover frame
         return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"], **held_item(a),
@@ -247,7 +258,7 @@ def goal_summary(p: dict) -> dict:
         return {"frame": p["frame_id"], "position": [round(v, 4) for v in p["position"]]}
     if "joint_targets" in p:
         return {"joint_targets": p["joint_targets"]}
-    return {k: v for k, v in p.items() if k in ("mode", "target", "part", "support", "held_item")}
+    return {k: v for k, v in p.items() if k in ("mode", "target", "part", "support", "held_item", "work_z_m")}
 
 
 class CapabilityServer(Node):

@@ -222,7 +222,11 @@ effects:
       Pick up a stationary item described in words, holding it by the part you name, with the arm and the wrist RGB-D camera,
       and lift it clear of where it stood. The arm needs no preparation: the skill takes its own views and plans its
       own way there from wherever the arm is. The item must be within the arm's reach behind the rover (dock at the
-      item's work pose first). The skill looks over the work area, finds possible grasps in the image, has the
+      item's work pose first). Say where the work is: the place frame the item stands on, and how high the part you
+      named sits above the site frame -- that place frame's z from site_map plus the item's
+      handle_height_above_base_m from the equipment catalogue. The skill puts its camera level with that part (an
+      upright handle neck shows the width the jaws close on from the side, and not at all from above) and takes one
+      view there. It finds possible grasps in that image, has the
       vision-language model choose the one on the described part of the described item, commits that contact in odom,
       approaches using robot pose feedback while checking visual visibility, closes the
       jaws and checks the hold while lifting. One call commits one contact; failure returns to the caller before
@@ -234,6 +238,8 @@ effects:
       target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
       part: [string, true, "the contact region to hold, described in words (e.g. the narrow neck of the T-shaped handle)"]
       item: [string, false, "the item's name in the equipment catalogue; the skill then keeps its catalogued size clear of the rover while carrying"]
+      support: [string, false, "the place frame the item stands on (e.g. depot_stand/slot_0), from site_map"]
+      grasp_height_m: [number, false, "how high the part you named sits above the site frame: the place frame's own z from site_map plus the item's handle_height_above_base_m from the equipment catalogue. The skill puts its camera level with it; without it the skill has to guess and can look at the wrong part of the item"]
     default_deadline_s: 900
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-pick
