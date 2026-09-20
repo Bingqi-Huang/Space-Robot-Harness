@@ -58,6 +58,8 @@ def attempt_summary(ev: dict) -> dict:
                     "selected_mark": a["candidate"]["id"], "measured_width_m": round(width, 4),
                     "catalogue_closing_width_m": closing, "measurement_resolution_m": round(resolution, 4),
                     "consistent": abs(width - closing) <= resolution})
+                    # the skill only offers places that measure as the declared contact, so a mismatch here means the
+                    # measurement and the catalogue disagree about what was held, not that another part was chosen
     find = sk.get("find") or {}
     views = [v.get("vlm", {}) for v in find.get("views", [])] + [find.get("locate", {}), find.get("select", {})]
     saw = sorted({v["what_is_visible"] for v in views if v.get("what_is_visible")})

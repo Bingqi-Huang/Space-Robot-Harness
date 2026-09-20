@@ -232,7 +232,7 @@ effects:
       the arm must not be folded (stow, arm_ready) until the item is set down.
     inputs:
       target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
-      part: [string, true, "the contact region to hold, described semantically; include applicable interface constraints from the equipment catalogue"]
+      part: [string, true, "the contact region to hold, described in words (e.g. the narrow neck of the T-shaped handle)"]
       item: [string, false, "the item's name in the equipment catalogue; the skill then keeps its catalogued size clear of the rover while carrying"]
     default_deadline_s: 900
     authority_class: routine
