@@ -3891,3 +3891,33 @@ travel available is the arm's limit minus the envelope's excess, `0.228 - 0.102s
 g8s/g8t both at -2.24/-2.33 rad of ±2.356). They meet at **s ≤ 0.664, i.e. `target: {longest: 0.30}`**; at 0.25 m
 the margin is 3.2 cm. Removing the unjustified yaw sweep instead makes the budget close at full size. The two are
 independent and both are one small change; neither is a tuned constant.
+
+**What the stand is, and what the stand-off does not check (g9p).** Two scene facts were wrong, not one. The
+`site/depot_stand` box took the prop's bounding height, 0.610 m, while the asset that authors it says plainly
+`top surface 0.55 m, front (+X) edge free for the arm, back lip`: the 6 cm is a lip along the back, and the box
+spread it over the table, the slots and the free front edge alike. An ORU standing on a slot at 0.550 therefore
+began 6 cm *inside* the obstacle, and since the held envelope reaches `neck_height` (0.055) below the item's own
+base, it had to rise **0.115 m** before the arm's checks would let it move at all, where physics asks 0. The hold
+lift is 0.15, so bring_in had 0.035 m against a measured 0.07 m of sag, and the first heights of its ladder came
+back `clear: false`. Bounding a prop at its declared working surface gives 0.093 m instead.
+
+Shrinking the ORU to 0.25 m was tried in the same pass and **reverted**: it cannot help. The body scale cancels out
+of the vertical budget exactly (`handle_above_base = body height + 0.10`, the handle being synthesized after scaling
+in absolute metres, which also left the 12 mm neck untouched). What it did do was move the rover. The boundary
+stands where the arm reaches the work height, and the work height is the tallest handle over a support
+(`ITEM_HANDLE_M`); a shorter unit lowered it from 1.017 to 0.854, the reach model parked 14 cm closer, and every one
+of pick's working views became unreachable. Swept against the live MoveIt over the skill's own grid
+(back x rise x pitch, 96 poses), the views survive on the aim's *distance*, barely on its height:
+
+| aim x (chassis) | −1.02 | −1.00 | −0.98 | −0.96 | −0.94 | −0.92 | −0.90 |
+|---|---|---|---|---|---|---|---|
+| reachable views of 96 | 15–20 | 10–17 | 6–15 | 1–9 | 0–5 | 0–1 | **0** |
+
+g9o's aim sat at −0.954 and worked on 3–8 of 96; g9p's at −0.908 and had none.
+
+**Harness gap this exposes (not a scene fault).** `stand_distance` chooses the parking place by asking whether the
+arm reaches the *work heights*, plus footprint clearance and a docking error either way. It never asks whether the
+skill's own observation poses are reachable from there, and those are the tighter constraint by far — behind and
+above the target, folding toward the rover. So the boundary can hand back a stand from which the item can be
+grasped but not seen. That is a property of the robot's geometry, not of any mission, and belongs in the stand
+choice.

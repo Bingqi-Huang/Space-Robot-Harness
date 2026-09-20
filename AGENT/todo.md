@@ -10,13 +10,16 @@ Goal of this phase: Ours completes Mission A/B covered and the held-out situatio
       fragile checks as evidence; the carried item in every collision check.
 - [x] IK acceptance rule: on the working branch **or** next to the seed (openral fbb33c9), measured offline first.
 - [x] `find` and bring_in unblocked: heights 0.04–0.10 usable, ~14 cm of retraction (g9m had 0.02 alone and 0 cm).
-- [ ] **The carry still loses the ORU** (g9o: jaw 0.169 → 0.100 on the drive, `oru_on` back to `depot_stand/slot_0`).
-      Answer it with one pass over the closed g9o bag before changing anything: evaluator `/tf` object poses plus
-      `/srb/env0/mission_state`, the ORU's base height over the stand across grasp → hold lift → bring_in → the
-      first metres of the drive. It separates insufficient raise (IK ceiling 0.10) from sag after `hold_here` from
-      drive acceleration; those need different fixes.
-- [ ] Watch how far the model's own recovery gets in g9o (it found the empty jaw, then observed for the box). Its
-      recovery is H1 evidence whether or not it succeeds — record it, do not steer it.
+- [x] Carry root cause, from the bags: both runs sag 8–14 cm; what decides the outcome is how far the item had
+      travelled when it did (0.228 m carried, 0.105 m dropped). Two modelling faults cost that travel — the held
+      envelope swept over every yaw, and the stand's box took its back lip's height over the whole table.
+- [x] Fixes in: held envelope = measured footprint + measured pivot (openral 81ada8f); prop bounded at its declared
+      working surface (SRB 90e5804). Shrinking the ORU was tried and reverted (SRB 9546407) — it moves the rover.
+- [ ] **g9q**: does bring_in's ladder now start `raise 0.00 → clear: true` (it was `false` in g9m/g9o), does the
+      servo run to the arm's limit, and does `oru_on` stay empty after the pick? Then place → stow → return dock.
+- [ ] **Harness gap, real and worth fixing**: `stand_distance` validates the work heights but never the skill's own
+      observation poses, which are the tighter constraint (behind and above the target). It can return a stand from
+      which the item can be grasped but not seen — g9p. Generic robot geometry, so it belongs in the stand choice.
 - [ ] Then place with the new shelf (never reached), stow, return dock, and full Mission B covered from the start.
 - [ ] Then G5 held-out: destination_occupied, spare_swapped, cover_obstruction, status_mismatch, route_block.
 - [ ] Then `press` live (never pressed a button), then Mission A's ready/stand deadlock (F62 §3).
