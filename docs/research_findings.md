@@ -4015,3 +4015,54 @@ sideways.
 The question is whether the base's acceleration threw it or the arm's hold relaxed after bring_in, and those need
 different answers. The bag carries the ORU's evaluator TF and the joint states: the ORU's height and the jaw angle
 against time across the first metre of the drive separate them. Not to be guessed at.
+
+## F81 -- the carry never had a dynamics problem: a cmd_vel overwrote the arm
+
+Six runs lost the ORU within the first metre of the drive. The dynamics were derived carefully -- lunar gravity from
+the published `space_context`, a swing budget from the largest disturbance the jaw had been measured to take, the
+linear and angular allowances split because they add at the load -- and ga1 drove under those limits, at a peak base
+speed of 0.08 m/s against g9x's 0.20, and lost it anyway. Peak load tilt barely moved: 14.3 deg in g9x, 12.9 in ga1.
+Base roll and pitch are 0.00 deg throughout both runs, parked and driving, so terrain was never in it either.
+
+The bag's wrist camera settled it in one look. From t=184.6 to 186.0 the ORU's head sits still above the closed jaws
+against empty sky. At 186.08 a base structure fills the frame; by 186.5 the head is visibly skewed; the jaw falls
+0.183 -> 0.163 -> 0.133 -> 0.104 and by 187.4 the jaws are empty. Reading the numbers alone had produced four
+successive wrong hypotheses in a day. **Look at the pictures first, then measure.**
+
+What the pictures showed was the load being flung, and the joints say by what. The arm is motionless from t=183.0 to
+185.78 -- joint2 at 41.6 deg to a tenth of a degree. At 186.00 it moves; by **186.22, 0.22 s later, joint2 is at
+60.0 deg and joint6 at -39.1** (+18.4 and -36.3 deg); the load's handle travels 21 mm along the tool's own approach
+axis in that same interval, and the jaw is pried from 0.170 to 0.183. From 187.5 on the arm oscillates between
+joint2 34.5 and 50.8 for the remainder of the run. Nothing in the mission commanded any of this.
+
+**The cause is at the SRB/ROS action boundary.** `LunarBot`'s action vector is one concatenation: base drive, then
+the arm's 14 slots (`[mode flag, 6 ik twist, 7 joint targets]`, `SwitchableArmAction`), then the binary gripper. Every
+`cmd_vel` message rebuilds the *whole* vector through `map_cmd_to_action`, which is the **teleoperation** mapping of
+one shared twist -- for this robot it returns a zero mode flag and seven zeroed joint targets that its own comment
+calls "an ignored placeholder" -- and then keeps only the dimensions in `_held_mask`. That mask was set by
+`hold = msg_type is BoolMsg`: the gripper was protected because it is a Bool, the arm was not because it is a
+`Float32MultiArray`. So the first cmd_vel of the drive switched the arm out of joint-position mode and zeroed its
+targets, and every cmd_vel after that did it again at 20 Hz.
+
+The bag contains its own control. The last arm command is at sim_t 176.54, when `pick` finishes; the arm is then
+uncommanded for **9.4 s and does not move at all**. It whips at 186.0, the instant the base first moves. Absence of
+arm commands is not what does it; the arrival of cmd_vel is.
+
+This is why every earlier explanation failed. Halving the drive speed could not help, because the disturbance is a
+joint step, not an acceleration. The gripper was never commanded open -- it is the one term the mask protected -- yet
+the load still left. The loss always fell inside the first metre because it happens on the *first* cmd_vel. And the
+two runs that did carry (g8s, g8t) had the arm pressed against joint4's stop, which absorbed the step.
+
+The fix is one line of semantics: **a client that commands an action term owns it**, so `hold = True` for every term
+rather than for Bool terms alone. Teleoperation never publishes on the per-term topics, and the base's own term
+(`four_wheel_steer`) has no publisher at all -- the base is driven by the `action/cmd_vel` Twist -- so nothing that
+worked before is latched.
+
+**A second, independent weakness, found on the way and worth keeping.** The jaws closed with the ORU's neck only
+3.2 mm inside the fingertips. The gripper's own collision meshes, forward-kinematic at the measured jaw angle, put
+the fingertips at tool z +0.006 and the pads' clamping ridges back to -0.030, with the jaw body closing the pocket at
+-0.043. The skill drove the contact to -0.012 and accepted a residual of up to 0.012 -- one manifest number,
+`pad_offset_m`, serving as both the target and its own tolerance, so a contact that had not entered the jaws at all
+was inside budget. Target and tolerance are now two quantities from one measurement of the pads (`pad_band_m`):
+seat at their middle, accept half their length. The seat moves 6 mm deeper, which lengthens the escape the load must
+travel from 33 mm to 40 mm. It is hardening, not the cause.
