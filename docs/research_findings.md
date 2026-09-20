@@ -3998,3 +3998,20 @@ lift 0.152. The evaluator's `oru_on` stayed empty through the drive that follows
 live MoveIt, the detector replayed on the run's own saved depth, the reasoner's inference asked of the real model
 with the real records. Two runs were still lost to code that a read-back would have caught (a `#` comment inside an
 embedded JSON block; a path passed where an image array was expected), which is why that read-back is now a rule.
+
+**g9x's carry, and what it uncovers.** The pick held: bring_in ran its full 0.30 m without stalling, `item_held`
+verified at jaw 0.174 and a 0.152 m lift, and the evaluator's `oru_on` stayed empty. The drive then lost it. At the
+shelf `item_still_held` verified **false** at jaw 0.100 -- closed on nothing -- and the ORU's truth pose is
+(5.620, -14.009, 0.086), pitched 48 deg, on the ground **0.44 m from the slot it came off**. It did not ride to
+PDU-1 and fall; it slid out of the jaws within the first metre, and the rover drove the rest of the way empty.
+
+This failure has been hidden until now. Every earlier run either never moved the item off its support (bring_in
+travelled 0-0.14 m, g9m/g9o) or ended with the arm pressed against joint4's stop, which held the posture rigid
+(g8s/g8t, both of which carried). g9x is the first time the ORU has hung free, clear of the stand, while the base
+accelerated -- and a 12 mm neck between jaws that close to 0.174 rad did not survive it. The handle is built so a
+vertical pull is taken by the head resting on the fingers (F49); nothing in it resists the neck being shaken out
+sideways.
+
+The question is whether the base's acceleration threw it or the arm's hold relaxed after bring_in, and those need
+different answers. The bag carries the ORU's evaluator TF and the joint states: the ORU's height and the jaw angle
+against time across the first metre of the drive separate them. Not to be guessed at.
