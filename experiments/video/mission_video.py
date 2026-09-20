@@ -26,7 +26,11 @@ from PIL import Image, ImageDraw, ImageFont
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_M = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-PANEL_W, PAD, MAP_W, OUT_W = 560, 22, 360, 1600
+PANEL_W, PAD, MAP_W, OUT_W = 560, 22, 360, 1600  # OUT_W is the default; --width overrides it
+#: The panel and the map are fixed pixel sizes, so a wider output gives them proportionally less of the frame
+#: and the follow camera proportionally more. Record the follow camera at the width you compose at: scaling it
+#: up is the only thing here that costs picture quality, and rendering it larger costs almost nothing -- the
+#: sim ran at 0.324x real time with a 960x540 stream against 0.353x with none at all (gb1 against ga8).
 INK = (238, 240, 244)
 DIM = (168, 176, 188)
 ROLE = {"reasoner": (128, 196, 255), "vlm": (196, 160, 255), "tool": (150, 230, 170),
@@ -265,6 +269,7 @@ def main() -> None:
     ap.add_argument("--title", default="Space Robotics Agent Harness — Mission B")
     ap.add_argument("--from-sim", type=float, default=-1e9)
     ap.add_argument("--to-sim", type=float, default=1e9)
+    ap.add_argument("--width", type=int, default=OUT_W, help="composed output width; record the follow camera at it")
     a = ap.parse_args()
 
     cap = cv2.VideoCapture(str(a.video))
@@ -291,8 +296,8 @@ def main() -> None:
     site = Map(a.structures, MAP_W, track, {k: v for k, v in places.items()}) if track and a.structures.exists() else None
     fonts = (ImageFont.truetype(FONT, 15), ImageFont.truetype(FONT_B, 16), ImageFont.truetype(FONT_M, 14))
 
-    scale = OUT_W / w
-    out_w, out_h = OUT_W, int(round(h * scale / 2) * 2)
+    scale = a.width / w
+    out_w, out_h = a.width, int(round(h * scale / 2) * 2)
     tmp = a.out.with_suffix(".raw.mp4")
     writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), fps, (out_w, out_h))
     written = 0
