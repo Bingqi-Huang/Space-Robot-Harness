@@ -4189,3 +4189,35 @@ the support's own outward normal, surveyed beside the point and never passed on.
 along it until the robot's own collision check passes, no further than half the item's depth -- past that the item
 is more off the surface than on it -- and records what it cost. No new number: the step is the smallest feature the
 perception resolves and the limit is the item's own size.
+
+## F86 -- the shelf, computed instead of argued
+
+Three sessions of inference about why `place` stalled ended with one instruction: it is a geometry question, so
+compute it from the actual models and the actual scene, and if the shelf is too small make it bigger. Doing that
+took minutes and found three defects, two of which no run had pointed at.
+
+**1. Props were boxed where they are not.** `prop_boxes` built each obstacle as `[0, size_m[2]]`, and `size_m` is a
+prop's *extent*, not where its top is: a prop that keeps its modelled origin need not start at z = 0. Read straight
+out of the authored glTF accessors, the service shelf spans **0.16..0.53** in its own frame and the PDU service
+panel **0.60..1.12**. Their collision boxes sat at 0..0.37 and 0..0.52 -- a phantom obstacle in the air underneath
+each, and no obstacle at all where the tray and the panel actually are. The panel's box was 0.6 m below the panel.
+This is the third time the same mistake has been found (F79 bounded a stand at its lip, F80 at its bounding height);
+it is now the asset's job to say where it is, in `z_range_m`.
+
+**2. The shelf could not take the payload.** It is a tray with a 3 cm rim, cantilevered off the cabinet on
+brackets, 0.6 m deep with the wall directly behind it. The ORU is checked as a 0.485 m envelope, so centred on its
+surveyed point the item sat **58 mm** from that wall, and the approach spent it: `place` stalled 5.5 cm out with
+`site/pdu_1` against `held_item`. The tray is now stretched in depth alone -- scaling it all round would lift its
+surface out of the arm's working band -- to 0.75 m, with its place frame at 0.40 rather than the centre. 1.42x was
+tried first and the scene builder refused it: the deeper tray reached 30 mm into the rover's own work pose. Back
+clearance 58 -> **158 mm**, no problems reported.
+
+**3. The handle's bars are what a downward look sees through the slot.** ga7's view left **8.7 mm** of neck showing
+where the candidate search needs `pad_height_m` = 14 mm, so it found the neck at exactly 12 mm wide with clear air
+on both sides and discarded it as too short -- 0 candidates at the declared width, while the permissive default
+returned the 26 mm pedestal. Each millimetre of bar depth costs `tan(look)` of visible neck. Bars 24 -> 12 mm deep
+and slot 24 -> 28 mm gives 25.9 mm of neck from 10 deg above, and the roll stop moves only from 6.3 to 10.5 deg --
+where the neck still presents 14.3 mm to jaws holding 14.95, so it is not pried. Measured: 4.9 deg held, 23.7 lost.
+
+The lesson is the instruction: a question about whether one solid fits on another is arithmetic over data the
+repository already holds. Three of these were sitting in the asset files the whole time.
