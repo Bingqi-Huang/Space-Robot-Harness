@@ -56,8 +56,9 @@ from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.time import Time
 from rosgraph_msgs.msg import Clock
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
 from sensor_msgs.msg import CameraInfo, Image, JointState
+from std_msgs.msg import String
 from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
 from tf2_ros import Buffer, TransformListener
@@ -103,13 +104,17 @@ LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON 
 #: force, after sitting through 40 s of the arm's own swinging, base stationary, at up to 16 deg. The same bag puts
 #: the onset of prying between 10.7 deg (jaw 0.170, untouched) and 16.3 deg (0.193, opening). So the swing this
 #: grasp takes is measured, the gravity is where the robot is, and the acceleration follows from the two.
-LUNAR_G_M_S2 = 1.62496  # lunar surface gravity, the domain this scene is built at (SRB Domain.MOON)
+#: Only reached when the environment publishes no context. It is the smallest gravity any of these bodies has,
+#: not the largest: the acceleration a hanging load takes scales with g, so not knowing where you are has to
+#: buy the gentlest driving, never the fastest (Earth here would have permitted six times the lunar limit).
+UNKNOWN_BODY_G_M_S2 = 0.14219  # srb.core.domain.Domain.ASTEROID, the least gravity in the table
 CARRY_SWING_RAD = math.radians(10.0)  # the largest swing the jaw was never disturbed by (g9x, base stationary)
 #: Straight line and turn are not two separate allowances: g9x drove at 0.5 m/s^2 with 0.64 rad/s^2 on a 0.787 m
 #: lever, which is another 0.50 m/s^2 at the load, and 1.0 m/s^2 together leans it 32 deg and overshoots to about
 #: 51 -- the angle the bag recorded when the ORU came off. The budget is what reaches the load, so each gets half.
-CARRY_SWING_BUDGET = LUNAR_G_M_S2 * math.tan(CARRY_SWING_RAD / 2)
-CARRY_LINEAR = round(CARRY_SWING_BUDGET / 2, 3)
+def carry_budget(gravity_m_s2: float) -> float:
+    """The acceleration a load hanging from the jaws may be given, on the body the robot is standing on."""
+    return gravity_m_s2 * math.tan(CARRY_SWING_RAD / 2)
 CARRY_MAX_SPEED = [0.25, 0.0, 1.0]
 FREE_MAX_VELOCITY = [0.5, 0.0, 2.0]
 FREE_MAX_ACCEL = [2.5, 0.0, 3.2]
@@ -291,6 +296,11 @@ class CapabilityServer(Node):
         TransformListener(self.buf, self)
         self.jaw, self.arm_q, self.sim_t, self.calls = None, None, 0.0, 0
         self.infos, self.depths = {}, {}
+        self._space_context: dict = {}
+        self.create_subscription(
+            String, "/srb/env0/space_context", lambda m: self._space_context.update(json.loads(m.data)),
+            QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            callback_group=cb)
         self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
         self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
         self.images = {}
@@ -405,13 +415,16 @@ class CapabilityServer(Node):
         if carrying:
             p = self.tcp_pose()["position"]
             lever = max(math.hypot(p[0], p[1]), 0.2)  # how far out the load is riding, measured
-            az = round(CARRY_LINEAR / lever, 2)
+            budget = carry_budget(self.space_context()["gravity_m_s2"])
+            linear = round(budget / 2, 3)  # the straight line and the turn each get half of what reaches the load
+            az = round(linear / lever, 2)
             # A sustained turn is not a step: it holds w^2 * r on the load for as long as it lasts, and 1 rad/s on
             # the 0.787 m lever g9x carried at is 0.79 m/s^2, a 26 deg lean all by itself -- past the angle the bag
             # says this grasp starts opening at. The turn rate comes out of the same budget as the accelerations.
-            wz = round(math.sqrt(CARRY_SWING_BUDGET / lever), 2)
-            want = {"max_velocity": [CARRY_MAX_SPEED[0], 0.0, wz], "max_accel": [CARRY_LINEAR, 0.0, az],
-                    "max_decel": [-CARRY_LINEAR, 0.0, -az], "lever_m": round(lever, 3)}
+            wz = round(math.sqrt(budget / lever), 2)
+            want = {"max_velocity": [CARRY_MAX_SPEED[0], 0.0, wz], "max_accel": [linear, 0.0, az],
+                    "max_decel": [-linear, 0.0, -az], "lever_m": round(lever, 3),
+                    "gravity_m_s2": round(self.space_context()["gravity_m_s2"], 4)}
         else:
             want = {"max_velocity": FREE_MAX_VELOCITY, "max_accel": FREE_MAX_ACCEL, "max_decel": FREE_MAX_DECEL}
         if want == self._drive_limits:
@@ -421,7 +434,7 @@ class CapabilityServer(Node):
             return {"carrying": carrying, "changed": False, "why": "the velocity smoother is not accepting parameters"}
         req = SetParameters.Request(parameters=[
             ParamMsg(name=n, value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=v))
-            for n, v in want.items() if n != "lever_m"])  # the lever is evidence, not a smoother parameter
+            for n, v in want.items() if n not in ("lever_m", "gravity_m_s2")])  # evidence, not smoother parameters
         fut = cli.call_async(req)
         t0 = time.time()
         while not fut.done() and time.time() - t0 < 3.0:
@@ -527,6 +540,20 @@ class CapabilityServer(Node):
         p, n = self.to_rover(*self.feature_geometry(name))
         return {"frame": "chassis_base_link", "position": [round(float(v), 4) for v in p], "normal": [round(float(v), 4) for v in n],
                 "source": "site survey placed by the rover's localization (expect several cm of error)"}
+
+    def space_context(self):
+        """The body this robot is standing on and what it does to physics, as the environment publishes it.
+
+        Gravity is not a property of the software. A load hanging from the jaws leans atan(a/g) off vertical under a
+        base acceleration `a`, so the same driving that is gentle on Earth is six times the lean on the Moon and
+        twice it again on an asteroid; and what a grasp can hold through is a property of the grasp, which the
+        equipment catalogue describes. Both are facts here, for any method to use; none of them is a rule."""
+        if not self._space_context:
+            return {"body": "unknown", "gravity_m_s2": UNKNOWN_BODY_G_M_S2,
+                    "note": "the environment published no space context, so the least gravity in the table is "
+                            "assumed: what a hanging load takes scales with gravity, and not knowing where you "
+                            "are must buy the gentlest driving, not the fastest"}
+        return dict(self._space_context)
 
     def work_stands(self, feature: str, grasp_height_m: float | None = None):
         """Where the rover can stand to work at a site point, and how squarely the arm can look at it from each.
@@ -745,6 +772,7 @@ class CapabilityServer(Node):
                      "locate_in_view": lambda: self.locate_in_view(args["camera"], args["target"]), "site_map": self.site_map,
                      "manifest": self.manifest, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
                      "held_item": self.held_item,
+                     "space_context": self.space_context,
                      "work_stands": lambda: self.work_stands(args["feature"], args.get("grasp_height_m")),
                      "locate_feature": lambda: self.locate_feature(args["name"])}[req.query]()
             res.success, res.value_json = True, json.dumps(value)

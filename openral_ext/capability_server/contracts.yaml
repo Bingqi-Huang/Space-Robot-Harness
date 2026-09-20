@@ -346,6 +346,16 @@ queries:
       find out whether something is still being carried, or to see what the gripper is actually on when a call
       failed for a reason that does not say. The answer is an observation, not ground truth; the frame is evidence.
     inputs: {}
+  space_context:
+    description: >-
+      The body this robot is standing on and what it does to physics: its name, the gravity in force, and the
+      light it gets. Gravity is not a constant of the software and it is not Earth's. A load hanging from the
+      jaws leans atan(a/g) off vertical under a base acceleration a, and swings to about twice that after the
+      step that starts it, so driving that would be gentle on Earth is six times the lean on the Moon; what a
+      given grasp holds through is a property of that grasp, which the equipment catalogue describes. These are
+      facts, not limits: the boundary keeps its own hardware-protecting limits whatever you conclude from them.
+    inputs: {}
+
   work_stands:
     description: >-
       Where the rover can stand to work at a surveyed point, and how squarely the arm can look at it from each
