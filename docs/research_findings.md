@@ -4221,3 +4221,49 @@ where the neck still presents 14.3 mm to jaws holding 14.95, so it is not pried.
 
 The lesson is the instruction: a question about whether one solid fits on another is arithmetic over data the
 repository already holds. Three of these were sitting in the asset files the whole time.
+
+## F87 -- Mission B, end to end
+
+ga8, every effect verified, `CHECK_EXIT 0`:
+
+    RESULT {"scenario": "covered", "destination": "pdu_1", "oru_on": "pdu_1_shelf/shelf",
+            "crate_on": "depot_stand/slot_1", "delivered": true, "success": true}
+
+| sim_t  | step                | evidence                                          |
+|--------|---------------------|---------------------------------------------------|
+| 179.52 | pick                | `item_held` true, jaw 0.170, lift 0.162 m, first attempt |
+| 285.34 | navigate to PDU-1   |                                                   |
+| 305.48 | dock                | `item_still_held` true, jaw 0.171                 |
+| 332.92 | place               | `item_placed` true, jaw 0.82, tool clear by 0.18 m |
+| 339.40 | stow                | `arm_stowed` true                                 |
+| 338.3  | evaluator           | `delivered: true`                                 |
+| 393.60 | return dock         | map position error 0.019 m, yaw 1.5 deg           |
+
+Before today the chain stood at: pick worked, carry always lost the load inside the first metre, and `place` had
+never been reached. Ten defects were found and fixed between those two states, and they are worth separating by
+what kind of thing they were.
+
+**Two were the harness withholding what it already knew.** The boundary dispatched the `pick`, saw it succeed and
+knew the catalogued item -- and answered "what am I holding" with a camera that is clamped to the handle and
+cannot see the payload, so the model correctly read "a grey rectangular block" and drove the right payload back
+to the depot (F82). The site survey records an outward normal beside every place point, and `place` was never
+given it, so when its own collision check refused the surveyed centre it had no direction to move in (F85).
+
+**Three were geometry no run ever pointed at, found by computing instead of inferring.** A prop's collision box
+was built from how *tall* it is rather than where it is, putting the service shelf 16 cm and the PDU panel 60 cm
+below themselves. The shelf was 0.6 m deep against a 0.485 m envelope with a wall behind it. The handle's own
+bars occluded the slot they bound, leaving 8.7 mm of neck where the candidate search needs 14 (F86). Three
+sessions of reasoning from run logs had not touched any of them; the arithmetic took minutes.
+
+**One was the simulator's action boundary**, and it is the one the whole carry turned on: every `cmd_vel` rebuilt
+the full action vector through the *teleoperation* mapping and kept only the dimensions marked held, and only the
+Bool gripper was marked. The first cmd_vel of every drive zeroed the arm (F81).
+
+**The rest were the harness's own numbers being wrong about themselves**: a seat depth and its tolerance sharing
+one constant, a transient swing tolerance spent as a sustained one, a turn taking the whole budget the line above
+it split in half, an orphaned scene lock that refused every later operation.
+
+The model's side needed no correction at any point. It computes the grasp height as the place frame's z plus the
+catalogued handle height, asks `work_stands` and docks where a level look exists, reconciles what the pick
+measured against the catalogue in its own report ("measured neck width 0.0119 m vs catalogue closing width
+0.012"), and when told what it was carrying, acted on the record rather than the picture.
