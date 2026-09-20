@@ -68,7 +68,12 @@ from contracts import CONTRACTS, IX, check_args, item_catalogue
 # above the tool axis, the one every view and every grasp works from (research repo F57), and it is the posture the
 # manipulation skills start and end in. `openral_rskill._eye_in_hand.READY` is the same seven numbers.
 READY = [0.0, -1.0, 0.0, -1.4, 0.0, 1.2, math.pi]
-STOW = [0.0, -0.6, 0.0, 1.2, 0.0, 0.6, 0.0]  # rskill-procedural-stow's travel pose
+#: rskill-procedural-stow's pose, and what the arm holds whenever no operation owns it: reaching back over
+#: the rear hull edge with the wrist camera level and facing the way the arm works. Measured from this
+#: robot's own URDF: tool 1.089 m behind the rover origin at 0.951 m, look 0.0 deg from level, 180 deg from
+#: forward, elbow bent 80 deg. It replaces a pose that folded the arm up over the deck looking forward and
+#: 21 deg above the horizon (F89).
+STOW = [0.0, 0.40, 0.0, -0.70, 0.0, -1.27, 3.14159265]
 ARM_JOINTS = [f"joint{i}" for i in range(1, 8)]
 # what each interaction-point type is, as the site's equipment documentation states it
 POINT_TYPES = {
@@ -839,9 +844,10 @@ class CapabilityServer(Node):
         if g.capability in ("stow", "arm_ready") and JAW_EMPTY_MAX_RAD < self.jaw < JAW_OPEN_MIN_RAD:
             handle.succeed()
             res.success, res.failure_kind = False, REJECTED
-            res.failure_reason = (f"the jaws are holding something (jaw {self.jaw:.3f} rad): {g.capability} folds the arm "
-                                  "into its travel pose, which would carry the item into the rover. Put the item down "
-                                  "first, or drive with the arm as the pick left it.")
+            res.failure_reason = (f"the jaws are holding something (jaw {self.jaw:.3f} rad): {g.capability} takes the arm "
+                                  "to a fixed posture in one joint-space move, which swings a hanging load through "
+                                  "whatever is between here and there without looking. Put the item down first, or "
+                                  "drive with the arm as the pick left it.")
             return res
         deadline = g.deadline_s or float(contract["default_deadline_s"])
         sim0 = self.sim_t

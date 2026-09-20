@@ -4267,3 +4267,36 @@ The model's side needed no correction at any point. It computes the grasp height
 catalogued handle height, asks `work_stands` and docks where a level look exists, reconciles what the pick
 measured against the catalogue in its own report ("measured neck width 0.0119 m vs catalogue closing width
 0.012"), and when told what it was carrying, acted on the record rather than the picture.
+
+## F89 -- what the robot does when nobody is commanding it
+
+Three things the user saw in gb2's video, all one root: the rover stood still for the first minute, the arm moved
+continuously and without purpose throughout, and at rest it was folded somewhere that looked nothing like a
+working posture.
+
+**Measured from the bag.** The rover first moves 2 cm at sim 79.7 s. For the first 150 s the arm's fastest joint
+is at **3.88 rad/s median, in 100 % of samples** -- its velocity limit is 3.92. Joint2 swings between -33 and
+-56 deg, joint4 between +59 and +101, joint6 between **-22 and +50**, with a period of a few seconds, until a
+skill first claims the arm at sim 159 s. After that the median joint speed is 0.0003 rad/s.
+
+**Why.** `RosInterface` starts its action buffer at zeros, and for `SwitchableArmAction` a zero is not "do
+nothing": element 0 is the mode flag, and 0 selects twist mode against a persistent desired pose that has never
+been set. Nav2's velocity smoother publishes `cmd_vel` at ~20 Hz whether or not the rover is moving, and every
+one of those rebuilt the whole action row through the teleoperation mapping (F81's other half -- `hold=True` only
+latches a term once something has commanded it, and nothing had). So the arm chased an unset pose at its limit
+for as long as the mission took to reach its first arm call.
+
+The fix belongs where the knowledge is: the term now answers `hold_action()` with joint-position mode at its own
+measured joints, and the interface writes that into the buffer and latches it before any subscription is live. A
+robot with nobody commanding it holds its posture.
+
+**And what it holds.** `stow` was `[0, -0.6, 0, 1.2, 0, 0.6, 0]`: the arm folded up over the deck, tool 0.209 m
+behind the rover origin at 1.455 m, the wrist camera pointing **forward** and 21 deg above the horizon -- and off
+the working branch the skills seed their IK from. It is now `[0, 0.40, 0, -0.70, 0, -1.27, pi]`: tool 0.694 m
+behind the origin at 1.404 m, camera **level and facing the way this arm works**, elbow bent 40 deg, on the
+branch, and 26 mm past the rear hull face so it changes nothing about what the rover can back up to. Every
+candidate was computed from the robot's own URDF against four conditions at once -- level, rearward, inside the
+hull, on the branch -- rather than adjusted until it looked right.
+
+Seven files carried a copy of that pose and an eighth carried it as the spawn state. That they all had to be
+found by grep is its own finding.
