@@ -270,8 +270,12 @@ def lower(capability: str, a: dict) -> dict:
             at["work_z_m"] = float(a["grasp_height_m"]) if "grasp_height_m" in a else work_heights(a["support"])[0]
         return {"target": a["target"], "part": a["part"], **held_item(a), **at}
     if capability == "place":
-        # a named support is fixed infrastructure: its surveyed point goes to the skill, which puts it in the rover frame
-        return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"], **held_item(a),
+        # a named support is fixed infrastructure: its surveyed point and the direction it faces go to the skill,
+        # which puts both in the rover frame. The normal is what tells a skill which way is *off* the support: a
+        # shelf on a wall has the wall behind it, and an item whose envelope is nearly as deep as the shelf has to
+        # sit forward of the surveyed centre or its back corner is inside the structure (ga5, F85).
+        return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"],
+                "support_normal_map": IX["points"][a["support"]]["normal"], **held_item(a),
                 **({"release_constraint": a["release_constraint"]} if "release_constraint" in a else {})}
     if capability == "press":
         # nothing to lower: the skill finds the target in its own camera, and where to stand off and how far to press

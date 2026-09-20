@@ -4160,3 +4160,32 @@ simulated gripper is **three to four times the hardware**. F49's note that 65 N 
 wrong, and F49 itself recorded that at the physically faithful 0.9 N.m the payload levered the jaws open. The user's
 decision is to keep the simulated force -- lunar equipment is not a commercial catalogue part -- and fix the
 interface, which is the right way round: a grasp that needs three times its gripper's rated force is not a grasp.
+
+## F85 -- two things the harness knew and did not say: where a level look survives docking, and which way is off a surface
+
+**pick.** ga6's handle change cost the pick, and the model was not at fault. `work_stands` reported a level look
+from 1.080 m and nothing nearer; the model docked at exactly that stand (`standoff_m` 0.12). The rover landed at
+**1.068 m** -- 12 mm short -- and at 1.065 m the same query says the shallowest look is 10 deg above horizontal. The
+24 mm slot is not readable from there: replayed on the run's own saved depth, the candidate search finds a
+continuous 90 mm surface where the neck should be isolated (the collar's own top face, seen through the slot) and
+returns **nothing** at the declared 12 mm; with the old permissive default it returns three candidates, all 26.4 mm
+-- the pedestal below the collar.
+
+The boundary was promising a level look on a 15 mm-wide condition against a docking band it verifies at **60 mm**.
+Reporting the precision would only have turned that into a refusal. The fix is in the interface instead: along the
+approach the handle's head and collar are now **shallower than the neck** (24 mm against 30), so the neck is the
+nearest surface from any direction with open air on both sides -- which is what the candidate search asks of any
+part. The level look stops being a precondition, and the stop against roll, which is the collar's reach *across*
+the jaws, is untouched.
+
+**place.** ga5 reached `place` for the first time and stalled at `over`, 5.5 and 6.8 cm out, with
+`site/pdu_1` against `held_item` 1.5 mm and 8.2 mm deep. The shelf is mounted correctly -- 0.6 m deep, protruding
+from the cabinet's front face, its surveyed point at its own centre. The item is what does not fit: the held
+envelope is 0.485 m across (0.392 widened by the measured 16 deg pivot), which leaves 58 mm behind it on a 600 mm
+shelf whose back is the cabinet wall, and the approach spends it.
+
+The surveyed point is the middle of the surface; nothing told the skill which way is *off* it. That direction is
+the support's own outward normal, surveyed beside the point and never passed on. `place` now receives it and steps
+along it until the robot's own collision check passes, no further than half the item's depth -- past that the item
+is more off the surface than on it -- and records what it cost. No new number: the step is the smallest feature the
+perception resolves and the limit is the item's own size.
