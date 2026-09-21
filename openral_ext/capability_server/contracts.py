@@ -53,7 +53,7 @@ def item_catalogue(record: dict) -> dict:
                 "closing_width_m": handle["neck_thickness_m"],  # the neck thickness is what the jaws close across
                 "dimensions_m": {k.removesuffix("_m"): handle[k] for k in (
                     "neck_thickness_m", "neck_width_m", "neck_height_m", "head_width_m", "head_depth_m",
-                    "collar_thickness_m", "collar_width_m", "collar_depth_m") if k in handle},
+                    "collar_thickness_m", "collar_width_m", "collar_depth_m", "standoff_m") if k in handle},
                 "evidence_requirement": "catalogue geometry does not locate the interface; confirm the visible part before contact",
             }
     return result

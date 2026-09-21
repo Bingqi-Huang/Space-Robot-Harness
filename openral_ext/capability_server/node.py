@@ -140,7 +140,6 @@ JAW_JOINT = "eg2_joint1"
 # read one gripper the same way, or an open jaw is a held item on one side of the call and not the other (run g4p)
 from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD  # noqa: E402
 from openral_rskill.grasp_perception import GripperGeometry  # noqa: E402
-from openral_rskill.procedural_pick import PickRskill  # noqa: E402
 from openral_rskill.procedural_pick import tool_rotation as look_rotation  # noqa: E402
 #: how high above a support the tool works: the item is held by its handle, so the tool never goes to the shelf itself
 ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.get("handle"))
@@ -216,7 +215,9 @@ def held_item(a: dict) -> dict:
     c = item_catalogue(IX["objects"][key])
     return {"held_item": {"size_m": c["size_m"], "handle_above_base_m": c["handle_height_above_base_m"],
                           "neck_height_m": c["grasp_interface"]["dimensions_m"]["neck_height"],
-                          "closing_width_m": c["grasp_interface"]["closing_width_m"]}}
+                          "closing_width_m": c["grasp_interface"]["closing_width_m"],
+                          # the whole declared interface: the skill fits this shape to its depth image (F91)
+                          "interface": c["grasp_interface"]["dimensions_m"]}}
 
 
 def lower(capability: str, a: dict) -> dict:
@@ -265,7 +266,8 @@ def lower(capability: str, a: dict) -> dict:
         # handle -- right for deciding where a rover can park for any of them, wrong for aiming a camera at one.
         at = {}
         if "support" in a:
-            at = {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"]}
+            at = {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"],
+                  "support_normal_map": IX["points"][a["support"]]["normal"]}  # the way the interface faces
             at["work_z_m"] = float(a["grasp_height_m"]) if "grasp_height_m" in a else work_heights(a["support"])[0]
         return {"target": a["target"], "part": a["part"], **held_item(a), **at}
     if capability == "place":
@@ -591,8 +593,7 @@ class CapabilityServer(Node):
         Which parts need that is in the equipment catalogue's grasp interface, and choosing the stand is the
         caller's: `dock_at_feature` adds its `standoff_m` to the nearest distance reported here.
 
-        The look is asked for over the same poses the skill will take it from (`PickRskill.LOOK_*`), which is every
-        direction round the point the arm can reach, not the rover's own axis alone -- see `work_stands`' loop.
+        The look is asked for over the same elevations the skill takes its one view from, straight back.
         """
         p, n_out = self.feature_geometry(feature)
         z = float(grasp_height_m) if grasp_height_m is not None else work_heights(feature)[0]
@@ -625,7 +626,7 @@ class CapabilityServer(Node):
             # along the approach presents 17 mm from 10 degrees round it. A level look from the side would be a look
             # that cannot measure the part, which is not what this query is asked for.
             shallowest = None
-            for deg in PickRskill.LOOK_PITCH_DEG:
+            for deg in (0.0, 10.0, 20.0, 30.0):  # the elevations `PickRskill.find` offers
                 R = look_rotation(deg, 0.0, 180.0)
                 if self.ik_reaches(at - R[:, 2] * back, R):
                     shallowest = deg

@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-20 (F81-F91). Read `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then
+Updated 2026-09-21 (F81-F91; pick rebuilt). Read `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then
 `AGENT/todo.md`. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts,
 evidence, verification and hard boundaries. No Mission B-specific skill, hidden hint, numeric tuning or recovery
 graph.
@@ -11,10 +11,17 @@ research `feat/manipulation-contracts`, openral `feat/manipulation-contracts`, S
 
 ## Where it stands
 
-**Mission B ran end to end once** (ga8, F87). **It is not reliable**, and eleven defects have been fixed since,
-**none of them with a successful run behind it**. The next action is a run, not more code (`todo.md`).
+**Mission B ran end to end once** (ga8, F87): pick first try, carry with `item_still_held` through the drive,
+place, stow, dock, `success: true`, `CHECK_EXIT 0`.
 
-## What was fixed today, by kind (F81-F91 carry the detail)
+**It is not reliable.** gb2, same target, failed `pick` three times with the handle in plain view (F91). On the
+user's ruling -- absolute-number gates are wrong; the handle is a declared affordance -- `pick` was rebuilt on
+2026-09-21: the catalogue's interface shape is fitted to the wrist depth (`interface_fit.py`), the grasp
+orientation is declared (approach along the support normal), and the servo re-fits every frame. Verified offline on
+gb2's frames only; `docs/grasp_target_selection_proposal.md` has the reasoning and the literature. **Nothing since
+ga8 has a successful run behind it.** The next action is a run.
+
+## What was fixed today, by kind (F81-F90 carry the detail)
 
 - **The simulator's action boundary.** Every `cmd_vel` rebuilt the whole action vector through the *teleoperation*
   mapping and kept only `_held_mask` dimensions; only the Bool gripper was masked, so the first cmd_vel of each
@@ -28,25 +35,20 @@ research `feat/manipulation-contracts`, openral `feat/manipulation-contracts`, S
   wall behind it; the handle's bars occluded the slot they bound.
 - **The harness's own numbers wrong about themselves.** One constant as both the seat depth and its tolerance; a
   transient swing tolerance spent as a sustained one; `work_stands` checking reach at the part rather than where
-  the tool ends up; one query timer serving both a lost response and the slowest legitimate answer (F90).
+  the tool ends up; one query timer serving both a lost response and the slowest legitimate answer, which cost
+  three minutes at the start of every run (F90).
 - **The payload interface.** F49 gave the T-handle form closure against a vertical pull and left rotation to
   friction; ga4 rolled it 23.7 deg round the neck during a turn and lost it. A collar below the slot makes the
   fingers captive (F83/F84).
-- **A capability weaker than the robot, and a promise weaker than the dock** (F91). `find` took one frame from the
-  first pose the arm could reach and gave up; the candidate search made the image re-certify a contact length the
-  catalogue declares. So 6 cm of docking error lost `pick` three times with the part in plain view. `find` now
-  takes the views the arm can reach, and `work_stands` answers reach and look at the end of the docking band where
-  each is hardest, instead of at a point with a caveat.
 
 The model's side needed no correction at any point.
 
 ## Method rules that were earned the hard way
 
 - **Look at the pictures before the numbers.** Four wrong hypotheses came out of one day of reading bags; 44
-  wrist frames showed the load being flung in a glance (F81). The saved `find` view showed the part the search
-  said was not there (F91). Record the chassis camera too.
+  wrist frames showed the load being flung in a glance (F81). Record the chassis camera too.
 - **Whether one solid fits on another is arithmetic over data the repository already holds.** Three of ga8's ten
-  defects were sitting in the asset files (F86); the asset file also refuted a plausible fix in one line (F91).
+  defects were sitting in the asset files (F86). Compute; do not infer from run logs.
 - **Read your own code back before running it.** This session it caught a collar placed off the old pedestal
   origin, `self.geom` undefined in the place skill, and a mesh bound taken after the scale proxy joined the scene.
 - **Subtract.** Do not add a tool, a script or a file unless something is impossible without it.

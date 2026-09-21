@@ -4,32 +4,32 @@ Order: `execution_plan` §21 — the proposed method before the external baselin
 **Sequence in force (user): Mission B reliable → `press` live → Mission A → baselines/freeze/experiments.**
 One simulation at a time. Experiments from here on record video (`D0_VIDEO`).
 
-## Blocking — nothing has run since ga8; the next thing is a run
+## Blocking -- `pick` was rebuilt on 2026-09-21 and has not run
 
-gb2's three `pick` failures are answered (F91) and the answer is proven offline on the run's own data, not live.
-The pick, the carry, the place, the stow and the video panel all now stand on offline evidence alone.
+gb2 lost `pick` three times with the handle in plain view: the candidate search filtered measured dimensions
+through eleven absolute thresholds, took one frame, and returned an empty list (F91). The user's ruling: gates on
+absolute numbers are wrong; the handle is a declared affordance, so how to grasp it is declared and vision only
+has to say where it is.
 
-- [ ] **Three clean runs of Mission B from the start, with video.** Watch for, in this order: the 3-minute stall at
-      the start (F90) is gone; `find` takes more than one view and says which; `pick` succeeds without the model
-      having to re-dock; the carry survives a turn with the load (F83/F84, never met); `place` steps along the
-      normal if it has to (F85, never triggered).
+- [ ] **Run Mission B with the rebuilt pick.** `find` takes one view, the VLM names the item's region, the
+      catalogue's interface shape is fitted to the depth (`openral_rskill/interface_fit.py`), the tool servos in
+      re-fitting every frame in the declared orientation (approach along the support normal, jaws across the
+      neck). Offline on gb2's two failed frames: slot centre to 0.8-1.6 mm, agreement 0.89-0.98, ~30 ms a frame.
+      Unproven live: the fit under the fingers' occlusion, the servo on a moving camera, the agreement floor (0.5).
+- [ ] Then three clean runs of Mission B from the start, with video, before anything else.
 
 ## Changed but never run — nothing below has a successful run behind it
 
 ga8 is the only end-to-end success (F87) and it predates all of this.
 
-- [ ] `find` takes the views the arm can reach instead of one (F91), and the declared contact length is no longer
-      re-certified from the image. Only the offline replay on gb2's two failed views: 0 candidates → 5, the neck
-      at 12.9 mm.
-- [ ] `work_stands` answers each promise at the end of the docking band where it is hardest (F91). Computed on the
-      arm's model, not asked of the live boundary — check the answer is not empty on the first run.
 - [ ] The handle: slot 28 mm, bars 12 mm deep (F86). Only the offline replay on ga8's depth.
 - [ ] The shelf 0.6 → 0.75 m, prop boxes at their real height (F86). Only the offline geometry.
 - [ ] `place` steps along the support's outward normal when its own collision check refuses (F85). Never triggered.
 - [ ] The arm holds its posture from step 0 (`hold_action`), and stow is level and rearward (F89). Never run.
-- [ ] Non-model queries resend after 4 s instead of 180 (F90) — **the 3-minute stall at the start of every run.**
+- [ ] Non-model queries resend after 4 s instead of 180 (F90) — **this is the 3-minute stall at the start of
+      every run**. Never run.
 - [ ] An orphaned contact-scene freeze is reclaimed instead of refusing everything after it. Never triggered.
-- [ ] The video panel: four things, at four sizes, in one accent and two verdicts. Rendered on gb2's frames only.
+- [ ] The video panel rewrite (`c5ce88d`). Rendered on gb2's frames only.
 
 ## Then
 
@@ -41,5 +41,5 @@ ga8 is the only end-to-end success (F87) and it predates all of this.
 
 ## Numbers still owed a measured source
 
-`bring_in`'s 5 cm sag margin (`held_drop_m`); the 0.10 rad posture margin; `max_views` = 6, which is a deadline on
-the search and not a measurement. Everything else in the carry and the grasp now has one.
+`bring_in`'s 5 cm sag margin (`held_drop_m`); the 0.10 rad posture margin; the fit's agreement floor of one half. Everything else in the carry and the
+grasp now has one. `CARRY_SUSTAINED_YAW_RAD_S` was removed rather than left undeclared.

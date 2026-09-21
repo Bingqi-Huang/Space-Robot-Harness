@@ -40,28 +40,18 @@ def attempt_summary(ev: dict) -> dict:
     sk = ev["evidence"]["skill"]
     out = {"seq": ev["seq"], "operation": ev["capability"], "args": ev["args"], "success": ev["success"],
            "stage": sk.get("failed_stage") or sk.get("stage"), "why": sk.get("why", ""), "sim_s": sk.get("sim_s")}
-    tries = [{k: a[k] for k in ("attempt", "outcome", "vlm") if k in a}
-             | ({"selected_mark": {k: a["candidate"][k] for k in ("id", "width_m", "depth_m")}} if a.get("candidate") else {})
-             for a in sk.get("attempts", [])]
+    tries = [{k: a[k] for k in ("attempt", "outcome", "fit") if k in a} for a in sk.get("attempts", [])]
     if tries:
         out["tries"] = tries
-    # Reconciliation (method mechanism, not a skill filter): the part the vision model chose, as the skill measured it,
-    # against the catalogued dimension the jaws close across; within the measurement's own pixel resolution or not.
-    closing = (ev["evidence"].get("goal") or {}).get("held_item", {}).get("closing_width_m")
-    if closing:
-        for a in sk.get("attempts", []):
-            if a.get("candidate") and a.get("selection_fx"):
-                # a depth edge is a mixed foreground/background pixel: up to two pixels of doubt at each measured edge
-                resolution = 4 * a["candidate"]["depth_m"] / a["selection_fx"]
-                width = a["candidate"]["width_m"]
-                out.setdefault("reconciliation", []).append({
-                    "selected_mark": a["candidate"]["id"], "measured_width_m": round(width, 4),
-                    "catalogue_closing_width_m": closing, "measurement_resolution_m": round(resolution, 4),
-                    "consistent": abs(width - closing) <= resolution})
-                    # the skill only offers places that measure as the declared contact, so a mismatch here means the
-                    # measurement and the catalogue disagree about what was held, not that another part was chosen
+    # Reconciliation (method mechanism, not a skill filter): how much of the catalogue's declared interface the
+    # wrist depth image agreed with where the skill took hold -- the picture against the record, in two numbers.
+    for a in sk.get("attempts", []):
+        if a.get("fit"):
+            out.setdefault("reconciliation", []).append({
+                "interface_agreement": a["fit"]["agreement"], "residual_m": a["fit"]["residual_m"],
+                "points": a["fit"]["points"]})
     find = sk.get("find") or {}
-    views = [v.get("vlm", {}) for v in find.get("views", [])] + [find.get("locate", {}), find.get("select", {})]
+    views = [v.get("vlm", {}) for v in find.get("views", [])] + [find.get("locate", {})]
     saw = sorted({v["what_is_visible"] for v in views if v.get("what_is_visible")})
     if saw:
         out["vision_model_saw"] = saw[:3]

@@ -4382,3 +4382,9 @@ the mechanics belong inside the skill, so looking again belongs inside the skill
 re-dock.
 
 Unverified: no run has started since.
+
+**Superseded the same day.** The user's ruling on reading this: thresholds on absolute numbers are the wrong
+scheme altogether, and a handle is an affordance -- how to grasp it is declared, and vision only has to say where
+it is. Both fixes above (the declared-length floor and the multi-pose look) were reverted; `pick` now fits the
+catalogue's interface shape to the depth image and servos on the fit (`interface_fit.py`,
+`docs/grasp_target_selection_proposal.md`). The docking-band answer in `work_stands` stands.
