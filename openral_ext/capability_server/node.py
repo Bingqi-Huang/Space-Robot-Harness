@@ -667,8 +667,14 @@ class CapabilityServer(Node):
                                               yaw=b["yaw"] + float(a.get("dyaw_rad", 0.0)), approach_m=0.0))
         if capability in ("navigate_to_feature", "dock_at_feature"):
             p, n = self.feature_geometry(a["feature"])
-            x, y, yaw = stand_at(p, n, self.stand_distance(a["feature"]),
-                                 a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0))
+            d0, standoff = self.stand_distance(a["feature"]), a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0)
+            if capability == "dock_at_feature" and standoff and not self.reaches_work(a["feature"], d0 + standoff, work_heights(a["feature"])):
+                offered = [(r["distance_m"], r["standoff_m"]) for r in self.work_stands(a["feature"])["stands"]]
+                raise self.NoStand(
+                    f"docking {standoff:+.3f} m from the stand for {a['feature']} puts the rover {d0 + standoff:.3f} m from the point, "
+                    f"where the arm cannot do the whole job without folding into itself or reaching a joint stop, wherever within "
+                    f"the docking band it lands. Stands that can (distance from the point, standoff_m to pass): {offered}")
+            x, y, yaw = stand_at(p, n, d0, standoff)
             if capability == "navigate_to_feature":
                 return lower("navigate_to_pose", dict(x=x, y=y, yaw=yaw))
             return lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, **({"approach_m": a["approach_m"]} if "approach_m" in a else {})))
