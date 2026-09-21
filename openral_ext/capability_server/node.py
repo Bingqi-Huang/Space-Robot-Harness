@@ -56,21 +56,11 @@ PICK_STANDOFF_MIN_M = min(_skill_goal("pick")["standoff_m"])
 PRESS_VIEW_DEPTH_M = float(_skill_goal("press")["view_part_depth_m"][0])
 PRESS_STANDOFFS_M = [float(_skill_goal("press")["standoff_m"]) * k for k in (1.0, 1.4, 0.7, 1.8)]  # press.stand_in_front's own offers
 PICK_STANDOFFS_M = [float(v) for v in _skill_goal("pick")["standoff_m"]]
+PICK_BRING_IN_STEP_M = float(_skill_goal("pick")["bring_in_step_m"])  # the carry-in bring_in tries first, from the pick manifest
+PICK_BRING_IN_RAISE_M = float(_skill_goal("pick")["bring_in_raise_step_m"])
 PICK_VIEW_DEPTH_M = float(_skill_goal("pick")["view_part_depth_m"][0])
 LOOK_PITCHES_DEG = (0.0, 10.0, 20.0, 30.0)  # the elevations both skills offer their one view from
 
-
-def _seed_bank(k: int = 8) -> list[list[float]]:
-    """Arm configurations to start inverse kinematics from: the ready posture, then a fixed spread over the working
-    branch. One seed finds one configuration; whether the robot can stand there without hitting itself depends on
-    which of the arm's redundant configurations that is, and the answer has to be 'some do' and not 'the first did'."""
-    rng = np.random.default_rng(3)
-    names = [f"joint{i}" for i in range(1, 8)]
-    bank = [list(READY)]
-    for _ in range(k):
-        bank.append([float(np.clip(rng.uniform(c - h, c + h), -JOINT_LIMITS_RAD[i] + 0.05, JOINT_LIMITS_RAD[i] - 0.05))
-                     for i, (c, h) in enumerate(POSTURE.get(n, (0.0, JOINT_LIMITS_RAD[i])) for i, n in enumerate(names))])
-    return bank
 
 from rclpy.action import ActionClient, ActionServer, CancelResponse
 from rclpy.duration import Duration
@@ -171,7 +161,7 @@ REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arg
 JAW_JOINT = "eg2_joint1"
 # the jaw bands come from the skills' own definition (openral_rskill._eye_in_hand): the boundary and the skills must
 # read one gripper the same way, or an open jaw is a held item on one side of the call and not the other (run g4p)
-from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD, JOINT_LIMITS_RAD, POSTURE  # noqa: E402
+from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD, JOINT_LIMITS_RAD, POSTURE, working_seeds  # noqa: E402
 from openral_rskill.grasp_perception import GripperGeometry  # noqa: E402
 from openral_rskill.procedural_pick import tool_rotation as look_rotation  # noqa: E402
 from openral_rskill.procedural_press import facing  # noqa: E402
@@ -381,7 +371,7 @@ class CapabilityServer(Node):
         self.rskill = ActionClient(self, ExecuteRskill, "/openral/execute_rskill", callback_group=cb)
         self.ik = self.create_client(GetPositionIK, "/compute_ik", callback_group=cb)
         self.validity = self.create_client(GetStateValidity, "/check_state_validity", callback_group=cb)
-        self._seeds = _seed_bank()  # built here: it reads the ready posture and the working-branch windows defined below
+        self._seeds = working_seeds()  # built here: it reads the ready posture and the working-branch windows defined below
         self._free_cache: dict = {}  # tool pose -> whether some self-collision-free configuration reaches it
         self._ok_cache: dict = {}  # (kind, distance, height) -> whether the whole job can be done from there
         self._reach_lock = threading.Lock()
@@ -697,12 +687,18 @@ class CapabilityServer(Node):
         if capability in ("navigate_to_feature", "dock_at_feature"):
             p, n = self.feature_geometry(a["feature"])
             d0, standoff = self.stand_distance(a["feature"]), a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0)
-            if capability == "dock_at_feature" and standoff and not self.reaches_work(a["feature"], d0 + standoff, work_heights(a["feature"])):
-                offered = [(r["distance_m"], r["standoff_m"]) for r in self.work_stands(a["feature"])["stands"]]
-                raise self.NoStand(
-                    f"docking {standoff:+.3f} m from the stand for {a['feature']} puts the rover {d0 + standoff:.3f} m from the point, "
-                    f"where the arm cannot do the whole job without folding into itself or reaching a joint stop, wherever within "
-                    f"the docking band it lands. Stands that can (distance from the point, standoff_m to pass): {offered}")
+            self._stand_advice = None
+            if capability == "dock_at_feature" and standoff:
+                # The dock is the model's to choose: the rover may back off a panel to free the arm as well as close on it, and
+                # the boundary cannot tell which it is doing. What it can say is whether the arm could do the job at this
+                # feature from where the rover will stand, and from which stands it could. mc3: a refusal here stopped the
+                # rover backing away from a panel it had just failed at, with the arm stuck in front of it.
+                works = self.reaches_work(a["feature"], d0 + standoff, work_heights(a["feature"]))
+                self._stand_advice = {"feature": a["feature"], "rover_distance_from_the_point_m": round(d0 + standoff, 3),
+                                      "the_arm_can_do_the_job_from_here": bool(works),
+                                      **({} if works else {"stands_from_which_it_can": [
+                                          {"distance_m": r["distance_m"], "standoff_m": r["standoff_m"]}
+                                          for r in self.work_stands(a["feature"])["stands"]]})}
             x, y, yaw = stand_at(p, n, d0, standoff)
             if capability == "navigate_to_feature":
                 return lower("navigate_to_pose", dict(x=x, y=y, yaw=yaw))
@@ -796,7 +792,9 @@ class CapabilityServer(Node):
                     pass  # a fact about that feature, which whoever asks for it is told
 
     def ik_solution(self, p_base: np.ndarray, R: np.ndarray, seed: list[float]) -> list[float] | None:
-        """One arm configuration for this tool pose in the rover frame, nearest `seed`, ignoring collisions."""
+        """One arm configuration for this tool pose in the rover frame, nearest `seed`, ignoring collisions. Any is enough: a
+        skill's planned moves (the stand-off, the view, the carry-in check) take any collision-free configuration too, so a
+        stand listed here is one a skill can take; only a servo step from where the arm is keeps the working-branch rule."""
         req = GetPositionIK.Request()
         r = req.ik_request
         r.group_name, r.ik_link_name, r.avoid_collisions = "rm_group", "tcp_frame", False
@@ -817,7 +815,8 @@ class CapabilityServer(Node):
         if res is None or res.error_code.val != 1:
             return None
         js = res.solution.joint_state
-        return [js.position[list(js.name).index(n)] for n in names]
+        q = [js.position[list(js.name).index(n)] for n in names]
+        return q
 
     def robot_free(self, q: list[float]) -> bool:
         """Whether the robot in this arm configuration touches only the world, not itself. What the world holds
@@ -860,6 +859,12 @@ class CapabilityServer(Node):
             end = [(at(float(GripperGeometry().seat_depth_m)), R) for R in rots]
             stand = [(at(-s), R) for s in PICK_STANDOFFS_M for R in rots]
             view_back = PICK_VIEW_DEPTH_M - behind
+            # What is picked is carried in towards the rover before the drive (bring_in): one step in, level or one step
+            # up. A grasp the arm can make only at full stretch has no such pose, and the item rides the longest lever
+            # and comes out of the jaws (gc2: pulled in 0.0 m, the ORU slid out in 13 s with the base still).
+            carry = [(np.array([-(x + float(GripperGeometry().seat_depth_m) - PICK_BRING_IN_STEP_M), 0.0, z + dz]), R)
+                     for dz in (0.0, PICK_BRING_IN_RAISE_M) for R in rots]
+            return [end, stand, carry, [(at(-view_back), look_rotation(pitch, 0.0, 180.0)) for pitch in LOOK_PITCHES_DEG]]
         else:
             R = facing(np.array([1.0, 0.0, 0.0]))
             end = [(at(PRESS_DEPTH_M), R)]
@@ -989,6 +994,7 @@ class CapabilityServer(Node):
                                   "whatever is between here and there without looking. Put the item down first, or "
                                   "drive with the arm as the pick left it.")
             return res
+        self._stand_advice = None
         deadline = g.deadline_s or float(contract["default_deadline_s"])
         sim0 = self.sim_t
         if g.capability == "approach_target":
@@ -1008,6 +1014,8 @@ class CapabilityServer(Node):
                 params["evidence_dir"] = str(self.evidence_dir)
             r = self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
+            if self._stand_advice:
+                evidence["stand_advice"] = self._stand_advice
             if r.evidence_json and r.evidence_json != "{}":
                 evidence["skill"] = json.loads(r.evidence_json)  # the skill's own record: raw evidence, not a verdict
             if not r.success and "position" in evidence["goal"]:  # a planner error code does not say what was wrong (ob5, ob6)

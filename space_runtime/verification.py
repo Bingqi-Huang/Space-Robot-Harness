@@ -78,7 +78,8 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         dyaw = abs((b["yaw"] - goal["yaw"] + math.pi) % (2 * math.pi) - math.pi)
         out.append(dict(effect="base_at_commanded_pose", holds=d <= band["position_m"] and dyaw <= band["yaw_rad"],
                         position_error_m=round(d, 3), yaw_error_rad=round(dyaw, 3), band=band,
-                        source="rover localization estimate (AMCL) vs commanded goal"))
+                        source="rover localization estimate (AMCL) vs commanded goal",
+                        **({"stand_advice": evidence["stand_advice"]} if evidence.get("stand_advice") else {})))
     if capability in TCP and isinstance(evidence.get("tcp_pose"), dict):
         tol = args.get("tolerance_m", TCP_DEFAULT_TOL[capability]) * cfg["tcp"]["tolerance_factor"]
         if capability.startswith("plan_"):
