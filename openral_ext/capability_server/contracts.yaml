@@ -128,10 +128,8 @@ effects:
       `standoff_m` further out on that axis (to back away). Entered along the axis. The arm works off the rover's
       rear, so at this pose the rear faces the feature: the front camera looks away from it and the wrist camera can
       see the work area.
-      The distance chosen by default is chosen for reach alone: it is the roomiest stand the arm can put its
-      tool at the work from, and reaching a thing is not the same as being able to look at it squarely.
-      `work_stands` reports, per distance, how shallowly the wrist camera can look from there and the
-      `standoff_m` that parks there; ask it when what must be measured depends on the angle it is seen from.
+      The default distance is the roomiest stand the arm can put its tool at the work from; `work_stands` lists
+      the stands that reach the work wherever the dock lands, with the `standoff_m` that parks at each.
     inputs:
       feature: [string, true, "site interaction point"]
       standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 0)"]
@@ -223,27 +221,24 @@ effects:
 
   pick:
     description: >-
-      Pick up a stationary item described in words, holding it by the part you name, with the arm and the wrist RGB-D camera,
-      and lift it clear of where it stood. The arm needs no preparation: the skill takes its own views and plans its
-      own way there from wherever the arm is. The item must be within the arm's reach behind the rover (dock at the
-      item's work pose first). Say where the work is: the place frame the item stands on, and how high the part you
-      named sits above the site frame -- that place frame's z from site_map plus the item's
-      handle_height_above_base_m from the equipment catalogue. The skill puts its camera level with that part (an
-      upright handle neck shows the width the jaws close on from the side, and not at all from above) and takes one
-      view there. It finds possible grasps in that image, has the
-      vision-language model choose the one on the described part of the described item, commits that contact in odom,
-      approaches using robot pose feedback while checking visual visibility, closes the
-      jaws and checks the hold while lifting. One call commits one contact; failure returns to the caller before
-      another observation/selection. On failure it reports the stage it
-      reached (find, select, approach, grasp, hold), why, and what the camera and the vision model saw. It ends with
-      the item held clear of where it stood and the arm in that carrying posture: the rover can drive like this, and
+      Pick up a stationary item by its catalogued lifting interface, with the arm and the wrist RGB-D camera, and
+      lift it clear of where it stood. The arm needs no preparation. The item must be within the arm's reach behind
+      the rover (dock at the item's work pose first). Say where the work is: the place frame the item stands on
+      and how high the interface sits above it. The skill takes one view there, asks the vision-language model which
+      surface in the view is the described item, fits the interface's declared shape to the depth image near it,
+      and reports how much of that shape the picture agreed with. How to take hold is declared, not measured: the
+      jaws close across the neck, the tool approaches along the support's surveyed normal, the fingers seat on the
+      pads. The tool then servos in on the interface as re-fitted every frame, closes the jaws and checks the hold
+      while lifting. On failure it reports the stage it reached (find, select, approach, grasp, hold), why, and
+      what the camera and the vision model saw. It ends with the item held clear of where it stood and the arm in
+      that carrying posture: the rover can drive like this, and
       the arm must not be folded (stow, arm_ready) until the item is set down.
     inputs:
       target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
       part: [string, true, "the contact region to hold, described in words (e.g. the narrow neck of the T-shaped handle)"]
       item: [string, false, "the item's name in the equipment catalogue; the skill then keeps its catalogued size clear of the rover while carrying"]
       support: [string, false, "the place frame the item stands on (e.g. depot_stand/slot_0), from site_map"]
-      grasp_height_m: [number, false, "how high the part you named sits above the site frame: the place frame's own z from site_map plus the item's handle_height_above_base_m from the equipment catalogue. The skill puts its camera level with it; without it the skill has to guess and can look at the wrong part of the item"]
+      grasp_height_m: [number, false, "how high the lifting interface sits above the site frame: the place frame's own z from site_map plus the item's handle_height_above_base_m from the equipment catalogue. This is where the camera is pointed"]
     default_deadline_s: 900
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-pick
@@ -366,21 +361,11 @@ queries:
 
   work_stands:
     description: >-
-      Where the rover can stand to work at a surveyed point, and how squarely the arm can look at it from each
-      distance. For every stand the reach model offers, `reaches_the_work` is whether the tool can end up **at the
-      grasp** -- `reach_is_checked_at_m` says where that is, the work point plus the depth the jaws seat a contact
-      at, because a stand that reaches the point can still be short of the grasp by that much. `shallowest_look_
-      deg_above_horizontal` is the flattest angle the wrist camera can look from; the camera rides behind the tool,
-      so looking at all means standing off. What the angle costs is how much of the contact is *seen*: a grasp is
-      recognised by the width the jaws close across, and from above whatever overhangs the contact cuts into its
-      length. It is not a precondition -- a lifting interface is built to stand proud of its own head, and the
-      catalogue says how deep that head is -- so a stand offering only a look from above is a worse stand, not an
-      unusable one, and `null` means the arm cannot look at the work from there at all. Both answers already carry
-      where the rover actually lands rather than where it aimed: docking is verified to `dock_error_m`, so reach is
-      checked at the far end of that band and the look at the near end -- the end where each is hardest to keep --
-      and `reach_is_checked_at_m` / `look_is_checked_at_m` say where. A stand offered here is one the rover can work
-      from wherever the dock puts it. Choosing the stand is yours: each stand carries the standoff_m to pass to
-      dock_at_feature to park there.
+      Where the rover can stand to work at a surveyed point. For every stand the reach model offers,
+      `reaches_the_work` is whether the tool can end up at the grasp from there -- checked at the far end of the
+      docking band (docking is verified to `dock_error_m`), so a stand offered here is one the rover can work from
+      wherever the dock puts it; `reach_is_checked_at_m` says where. Each stand carries the `standoff_m` to pass to
+      dock_at_feature to park there. Choosing the stand is yours; nothing about the camera's view depends on it.
     inputs:
       feature: [string, true, "site interaction point, e.g. depot_stand/slot_0"]
       grasp_height_m: [number, false, "how high above the site frame the part sits; defaults to the boundary's own work height, which is the tallest catalogued handle over any support"]

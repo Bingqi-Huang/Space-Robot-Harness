@@ -86,6 +86,12 @@ def local_tools() -> list[dict]:
 
 def decode(name: str, args: dict):
     rationale = str(args.pop("rationale", ""))
+    if len(rationale.split()) < 3:
+        # The contract asks for a sentence; an empty or placeholder rationale is a call that has not been justified,
+        # which is the same thing as a reply with no call in it -- not an answer, and re-asked the same way. gb3's
+        # `dock_to_pose {0, 0, 0}` came with the rationale "placeholder" after 50 s of reasoning that had chosen a
+        # different tool and a different target (research repo F92).
+        raise ROSReasonerInvalidPlan(f"tool {name!r}: no rationale ({rationale!r}); an unjustified call is not an answer")
     try:
         if name in CONTRACTS["effects"] or name in CONTRACTS["queries"]:
             return ExecuteRskillTool(rskill_id=name, goal_params_json=json.dumps(args), rationale=rationale)

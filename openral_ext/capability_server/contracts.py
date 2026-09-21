@@ -49,12 +49,12 @@ def item_catalogue(record: dict) -> dict:
                      "few degrees of slip widens what they hold by half again. A turn is the move that does this: it "
                      "asks for the torque continuously, and the slip accumulates instead of swinging back")),
                 "not_clamping_regions": ["transverse head", "collar", "wider mounting pedestal"],
-                "observation_requirement": "distinguish the neck from both the head and pedestal, and see clearance for both fingers",
+                "how_it_is_found": "the pick skill fits this interface's declared shape to its wrist depth image; you name the item, not the contact",
                 "closing_width_m": handle["neck_thickness_m"],  # the neck thickness is what the jaws close across
                 "dimensions_m": {k.removesuffix("_m"): handle[k] for k in (
                     "neck_thickness_m", "neck_width_m", "neck_height_m", "head_width_m", "head_depth_m",
                     "collar_thickness_m", "collar_width_m", "collar_depth_m", "standoff_m") if k in handle},
-                "evidence_requirement": "catalogue geometry does not locate the interface; confirm the visible part before contact",
+                "evidence_requirement": "catalogue geometry does not locate the interface; the pick reports how much of the shape the picture agreed with",
             }
     return result
 
