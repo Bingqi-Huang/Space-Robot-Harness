@@ -122,6 +122,11 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         state = jaw_state(arm["jaw_rad"], cfg)
         m = dict(effect="item_placed", support=args["support"], jaw=state, jaw_rad=arm["jaw_rad"],
                  source="jaw encoder + arm kinematics (tool clear of the release point) + wrist images after the retreat (flow recomputed here)")
+        # What the skill got as far as, kept whether or not it finished: a skill that let go and then stopped in its retreat
+        # (gc1) leaves the model asking a camera whether the item is there, when the record says where it was let go
+        if contact:
+            m.update(let_go_at=contact["tcp"], let_go_above_expected_m=contact.get("stopped_above_expected_m"),
+                     skill_stopped_at=sk.get("failed_stage"))
         if st and contact and isinstance(evidence.get("tcp_pose"), dict):
             clear = math.dist(evidence["tcp_pose"]["position"], contact["tcp"])
             flow, depth, n = image_motion(st["before"], st["after"], st["before_depth"], cfg["place"]["near_m"],

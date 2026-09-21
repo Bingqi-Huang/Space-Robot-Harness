@@ -137,7 +137,11 @@ def apply(f: dict, ev: dict) -> None:
             held = [name for name, o in f["objects"].items() if o["state"] == "in_gripper"]
             for name in held:
                 f["objects"][name] = ({"state": f"on {ev['support']}", "seq": ev["seq"], "by": "verified item_placed"} if ev["holds"]
-                                      else {"state": "unknown", "seq": ev["seq"], "by": "item_placed did not verify"})
+                                      else {"state": "unknown", "seq": ev["seq"],
+                                            "by": "item_placed did not verify" + (
+                                                f": the jaws let go with the tool {ev['let_go_above_expected_m'] * 100:+.0f} cm from where the support "
+                                                f"should take the item, and the skill stopped at {ev.get('skill_stopped_at')}"
+                                                if ev.get("let_go_above_expected_m") is not None else "")})
     elif k == "query_answered":
         f["recent"][-1]["result"] = {"success": ev["success"], "value": ev["value"], "failure_reason": ev["failure_reason"]}
         if ev["success"]:
