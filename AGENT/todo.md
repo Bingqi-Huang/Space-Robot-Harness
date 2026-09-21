@@ -14,7 +14,10 @@ has to say where it is.
 - [ ] **Run Mission B with the rebuilt pick.** `find` takes one view, the VLM names the item's region, the
       catalogue's interface shape is fitted to the depth (`openral_rskill/interface_fit.py`), the tool servos in
       re-fitting every frame in the declared orientation (approach along the support normal, jaws across the
-      neck). Offline on gb2's two failed frames: slot centre to 0.8-1.6 mm, agreement 0.89-0.98, ~30 ms a frame.
+      neck). Offline: every current-handle frame on record (ga8, ga9, gb1, gb2) fits at 0.97-0.99 agreement, 0.3-0.4 mm;
+      gb2's two failed frames at 0.80 and 0.91; a distant structure that a tight judge scored 0.79 scores 0.14 once
+      the sky under the shape counts; with the fingers on the neck (ga8/ga9 pre-lift frames) agreement is 0.03-0.33,
+      so the servo switches to carrying the last fit. ~18 ms a frame, ~120 ms the first.
       Unproven live: the fit under the fingers' occlusion, the servo on a moving camera, the agreement floor (0.5).
 - [ ] Then three clean runs of Mission B from the start, with video, before anything else.
 
