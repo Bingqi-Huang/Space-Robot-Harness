@@ -4514,3 +4514,22 @@ live planning scene every tool pose inside the slot, +-10 mm in height and 40 mm
 What the three findings share for the paper: every one was found from the record of a failed run and settled
 offline -- a live planner asked what it would accept, a bag replayed against the loop's own arithmetic -- before
 another run was started.
+
+## F96 -- the arm's joints were stuck by the friction the robot's USD authors on them
+
+The arm never held what it was told, and a good part of the session went on the consequences: the arm answered 0.5-0.75 s late (F95), settled above its command, sagged 5-6 cm over a carry, and on the last runs its wrist saturated at its torque limit at rest and whipped when the arm first moved, twisting the ORU's T-handle out of the jaws (gb8r3: jaw 0.169 to 0.098 within 6 s of place starting). Skills, gains and the harness were tuned around a plant that was misbehaving.
+
+**Where it was found.** The bag of a real run: while `pick` waited on the vision model the command was one constant vector for 40 s, and joints 1, 3, 5 and 7 sat 2-7 degrees from it with their drives at the torque limit (60, 30, 10, 10 N m). Not a tracking error, not a second command source (one distinct vector in 1200 messages). Then a bare simulation with nothing else in it -- the robot on a ground plane, a 0.10 rad step per joint (`experiments/robot_check/arm_steps.py`):
+
+| what was changed | joints 1-7, 0.10 rad step |
+|---|---|
+| as configured, base free | half way in ~7.5 s, drives saturated, end torque 10-29 N m |
+| base fixed | 0.05-0.3 s, end torque under 1.4 N m |
+| self collisions off | identical to as configured |
+| sleeping off, 1 g root given 50 kg | identical |
+| solver iterations 32 to 128, or step 5 ms to 2.5 ms | worse (less motion in the same time) |
+| USD joint friction 0.4 0.4 0.3 0.3 0.2 0.2 0.1 to 0 | 0.05-0.3 s, end torque under 1.2 N m |
+
+**Why.** PhysX's joint friction is a unitless coefficient on the force transmitted between the two links a joint connects, not a torque. In an articulation whose base is free that force is large enough that the coefficient times it exceeds what the drives can deliver. With the base fixed, or the coefficient zero, the same drives (stiffness 600, damping and limits as configured, checked against what PhysX holds) are fast and hold with almost no torque. The values are what the USD carried, not a typo in our configuration; the actuator group's `friction` option did not reach PhysX in this Isaac Lab (the read-back stayed at the USD's values), so the fix is in the asset: `experiments/robot_check/zero_arm_joint_friction.py`.
+
+**What it does not say.** It does not say the earlier findings were wrong: the ratchets of `hold_here`, the leash and the carry sag are real and separate, at centimetres. It does say that the gains, ramps and margins tuned in F92-F95 were tuned against an arm that lagged by seconds, and that the wrist saturation the place failures ended in was this. The first graph-level check is the next full runs.
