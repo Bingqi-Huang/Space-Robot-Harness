@@ -4447,3 +4447,70 @@ reasoner has to hold three things -- what the model may not do (invariants), whe
 the third is the gap, and it is small.
 
 Recorded, not yet acted on. Whether to add (1) and (3) is the user's call.
+
+## F93 -- a stand has to reach the whole job, and "reaches" has to mean "without hitting itself"
+
+gb6 docked at the boundary's default stand (0.96 m), found the handle at 0.96 agreement, and had no arm
+configuration for any of six stand-off options. ma4 and ma5 did the same at a button: `press` failed at `locate`,
+twice, from two different stands (0.589 m and 0.784 m), with every one of twelve viewing poses unreachable.
+
+**The boundary's answer was wrong in the same way three times.** `work_stands` asked MoveIt for an arm configuration
+at one pose per job with collisions off. gb2 reached the handle's point and stalled short of the seat (F88); gb6
+reached the seat and had none for the stand-off, 7-14 cm nearer the rover than the handle; ma5 reached a button and
+every configuration for its stand-off and view folded the forearm into the arm's own base. Asked offline of the
+live MoveIt -- IK with collisions off, then `check_state_validity` on each solution -- the pure kinematics says all
+of stand-off, view and stroke are reachable for a button 0.5-1.1 m out, and MoveIt names the contact for the ones
+the planner refuses: `base_link x Link5`, `base_link x Link6`, `base_link x eg2_*`. The button was 0.784 m from the
+rover's origin and the arm has to fold to reach a tool 0.68 m out.
+
+The rule that replaces it: a stand is listed only if, for every pose the skill for that kind of point takes (a
+grasp's stand-off, seat and view; a press's stand-off, stroke and view), some seed of a fixed bank yields a
+configuration with no robot-vs-robot contact, at the near, middle and far end of the docking band. World contacts are
+ignored because they depend on where the rover will stand; its own geometry does not. Every candidate distance is
+scanned -- the window for a press, D in [0.95, 1.10] m, was not among the twelve stands with the most room, which
+is what the boundary used to look at. Result: press default 1.06 m (was 0.589 / 0.805), pick 1.065 m.
+
+## F94 -- press: three gates, one cause
+
+At the new stand `press` ran further than it ever had, and each step ended on a fact about a number written down.
+
+`locate` refused a button in plain view at the frame's centre because it measured 0.3142 m against
+`min_depth_m: 0.315`. The gripper's own reach in its camera follows from the mount and the tool -- 0.285 m -- and a
+surface beyond it cannot be the gripper. (The silhouette mask `tool_in_view` also produces was tried and refused: it
+over-covers by construction and reaches the button's lower edge.)
+
+The stroke then ran its full 3 cm and met nothing, because the simulator's panel does not resist the tool; the skill
+reported a miss. **The evaluator had counted the press and cleared PDU-2's fault** -- `faults.pdu_2 false`,
+`presses.pdu_2 1` -- the first time the new skill ever pressed a button. The skill was waiting for a signal the world
+does not give and calling its absence failure. It now records `contact.resisted` and returns; the `pressed` verifier
+already judged by kinematics alone (how far past the measured face the tool went, how far back it came), never by the
+skill's flag. This is the harness's own rule -- an unsure check is not a veto, its facts go to whoever decides -- and
+the skill had not followed it.
+
+A third run failed at `locate` because the model described the button as "below the large round status lamp": the
+frame is a few tens of centimetres across and the lamp is not in it, so the vision model correctly said no button
+was visible below it. The contract asked for a description "by appearance and position". It asks for what the
+close view shows now.
+
+## F95 -- the servo was a limit cycle, in position and again in orientation
+
+`pick` stalled 2.6 cm short in gb2 and 2.9 cm short in gb7r1 with the target steady and the arm reaching it. The
+bag's `switchable_arm` command against the joint states showed the command itself swinging with a 3 s period, the
+measured joints trailing it by 0.5-0.75 s. `servo` integrates the measured error into the command each 50 ms cycle
+at up to 20 per second, limited only by a 5 cm/s speed cap: that is a limit cycle for any delay of the arm over 0.3 s.
+Copied line for line into a model of the loop (`experiments/servo_loop.py`) against arms answering 0.3, 0.6 and 1.0 s
+late, the law as written swings +-26, +-39 and +-59 mm and never settles; a gain of 1 per second and no sag
+integral settles in under 2.5 s at every delay and holds +-2 mm with 3 mm of noise on the goal. The second integrator
+the sag term adds is destabilising by itself (+-38 mm at a gain of 1.5 with it on), which is why it stays for the
+stages that carry a load and off for the ones that do not.
+
+The gain was added as an opt-in parameter for the empty-jaw stages, and the stand-off then settled in 0.72 s to 3 mm.
+The close-in still swung +-9 mm sideways at 1.6 Hz with the goal steady to 0.8 mm: the orientation term takes the
+whole rotation error every cycle too, a 20/s loop about a 0.2 m lever. The same gain applies to it now. By the time
+the finger met the collar the tool had drifted 16 mm sideways and 7 mm low -- the slot leaves the fingers 5 mm to
+either side -- which the forward kinematics of the blocked configuration showed and the slot itself did not: in the
+live planning scene every tool pose inside the slot, +-10 mm in height and 40 mm in depth, is collision-free.
+
+What the three findings share for the paper: every one was found from the record of a failed run and settled
+offline -- a live planner asked what it would accept, a bag replayed against the loop's own arithmetic -- before
+another run was started.
