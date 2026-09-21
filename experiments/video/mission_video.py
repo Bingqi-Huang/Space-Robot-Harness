@@ -64,8 +64,12 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
     and the queries the boundary answers from its own state. Those are in `events.jsonl` for anyone reading the
     record; on a video they crowd out the four things a viewer needs.
     """
-    state = {"mission": "", "plan": [], "log": [], "now": "", "why": "", "stage": "", "held": "nothing"}
+    state = {"mission": "", "plan": [], "log": [], "now": "", "why": "", "stage": "", "held": "nothing",
+             "thinking": None, "reply": "", "reasoning": "", "llm_s": None}
     times, states = [], []
+    # wall seconds per simulated second over the run: the model thinks in wall time and the video plays sim time
+    span_w, span_s = events[-1]["wall_t"] - events[0]["wall_t"], events[-1]["sim_t"] - events[0]["sim_t"]
+    state["wall_per_sim"] = span_w / span_s if span_s > 0 else 1.0
 
     def note(text: str, kind: str = "plain", detail: str = "") -> None:
         state["log"] = state["log"][-8:] + [{"t": e["sim_t"], "text": str(text), "kind": kind, "detail": detail}]
@@ -74,9 +78,13 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
         k = e["kind"]
         if k == "mission_received":
             state["mission"] = e["text"]
+        elif k == "reasoner_step_started":
+            state.update(thinking=e["sim_t"], reply="", reasoning="", llm_s=None)
         elif k == "tool_proposed":
-            state.update(now=str(e["tool"]), why=str(e.get("rationale") or ""), stage="")
+            state.update(now=str(e["tool"]), why=str(e.get("rationale") or ""), stage="", thinking=None,
+                         reply=str(e.get("content") or ""), reasoning=str(e.get("reasoning") or ""), llm_s=e.get("llm_s"))
         elif k == "reasoner_step_failed":
+            state["thinking"] = None
             note("the model's answer was not a usable call", "bad")
         elif k == "guard_decision" and e.get("outcome") != "allow":
             note(f"refused — {e.get('reason', '')}", "bad")
@@ -278,6 +286,30 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
         for i, t in enumerate(said[:2]):
             text(t + ("…" if i == 1 and len(said) > 2 else ""), small, FAINT, dx=12, gap=3)
     ops.append(("bar", top, y - 2))
+    y += 12
+
+    # the remote model, in its own words: while it thinks, that it is thinking and for how long; after, what it
+    # said beside the call and the opening of its reasoning. A robot that stands still while a model thinks is not
+    # stuck, and the record can say so.
+    caption("model")
+    if state.get("thinking") is not None:
+        waited = (sim_t - state["thinking"]) * state.get("wall_per_sim", 1.0)
+        dots = "·" * (1 + int(sim_t * 3) % 3)
+        text(f"thinking {dots:<3}", body, AMBER, gap=3)
+        text(f"{max(waited, 0):.0f} s waiting on the model", small, FAINT, gap=3)
+    elif state.get("reply") or state.get("reasoning"):
+        if state.get("reply"):
+            said = wrap(state["reply"], 56)
+            for i, t in enumerate(said[:2]):
+                text(t + ("…" if i == 1 and len(said) > 2 else ""), body, DIM, gap=4)
+        if state.get("reasoning"):
+            said = wrap(state["reasoning"].replace("\n", " "), 60)
+            for i, t in enumerate(said[:3]):
+                text(t + ("…" if i == 2 and len(said) > 3 else ""), small, FAINT, gap=3)
+        if state.get("llm_s"):
+            text(f"answered in {state['llm_s']:.0f} s", small, FAINT, gap=3)
+    else:
+        text("no reply recorded", small, FAINT, gap=3)
     y += 12
 
     caption("record")

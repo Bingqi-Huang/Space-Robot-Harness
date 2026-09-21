@@ -144,16 +144,22 @@ class Agent:
         state = self.store.facts["ledger"]
         return MissionState.from_state_dict(state) if state else None
 
+    def proposed(self, **data) -> None:
+        """A `tool_proposed` event with what the model said around the call: its reply text and, where the endpoint
+        returns it, its reasoning -- the record is the transcript, and a video of the run shows the model's own
+        words rather than a paraphrase."""
+        self.event("tool_proposed", **data, llm_s=getattr(self, "_llm_s", None), **self.client.last_reply)
+
     def dispatch(self, call) -> None:
         if isinstance(call, EmitPromptTool):
             tool = "report_to_operator" if call.target_topic == REPORT_TOPIC else "request_operator"
-            self.event("tool_proposed", tool=tool, args={"text": call.text}, rationale=call.rationale)
+            self.proposed(tool=tool, args={"text": call.text}, rationale=call.rationale)
             self.event("operator_report" if tool == "report_to_operator" else "operator_request", text=call.text)
             return
         name, args = call.rskill_id, json.loads(call.goal_params_json or "{}")
         if name == DECOMPOSE:
             subtasks, target = [t for t in args["subtasks"] if t.strip()], args.get("target_task_id", "")
-            self.event("tool_proposed", tool="decompose_mission", args={"target_task_id": target, "subtasks": subtasks}, rationale=call.rationale)
+            self.proposed(tool="decompose_mission", args={"target_task_id": target, "subtasks": subtasks}, rationale=call.rationale)
             ledger = self.ledger()
             if not target:
                 # replan: closed tasks stay as history, every open task is replaced by the new list
@@ -170,7 +176,7 @@ class Agent:
             if ok:
                 self.event("ledger_changed", ledger=ledger.to_state_dict())
             return
-        self.event("tool_proposed", tool=name, args=args, rationale=call.rationale)
+        self.proposed(tool=name, args=args, rationale=call.rationale)
         if name == SET_TASK_STATUS:
             ledger = self.ledger()
             ok = ledger is not None and ledger.active() is not None
@@ -224,9 +230,10 @@ class Agent:
                     self.event("fdir_changed", fault="estop", active=bool(m.latched), detail=m.detail)
             step += 1
             self.renderer.step = step
+            self.event("reasoner_step_started", step=step)  # the model is thinking from here until the next proposal
             t = time.time()
             res = self.core.tick(world_state=None, renderer=self.renderer, palette=self.palette, force=True)
-            llm_s = round(time.time() - t, 1)
+            llm_s = self._llm_s = round(time.time() - t, 1)
             if res.tool_call is None:
                 raw = self.client.last_raw or {}
                 self.event("reasoner_step_failed", tool=raw.get("name", "?"), args=raw.get("arguments", ""), llm_s=llm_s,
