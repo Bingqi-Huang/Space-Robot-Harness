@@ -54,7 +54,6 @@ PICK_STANDOFF_MIN_M = min(_skill_goal("pick")["standoff_m"])
 #: where the press skill's camera stands from its target (the depth it measures a part at, less the camera's
 #: offset behind the tool, read off TF at run time) and how far it drives past the face
 PRESS_VIEW_DEPTH_M = float(_skill_goal("press")["view_part_depth_m"][0])
-PRESS_DEPTH_M = float(_skill_goal("press")["press_depth_m"])
 PRESS_STANDOFFS_M = [float(_skill_goal("press")["standoff_m"]) * k for k in (1.0, 1.4, 0.7, 1.8)]  # press.stand_in_front's own offers
 PICK_STANDOFFS_M = [float(v) for v in _skill_goal("pick")["standoff_m"]]
 PICK_VIEW_DEPTH_M = float(_skill_goal("pick")["view_part_depth_m"][0])
@@ -178,6 +177,8 @@ from openral_rskill.procedural_pick import tool_rotation as look_rotation  # noq
 from openral_rskill.procedural_press import facing  # noqa: E402
 #: how high above a support the tool works: the item is held by its handle, so the tool never goes to the shelf itself
 ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.get("handle"))
+#: how far past a button's tip the tool goes for it to actuate: what the catalogue declares for the buttons on the site
+PRESS_DEPTH_M = max(float(p["interface"]["travel_m"]) for p in IX["points"].values() if p.get("type") == "press" and p.get("interface"))
 
 
 def horizontal(v) -> np.ndarray:
@@ -317,7 +318,7 @@ def lower(capability: str, a: dict) -> dict:
         # the surveyed point of the target, for the skill to point its camera at; what it presses is what it then
         # sees there, and where to stand off and how far to press past the face are its own defaults
         return {"target": a["target"], "feature_xyz_map": IX["points"][a["feature"]]["xyz"],
-                "feature_normal_map": IX["points"][a["feature"]]["normal"]}
+                "feature_normal_map": IX["points"][a["feature"]]["normal"], "interface": IX["points"][a["feature"]].get("interface")}
     raise KeyError(capability)
 
 

@@ -135,18 +135,23 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
             m["holds"] = False
         out.append(m)
     if capability == "press":
-        # A press is over when the tool met the face and came back off it. Both halves are the robot's own
-        # kinematics against the point the skill's own view measured -- never the skill's success flag: it went in
-        # far enough to make contact where the target was seen, and it is clear of that point again afterwards.
+        # A press is over when the tool, jaws closed, met the button and came back off it. Every half is the robot's own
+        # measurement against the button the skill fitted from the catalogue's declared shape -- never the skill's success
+        # flag: the jaws were closed (encoder), the tool went in past the button's tip, it was on the button's axis to
+        # within the declared cap radius, and it is clear of it again afterwards. mc1's two presses had the jaws open at
+        # 0.82 rad and the tool a hand's width off the button, and the check that only looked at depth passed both.
         sk = evidence.get("skill") or {}
         contact, target = sk.get("contact"), sk.get("target_rover")
         m = dict(effect="pressed", target=args.get("target"),
-                 source="arm kinematics against the point the wrist view measured (contact depth and retreat)")
-        if contact and target and isinstance(evidence.get("tcp_pose"), dict):
-            past = float(contact.get("past_face_m", 0.0))
+                 source="arm kinematics and the jaw encoder against the button the wrist depth fitted (jaws closed, on the button, "
+                        "past its tip, and back off it)")
+        if contact and target and isinstance(evidence.get("tcp_pose"), dict) and "off_axis_m" in contact:
+            past, off, jaw = float(contact.get("past_face_m", 0.0)), float(contact["off_axis_m"]), float(contact["jaw_rad"])
             back = math.dist(evidence["tcp_pose"]["position"], contact["tcp"])
-            m.update(past_face_m=round(past, 4), retreated_m=round(back, 3))
-            m["holds"] = past >= cfg["press"]["min_contact_m"] and back >= cfg["press"]["min_retreat_m"]
+            m.update(past_face_m=round(past, 4), off_axis_m=round(off, 4), cap_radius_m=contact["cap_radius_m"],
+                     jaw_at_contact=jaw_state(jaw, cfg), retreated_m=round(back, 3))
+            m["holds"] = (past >= cfg["press"]["min_contact_m"] and back >= cfg["press"]["min_retreat_m"]
+                          and off <= float(contact["cap_radius_m"]) and jaw_state(jaw, cfg) == "closed_empty")
         else:
             m["holds"] = False
         out.append(m)
