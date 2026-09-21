@@ -23,6 +23,7 @@ Run inside a sourced graph (ROS Humble + openral install + ros/install):
 
 import base64
 import json
+import yaml
 import sys
 import re
 import math
@@ -42,6 +43,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from workspace.footprint import DOCK_ERROR_M, clear_distance  # noqa: E402
 from workspace.reach import reach_map  # noqa: E402
 
+#: the nearest the pick skill stands its tool off the slot before closing in (its own manifest): the near end of
+#: the insertion a stand has to keep reachable, as the seat is the far end
+PICK_STANDOFF_MIN_M = min(json.loads(yaml.safe_load(
+    (Path(__file__).resolve().parents[2] / "openral/rskills/rskill-procedural-pick/rskill.yaml"
+     ).read_text())["procedural"]["default_goal_json"])["standoff_m"])
 from rclpy.action import ActionClient, ActionServer, CancelResponse
 from rclpy.duration import Duration
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -577,9 +583,10 @@ class CapabilityServer(Node):
     def work_stands(self, feature: str, grasp_height_m: float | None = None):
         """Where the rover can stand to work at a site point: the arm's own answer, not a table.
 
-        Reach is asked where the tool has to *end up* -- the work point plus the depth the jaws seat a contact at
-        (gb2 docked where the point was reached and stalled 2.6 cm short of the grasp, F88) -- and where the rover
-        *lands*, not where it aimed: the far end of the docking band, since reach runs out with distance (F91).
+        Reach is asked where the tool has to *be*: at both ends of the insertion -- the stand-off nearest the rover
+        and the seat beyond the handle (gb2 reached the point and stalled 2.6 cm short of the seat, F88; gb6 reached
+        the seat and had no configuration for the stand-off, F93) -- and where the rover *lands*, not where it
+        aimed: each end at the end of the docking band where it is hardest (F91).
         The camera's look angle is no longer reported: the interface is found by fitting its declared shape to the
         depth from whatever elevation the arm has, and describing a constraint the harness no longer had kept the
         model deliberating over it for 50 s at a time (F92).
@@ -590,11 +597,10 @@ class CapabilityServer(Node):
         seat = float(GripperGeometry().seat_depth_m)
         out, base = [], None
         for d, _room in reach_map().stand_candidates([z], near)[:12]:
-            grasp_at = np.array([-(d + DOCK_ERROR_M + seat), 0.0, z])
-            reaches = any(self.ik_reaches(grasp_at, R) for R in approach_rotations())
             base = d if base is None else min(base, d)
-            out.append({"distance_m": round(d, 3), "reaches_the_work": reaches,
-                        "reach_is_checked_at_m": round(d + DOCK_ERROR_M + seat, 3)})
+            out.append({"distance_m": round(d, 3), "reaches_the_work": self.reaches_work(feature, d, [z]),
+                        "reach_is_checked_at_m": [round(d - DOCK_ERROR_M - PICK_STANDOFF_MIN_M, 3),
+                                                  round(d + DOCK_ERROR_M + seat, 3)]})
         out.sort(key=lambda r: r["distance_m"])
         try:  # what standoff_m counts from; "none" is the answer this query exists to be able to give
             chosen = round(self.stand_distance(feature), 3)
@@ -711,6 +717,24 @@ class CapabilityServer(Node):
         """Standing `d` from a site point, can the arm put its tool where the work is?"""
         return all(any(self.ik_reaches(np.array([-d, 0.0, z]), R) for R in approach_rotations()) for z in heights)
 
+    def insertion_reaches(self, d: float, z: float) -> bool:
+        """Standing `d` from an item's handle, can the arm put its tool at *both ends of the insertion* wherever the
+        dock lands? A pick stands the tool off the slot first and drives it to the pads' seat last, so the tool has
+        to reach a point nearer the rover than the handle and one beyond it. Reach at the far end runs out when the
+        rover lands far; reach at the near end runs out when it lands near -- the arm cannot fold that flat. gb6
+        docked at a stand that reached the seat and had no configuration for any stand-off (F93)."""
+        near = np.array([-(d - DOCK_ERROR_M - PICK_STANDOFF_MIN_M), 0.0, z])
+        far = np.array([-(d + DOCK_ERROR_M + GripperGeometry().seat_depth_m), 0.0, z])
+        level = approach_rotations((0.0,))
+        return any(self.ik_reaches(near, R) for R in level) and any(self.ik_reaches(far, R) for R in level)
+
+    def reaches_work(self, feature: str, d: float, heights: list[float]) -> bool:
+        """What a stand at `d` has to reach for this feature: an item's whole insertion where an item stands (a
+        `place` point is where things are picked up and put down by their handles), the work point otherwise."""
+        if IX["points"][feature]["type"] == "place":
+            return all(self.insertion_reaches(d, z) for z in heights)
+        return all(self.arm_reaches(d + e, heights) for e in (0.0, -DOCK_ERROR_M, DOCK_ERROR_M))
+
     def stand_distance(self, feature: str) -> float:
         """How far from a site point this rover parks to work there.
 
@@ -725,8 +749,8 @@ class CapabilityServer(Node):
         heights = work_heights(feature)
         near = clear_distance(p[:2], n[:2])
         cands = reach_map().stand_candidates(heights, near)
-        for d, _room in cands[:8]:
-            if all(self.arm_reaches(d + e, heights) for e in (0.0, -DOCK_ERROR_M, DOCK_ERROR_M)):
+        for d, _room in cands[:12]:
+            if self.reaches_work(feature, d, heights):
                 self.get_logger().info(f"stand at {feature}: {d:.3f} m from the point (hull clear from {near:.3f} m, "
                                        f"work at z {[round(z, 3) for z in heights]})")
                 self._stands[feature] = d
