@@ -4533,3 +4533,38 @@ The arm never held what it was told, and a good part of the session went on the 
 **Why.** PhysX's joint friction is a unitless coefficient on the force transmitted between the two links a joint connects, not a torque. In an articulation whose base is free that force is large enough that the coefficient times it exceeds what the drives can deliver. With the base fixed, or the coefficient zero, the same drives (stiffness 600, damping and limits as configured, checked against what PhysX holds) are fast and hold with almost no torque. The values are what the USD carried, not a typo in our configuration; the actuator group's `friction` option did not reach PhysX in this Isaac Lab (the read-back stayed at the USD's values), so the fix is in the asset: `experiments/robot_check/zero_arm_joint_friction.py`.
 
 **What it does not say.** It does not say the earlier findings were wrong: the ratchets of `hold_here`, the leash and the carry sag are real and separate, at centimetres. It does say that the gains, ramps and margins tuned in F92-F95 were tuned against an arm that lagged by seconds, and that the wrist saturation the place failures ended in was this. The first graph-level check is the next full runs.
+
+## F97 -- two joint-space defaults the sluggish arm had been hiding: a turn of the wrist, and a pull at the rate limit
+
+With the arm answering its command (F96), the first full pair of runs (gc3 Mission B, mc4 Mission A) failed at two places the
+servo had passed before, and both were joint-space rules that were wrong for any arm and had never been exercised on one
+that moves.
+
+**mc4, press retreat: "arm stopped making progress 0.1 cm / 7 deg from its goal ... at a joint stop: joint7 -6.24 (limit +-6.283)".**
+The button was pressed (jaw closed on nothing, 1 mm off axis, 6.9 mm past the face, retreated 107 mm; the independent check
+held) and the skill still failed. The bag: between sim 198 and 205 joint7 went from +1.89 to -5.58 in one planned move, a turn
+and a half, and ended 0.04 rad from its stop. The planned stand-off IK is seeded from several configurations; MoveIt answers
+with whatever turn of the roll its solver settled on, and a planned move executes the joints literally. The wrist roll spans
++-2 pi, so every pose has two solutions a turn apart. `nearest_equivalent` now takes each joint that can turn more than a
+full turn at the turn nearest the arm, inside the stop's margin, on both IK paths.
+
+**gc3, place: the carried ORU left the fingers 0.6 s after `over` began.** The world poses in the bag (evaluator truth, used
+here only to diagnose): the tool, held at z 1.217, fell to 1.10 in half a second with the *command* within 4 mm of its goal,
+rose to 1.33, and rang at 1 Hz with +-10 cm decaying over five seconds; the jaw read 0.158 then 0.093 (empty) as the tool
+accelerated upward; the ORU dropped 11 cm onto the shelf, upright, and the evaluator scored it delivered while the skill,
+correctly, reported a failed place. What moved was the elbow and wrist at 0.23-0.28 rad/s, the joint-rate limit. The servo's
+posture pull was `(centre - q) * gain`, scaled up to `max_dq` whenever it exceeded it, which with the arm anywhere off the
+window centre is always: a null-space self-motion at the rate limit, from a standstill, on every default-gain stage. The
+joints answer at their own lags, so a null-space motion that should leave the tool where it is moved it by 12 cm and excited
+the arm's slow mode. On the arm that stuck (F96) the pull was invisible. It is now a rate -- `posture_gain` per second of the
+distance from the window centre, 0.05 -- because the branch drifts over tens of seconds and a pull with a 20 s time constant
+holds it without exciting the arm. `place` also waits for the arm to be still before `over`, since the rover has just stopped.
+
+**What the run did with it.** The reasoner searched, saw a gold box on the shelf, and tried to pick it again to "decide
+whether it is really there": the harness had said "not placed" (true of the skill, false of the world) and had no instrument
+of its own that could say "it is on the shelf" -- the claim/instrument gap of the reconcile design, not yet built.
+
+**Also learned the hard way.** Reading a bag with SQLite while its recorder is alive crashes the recorder ("database is locked"):
+both bags of that pair were cut in the middle of the run, which is why the mini-map of that pair cannot be drawn.
+
+Not yet validated: the place chain on the fixed servo (scripted pick -> carry -> place on a held graph, then a full recorded run).
