@@ -362,12 +362,12 @@ queries:
 
   work_stands:
     description: >-
-      Where the rover can stand to work at a surveyed point. For every stand the reach model offers,
-      `reaches_the_work` is whether the tool can be at both ends of the work from there: the stand-off nearest the
-      rover and the seat beyond the handle, each checked at the end of the docking band where it is hardest
-      (docking is verified to `dock_error_m`), so a stand offered here is one the rover can work from wherever the
-      dock puts it; `reach_is_checked_at_m` gives the two distances. Each stand carries the `standoff_m` to pass to
-      dock_at_feature to park there. Choosing the stand is yours; nothing about the camera's view depends on it.
+      Where the rover can stand to work at a surveyed point. A stand is listed only if the whole job can be done
+      from it: every pose the skill for that kind of point has to take (a grasp's stand-off and seat, a press's
+      stand-off, face and view), each with an arm configuration that does not hit the robot itself, wherever within
+      the docking band -- `dock_error_m` either side -- the rover actually lands. Each stand carries the `standoff_m`
+      to pass to dock_at_feature to park there. Choosing the stand is yours; nothing about the camera's view depends
+      on it. An empty list is a fact: no parking place lets the arm do this job.
     inputs:
       feature: [string, true, "site interaction point, e.g. depot_stand/slot_0"]
       grasp_height_m: [number, false, "how high above the site frame the part sits; defaults to the boundary's own work height, which is the tallest catalogued handle over any support"]

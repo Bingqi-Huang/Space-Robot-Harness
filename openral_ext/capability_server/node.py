@@ -37,7 +37,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 import rclpy
-from moveit_msgs.srv import GetPositionIK
+from moveit_msgs.srv import GetPositionIK, GetStateValidity
 from openral_msgs.action import ExecuteRskill
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from workspace.footprint import DOCK_ERROR_M, clear_distance  # noqa: E402
@@ -55,6 +55,24 @@ PICK_STANDOFF_MIN_M = min(_skill_goal("pick")["standoff_m"])
 #: offset behind the tool, read off TF at run time) and how far it drives past the face
 PRESS_VIEW_DEPTH_M = float(_skill_goal("press")["view_part_depth_m"][0])
 PRESS_DEPTH_M = float(_skill_goal("press")["press_depth_m"])
+PRESS_STANDOFFS_M = [float(_skill_goal("press")["standoff_m"]) * k for k in (1.0, 1.4, 0.7, 1.8)]  # press.stand_in_front's own offers
+PICK_STANDOFFS_M = [float(v) for v in _skill_goal("pick")["standoff_m"]]
+PICK_VIEW_DEPTH_M = float(_skill_goal("pick")["view_part_depth_m"][0])
+LOOK_PITCHES_DEG = (0.0, 10.0, 20.0, 30.0)  # the elevations both skills offer their one view from
+
+
+def _seed_bank(k: int = 8) -> list[list[float]]:
+    """Arm configurations to start inverse kinematics from: the ready posture, then a fixed spread over the working
+    branch. One seed finds one configuration; whether the robot can stand there without hitting itself depends on
+    which of the arm's redundant configurations that is, and the answer has to be 'some do' and not 'the first did'."""
+    rng = np.random.default_rng(3)
+    names = [f"joint{i}" for i in range(1, 8)]
+    bank = [list(READY)]
+    for _ in range(k):
+        bank.append([float(np.clip(rng.uniform(c - h, c + h), -JOINT_LIMITS_RAD[i] + 0.05, JOINT_LIMITS_RAD[i] - 0.05))
+                     for i, (c, h) in enumerate(POSTURE.get(n, (0.0, JOINT_LIMITS_RAD[i])) for i, n in enumerate(names))])
+    return bank
+
 from rclpy.action import ActionClient, ActionServer, CancelResponse
 from rclpy.duration import Duration
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -145,8 +163,10 @@ REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arg
 JAW_JOINT = "eg2_joint1"
 # the jaw bands come from the skills' own definition (openral_rskill._eye_in_hand): the boundary and the skills must
 # read one gripper the same way, or an open jaw is a held item on one side of the call and not the other (run g4p)
-from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD  # noqa: E402
+from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD, JOINT_LIMITS_RAD, POSTURE  # noqa: E402
 from openral_rskill.grasp_perception import GripperGeometry  # noqa: E402
+from openral_rskill.procedural_pick import tool_rotation as look_rotation  # noqa: E402
+from openral_rskill.procedural_press import facing  # noqa: E402
 #: how high above a support the tool works: the item is held by its handle, so the tool never goes to the shelf itself
 ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.get("handle"))
 
@@ -350,9 +370,15 @@ class CapabilityServer(Node):
         self.vlm_pool = ThreadPoolExecutor(8)
         self.rskill = ActionClient(self, ExecuteRskill, "/openral/execute_rskill", callback_group=cb)
         self.ik = self.create_client(GetPositionIK, "/compute_ik", callback_group=cb)
+        self.validity = self.create_client(GetStateValidity, "/check_state_validity", callback_group=cb)
+        self._seeds = _seed_bank()  # built here: it reads the ready posture and the working-branch windows defined below
+        self._free_cache: dict = {}  # tool pose -> whether some self-collision-free configuration reaches it
+        self._ok_cache: dict = {}  # (kind, distance, height) -> whether the whole job can be done from there
+        self._reach_lock = threading.Lock()
         ActionServer(self, ExecuteCapability, "/space/capability/execute", self._execute,
                      cancel_callback=lambda _: CancelResponse.ACCEPT, callback_group=cb)
         self.create_service(QueryCapability, "/space/capability/query", self._query, callback_group=cb)
+        threading.Thread(target=self._warm_stands, daemon=True, name="warm-stands").start()
         self.get_logger().info(f"capability boundary up: effects {sorted(CONTRACTS['effects'])}, queries {sorted(CONTRACTS['queries'])}")
 
     def _on_joints(self, m):
@@ -591,32 +617,30 @@ class CapabilityServer(Node):
     def work_stands(self, feature: str, grasp_height_m: float | None = None):
         """Where the rover can stand to work at a site point: the arm's own answer, not a table.
 
-        Reach is asked where the tool has to *be*: at both ends of the insertion -- the stand-off nearest the rover
-        and the seat beyond the handle (gb2 reached the point and stalled 2.6 cm short of the seat, F88; gb6 reached
-        the seat and had no configuration for the stand-off, F93) -- and where the rover *lands*, not where it
-        aimed: each end at the end of the docking band where it is hardest (F91).
-        The camera's look angle is no longer reported: the interface is found by fitting its declared shape to the
-        depth from whatever elevation the arm has, and describing a constraint the harness no longer had kept the
-        model deliberating over it for 50 s at a time (F92).
+        A stand is listed only if the whole job can be done from it -- every pose the skill needs, each with an arm
+        configuration that does not hit the robot itself -- wherever within the docking band the rover actually
+        lands. The boundary used to answer with the tool's reach at a point, collisions off: gb2 reached the point
+        and stalled short of the seat (F88), gb6 reached the seat and had no configuration for the stand-off
+        (F93), ma5 reached a button from two stands at which every configuration folded the arm into itself (F94).
+        The camera's look angle is not reported: the interface is fitted from whatever elevation the arm has, and a
+        constraint the harness no longer had kept the model deliberating over it for 50 s (F92).
         """
         p, n_out = self.feature_geometry(feature)
         z = float(grasp_height_m) if grasp_height_m is not None else work_heights(feature)[0]
         near = clear_distance(p[:2], n_out[:2])
-        out, base = [], None
-        for d, _room in reach_map().stand_candidates([z], near)[:12]:
-            base = d if base is None else min(base, d)
-            out.append({"distance_m": round(d, 3), "reaches_the_work": self.reaches_work(feature, d, [z]),
-                        "reach_is_checked_at_m": [round(d - DOCK_ERROR_M, 3), round(d + DOCK_ERROR_M, 3)]})
-        out.sort(key=lambda r: r["distance_m"])
+        works = sorted(d for d, _room in reach_map().stand_candidates([z], near) if self.reaches_work(feature, d, [z]))
         try:  # what standoff_m counts from; "none" is the answer this query exists to be able to give
             chosen = round(self.stand_distance(feature), 3)
         except self.NoStand:
             chosen = None
-        for row in out:  # the number to pass, not a subtraction to do: asked to work it out, the model stood
-            row["standoff_m"] = None if chosen is None else round(row["distance_m"] - chosen, 3)  # at 1.92 m
+        shown = works[::max(1, len(works) // 10)]
+        if chosen is not None and round(chosen, 3) not in [round(d, 3) for d in shown]:
+            shown = sorted(shown + [chosen])
+        rows = [{"distance_m": round(d, 3),  # the number to pass, not a subtraction to do: asked to work it out, the model stood
+                 "standoff_m": None if chosen is None else round(d - chosen, 3)} for d in shown]  # at 1.92 m
         return {"feature": feature, "work_height_m": round(z, 4), "dock_error_m": DOCK_ERROR_M,
-                "nearest_stand_m": round(base, 3) if base is not None else None,
-                "standoff_m_the_boundary_would_choose_on_its_own": chosen, "stands": out}
+                "nearest_stand_m": round(works[0], 3) if works else None,
+                "standoff_m_the_boundary_would_choose_on_its_own": chosen, "stands": rows}
 
     def feature_target(self, a: dict) -> dict:
         """TCP target for a feature capability, in the rover frame, from the surveyed feature and the rover's localization."""
@@ -723,26 +747,108 @@ class CapabilityServer(Node):
         """Standing `d` from a site point, can the arm put its tool where the work is?"""
         return all(any(self.ik_reaches(np.array([-d, 0.0, z]), R) for R in approach_rotations()) for z in heights)
 
-    def ends_reach(self, d: float, z: float, near_m: float, far_m: float) -> bool:
-        """Standing `d` from a work point, can the arm put its tool at *both ends of the work* wherever the dock
-        lands -- `near_m` short of the point (nearest the rover) and `far_m` beyond it? Reach at the far end runs
-        out when the rover lands far; at the near end when it lands near, where the arm cannot fold flat. gb6
-        docked at a stand that reached a grasp's seat and had no configuration for its stand-off (F93); ma5 docked
-        at two stands that reached a button and could not put the camera on it from either (F94)."""
-        near = np.array([-(d - DOCK_ERROR_M - near_m), 0.0, z])
-        far = np.array([-(d + DOCK_ERROR_M + far_m), 0.0, z])
-        level = approach_rotations((0.0,))
-        return any(self.ik_reaches(near, R) for R in level) and any(self.ik_reaches(far, R) for R in level)
+    def _warm_stands(self) -> None:
+        """Settle where the rover parks for every point that needs the arm, while the first calls are still being
+        thought about: the first answer for a kind of point costs the arm's own inverse kinematics some seconds
+        (about 13 s for a grasp or a press), the rest come from the cache."""
+        self.ik.wait_for_service()
+        self.validity.wait_for_service()
+        for feature, pt in IX["points"].items():
+            if pt["type"] in ("place", "press"):
+                try:
+                    self.stand_distance(feature)
+                except self.NoStand:
+                    pass  # a fact about that feature, which whoever asks for it is told
+
+    def ik_solution(self, p_base: np.ndarray, R: np.ndarray, seed: list[float]) -> list[float] | None:
+        """One arm configuration for this tool pose in the rover frame, nearest `seed`, ignoring collisions."""
+        req = GetPositionIK.Request()
+        r = req.ik_request
+        r.group_name, r.ik_link_name, r.avoid_collisions = "rm_group", "tcp_frame", False
+        names = [f"joint{i}" for i in range(1, 8)]
+        r.robot_state.joint_state.name, r.robot_state.joint_state.position, r.robot_state.is_diff = names, [float(v) for v in seed], True
+        r.pose_stamped.header.frame_id = "chassis_base_link"
+        pp = r.pose_stamped.pose
+        pp.position.x, pp.position.y, pp.position.z = (float(v) for v in p_base)
+        pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = mat_to_quat(R)
+        r.timeout.nanosec = 100_000_000
+        f = self.ik.call_async(req)
+        t0 = time.time()
+        while not f.done():
+            if time.time() - t0 > 5.0:
+                return None
+            time.sleep(0.005)
+        res = f.result()
+        if res is None or res.error_code.val != 1:
+            return None
+        js = res.solution.joint_state
+        return [js.position[list(js.name).index(n)] for n in names]
+
+    def robot_free(self, q: list[float]) -> bool:
+        """Whether the robot in this arm configuration touches only the world, not itself. What the world holds
+        depends on where the rover will be standing, which is not known here; the robot's own geometry does not."""
+        req = GetStateValidity.Request()
+        req.group_name = "rm_group"
+        req.robot_state.joint_state.name = [f"joint{i}" for i in range(1, 8)]
+        req.robot_state.joint_state.position, req.robot_state.is_diff = [float(v) for v in q], True
+        f = self.validity.call_async(req)
+        t0 = time.time()
+        while not f.done():
+            if time.time() - t0 > 5.0:
+                return False
+            time.sleep(0.005)
+        res = f.result()
+        return res is not None and not any("/" not in c.contact_body_1 and "/" not in c.contact_body_2 for c in res.contacts)
+
+    def arm_free(self, p_base: np.ndarray, R: np.ndarray) -> bool:
+        """Whether the arm can put the tool at this pose without hitting itself. `ik_reaches` said yes to any pose the
+        joints can geometrically take -- ma5 docked at stands where every one of them folded the forearm into the
+        arm's own base, and the skill's planner, which does check, found nothing for a stand-off, a view or a press
+        from either of two stands (F94)."""
+        key = (tuple(np.round(p_base, 3)), tuple(np.round(R.ravel(), 3)))
+        if key not in self._free_cache:
+            self._free_cache[key] = any((q := self.ik_solution(p_base, R, seed)) is not None and self.robot_free(q)
+                                        for seed in self._seeds)
+        return self._free_cache[key]
+
+    def job_poses(self, kind: str, x: float, z: float) -> list[list[tuple[np.ndarray, np.ndarray]]]:
+        """The tool poses the skill for this kind of point has to be able to take with the work `x` from the rover's
+        origin: a list of groups, each group a set of alternatives of which any one will do, every group needed.
+        Read from the skills' own manifests and orientations: pick stands its tool off the slot (nearest offer
+        first) and seats it beyond the handle, and takes its one view from some elevation; press stands off the
+        button facing it, drives past its face, and takes its view the same way."""
+        behind = float(np.linalg.norm(self._tf("tcp_frame", "wrist_camera_optical_frame")[0]))
+        at = lambda dx: np.array([-(x + dx), 0.0, z])  # noqa: E731  (dx positive = further from the rover)
+        if kind == "place":
+            up_rots = approach_rotations((0.0,))
+            rots = [up_rots[0], np.stack([-up_rots[0][:, 0], np.cross(up_rots[0][:, 2], -up_rots[0][:, 0]), up_rots[0][:, 2]], axis=1)]
+            end = [(at(float(GripperGeometry().seat_depth_m)), R) for R in rots]
+            stand = [(at(-s), R) for s in PICK_STANDOFFS_M for R in rots]
+            view_back = PICK_VIEW_DEPTH_M - behind
+        else:
+            R = facing(np.array([1.0, 0.0, 0.0]))
+            end = [(at(PRESS_DEPTH_M), R)]
+            stand = [(at(-s), R) for s in PRESS_STANDOFFS_M]
+            view_back = PRESS_VIEW_DEPTH_M - behind
+        view = [(at(-view_back), look_rotation(pitch, 0.0, 180.0)) for pitch in LOOK_PITCHES_DEG]
+        return [end, stand, view]  # the most restrictive first: a stand that fails fails on the first
+
+    def job_ok(self, kind: str, x: float, z: float) -> bool:
+        key = (kind, round(x, 3), round(z, 3))
+        with self._reach_lock:
+            if key not in self._ok_cache:
+                self._ok_cache[key] = all(any(self.arm_free(p, R) for p, R in group) for group in self.job_poses(kind, x, z))
+            return self._ok_cache[key]
 
     def reaches_work(self, feature: str, d: float, heights: list[float]) -> bool:
-        """What a stand at `d` has to reach for this feature, from the skills' own manifests: a grasp's stand-off
-        and seat where an item stands (`place`), the camera's viewing distance and the press depth at a button."""
+        """Whether the whole job at this feature can be done from a stand `d` away wherever the dock lands: the
+        poses the skill needs (`job_poses`), each with a configuration that does not hit the robot itself, at the
+        near and far ends of the docking band as well as the middle -- reach is not monotone in distance, so the
+        ends do not bound the middle. Where a feature has no skill of its own (an indicator is read from the front
+        camera) the arm only has to reach the point."""
         kind = IX["points"][feature]["type"]
-        if kind == "place":
-            return all(self.ends_reach(d, z, PICK_STANDOFF_MIN_M, GripperGeometry().seat_depth_m) for z in heights)
-        if kind == "press":
-            behind = float(np.linalg.norm(self._tf("tcp_frame", "wrist_camera_optical_frame")[0]))
-            return all(self.ends_reach(d, z, PRESS_VIEW_DEPTH_M - behind, PRESS_DEPTH_M) for z in heights)
+        if kind in ("place", "press"):
+            return all(self.job_ok(kind, d + e, z) for z in heights for e in (-DOCK_ERROR_M, 0.0, DOCK_ERROR_M))
         return all(self.arm_reaches(d + e, heights) for e in (0.0, -DOCK_ERROR_M, DOCK_ERROR_M))
 
     def stand_distance(self, feature: str) -> float:
@@ -758,8 +864,8 @@ class CapabilityServer(Node):
         p, n = self.feature_geometry(feature)
         heights = work_heights(feature)
         near = clear_distance(p[:2], n[:2])
-        cands = reach_map().stand_candidates(heights, near)
-        for d, _room in cands[:12]:
+        cands = reach_map().stand_candidates(heights, near)  # every distance the arm's reach map offers, roomiest first
+        for d, _room in cands:
             if self.reaches_work(feature, d, heights):
                 self.get_logger().info(f"stand at {feature}: {d:.3f} m from the point (hull clear from {near:.3f} m, "
                                        f"work at z {[round(z, 3) for z in heights]})")
