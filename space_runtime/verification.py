@@ -58,11 +58,19 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         # angle cannot confirm a grip (a thin edge and an empty jaw are 0.17 and 0.10), but it can refuse one.
         seen = look["observed"]
         shut = jaw_state(float(look["jaw_rad"]), cfg) == "closed_empty"
+        # One reading is a sample. The boundary read the picture once, compared it with what it knows (a pick
+        # succeeded, the jaw is in the held range) and, when they disagreed or the reading was unsure, read it again with
+        # the facts that say what a held handle looks like from this camera. Both readings are kept in the record; what
+        # they finally say is the verdict, and a disagreement that survives is the reasoner's to resolve.
         out.append({"effect": "item_still_held", "holds": bool(seen["holding"]) and not shut, "items": list(held),
-                    "seen": seen["what"], "jaw_rad": look["jaw_rad"], "image": seen["image"],
+                    "seen": seen["what"], "confidence": seen.get("confidence"),
+                    "first_reading": seen.get("first_reading"), "second_reading": seen.get("second_reading"),
+                    "record_and_jaw_expect_held": seen.get("record_and_jaw_expect_held"),
+                    "jaw_rad": look["jaw_rad"], "image": seen["image"],
                     "jaw": "closed_empty" if shut else "open_or_holding",
-                    "source": "the gripper's own camera read by the vision model, refused by the jaw encoder when the "
-                              "fingers are shut on nothing; against what the record says is carried"})
+                    "source": "the gripper's own camera read by the vision model against the pick record and the jaw "
+                              "encoder, read again with context when they disagree; refused by the jaw encoder when the "
+                              "fingers are shut on nothing"})
     if capability in BASE_NAV | BASE_DOCK and isinstance(evidence.get("base_pose"), dict):
         band = cfg["base"]["navigate" if capability in BASE_NAV else "dock"]
         b = evidence["base_pose"]

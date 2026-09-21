@@ -153,8 +153,17 @@ BASE_MOVES = ("navigate_to_pose", "navigate_to_feature", "dock_to_pose", "dock_a
 
 HELD_PROMPT = ("This camera is mounted on a robot's own gripper and looks out past its fingers; the fingers are the "
                "dark shapes along the bottom of the frame. Say whether anything is held between them, and what it is. "
-               'Reply with JSON only: {"holding": true or false, "what": "<what is between the fingers, a few words, '
-               'or an empty string>"}')
+               'Reply with JSON only: {"holding": true or false, "confidence": <0 to 1>, "what": "<what is between the '
+               'fingers, a few words, or an empty string>"}')
+#: asked again only when the first answer disagrees with what the harness knows, or is not confident. It says what a
+#: held handle looks like from this camera and what an empty gripper looks like, and nothing about what the harness
+#: expects: a version that also stated the jaw angle led the model to call an empty gripper a held handle 6 times in 8
+HELD_CONTEXT = ("Facts about this gripper. It lifts a unit by a T-shaped handle. When it holds one, the handle's head -- a "
+                "light grey bar about {head_width_m:.2f} m wide -- sits between the fingers near the bottom of the frame "
+                "and the unit's own body hangs below it, out of this camera's view. When it holds nothing, the fingers "
+                "are open or shut on nothing and only the scene behind them is in the frame. Decide from what is "
+                "visible between and just above the fingers.")
+HELD_MIN_CONFIDENCE = 0.7  # below this a reading is not taken at its word
 VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; how many must find the target
 DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
 ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
@@ -513,12 +522,31 @@ class CapabilityServer(Node):
         it is the handle head. The two are labelled separately and are not reconciled here.
         """
         f = self.frame("wrist")
-        reply = self.ask_vlm(f["path"], HELD_PROMPT)
-        found = re.search(r"\{.*\}", reply, re.S)
-        if not found:
-            raise ValueError(f"the model did not answer with JSON: {reply[:200]!r}")
-        j = json.loads(found.group(0))
-        return {"observed": {"holding": bool(j.get("holding")), "what": str(j.get("what") or ""),
+
+        def read(prompt: str) -> dict:
+            reply = self.ask_vlm(f["path"], prompt)
+            found = re.search(r"\{.*\}", reply, re.S)
+            if not found:
+                raise ValueError(f"the model did not answer with JSON: {reply[:200]!r}")
+            j = json.loads(found.group(0))
+            try:
+                confidence = float(j.get("confidence"))
+            except (TypeError, ValueError):
+                confidence = 0.0  # an answer that does not say how sure it is is not a sure answer
+            return {"holding": bool(j.get("holding")), "confidence": confidence, "what": str(j.get("what") or "")}
+
+        # What the harness knows: a pick succeeded since the last release, and the jaw is between shut-on-nothing and open.
+        # The jaw cannot confirm a grip, but a record and an angle that both say held are what the picture is read against.
+        in_band = JAW_EMPTY_MAX_RAD < self.jaw < JAW_OPEN_MIN_RAD
+        expected = self._picked is not None and in_band
+        first = read(HELD_PROMPT)  # blind: an answer shaped by the question is not evidence (F57, F58)
+        second = None
+        if first["holding"] != expected or first["confidence"] < HELD_MIN_CONFIDENCE:
+            iface = (self._picked or {}).get("interface") or {}
+            context = HELD_CONTEXT.format(head_width_m=float(iface.get("head_width", 0.09)))
+            second = read(HELD_PROMPT + "\n" + context)
+        final = second or first
+        return {"observed": {**final, "first_reading": first, "second_reading": second, "record_and_jaw_expect_held": expected,
                              "frame_stamp_s": round(f["stamp"], 2), "image": str(f["path"]), "model": VLM_MODEL},
                 "record": self._picked or "no pick has succeeded since the last place or release",
                 "jaw_rad": round(self.jaw, 3)}
@@ -990,6 +1018,7 @@ class CapabilityServer(Node):
         # had the wrong payload and drove back to put it down. The record of the call it made itself settles it.
         if r.success and g.capability == "pick":
             self._picked = {"item": args.get("item") or args.get("target"), "from_support": args.get("support"),
+                            "interface": (evidence.get("goal", {}).get("held_item") or {}).get("interface"),
                             "jaw_rad_at_pick": None if self.jaw is None else round(self.jaw, 3),
                             "picked_at_sim_s": round(self.sim_t, 2)}
         elif r.success and g.capability in ("place", "release"):

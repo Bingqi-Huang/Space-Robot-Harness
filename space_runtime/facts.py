@@ -127,6 +127,9 @@ def apply(f: dict, ev: dict) -> None:
             # Failed confirmation invalidates the held fact; it does not prove the item fell or the jaws are empty.
             # Preserve the observation so the agent can resolve the uncertainty.
             seen = f" -- the gripper's camera shows {ev['seen']}" if ev.get("seen") else ""
+            if ev.get("record_and_jaw_expect_held"):
+                seen += (f" (read twice, the second time with the facts about what a held handle looks like; the pick "
+                         f"record and the jaw angle still say held)")
             for name in ev["items"]:
                 f["objects"][name] = {"state": "unknown", "seq": ev["seq"],
                                       "by": f"holding not confirmed after {ev['capability']}{seen} (jaw {ev['jaw_rad']} rad)"}
