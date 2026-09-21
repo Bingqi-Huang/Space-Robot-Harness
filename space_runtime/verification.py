@@ -56,13 +56,22 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         # nothing cannot be holding anything, whatever is in the frame behind them -- the model called a solar panel
         # in the background a held item once (g5m), and the harness let a dropped payload through on that answer. The
         # angle cannot confirm a grip (a thin edge and an empty jaw are 0.17 and 0.10), but it can refuse one.
+        # A picture read by a language model is a sample, not a measurement: the same carry frame, asked six times,
+        # said "holding" four times and "nothing" twice, and gb7r8 was told its payload was gone while the handle head
+        # sat in the jaws. What the harness can measure is whether the view of what the jaws carry has changed since
+        # the hold was verified by the lift: a rigid payload does not change it, a dropped one does. The model's
+        # reading is kept in the record and decides only when there is no such reference.
         seen = look["observed"]
         shut = jaw_state(float(look["jaw_rad"]), cfg) == "closed_empty"
-        out.append({"effect": "item_still_held", "holds": bool(seen["holding"]) and not shut, "items": list(held),
-                    "seen": seen["what"], "jaw_rad": look["jaw_rad"], "image": seen["image"],
+        same = look.get("carried_view_unchanged")
+        holding = bool(seen["holding"]) if same is None else same >= cfg["hold"].get("carried_view_min", 0.8)
+        out.append({"effect": "item_still_held", "holds": holding and not shut, "items": list(held),
+                    "seen": seen["what"], "vlm_says_holding": bool(seen["holding"]), "carried_view_unchanged": same,
+                    "jaw_rad": look["jaw_rad"], "image": seen["image"],
                     "jaw": "closed_empty" if shut else "open_or_holding",
-                    "source": "the gripper's own camera read by the vision model, refused by the jaw encoder when the "
-                              "fingers are shut on nothing; against what the record says is carried"})
+                    "source": "the depth of what the jaws carry against the view when the lift verified the hold, "
+                              "refused by the jaw encoder when the fingers are shut on nothing; the camera read by the "
+                              "vision model decides only when there is no reference"})
     if capability in BASE_NAV | BASE_DOCK and isinstance(evidence.get("base_pose"), dict):
         band = cfg["base"]["navigate" if capability in BASE_NAV else "dock"]
         b = evidence["base_pose"]

@@ -39,6 +39,7 @@ verification:
     beyond_gripper_m: 0.12  # a held item lies within this of the gripper's own surface, outside its silhouette
     min_pixels: 200
     min_lift_m: 0.05
+    carried_view_min: 0.8  # item_still_held: the fraction of what the jaws carry whose depth is unchanged since the lift verified it
   press:  # pressed: the tool reached this far past the face the view measured, and is this far back off it again
     min_contact_m: 0.005
     min_retreat_m: 0.04

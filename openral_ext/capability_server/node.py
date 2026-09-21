@@ -341,6 +341,7 @@ class CapabilityServer(Node):
         #: what the last pick that succeeded took, and from where. The boundary dispatched that call and saw it
         #: succeed, so this is its own record, not an observation and not simulator truth.
         self._picked: dict | None = None
+        self._carry_ref: tuple[np.ndarray, np.ndarray] | None = None  # the wrist depth when the hold was verified, and the empty gripper's pixels
         self.create_subscription(
             String, "/srb/env0/space_context", lambda m: self._space_context.update(json.loads(m.data)),
             QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL),
@@ -499,6 +500,26 @@ class CapabilityServer(Node):
                                f"{want['max_accel'][0]} m/s^2")
         return {"carrying": carrying, "changed": True, **want}
 
+    def carry_reference(self, gripper_mask: str | None):
+        """The wrist camera's depth at the moment a hold was verified independently (the lift), with the empty gripper's
+        own pixels: an item held by its handle is rigid with the camera, so what the jaws carry looks the same for as
+        long as they carry it."""
+        if not gripper_mask or not Path(gripper_mask).exists():
+            return None
+        return self.frame("wrist")["depth"].copy(), np.load(gripper_mask)
+
+    def carry_unchanged(self, depth: np.ndarray, near_m: float = 0.6, tol_m: float = 0.01):
+        """Of the pixels that had something close in front of the camera when the hold was verified, apart from the
+        gripper itself, the fraction whose depth is still the same: what the jaws carry is there, or it is not. None
+        when there was nothing to compare (no reference, or too few pixels)."""
+        if self._carry_ref is None:
+            return None
+        ref, mask = self._carry_ref
+        watched = np.isfinite(ref) & (ref > 0.05) & (ref < near_m) & ~mask
+        if watched.sum() < 200:
+            return None
+        return round(float(np.mean(np.abs(depth[watched] - ref[watched]) < tol_m)), 3)
+
     def held_item(self) -> dict:
         """What the gripper has between its fingers, from its own camera, with the jaw angle beside it.
 
@@ -514,6 +535,7 @@ class CapabilityServer(Node):
         """
         f = self.frame("wrist")
         reply = self.ask_vlm(f["path"], HELD_PROMPT)
+        unchanged = self.carry_unchanged(f["depth"])
         found = re.search(r"\{.*\}", reply, re.S)
         if not found:
             raise ValueError(f"the model did not answer with JSON: {reply[:200]!r}")
@@ -521,7 +543,7 @@ class CapabilityServer(Node):
         return {"observed": {"holding": bool(j.get("holding")), "what": str(j.get("what") or ""),
                              "frame_stamp_s": round(f["stamp"], 2), "image": str(f["path"]), "model": VLM_MODEL},
                 "record": self._picked or "no pick has succeeded since the last place or release",
-                "jaw_rad": round(self.jaw, 3)}
+                "carried_view_unchanged": unchanged, "jaw_rad": round(self.jaw, 3)}
 
     def detect(self, camera: str, target: str) -> dict:
         """Where a target described in words is in the current image of a camera: pixel, and its 3-D point in `odom` from the
@@ -989,11 +1011,12 @@ class CapabilityServer(Node):
         # (accurately) "a smooth light-grey case, no lifting eye, no gold foil" -- the handle head -- concluded it
         # had the wrong payload and drove back to put it down. The record of the call it made itself settles it.
         if r.success and g.capability == "pick":
+            self._carry_ref = self.carry_reference(evidence.get("skill", {}).get("hold_check", {}).get("gripper_mask"))
             self._picked = {"item": args.get("item") or args.get("target"), "from_support": args.get("support"),
                             "jaw_rad_at_pick": None if self.jaw is None else round(self.jaw, 3),
                             "picked_at_sim_s": round(self.sim_t, 2)}
         elif r.success and g.capability in ("place", "release"):
-            self._picked = None
+            self._picked, self._carry_ref = None, None
         evidence["sim_s"] = round(self.sim_t - sim0, 2)
         for key, fn in (("base_pose", self.base_pose), ("tcp_pose", self.tcp_pose)):
             try:
