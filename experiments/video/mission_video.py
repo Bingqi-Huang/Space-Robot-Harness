@@ -65,7 +65,7 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
     record; on a video they crowd out the four things a viewer needs.
     """
     state = {"mission": "", "plan": [], "log": [], "now": "", "why": "", "stage": "", "held": "nothing",
-             "thinking": None, "reply": "", "reasoning": "", "llm_s": None}
+             "thinking": None, "reply": "", "reasoning": "", "llm_s": None, "plan_since": 0.0}
     times, states = [], []
     # wall seconds per simulated second over the run: the model thinks in wall time and the video plays sim time
     span_w, span_s = events[-1]["wall_t"] - events[0]["wall_t"], events[-1]["sim_t"] - events[0]["sim_t"]
@@ -111,6 +111,7 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
                 state["held"] = "nothing"
         elif k == "ledger_changed":
             state["plan"] = [(t["status"], t["text"]) for t in e["ledger"]["tasks"]]
+            state["plan_since"] = e["sim_t"]  # a long line rests when it first appears, then scrolls
         elif k in ("operator_report", "operator_request"):
             note("reported to mission control", "good")
         else:
@@ -218,6 +219,27 @@ def moving(track: list[dict], stamps: list[float], sim_t: float) -> str:
 LEDGER = {"done": ("✓", False), "active": ("▸", True), "verifying": ("▸", True), "abandoned": ("✕", False)}
 
 
+def plain(text: str) -> str:
+    """Identifiers as words: `dock_at_feature` reads as "dock at feature" on a screen meant for people."""
+    return str(text).replace("_", " ")
+
+
+def marquee(text: str, font, width: int, height: int, colour, t: float, hold_s: float = 3.0, speed_px_s: float = 30.0) -> Image.Image:
+    """A line too long for its box, shown whole: it rests, scrolls left at a reading pace until its end is in
+    view, rests again, and starts over -- keyed to the simulation clock the video plays at."""
+    full = int(font.getlength(text)) + 1
+    over = max(0, full - width)
+    if over:
+        period = 2 * hold_s + over / speed_px_s
+        phase = t % period
+        off = 0 if phase < hold_s else (over if phase > hold_s + over / speed_px_s else (phase - hold_s) * speed_px_s)
+    else:
+        off = 0
+    strip = Image.new("RGBA", (max(full, width), height), (0, 0, 0, 0))
+    ImageDraw.Draw(strip).text((0, 0), text, font=font, fill=colour)
+    return strip.crop((int(off), 0, int(off) + width, height))
+
+
 def elide(text: str, font, width: int) -> str:
     """One line, cut at the last word that fits rather than at a character count -- the panel knows its own width
     and the font knows its own metrics, so nothing needs a guess at how many characters fit."""
@@ -237,9 +259,9 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
     it was given, its own plan with the current step marked, what it is doing now and why, and the harness's
     last four verdicts. One accent (amber) for now, green and red for verdicts, three greys for everything else.
     The card is as tall as its content; nothing wraps past two lines and nothing is cut mid-word."""
-    small, body, head, mono = fonts
+    small, body, head, mono, capf = fonts
     x0, inner = 20, PANEL_W - 40
-    ops: list[tuple] = []  # ("text", y, x, text, font, colour) | ("rule", y) | ("bar", y0, y1) -- laid out first, drawn after
+    ops: list[tuple] = []  # ("text", y, x, text, font, colour) | ("strip", y, x, image) | ("rule", y) | ("bar", y0, y1)
     y = 18
 
     def text(t, font, colour, dx=0, gap=5):
@@ -250,8 +272,8 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
     def caption(t):
         nonlocal y
         y += 4
-        ops.append(("text", y, x0, "  ".join(t.upper()), small, FAINT))
-        y += small.size + 7
+        ops.append(("text", y, x0, t.upper(), capf, DIM))
+        y += capf.size + 7
 
     # header: the clock, and the robot's own state beside it
     ops.append(("text", y - 2, x0, f"{sim_t:.0f}", head, INK))
@@ -273,13 +295,19 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
         caption("plan")
         for status, task in state["plan"][:6]:
             glyph, here = LEDGER.get(status, ("·", False))
-            text(f"{glyph}  {elide(task, body, inner - 24)}", body, INK if here else (FAINT if status == "done" else DIM), gap=6)
+            colour = INK if here else (FAINT if status == "done" else DIM)
+            ops.append(("text", y, x0, glyph, body, colour))
+            ops.append(("strip", y, x0 + 24, marquee(plain(task), body, inner - 24, body.size + 6, colour, sim_t - state.get("plan_since", 0.0))))
+            y += body.size + 6
         y += 10
 
     caption("now")
     top = y
-    text((state["now"] or "thinking").split("/")[-1], head, AMBER, dx=12, gap=3)
-    under = "  ·  ".join(x for x in (state["stage"], f"holding {state['held']}") if x)
+    if state.get("thinking") is not None:
+        text("deciding", head, DIM, dx=12, gap=3)
+    else:
+        text(plain((state["now"] or "thinking").split("/")[-1]), head, AMBER, dx=12, gap=3)
+    under = "  ·  ".join(x for x in (plain(state["stage"]), f"holding {plain(state['held'])}") if x)
     text(elide(under, body, inner - 12), body, DIM, dx=12, gap=5)
     if state["why"]:
         said = wrap(state["why"], 56)
@@ -316,7 +344,7 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
     for m in state["log"][-4:]:
         colour = {"good": GREEN, "bad": RED}.get(m["kind"], INK)
         ops.append(("text", y + body.size - mono.size, x0, f"{m['t']:5.0f}", mono, FAINT))
-        text(elide(m["text"], body, inner - 48), body, colour, dx=48, gap=3 if m.get("detail") else 7)
+        text(elide(plain(m["text"]), body, inner - 48), body, colour, dx=48, gap=3 if m.get("detail") else 7)
         if m.get("detail"):
             text(elide(m["detail"], small, inner - 48), small, FAINT, dx=48, gap=7)
     y += 6
@@ -332,6 +360,8 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
         if op[0] == "text":
             _, yy, xx, t, font, colour = op
             d.text((xx, yy), t, font=font, fill=colour)
+        elif op[0] == "strip":
+            img.alpha_composite(op[3], (op[2], op[1]))
         elif op[0] == "rule":
             d.line([(x0, op[1]), (x0 + inner, op[1])], fill=(255, 255, 255, 28), width=1)
         else:
@@ -379,7 +409,7 @@ def main() -> None:
     track_t = [s["t"] for s in track]
     # one scale: a caption, a line of text, the thing happening now, and the clock
     fonts = (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 14), ImageFont.truetype(FONT_B, 26),
-             ImageFont.truetype(FONT_M, 13))
+             ImageFont.truetype(FONT_M, 13), ImageFont.truetype(FONT_B, 14))
     site = Map(a.structures, MAP_W, track, places, font=fonts[0]) if track and a.structures.exists() else None
 
     scale = a.width / w
