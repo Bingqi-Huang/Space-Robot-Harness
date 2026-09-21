@@ -312,7 +312,7 @@ def lower(capability: str, a: dict) -> dict:
         # shelf on a wall has the wall behind it, and an item whose envelope is nearly as deep as the shelf has to
         # sit forward of the surveyed centre or its back corner is inside the structure (ga5, F85).
         return {"support": a["support"], "support_xyz_map": IX["points"][a["support"]]["xyz"],
-                "support_normal_map": IX["points"][a["support"]]["normal"], **held_item(a),
+                "support_normal_map": IX["points"][a["support"]]["normal"], "interface": IX["points"][a["support"]].get("interface"), **held_item(a),
                 **({"release_constraint": a["release_constraint"]} if "release_constraint" in a else {})}
     if capability == "press":
         # the surveyed point of the target, for the skill to point its camera at; what it presses is what it then
