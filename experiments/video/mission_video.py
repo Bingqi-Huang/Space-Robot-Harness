@@ -3,9 +3,9 @@
     openral/.venv/bin/python experiments/video/mission_video.py <follow.mp4> <run>/ours/events.jsonl <out.mp4> \
         [--times <follow.mp4.times>] [--track <track.json>] [--title "..."] [--from-sim 0 --to-sim 1e9]
 
-Layout: the follow camera fills the frame; a translucent panel down the left carries the mission, the state of the
-robot and its services, the agent's working plan, and beneath them a chat of the remote reasoner and vision model
-with every tool and rSkill call between them; a corner holds a plan view of the site with the rover on it.
+Layout: the follow camera fills the frame; a card top-left carries the clock, the mission, the agent's plan with the
+current step marked, what it is doing now and why, and the harness's last verdicts; a card bottom-right holds a plan
+view of the site with the rover on it.
 
 Every panel line is read from the run's own record (`events.jsonl`, the same simulation clock as the video's
 `.times`), so the video states what the run states. The mini-map's poses come from the evaluator track
@@ -27,7 +27,7 @@ from PIL import Image, ImageChops, ImageDraw, ImageFont
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_M = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-PANEL_W, PAD, MAP_W, OUT_W = 440, 24, 300, 1600  # OUT_W is the default; --width overrides it
+PANEL_W, PAD, MAP_W, OUT_W = 420, 24, 300, 1600  # OUT_W is the default; --width overrides it
 #: The panel and the map are fixed pixel sizes, so a wider output gives them proportionally less of the frame
 #: and the follow camera proportionally more. Record the follow camera at the width you compose at: scaling it
 #: up is the only thing here that costs picture quality, and rendering it larger costs almost nothing -- the
@@ -133,8 +133,7 @@ class Map:
         self.hi = self.lo + span
         self.base = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(self.base)
-        d.rounded_rectangle([0, 0, size - 1, size - 1], radius=16, fill=(13, 15, 19, 224),
-                            outline=(255, 255, 255, 30), width=1)
+        d.rounded_rectangle([0, 0, size - 1, size - 1], radius=14, fill=(13, 15, 19, 222))
         for b in self.boxes:
             c, (sx, sy), yaw = np.array(b["center"]), b["size_xy"], b["yaw"]
             r = np.array([[math.cos(yaw), -math.sin(yaw)], [math.sin(yaw), math.cos(yaw)]])
@@ -226,70 +225,87 @@ def elide(text: str, font, width: int) -> str:
 
 
 def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") -> Image.Image:
-    """Four things, in the order a viewer needs them: what the robot is doing and why, where that sits in its own
-    plan, what the harness has just ruled on, and -- once, quietly at the top -- the mission it was given.
-
-    The card is as tall as what it has to say. The full-height slab this replaced held forty log lines at one
-    size in five colours, wrapped and cut with `[...]` mid-sentence, and the one thing a viewer actually needs --
-    the operation running right now -- was a small green line in the middle of it.
-    """
+    """One card, read top to bottom in the order a viewer needs it: the clock and the robot's state, the mission
+    it was given, its own plan with the current step marked, what it is doing now and why, and the harness's
+    last four verdicts. One accent (amber) for now, green and red for verdicts, three greys for everything else.
+    The card is as tall as its content; nothing wraps past two lines and nothing is cut mid-word."""
     small, body, head, mono = fonts
-    inner = PANEL_W - 2 * 18
-    rows: list[tuple] = []  # (font, colour, text, indent, gap after, an optional (text, font, colour) at the margin)
+    x0, inner = 20, PANEL_W - 40
+    ops: list[tuple] = []  # ("text", y, x, text, font, colour) | ("rule", y) | ("bar", y0, y1) -- laid out first, drawn after
+    y = 18
 
-    def row(font, colour, text, dx=0, gap=6, lead=None):
-        rows.append((font, colour, text, dx, gap, lead))
+    def text(t, font, colour, dx=0, gap=5):
+        nonlocal y
+        ops.append(("text", y, x0 + dx, t, font, colour))
+        y += font.size + gap
 
-    def caption(text):
-        row(small, FAINT, " ".join(text.upper()), gap=8)  # letter-spaced: a label, read as a label, not as a line
+    def caption(t):
+        nonlocal y
+        y += 4
+        ops.append(("text", y, x0, "  ".join(t.upper()), small, FAINT))
+        y += small.size + 7
 
-    row(small, FAINT, elide(title, small, inner), gap=6)
-    row(mono, AMBER, f"{sim_t:.0f} s" + (f"   {moving_now}" if moving_now else ""), gap=20)
+    # header: the clock, and the robot's own state beside it
+    ops.append(("text", y - 2, x0, f"{sim_t:.0f}", head, INK))
+    ops.append(("text", y + head.size - small.size - 4, x0 + head.getlength(f"{sim_t:.0f}") + 6, "s", small, FAINT))
+    if moving_now:
+        w = body.getlength(moving_now)
+        ops.append(("text", y + head.size - body.size - 3, x0 + inner - w, moving_now, body, DIM))
+    y += head.size + 10
+    ops.append(("rule", y))
+    y += 12
 
     caption("mission")
-    said = wrap(state["mission"], 56)
+    said = wrap(state["mission"], 54)
     for i, t in enumerate(said[:2]):
-        row(body, DIM, t + ("…" if i == 1 and len(said) > 2 else ""), gap=4)
-    rows[-1] = (*rows[-1][:4], 22, None)
+        text(t + ("…" if i == 1 and len(said) > 2 else ""), body, DIM, gap=4)
+    y += 10
 
     if state["plan"]:
         caption("plan")
-        for status, text in state["plan"][:6]:
+        for status, task in state["plan"][:6]:
             glyph, here = LEDGER.get(status, ("·", False))
-            row(body, INK if here else FAINT, f"{glyph}  {elide(text, body, inner - 22)}", gap=7)
-        rows[-1] = (*rows[-1][:4], 22, None)
+            text(f"{glyph}  {elide(task, body, inner - 24)}", body, INK if here else (FAINT if status == "done" else DIM), gap=6)
+        y += 10
 
     caption("now")
-    # the agent's own bookkeeping calls are named for the tool table they live in; on a video that prefix is noise
-    row(head, AMBER, (state["now"] or "thinking").split("/")[-1], gap=4)
+    top = y
+    text((state["now"] or "thinking").split("/")[-1], head, AMBER, dx=12, gap=3)
     under = "  ·  ".join(x for x in (state["stage"], f"holding {state['held']}") if x)
-    row(body, DIM, elide(under, body, inner), gap=6)
+    text(elide(under, body, inner - 12), body, DIM, dx=12, gap=5)
     if state["why"]:
-        said = wrap(state["why"], 58)
+        said = wrap(state["why"], 56)
         for i, t in enumerate(said[:2]):
-            row(small, FAINT, t + ("…" if i == 1 and len(said) > 2 else ""), gap=3)
-    rows[-1] = (*rows[-1][:4], 22, None)
+            text(t + ("…" if i == 1 and len(said) > 2 else ""), small, FAINT, dx=12, gap=3)
+    ops.append(("bar", top, y - 2))
+    y += 12
 
-    caption("what happened")
+    caption("record")
     for m in state["log"][-4:]:
         colour = {"good": GREEN, "bad": RED}.get(m["kind"], INK)
-        row(body, colour, elide(m["text"], body, inner - 46), dx=46, gap=7 if not m.get("detail") else 3,
-            lead=(f"{m['t']:5.0f}", mono, FAINT))
+        ops.append(("text", y + body.size - mono.size, x0, f"{m['t']:5.0f}", mono, FAINT))
+        text(elide(m["text"], body, inner - 48), body, colour, dx=48, gap=3 if m.get("detail") else 7)
         if m.get("detail"):
-            row(small, FAINT, elide(m["detail"], small, inner - 46), dx=46, gap=7)
+            text(elide(m["detail"], small, inner - 48), small, FAINT, dx=48, gap=7)
+    y += 6
+    ops.append(("rule", y))
+    y += 9
+    text(elide(title, small, inner), small, FAINT, gap=0)
+    height = y + small.size + 16
 
-    height = 18 + sum(font.size + gap for font, _, _, _, gap, _ in rows) + 12
     img = Image.new("RGBA", (PANEL_W, height), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rounded_rectangle([0, 0, PANEL_W - 1, height - 1], radius=16, fill=(15, 17, 22, 194),
-                        outline=(255, 255, 255, 30), width=1)
-    y = 18
-    for font, colour, text, dx, gap, lead in rows:
-        if lead is not None:
-            d.text((18, y + font.size - lead[1].size), lead[0], font=lead[1], fill=lead[2])
-        d.text((18 + dx, y), text, font=font, fill=colour)
-        y += font.size + gap
+    d.rounded_rectangle([0, 0, PANEL_W - 1, height - 1], radius=14, fill=(13, 15, 19, 222))
+    for op in ops:
+        if op[0] == "text":
+            _, yy, xx, t, font, colour = op
+            d.text((xx, yy), t, font=font, fill=colour)
+        elif op[0] == "rule":
+            d.line([(x0, op[1]), (x0 + inner, op[1])], fill=(255, 255, 255, 28), width=1)
+        else:
+            d.rounded_rectangle([x0, op[1], x0 + 3, op[2]], radius=2, fill=(*AMBER, 255))
     return img
+
 
 def main() -> None:
     ap = argparse.ArgumentParser()
@@ -330,8 +346,8 @@ def main() -> None:
         places = {k: {**v, "label": PLACES[k]} for k, v in places.items()}
     track_t = [s["t"] for s in track]
     # one scale: a caption, a line of text, the thing happening now, and the clock
-    fonts = (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 15), ImageFont.truetype(FONT_B, 27),
-             ImageFont.truetype(FONT_M, 14))
+    fonts = (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 14), ImageFont.truetype(FONT_B, 26),
+             ImageFont.truetype(FONT_M, 13))
     site = Map(a.structures, MAP_W, track, places, font=fonts[0]) if track and a.structures.exists() else None
 
     scale = a.width / w
