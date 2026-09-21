@@ -266,13 +266,13 @@ effects:
     description: >-
       Press something described in words -- a button, a latch, a switch on a panel: find it in the wrist camera,
       stand off in front of it facing the surface, close in along the tool axis until the face takes the load, then
-      withdraw. Describe the target by appearance and position; the equipment carries no readable labels. The target
+      withdraw. Describe the target by how it looks in the wrist camera's close view; the equipment carries no readable labels. The target
       must be within the arm's reach behind the rover (dock at the feature's work pose first). The arm does not need
       to be in any particular posture: this plans its own way from wherever the arm is, so `arm_ready` beforehand is
       neither required nor useful -- at a work pose close enough to reach the panel, the ready posture may well not
       fit. On failure it reports the stage reached (locate, approach, press, retreat) and why.
     inputs:
-      target: [string, true, "what to press, described by appearance and position"]
+      target: [string, true, "what to press, as the wrist camera will see it up close: its colour and shape (e.g. the round red push button on a yellow panel). The view is a few tens of centimetres across, so say nothing about where it is relative to things elsewhere on the site -- the status lamp above it, for one, is not in the frame"]
       feature: [string, true, "the site interaction point of the target, e.g. pdu_2_panel/press (the one you docked at)"]
     default_deadline_s: 420
     authority_class: routine
