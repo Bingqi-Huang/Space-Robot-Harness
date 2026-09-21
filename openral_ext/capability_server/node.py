@@ -45,9 +45,16 @@ from workspace.reach import reach_map  # noqa: E402
 
 #: the nearest the pick skill stands its tool off the slot before closing in (its own manifest): the near end of
 #: the insertion a stand has to keep reachable, as the seat is the far end
-PICK_STANDOFF_MIN_M = min(json.loads(yaml.safe_load(
-    (Path(__file__).resolve().parents[2] / "openral/rskills/rskill-procedural-pick/rskill.yaml"
-     ).read_text())["procedural"]["default_goal_json"])["standoff_m"])
+def _skill_goal(name: str) -> dict:
+    return json.loads(yaml.safe_load((Path(__file__).resolve().parents[2] / f"openral/rskills/rskill-procedural-{name}/rskill.yaml"
+                                      ).read_text())["procedural"]["default_goal_json"])
+
+
+PICK_STANDOFF_MIN_M = min(_skill_goal("pick")["standoff_m"])
+#: where the press skill's camera stands from its target (the depth it measures a part at, less the camera's
+#: offset behind the tool, read off TF at run time) and how far it drives past the face
+PRESS_VIEW_DEPTH_M = float(_skill_goal("press")["view_part_depth_m"][0])
+PRESS_DEPTH_M = float(_skill_goal("press")["press_depth_m"])
 from rclpy.action import ActionClient, ActionServer, CancelResponse
 from rclpy.duration import Duration
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -278,9 +285,10 @@ def lower(capability: str, a: dict) -> dict:
                 "support_normal_map": IX["points"][a["support"]]["normal"], **held_item(a),
                 **({"release_constraint": a["release_constraint"]} if "release_constraint" in a else {})}
     if capability == "press":
-        # nothing to lower: the skill finds the target in its own camera, and where to stand off and how far to press
-        # past the face are its own defaults
-        return {"target": a["target"]}
+        # the surveyed point of the target, for the skill to point its camera at; what it presses is what it then
+        # sees there, and where to stand off and how far to press past the face are its own defaults
+        return {"target": a["target"], "feature_xyz_map": IX["points"][a["feature"]]["xyz"],
+                "feature_normal_map": IX["points"][a["feature"]]["normal"]}
     raise KeyError(capability)
 
 
@@ -594,13 +602,11 @@ class CapabilityServer(Node):
         p, n_out = self.feature_geometry(feature)
         z = float(grasp_height_m) if grasp_height_m is not None else work_heights(feature)[0]
         near = clear_distance(p[:2], n_out[:2])
-        seat = float(GripperGeometry().seat_depth_m)
         out, base = [], None
         for d, _room in reach_map().stand_candidates([z], near)[:12]:
             base = d if base is None else min(base, d)
             out.append({"distance_m": round(d, 3), "reaches_the_work": self.reaches_work(feature, d, [z]),
-                        "reach_is_checked_at_m": [round(d - DOCK_ERROR_M - PICK_STANDOFF_MIN_M, 3),
-                                                  round(d + DOCK_ERROR_M + seat, 3)]})
+                        "reach_is_checked_at_m": [round(d - DOCK_ERROR_M, 3), round(d + DOCK_ERROR_M, 3)]})
         out.sort(key=lambda r: r["distance_m"])
         try:  # what standoff_m counts from; "none" is the answer this query exists to be able to give
             chosen = round(self.stand_distance(feature), 3)
@@ -717,22 +723,26 @@ class CapabilityServer(Node):
         """Standing `d` from a site point, can the arm put its tool where the work is?"""
         return all(any(self.ik_reaches(np.array([-d, 0.0, z]), R) for R in approach_rotations()) for z in heights)
 
-    def insertion_reaches(self, d: float, z: float) -> bool:
-        """Standing `d` from an item's handle, can the arm put its tool at *both ends of the insertion* wherever the
-        dock lands? A pick stands the tool off the slot first and drives it to the pads' seat last, so the tool has
-        to reach a point nearer the rover than the handle and one beyond it. Reach at the far end runs out when the
-        rover lands far; reach at the near end runs out when it lands near -- the arm cannot fold that flat. gb6
-        docked at a stand that reached the seat and had no configuration for any stand-off (F93)."""
-        near = np.array([-(d - DOCK_ERROR_M - PICK_STANDOFF_MIN_M), 0.0, z])
-        far = np.array([-(d + DOCK_ERROR_M + GripperGeometry().seat_depth_m), 0.0, z])
+    def ends_reach(self, d: float, z: float, near_m: float, far_m: float) -> bool:
+        """Standing `d` from a work point, can the arm put its tool at *both ends of the work* wherever the dock
+        lands -- `near_m` short of the point (nearest the rover) and `far_m` beyond it? Reach at the far end runs
+        out when the rover lands far; at the near end when it lands near, where the arm cannot fold flat. gb6
+        docked at a stand that reached a grasp's seat and had no configuration for its stand-off (F93); ma5 docked
+        at two stands that reached a button and could not put the camera on it from either (F94)."""
+        near = np.array([-(d - DOCK_ERROR_M - near_m), 0.0, z])
+        far = np.array([-(d + DOCK_ERROR_M + far_m), 0.0, z])
         level = approach_rotations((0.0,))
         return any(self.ik_reaches(near, R) for R in level) and any(self.ik_reaches(far, R) for R in level)
 
     def reaches_work(self, feature: str, d: float, heights: list[float]) -> bool:
-        """What a stand at `d` has to reach for this feature: an item's whole insertion where an item stands (a
-        `place` point is where things are picked up and put down by their handles), the work point otherwise."""
-        if IX["points"][feature]["type"] == "place":
-            return all(self.insertion_reaches(d, z) for z in heights)
+        """What a stand at `d` has to reach for this feature, from the skills' own manifests: a grasp's stand-off
+        and seat where an item stands (`place`), the camera's viewing distance and the press depth at a button."""
+        kind = IX["points"][feature]["type"]
+        if kind == "place":
+            return all(self.ends_reach(d, z, PICK_STANDOFF_MIN_M, GripperGeometry().seat_depth_m) for z in heights)
+        if kind == "press":
+            behind = float(np.linalg.norm(self._tf("tcp_frame", "wrist_camera_optical_frame")[0]))
+            return all(self.ends_reach(d, z, PRESS_VIEW_DEPTH_M - behind, PRESS_DEPTH_M) for z in heights)
         return all(self.arm_reaches(d + e, heights) for e in (0.0, -DOCK_ERROR_M, DOCK_ERROR_M))
 
     def stand_distance(self, feature: str) -> float:

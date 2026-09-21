@@ -273,6 +273,7 @@ effects:
       fit. On failure it reports the stage reached (locate, approach, press, retreat) and why.
     inputs:
       target: [string, true, "what to press, described by appearance and position"]
+      feature: [string, true, "the site interaction point of the target, e.g. pdu_2_panel/press (the one you docked at)"]
     default_deadline_s: 420
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-press
