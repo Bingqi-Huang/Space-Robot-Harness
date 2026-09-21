@@ -4568,3 +4568,32 @@ of its own that could say "it is on the shelf" -- the claim/instrument gap of th
 both bags of that pair were cut in the middle of the run, which is why the mini-map of that pair cannot be drawn.
 
 Not yet validated: the place chain on the fixed servo (scripted pick -> carry -> place on a held graph, then a full recorded run).
+
+## F98 -- the arm's drives were 57 times softer than configured: gains are applied per degree
+
+F97 named two joint-space defaults, and the scripted carry (pick, drive, dock, place on a held graph) showed they were not the
+cause of the place failures: the arm still swung the carried ORU +-10 cm at 1 Hz whenever it moved, with the command constant
+for ten seconds. The recorded efforts said "joint 4 at 30 N m, joints 5-7 at 10 N m, all at their limits, for tens of seconds"
+with a 1 kg unit in 1.625 m/s^2 -- a 1.6 N weight -- which no load can explain.
+
+**The reading was a replica.** Isaac Lab's implicit actuator reports `k * (target - position) - c * velocity`, clipped, with the
+gains it was configured with; PhysX applies what it applies. The "saturated" efforts were the replica of a configured gain acting on
+a joint error of 0.1-0.3 rad, and told nothing about the torque.
+
+**What PhysX does.** A bare-simulation script (`experiments/robot_check/carry_static.py`: the robot with its base fixed, in the carry
+pose recorded from gc3, nothing else in the scene): the elbow's target stepped 0.05 rad rings as a clean sinusoid at 1.0 Hz, amplitude
+decaying by 0.84 every half cycle (damping ratio 0.055), for six seconds. The generalized mass matrix PhysX reports for the arm gives
+0.12 kg m^2 about the elbow, which at the configured 600 N m/rad would ring at 11 Hz. Stiffness 150 rings at 0.5 Hz (frequency goes
+as the square root of the gain, so it is a gain and not an inertia), and a free base changes nothing. A stiffness of 600 * pi/180 =
+10.5 N m/rad and a damping of 7.65 * pi/180 = 0.13 N m s/rad reproduce both the frequency and the damping ratio. Multiplying both
+gains by 180/pi (34 377 and 438 in the configured units) settles the same kick in 0.3 s with no ringing; the configuration in
+`lunarbot.py` now writes the arm's gains converted, and the same test on that file holds the ORU to 0.001-0.004 rad.
+
+**What it explains.** The arm that "answers 0.5-0.75 s late" (F95), the wrist that sagged 5-6 cm over a carry (F96's list), the servo
+gains that had to be so low that a stall looked like success, the stand-off that rang after a planned move, and every place that ended
+with the ORU out of the fingers: a static load of 1 N m deflected an elbow by 0.1 rad, and any disturbance rang for five seconds. F96
+took the friction off the arm; this is what remained.
+
+**What it does not say.** The gripper, the steering and the wheels are configured in the same way and are left alone: they were tuned
+against their behaviour as it is, and nothing in the record shows them at fault. The servo's gains and ramps were tuned against the soft arm
+and are conservative for the arm as configured; they are not touched until a run shows them wrong.
