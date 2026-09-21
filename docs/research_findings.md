@@ -4388,3 +4388,62 @@ scheme altogether, and a handle is an affordance -- how to grasp it is declared,
 it is. Both fixes above (the declared-length floor and the multi-pose look) were reverted; `pick` now fits the
 catalogue's interface shape to the depth image and servos on the fit (`interface_fit.py`,
 `docs/grasp_target_selection_proposal.md`). The docking-band answer in `work_stands` stands.
+
+## F92 -- the model decided one thing and called another: a schema-valid answer that was not an answer
+
+gb3, 2026-09-21, the first run of the rebuilt `pick`. Step 7: the rover had just arrived at the depot approach
+point (`base_at_commanded_pose` verified at sim 85). The model thought for **50.2 s** -- 39,297 characters of
+`reasoning_content`, the first run to record it -- and its reasoning ends, verbatim:
+
+    Plan for steps:
+    7. dock_at_feature(slot_0, standoff 0.135)
+    8. observe(wrist, "describe the object on the stand ahead of the gripper ...")
+    9+. pick(...)
+    Let me go.
+    ... It says reaches_the_work: true. OK.
+    Go.
+
+The tool call that came with it was `dock_to_pose {"x": 0, "y": 0, "yaw": 0}` with the rationale **"placeholder"**.
+Not the tool it had chosen, not the feature, not the standoff; the pose is the map origin, which is the dock. Every
+field is schema-valid, the pose is a legal target, and the guard allowed it. The rover drove 1.9 m back toward the
+dock, `dock_to_pose` timed out after 180 s short of it, the verifier reported `base_at_commanded_pose: false`, the
+model read that in its next context, wrote a fresh plan and drove back to the depot. Cost: about 200 s of
+simulation and nothing else. Recovery worked exactly as the harness is designed to make it work -- verification
+independent of the model, context rebuilt from the record, the model replans -- and it worked at the price of a
+timeout.
+
+**What this is.** Not a wrong strategy: the strategy in the reasoning was right. Not a malformed reply: the reply
+parsed. It is a *degenerate* answer -- the function-call channel came back with defaults and a placeholder after a
+long reasoning channel -- and the harness had nothing that looks at an answer's quality, only at its validity and,
+later, its effect. That is a failure class of its own, distinct from the two the harness already handles (an
+answer the guard refuses; an effect the verifier refutes), and it is the class that costs time rather than safety.
+
+**Why it took 50 s and 39 k characters to get there is also the harness's doing.** The reasoning dithers for pages
+over the stand: *"The explicit hint in the tool description pushes toward choosing based on look angle ... Choose
+it. Confirmed ... let me reconsider the standoff one final time."* The `work_stands` contract still discusses the
+look angle at length -- text written when a level look was a precondition. It no longer constrains anything (F91:
+the fit takes the interface from any elevation), but the description still makes the model deliberate about it,
+and the deliberation is what ran the answer channel dry. A contract that describes a constraint the harness no
+longer has is not neutral: it is a prompt.
+
+**What the harness can do about a degenerate answer, in order of how little it has to know.**
+
+1. *Treat a non-answer as no answer.* The contract already requires a rationale on every call; a rationale that is
+   empty or a single placeholder token is a call that has not been justified, in the same sense as a reply with no
+   tool call in it -- and the core already re-asks for that (`reasoner_step_failed`, one retry, the failure in the
+   record). No task knowledge, no geometry, no thresholds: an unjustified call is not an answer.
+2. *Check the answer against the model's own reasoning.* The endpoint returns the reasoning; when it names a tool
+   (`dock_at_feature(slot_0, ...)`) and the call names another (`dock_to_pose`), the two channels disagree and the
+   record can say so. Cheap to detect for the tool name; fragile for arguments. Worth recording; not worth acting
+   on automatically beyond (1).
+3. *Do not describe constraints the harness no longer has.* The look-angle text in `work_stands` goes.
+4. *Bound what a wrong call can cost.* The 180 s was `dock_to_pose`'s own timeout on a 1.9 m drive; the loss was
+   the timeout, not the detection. Progress-based termination is the general remedy and already exists for the arm
+   (stall detection in the servo); the base's docking skill only has a deadline.
+
+For the paper this is the third leg of the argument, and the run supplied it unasked: a harness for a fallible
+reasoner has to hold three things -- what the model may not do (invariants), whether what it did worked
+(verification), and whether what it said is an answer at all (answer integrity). The first two carried this run;
+the third is the gap, and it is small.
+
+Recorded, not yet acted on. Whether to add (1) and (3) is the user's call.
