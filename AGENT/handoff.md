@@ -1,100 +1,64 @@
 # Handoff
 
-Updated 2026-09-21 (F81-F91; pick rebuilt). Read `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then
-`AGENT/todo.md`. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts,
-evidence, verification and hard boundaries. No Mission B-specific skill, hidden hint, numeric tuning or recovery
-graph.
+Updated 2026-09-22 (F92-F98). Read `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then `AGENT/todo.md`.
+Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
+boundaries. No Mission-specific skill, hidden hint, numeric tuning or recovery graph. Simulator truth is for post-hoc diagnosis and
+drawing only, never for a decision (user: "that is cheating").
 
-## Heads (all clean, all committed)
+## Heads
 
-research `feat/manipulation-contracts`, openral `feat/manipulation-contracts`, SRB `feat/lunar-base-scene`.
+research `feat/manipulation-contracts`, openral `feat/manipulation-contracts`, SRB `feat/lunar-base-scene`. All committed.
 
 ## Where it stands
 
-**Mission B ran end to end once** (ga8, F87): pick first try, carry with `item_still_held` through the drive,
-place, stow, dock, `success: true`, `CHECK_EXIT 0`.
+**Mission A (PDU-2 fault) has run end to end from scratch, twice, with evaluator success** (mc4, mc5; 1 press, faults cleared, PDU-2
+reported, dock, arm stowed); mc5 has video + a complete bag (`artifacts/runs/mc5`). **Mission B has not**: `pick`, the carry, the dock
+and the `place` calls all reach the shelf, but the ORU leaves the fingers when `place` starts (gc3, gt1c2). Cause found late on
+2026-09-22 (F98): the arm's drive gains are applied by PhysX per degree, so every joint was 57x softer than configured (10.5 N m/rad, damping
+ratio 0.05): it sagged under a 1 kg unit and rang at 1 Hz after any move. Fixed in SRB `lunarbot.py` (gains x 180/pi); bare test: kick
+settles in 0.3 s, ORU held to 0.004 rad. **Nothing on the corrected arm has a full run behind it yet**: mc6 (Mission A, recorded) and
+gt2 (scripted pick-carry-place, no model) were started on it.
 
-**It is not reliable.** gb2, same target, failed `pick` three times with the handle in plain view (F91). On the
-user's ruling -- absolute-number gates are wrong; the handle is a declared affordance -- `pick` was rebuilt on
-2026-09-21: the catalogue's interface shape is fitted to the wrist depth (`interface_fit.py`), the grasp
-orientation is declared (approach along the support normal), and the servo re-fits every frame. Verified offline on
-gb2's frames only; `docs/grasp_target_selection_proposal.md` has the reasoning and the literature. **Nothing since
-ga8 has a successful run behind it.** The next action is a run.
+## What was done since ga8, by kind (F92-F98 carry the detail)
 
-## What was fixed today, by kind (F81-F90 carry the detail)
+- **Press v2**: the catalogue declares the button (`interface`: mushroom on a collar on a plate); `locate_disc` fits it from the wrist depth
+  with no thresholds; the shared servo drives it; jaws close first; contact is evidence (past-face, off-axis, jaw), the boundary's
+  independent `pressed` check judges. **Place v2**: `fit_wall` corrects the surveyed wall; over/lower/retreat are the shared servo;
+  `lower` stops on a stall and records where. No skill has a handwritten loop.
+- **One IK rule** for the boundary's stand feasibility and the skills: non-planned IK keeps the working branch or the seed; planned IK takes
+  any collision-free solution ranked by `posture_cost`; every solution is taken at the wrist-roll turn nearest the arm
+  (`nearest_equivalent`, F97). A dock is advice (`stand_advice`), not a veto.
+- **Claims**: `held_item` reads twice (neutral context, then the item) with a confidence; place verification is independent of the
+  skill's completion. Not built yet: `check_item_at`, `read_indicator`, the claim ledger (gc3 showed the gap: place "not
+  placed", a gold box on the shelf, the model tried to pick it up again).
+- **The robot model** (F96, F98): USD joint friction 0.1-0.4 (unitless, x transmitted force) stuck the arm; arm drive gains per degree.
+  Both were found in a bare Isaac script (`experiments/robot_check/{arm_steps,carry_static}.py`), not in a run.
+- **Posture pull is a rate** (0.05/s), no longer a step at the joint-rate limit (F97); place waits for stillness before `over`.
 
-- **The simulator's action boundary.** Every `cmd_vel` rebuilt the whole action vector through the *teleoperation*
-  mapping and kept only `_held_mask` dimensions; only the Bool gripper was masked, so the first cmd_vel of each
-  drive switched the arm out of joint-position mode and zeroed its targets. **This was the carry** (F81). And the
-  buffer started at zeros, which for that arm selects twist mode against a pose never set — so before any skill
-  claimed it the arm ran at its velocity limit for 150 s (F89).
-- **The harness withholding what it knew.** `held_item` answered with a camera clamped to the handle, which
-  cannot see the payload (F82). Every place point carries a surveyed outward normal `place` was never given (F85).
-- **Geometry, found by computing not inferring** (F86). A prop's box was built from how tall it is rather than
-  where it is (shelf 16 cm low, PDU panel 60 cm low); the shelf was 0.6 m deep against a 0.485 m envelope with a
-  wall behind it; the handle's bars occluded the slot they bound.
-- **The harness's own numbers wrong about themselves.** One constant as both the seat depth and its tolerance; a
-  transient swing tolerance spent as a sustained one; `work_stands` checking reach at the part rather than where
-  the tool ends up; one query timer serving both a lost response and the slowest legitimate answer, which cost
-  three minutes at the start of every run (F90).
-- **The payload interface.** F49 gave the T-handle form closure against a vertical pull and left rotation to
-  friction; ga4 rolled it 23.7 deg round the neck during a turn and lost it. A collar below the slot makes the
-  fingers captive (F83/F84).
+## Method rules earned the hard way
 
-The model's side needed no correction at any point.
-
-## Method rules that were earned the hard way
-
-- **Look at the pictures before the numbers.** Four wrong hypotheses came out of one day of reading bags; 44
-  wrist frames showed the load being flung in a glance (F81). Record the chassis camera too.
-- **Whether one solid fits on another is arithmetic over data the repository already holds.** Three of ga8's ten
-  defects were sitting in the asset files (F86). Compute; do not infer from run logs.
-- **Read your own code back before running it.** This session it caught a collar placed off the old pedestal
-  origin, `self.geom` undefined in the place skill, and a mesh bound taken after the scale proxy joined the scene.
-- **Subtract.** Do not add a tool, a script or a file unless something is impossible without it.
+- Separate the robot model from the stack first: a bare Isaac script with the base fixed took one minute per variant and found what
+  three days of runs did not. `Articulation.data.applied_torque` (the joint_states effort) is Isaac's replica with the configured gains,
+  not PhysX's torque.
+- Never open a run's bag while its recorder is alive (SQLite lock kills the recorder; both gc3 and mc4 bags were cut). Read closed bags.
+- Scripted capability chains (`experiments/launch/lunar_base_d0/scripted_chain_check.py` + `chain_*.json`, attach to a held graph,
+  no model) turn a 60-minute mission into a 15-minute test of one skill. `RESUME_SNAPSHOT` restores a jaws-open state only.
+- Look at the pictures before the numbers; compute geometry offline; read your own code back before running it; subtract.
 
 ## Running it
 
-Skills are import-cached in `openral_rskill_ros/runtime_node`; a skill change needs the runtime restarted, an SRB
-or asset change needs the whole graph rebooted.
-
-1. Stop by explicit PID (never `pkill -f`), then confirm `ros2 node list` is **empty** — a leftover
-   `planning_scene` from an earlier graph published TF frozen at its last clock and cost ga3 the whole run. Kill
-   the ros2 daemon too; it caches nodes that no longer exist.
-2. Recorder: topics as in `gb2/`, QoS `record_qos.yaml`, **including `/openral/cameras/front/image`**.
-3. Fresh graph (absolute log dir): `D0_CAPABILITY_SERVER=1 D0_HOLD=1 D0_CHECK=ours_mission_check.py OURS_MISSION=b`
-   `[D0_VIDEO=<dir>/mission_b.mp4 D0_VIDEO_RES=1920,1080 D0_VIDEO_STRIDE=2 D0_VIDEO_SPEEDUP=1]`
-   `setsid nohup experiments/launch/lunar_base_d0/run_d0.sh <dir>`. Rendering costs ~14 % of the sim rate, not the
-   5x an old note feared.
-4. Attach to a live graph: `D0_RESTART_RUNTIME_PID=<pid> [D0_RESTART_BOUNDARY=1] ... attach_d0.sh <graph> <newlog>`.
-   Resume points are jaws-open only.
-5. Asset or scene change: `assets/lunar_base/process/process.py --only <names>` then `scene/build_scene.py`, then
-   reboot the graph. The builder's `problems` list is a real check — it refused a deeper shelf that reached into
-   the rover's own work pose.
-6. Analyse only closed bags. `/usr/bin/python3.10` for rosbag2, `openral/.venv/bin/python` for the skills.
-   `ROS_DOMAIN_ID=77 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST` plus `fastdds_large_shm.xml`.
-
-Video: `experiments/video/track_from_bag.py <run>/robot_motion <run>/track.json`, then
-`experiments/video/mission_video.py <run>/mission_b.mp4 <run>/ours/events.jsonl <out> --track <run>/track.json
---width 1920`. Re-encode with x264 before sending anything anywhere; the composer writes mp4v at ~6x the size.
-
-## Established context
-
-- Ours completed Mission A covered before the new manipulation stack (oa2); record-based restart worked (rs1).
-- Press is built but has never pressed a button live; Mission A's ready/stand deadlock is unresolved (F62 §3).
-- PLEXIL Release 6 builds and runs Mission A covered through the common boundary (F52); EUROPA not started.
-- `oru_on`/`crate_on` name a support only when the item is **not** in the gripper.
-- The jaw reading is what the fingers closed on; it rising means something is prying them apart. The drives sit at
-  their 4.0 N.m limit the whole time an item is held — 3-4x the real EG2-4C2's 0-20 N. The user's decision is to
-  keep that (lunar equipment is not a catalogue part) and give the interface form closure instead.
+Skills are import-cached in `runtime_node`; a skill change needs the runtime restarted (`D0_RESTART_RUNTIME_PID`), an SRB or asset
+change needs the graph rebooted. Kill by run tag, never by name: `teardown_d0.sh <run dir>` with `D0_VIDEO=<mp4>` set to finalize the
+video. Full pair: `experiments/launch/lunar_base_d0/launch_full_pair.sh <tagB|-> <tagA|->` (1080p video + bag; A on GPU 1).
+Monitor `artifacts/runs/<tag>/ours/events.jsonl`; the evaluator's `RESULT` line is in `<tag>/check.log`. Stop the recorder by PID
+(`recorder.pid` can be stale: find it with `ps`), then `track_from_bag.py <run>/robot_motion <run>/track.json`, then
+`mission_video.py <run>/mission_x.mp4 <run>/ours/events.jsonl <out> --times <mp4>.times --track <run>/track.json --title ...`, then
+x264 (1280 wide, crf 29) to stay under the 30 MiB send limit.
 
 ## Rules
 
-- One simulation only. All paths absolute. No `pgrep -f` / `pkill -f`.
-- Never navigate on simulator truth; it is evaluator/diagnosis only, never control, prompts, guards or verifiers.
-- Whole-operation tools only; mechanics stay inside skills. A skill retries the same target, never moves the base.
-- Model-facing services use DeepSeek's own endpoint; keys in `AGENT/VLM_provider.md` never enter logs or output.
-- Boundary: `openral_ext/capability_server/{contracts.yaml,contracts.py,node.py}`. Ours: `space_runtime/`.
-- Development resumes/edits are not campaign results; never count them in paper metrics.
-- Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies to the user in concise Simplified
-  Chinese.
+- One graph per GPU (A on 1, B on 0). All paths absolute. No `pgrep -f` / `pkill -f`.
+- Never navigate or decide on simulator truth. Whole-operation tools only; mechanics stay in skills. A skill retries the same target,
+  never moves the base. Keys in `AGENT/VLM_provider.md` never enter logs or output.
+- Development resumes/scripted chains are not campaign results; never count them in paper metrics.
+- Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies to the user in concise Simplified Chinese.

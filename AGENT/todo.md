@@ -1,48 +1,25 @@
 # TODO
 
-Order: `execution_plan` §21 — the proposed method before the external baselines.
-**Sequence in force (user): Mission B reliable → `press` live → Mission A → baselines/freeze/experiments.**
-One simulation at a time. Experiments from here on record video (`D0_VIDEO`).
+Order: `execution_plan` §21 -- the proposed method before the external baselines. Sequence in force (user): Mission B reliable,
+Mission A, then baselines / freeze / experiments. One graph per GPU. Experiments record video (`D0_VIDEO`).
 
-## Blocking -- `pick` was rebuilt on 2026-09-21 and has not run
+## Now (2026-09-22)
 
-gb2 lost `pick` three times with the handle in plain view: the candidate search filtered measured dimensions
-through eleven absolute thresholds, took one frame, and returned an empty list (F91). The user's ruling: gates on
-absolute numbers are wrong; the handle is a declared affordance, so how to grasp it is declared and vision only
-has to say where it is.
+- [ ] **Mission B on the corrected arm (F98).** gt2: scripted pick -> carry -> dock -> place, no model. If `place` holds the ORU through
+      `over`/`lower` and the evaluator says delivered, record a full Mission B from scratch (`launch_full_pair.sh <tag> -`).
+- [ ] **Mission A on the corrected arm.** mc6 is running (recorded). mc4/mc5 succeeded on the soft arm; mc5 has video and a complete bag.
+- [ ] Compose both videos (panel + mini-map), x264 1280 wide crf 29, send.
+- [ ] Servo gains, ramps and margins were tuned against the soft arm (F95/F96/F98): re-check a stall or a dip only if a run shows one.
+      Do not retune preemptively.
 
-- [ ] **Run Mission B with the rebuilt pick.** `find` takes one view, the VLM names the item's region, the
-      catalogue's interface shape is fitted to the depth (`openral_rskill/interface_fit.py`), the tool servos in
-      re-fitting every frame in the declared orientation (approach along the support normal, jaws across the
-      neck). Offline: every current-handle frame on record (ga8, ga9, gb1, gb2) fits at 0.97-0.99 agreement, 0.3-0.4 mm;
-      gb2's two failed frames at 0.80 and 0.91; a distant structure that a tight judge scored 0.79 scores 0.14 once
-      the sky under the shape counts; with the fingers on the neck (ga8/ga9 pre-lift frames) agreement is 0.03-0.33,
-      so the servo switches to carrying the last fit. ~18 ms a frame, ~120 ms the first.
-      Unproven live: the fit under the fingers' occlusion, the servo on a moving camera, the agreement floor (0.5).
-- [ ] Then three clean runs of Mission B from the start, with video, before anything else.
+## Design items not yet built
 
-## Changed but never run — nothing below has a successful run behind it
-
-ga8 is the only end-to-end success (F87) and it predates all of this.
-
-- [ ] The handle: slot 28 mm, bars 12 mm deep (F86). Only the offline replay on ga8's depth.
-- [ ] The shelf 0.6 → 0.75 m, prop boxes at their real height (F86). Only the offline geometry.
-- [ ] `place` steps along the support's outward normal when its own collision check refuses (F85). Never triggered.
-- [ ] The arm holds its posture from step 0 (`hold_action`), and stow is level and rearward (F89). Never run.
-- [ ] Non-model queries resend after 4 s instead of 180 (F90) — **this is the 3-minute stall at the start of
-      every run**. Never run.
-- [ ] An orphaned contact-scene freeze is reclaimed instead of refusing everything after it. Never triggered.
-- [ ] The video panel rewrite (`c5ce88d`). Rendered on gb2's frames only.
-
-## Then
-
-- [ ] A carried pivot: ga8's route never turned in place with the load, so the collar has not met the 23.7 deg
-      roll that lost ga4 (F83/F84).
-- [ ] `press` against the PDU panel's corrected box (0..0.52 → 0..1.12, its real extent) — a new obstacle in
-      front of Mission A's press, which has not run since.
-- [ ] G5 held-out situations; Mission A's ready/stand deadlock (F62 §3); baselines; the freeze; the campaign.
+- [ ] Claims/reconcile: `check_item_at`, `read_indicator`, the claim ledger (a place that failed while the item sits on the shelf, gc3).
+- [ ] Dock error band from the localization's own uncertainty (real bias 12-13 cm; `DOCK_ERROR_M` 0.06).
+- [ ] Unify pick's and press's per-frame tracking class; the press/place `interface` schema already agrees.
+- [ ] G5 held-out situations; Mission A's ready/stand deadlock (F62 section 3); baselines; the freeze; the campaign.
 
 ## Numbers still owed a measured source
 
-`bring_in`'s 5 cm sag margin (`held_drop_m`); the 0.10 rad posture margin; the fit's agreement floor of one half. Everything else in the carry and the
-grasp now has one. `CARRY_SUSTAINED_YAW_RAD_S` was removed rather than left undeclared.
+`bring_in`'s sag margin (`held_drop_m`); the posture-window margin; the fit's agreement floor of one half; the posture pull's 0.05/s
+(chosen to be slow against the arm's lag, not measured on the corrected arm).
