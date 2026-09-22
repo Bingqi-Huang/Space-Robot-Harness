@@ -26,9 +26,8 @@ required_capabilities:   # no new capability -- Nav2's own obstacle avoidance ha
   - navigate_to_feature
   - dock_at_feature
   - arm_ready
-  - grasp
+  - pick
   - place
-  - release
   - stow
   - observe
 

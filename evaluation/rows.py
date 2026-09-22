@@ -25,9 +25,11 @@ import re
 from pathlib import Path
 from typing import Any, Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict
 
 from evaluation import violations
+from openral_ext.capability_server.contracts import CONTRACTS
 
 __all__ = ["NormalizedRunRow", "PREPLANNED_TRANSITION_CATEGORIES", "extract_row"]
 
@@ -113,24 +115,63 @@ def _check_log_mission(check_log: Path) -> dict[str, Any] | None:
     return mission
 
 
-def _match_scenario_id(mission: dict[str, Any] | None, method: str) -> tuple[str | None, str | None, str | None]:
-    """`(scenario_id, mission_family, coverage)` guessed from the MISSION verdict's own `scenario` field
-    plus which fields are present (Mission A has `faulted_pdu`, Mission B has `destination`). Best-effort --
-    `None` when the verdict is missing or the scenario= value has no manifest under experiments/scenarios/."""
+_SCENARIOS_DIR = Path(__file__).resolve().parent.parent / "experiments" / "scenarios"
+
+
+def _real_manifests() -> list:
+    """Every manifest actually under `experiments/scenarios/`, loaded once. A plain module-level cache, not
+    a fixture: `evaluation.scenario_schema.load_manifest` is the same loader `iter_manifests` (and thus any
+    other consumer of this directory) uses -- a manifest that fails to parse here is a real problem, not
+    swallowed."""
+    from evaluation.scenario_schema import iter_manifests
+    return [m for _, m in iter_manifests(_SCENARIOS_DIR)] if _SCENARIOS_DIR.is_dir() else []
+
+
+def _scenery_override(run_dir: Path) -> str | None:
+    """The `env.scenery=<value>` deploy arg the run actually used, from `scene_run.yaml`'s own recorded
+    `simulator.argv` -- `None` when absent (the default scenery), matching a manifest's own
+    `scenery_override: null`. `b4_route_block` is the one manifest so far that needs this: it reuses
+    `env.scenario: covered` (§12) and is told apart from `b1_deliver_oru` only by scenery."""
+    p = run_dir / "scene_run.yaml"
+    if not p.is_file():
+        return None
+    argv = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("simulator", {}).get("argv", [])
+    for arg in argv:
+        if isinstance(arg, str) and arg.startswith("env.scenery="):
+            return arg.split("=", 1)[1]
+    return None
+
+
+def _match_scenario_id(mission: dict[str, Any] | None, run_dir: Path) -> tuple[str | None, str | None, str | None]:
+    """`(scenario_id, mission_family, coverage)` resolved against the *real* manifests under
+    `experiments/scenarios/` -- not synthesized from the raw `scenario=` value, which is not a manifest id
+    (e.g. `"covered"`, not `"mission_a/covered/a1_pdu_reset"`). `mission_family` comes from which fields the
+    MISSION verdict carries (Mission A has `faulted_pdu`, Mission B has `destination`); within that family,
+    the manifest whose `simulator.env_overrides["env.scenario"]` matches the run's raw `scenario` value AND
+    whose `scenery_override` matches what `scene_run.yaml` actually used (`_scenery_override`) is the match
+    -- needed because `b4_route_block`'s manifest reuses `env.scenario: covered`, told apart from
+    `b1_deliver_oru` only by scenery. Zero or more-than-one match leaves `scenario_id` `None`; `coverage`
+    then falls back to the same-value heuristic (`"covered"` iff `scenario == "covered"`), still
+    best-effort."""
     if not mission:
         return None, None, None
     scenario = mission.get("scenario")
     family = "mission_a" if "faulted_pdu" in mission else "mission_b" if "destination" in mission else None
+    scenery = _scenery_override(run_dir)
+    candidates = [m for m in _real_manifests()
+                  if m.mission_family == family and m.simulator.get("env_overrides", {}).get("env.scenario") == scenario
+                  and m.simulator.get("scenery_override") == scenery]
+    if len(candidates) == 1:
+        return candidates[0].scenario_id, family, candidates[0].coverage
     coverage = "covered" if scenario == "covered" else "held_out" if scenario else None
-    scenario_id = f"{family}/{coverage}/{scenario}" if family and coverage else None
-    return scenario_id, family, coverage
+    return None, family, coverage
 
 
 def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow:
     events = _read_jsonl(run_dir / "ours" / "events.jsonl")
     mission = _check_log_mission(run_dir / "check.log")
     resolved_method = method or ("ours" if events else "generic_openral")
-    _, family, coverage = _match_scenario_id(mission, resolved_method)
+    _, family, coverage = _match_scenario_id(mission, run_dir)
     evaluator_signals = violations.count_violations(run_dir)
 
     guard = [e for e in events if e.get("kind") == "guard_decision"]
@@ -174,12 +215,16 @@ def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow
     step_kinds = {"tool_proposed", "reasoner_step_failed"}
     steps = [e for e in events if e.get("kind") in step_kinds]
     # trace completeness (§14.6, restricted to what's observable from these two files): every proposed
-    # CAPABILITY step (space_runtime/tools.py: decompose_mission/set_task_status/report_to_operator/
-    # request_operator are local/operator tools that never reach the guard -- agent.py's dispatch()
-    # branches them before guard.check) has a guard_decision after it
-    # names as logged: local/* prefix from space_runtime/tools.py's DECOMPOSE/SET_TASK_STATUS constants;
-    # the operator pair is logged unprefixed (agent.py dispatch()'s EmitPromptTool branch)
-    _NON_CAPABILITY_TOOLS = {"local/decompose_mission", "local/set_task_status", "report_to_operator", "request_operator"}
+    # CAPABILITY step has a guard_decision after it. Excluded, matching agent.py's own dispatch() branch
+    # order exactly (each returns before guard.check is ever reached): decompose_mission/set_task_status
+    # (space_runtime/tools.py's DECOMPOSE/SET_TASK_STATUS constants, logged with their own "local/" prefix),
+    # report_to_operator/request_operator (logged unprefixed, the EmitPromptTool branch), and every read-only
+    # query (CONTRACTS["queries"] -- site_map/observe/arm_state/etc.; `if name in CONTRACTS["queries"]:
+    # ... return` in dispatch() comes before guard.check for exactly these names). A query used to read as
+    # an incomplete trace whenever it was the last tool_proposed event of its kind with no later, unrelated
+    # guard_decision to accidentally satisfy the check -- confirmed against a real run (F107).
+    _NON_CAPABILITY_TOOLS = {"local/decompose_mission", "local/set_task_status", "report_to_operator",
+                              "request_operator", *CONTRACTS["queries"]}
     guard_seqs = sorted(e["seq"] for e in guard)
     trace_complete = all(
         any(gs > s["seq"] for gs in guard_seqs) for s in steps
@@ -208,7 +253,7 @@ def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow
     return NormalizedRunRow(
         run_id=run_dir.name,
         method=resolved_method,
-        scenario_id=_match_scenario_id(mission, resolved_method)[0],
+        scenario_id=_match_scenario_id(mission, run_dir)[0],
         mission_family=family,
         coverage=coverage,
         autonomous_mission_success=mission.get("success") if mission is not None else None,

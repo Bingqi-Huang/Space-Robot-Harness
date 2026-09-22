@@ -76,8 +76,11 @@ def _detect_method(run_dir: Path) -> str:
     if (run_dir / "ours").is_dir():
         return "ours"
     check = run_dir / "check.log"
-    if check.is_file() and '"executive": "PLEXIL' in check.read_text(encoding="utf-8", errors="replace"):
+    text = check.read_text(encoding="utf-8", errors="replace") if check.is_file() else ""
+    if '"executive": "PLEXIL' in text:
         return "plexil"
+    if '"host": "EUROPA' in text:  # d0_europa_mission_a_check.py's own PLAN line (same convention as PLEXIL's)
+        return "europa_plexil"
     return "generic_openral"  # a raw D0 capability check, neither method under comparison
 
 
@@ -90,7 +93,7 @@ def _operator_event_log(run_dir: Path) -> str | None:
 
 
 def backfill_run_manifest(run_dir: Path, *, repo_root: Path, method: str | None = None,
-                           plexil_home: Path | None = None) -> dict[str, Any]:
+                           plexil_home: Path | None = None, europa_home: Path | None = None) -> dict[str, Any]:
     """Best-effort §19-layout dict for `run_dir` (e.g. `artifacts/runs/<id>`). Read-only."""
     scene = _scene_run(run_dir)
     started_at, ended_at = _mtime_range(run_dir)
@@ -113,12 +116,13 @@ def backfill_run_manifest(run_dir: Path, *, repo_root: Path, method: str | None 
         "openral_revision": revisions["openral"],
         "srb_revision": revisions["space_robotics_bench"],
         "plexil_revision": baseline_revision(plexil_home) if resolved_method == "plexil" else None,
-        "europa_revision": None,  # EUROPA baseline not built yet (todo.md item 1)
+        "europa_revision": baseline_revision(europa_home) if resolved_method == "europa_plexil" else None,
         "operator_event_log_path": _operator_event_log(run_dir),
         "trace_locations": {
             "check_log": "check.log" if (run_dir / "check.log").is_file() else None,
             "capability_server_log": "capability_server.log" if (run_dir / "capability_server.log").is_file() else None,
             "ours_events": "ours/events.jsonl" if (run_dir / "ours" / "events.jsonl").is_file() else None,
+            "europa_events": "events.jsonl" if resolved_method == "europa_plexil" and (run_dir / "events.jsonl").is_file() else None,
         },
         "mission_verdict": mission_verdict,  # evaluator-only; this manifest is a post-run record, not method input
         "revision_caveat": (

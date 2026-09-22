@@ -22,9 +22,8 @@ required_capabilities:   # no new capability vs B1 -- the held-out part is ident
   - navigate_to_feature
   - dock_at_feature
   - arm_ready
-  - grasp
+  - pick
   - place
-  - release
   - stow
   - observe
 

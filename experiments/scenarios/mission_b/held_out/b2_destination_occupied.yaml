@@ -17,13 +17,12 @@ simulator:
   destination: pdu_1
   episode_length_s: 1200.0
 
-required_capabilities:   # same set as B1 -- clearing the crate uses grasp/carry/place/release, all pre-freeze
+required_capabilities:   # same set as B1 -- clearing the crate is a second pick/place round, all pre-freeze
   - navigate_to_feature
   - dock_at_feature
   - arm_ready
-  - grasp
+  - pick
   - place
-  - release
   - stow
   - observe
 

@@ -1,8 +1,9 @@
 # TODO
 
 Order: `execution_plan` §21 -- the proposed method before the external baselines. All three methods (Ours, PLEXIL,
-EUROPA→PLEXIL) now complete both Mission A and Mission B covered live (F92-F100, F104, F105, F106, 2026-09-22) --
-see handoff.md. **Next: baselines / freeze / experiments**, not yet started as one coherent pass.
+EUROPA→PLEXIL) now complete both Mission A and Mission B covered live (F92-F100, F104, F105, F106, 2026-09-22),
+and the evaluation infra has now actually been run against those six real runs (F107) -- see handoff.md.
+**Next: held-out grounding needs a user decision (below); the freeze pass itself is otherwise unblocked.**
 
 ## Now -- small follow-ups
 
@@ -12,7 +13,9 @@ see handoff.md. **Next: baselines / freeze / experiments**, not yet started as o
       `plexil_mission_b_success_20260922`.
 - [x] Merge `feat/europa-mission-b` back into `feat/experiment-campaign`.
 - [x] PLEXIL Mission A rewritten onto shared `press`; EUROPA Mission A domain built; both live, both succeed (F106)
-      -- uncommitted on `feat/experiment-campaign` directly, ask before committing.
+      -- committed `819a102`.
+- [x] Run-manifest/freeze pass exercising the merged evaluation infra against the six real corrected-arm runs;
+      re-validate scenario manifests + certificates (F107) -- committed on top of `819a102`, same branch.
 - [ ] `mission-a-model.nddl`/`mission-b-model.nddl` duplicate their shared Base/Posture/Jaws timelines and rules --
       consolidate into one frozen capability model before the artifact freeze, not before (F105/F106 both note it).
 - [ ] Wire the evaluator-violations recorder (`experiments/evaluator_recorder/`) into every method's launch script
@@ -36,11 +39,13 @@ see handoff.md. **Next: baselines / freeze / experiments**, not yet started as o
 4. [ ] **H3 has no evidence yet**: every capability is `routine`, the guard has only ever fired on e-stop. Add the
        explicit hard invariant/approval classes the chosen held-out scenarios actually need (§4.3, §10.2) -- see
        "Open questions".
-5. [ ] All three methods now complete both Mission A and Mission B covered live independently; still need a
-       run-manifest/freeze pass actually exercising the merged evaluation infra
-       (operator console, PLEXIL/EUROPA trace normalizers) against these corrected-arm runs, not just F103's dev runs.
-6. [ ] Scenario manifests + closed-capability certificates (`experiments/scenarios/`) exist for 2 covered + 5 held-out
-       candidates but were only ever exercised on 5 development runs (F103) -- re-validate.
+5. [x] Run-manifest/freeze infra (`evaluation/`, `openral_ext/run_manifest/`) exercised against the six real
+       corrected-arm runs, not just F103's 5 dev runs (F107) -- five bugs found and fixed, all pre-existing.
+       Operator console / evaluator recorder still unexercised (both live-only, no run has either attached yet --
+       tracked above, "wire the evaluator-violations recorder").
+6. [x] Scenario manifests + closed-capability certificates (`experiments/scenarios/`) re-validated against the
+       current stack (F107): all 7 manifests + 5 certificates still parse; `b1`/`b2`/`b3`/`b4`'s
+       `required_capabilities` were stale (pre-`pick` primitives), fixed.
 7. [ ] Freeze method artifacts (git tags), run Experiment I, then the §5.7 Ours-internal ablations, then Experiment II
        (needs an extension case -- see "Open questions", B7).
 

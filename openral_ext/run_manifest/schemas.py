@@ -73,7 +73,9 @@ class RunManifest(BaseModel):
                      "repo (not a submodule), so this is best-effort, not guaranteed.",
     )
     europa_revision: str | None = Field(
-        default=None, description="Same idea as plexil_revision. None today -- the EUROPA baseline has not been built (todo.md item 1)."
+        default=None,
+        description="`git -C <EUROPA_HOME> rev-parse HEAD`, EUROPA_HOME from docs/baselines/europa.md's pin "
+                     "(build_europa.sh: ~/Programs/europa/dist/europa). Same best-effort caveat as plexil_revision.",
     )
     operator_event_log_path: str | None = Field(
         default=None,

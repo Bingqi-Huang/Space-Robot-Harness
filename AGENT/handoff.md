@@ -1,15 +1,14 @@
 # Handoff
 
-Updated 2026-09-22 (F106, PLEXIL + EUROPA Mission A both live -- full success). Read `AGENT/research_content.md`
+Updated 2026-09-22 (F107, evaluation infra exercised against six real runs). Read `AGENT/research_content.md`
 and `AGENT/execution_plan.md` first, then `AGENT/todo.md`. Goal: the Acta Astronautica paper. The model owns
 mission strategy; a thin harness owns facts, evidence, verification and hard boundaries. Simulator truth is for
 post-hoc diagnosis only, never a decision.
 
 ## Heads
 
-On `feat/experiment-campaign` directly (this session's Mission A work is uncommitted on it, not a side branch --
-ask before committing/pushing). openral/SRB unchanged on `feat/experiment-campaign`/`feat/lunar-base-scene`.
-Nothing pushed.
+On `feat/experiment-campaign` directly. F106 (Mission A) committed `819a102`; F107 (evaluation infra) committed
+on top, same branch. Nothing pushed. openral/SRB unchanged on `feat/experiment-campaign`/`feat/lunar-base-scene`.
 
 ## Where it stands
 
@@ -17,10 +16,30 @@ Nothing pushed.
 video and its own overlay panel.** Mission B: Ours (F92-F100, `mission_b_success_20260922`), PLEXIL (F104,
 `plexil_mission_b_success_20260922`), EUROPA->PLEXIL (F105, `europa_mission_b_success_20260922`). Mission A: Ours
 (F92-F100, `mission_a_success_20260922`), PLEXIL (F106, `plexil_mission_a_success_20260922`), EUROPA->PLEXIL (F106,
-`europa_mission_a_success_20260922`). **Still no campaign**: all six covered runs happened independently, never
-side by side on one frozen instance set, and nothing is frozen yet.
+`europa_mission_a_success_20260922`). **The evaluation/manifest infrastructure has now actually been run against
+these six** (F107, not just F103's 5 dev runs) -- five real bugs found and fixed (below). **Still no campaign**:
+all six covered runs happened independently, never side by side on one frozen instance set, and nothing is frozen.
 
 - `artifacts/runs/` debug archive from earlier this session (117 GB) still sits at `_debug_archive/`, not deleted.
+
+## F107 -- evaluation infra vs. six real runs: five bugs, all pre-existing, none new
+
+Full account: `docs/research_findings.md` F107. No new live-sim time -- all found/fixed reading already-recorded
+run directories. (1) `rows.py`'s `scenario_id` was synthesized (`"mission_a/covered/covered"`, matched nothing)
+-- now resolved against real `experiments/scenarios/**/*.yaml` manifests, matched on `env.scenario` +
+`env.scenery` (the latter needed: `b4_route_block` reuses `env.scenario: covered`, told apart from `b1` only by
+scenery -- real ambiguity, not yet a real conflict, `b4` never run). (2) `trace_complete` didn't exclude
+`CONTRACTS["queries"]` (site_map/arm_state/...), which `agent.py` itself also returns from before `guard.check`
+-- flagged the real Mission A Ours run incomplete over its own last verification query. (3) `plexil_normalize.py`
+never ran against a real PLEXIL run before: `check.log`'s `STEP` lines all share one post-hoc timestamp (not
+each capability's own), and `normalize_capability_server_log` stamped `t=float(seq)` instead of the log line's
+real epoch -- both fixed, `capability_server.log` + `plexil_node_trace.log` now sort together correctly. (4)
+`evaluation/baselines/europa_normalize.py` (new) -- the EUROPA trace-normalizer schema slot, filled; reads
+`host.py`'s own already-epoch-stamped `events.jsonl`. (5) `backfill.py`'s `_detect_method` never recognized
+EUROPA runs at all (fell back to `generic_openral`) -- fixed, plus `europa_revision`/`trace_locations.
+europa_events` now resolve for real. Also, not a code bug: `b1_deliver_oru.yaml`'s `required_capabilities` listed
+the pre-`pick` primitives (`grasp`/`release`) instead of `pick` itself -- fixed, propagated to `b2`/`b3`/`b4`
+(which explicitly declared themselves copies of `b1`'s set).
 
 ## F106 -- Mission A: a dropped PLEXIL recovery, and a Nav2 flake both baselines hit identically
 

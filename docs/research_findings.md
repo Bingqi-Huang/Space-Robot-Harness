@@ -4918,3 +4918,97 @@ class of fix as F104's adapter bug (a shared-infrastructure defect affecting the
 fixed from a real live failure, not tuned preemptively). It is not "hand-strengthening the baseline to make it
 pass this scenario": the retry is not conditioned on Mission A, PDU-2, or this failure's specifics, and it did
 not touch EUROPA at all, whose own equivalent mechanism (replanning) already existed and needed nothing.
+
+## F107 — Evaluation infra exercised against six real corrected-arm runs: five real bugs, all pre-existing (2026-09-22)
+
+F103 built the evaluation/manifest infrastructure and exercised it against 5 development runs only, flagging
+that as a real limitation ("development numbers are not results" -- the mechanism was proven, not the numbers).
+This pass ran the actual pipeline (`evaluation/rows.py`, `evaluation/baselines/`,
+`openral_ext/run_manifest/backfill.py`, `evaluation/tables.py`, `evaluation/scenario_schema.py`) against the six
+genuine covered-instance successes this session produced (Ours/PLEXIL/EUROPA->PLEXIL x Mission A/B, F92-F100,
+F104-F106) -- the first time any of it has touched a real campaign-shaped run, not a fixture or a dev smoke test.
+No new live-sim time: every fix here was found and verified reading already-recorded run directories.
+
+**1. `rows.py`'s `scenario_id` was synthesized, not matched.** `_match_scenario_id` built strings like
+`f"{family}/{coverage}/{scenario}"` from the MISSION verdict's raw `scenario` field (e.g. `"mission_a/covered/
+covered"`) -- never a real manifest id (`"mission_a/covered/a1_pdu_reset"`). Every one of the six rows had a
+`scenario_id` that matched nothing under `experiments/scenarios/`. Fixed: resolve against the real manifests
+(`evaluation.scenario_schema.iter_manifests`), matched on `mission_family` plus the run's actual
+`env.scenario`/`env.scenery` values (the latter read from `scene_run.yaml`, needed because `b4_route_block`'s
+manifest reuses `env.scenario: covered` -- distinguished from `b1_deliver_oru` only by a scenery override, a
+real ambiguity this exposed, not yet a real conflict since `b4` has never been run). Zero or multiple matches
+still return `None`, honestly, rather than guessing.
+
+**2. `rows.py`'s `trace_complete` didn't know about read-only queries.** `_NON_CAPABILITY_TOOLS` excluded
+`decompose_mission`/`set_task_status`/`report_to_operator`/`request_operator` by name but not `CONTRACTS
+["queries"]` (`site_map`, `arm_state`, `observe`, ...) -- which `agent.py`'s own `dispatch()` also returns from
+before ever reaching `guard.check()`. A query call reads as an incomplete trace whenever it happens to be the
+last `tool_proposed` event of its kind with no later, unrelated `guard_decision` to accidentally satisfy the
+check -- exactly what happened on the real Mission A run (`arm_state`, the mission's own last verification step).
+Fixed: excluded set now includes `CONTRACTS["queries"]` directly, matching `dispatch()`'s own branch condition
+instead of a hand-maintained partial list.
+
+**3. `plexil_normalize.py` was never run against a real PLEXIL run before** (its own prior docstring said so).
+Two bugs only a real run's *combination* of files could surface:
+  - `check.log`'s `STEP` lines all carry the identical `t`: `d0_plexil_mission_a_check.py` writes every one in
+    a single post-hoc loop over `capability_server.log`, *after* `universalExec` has already exited -- not each
+    capability's own completion time. `normalize_plexil_check_log` no longer reads them.
+  - `normalize_capability_server_log` discarded the log line's own real epoch prefix and stamped `t=float(seq)`
+    -- a placeholder nobody had reason to suspect until compared against real node-trace timestamps sitting
+    right next to it. Fixed to parse the real `[INFO] [<epoch>] ...` prefix (`evaluation/violations.py`'s own
+    regex, reused). With both fixed, `capability_server.log` (now real epoch) and `plexil_node_trace.log`
+    (already real epoch) sort together correctly; `PLAN`/`EXEC` keep `check.log`'s own wall-since-script-start
+    clock, needing no cross-timebase alignment since they structurally bracket the mission (nothing precedes
+    `PLAN`, nothing follows `EXEC`).
+
+**4. The EUROPA trace-normalizer schema slot, filled.** `common_schema.py`'s `token_id` field and
+`method="europa_plexil"` existed but nothing populated them ("no EUROPA baseline exists yet" -- one does now).
+`evaluation/baselines/europa_normalize.py` (new) reads `host.py`'s own `events.jsonl` directly -- already
+real-epoch-stamped, no reconstruction needed, unlike PLEXIL's logs. `token_id` is `"LunarBot.<action>"`, the
+NDDL action name a `plan` event's own `activities` list carries (the closest EUROPA analogue to PLEXIL's
+`plan_node_id`, itself a name and not a unique instance id either). Exercised against both real EUROPA runs;
+correctly reproduces Mission A's diagnosed retry sequence (F106) as `execution_finished(success=False)` ->
+`plan_started` (replan) -> `execution_started` -> `execution_finished(success=True)`, in order.
+
+**5. `backfill.py`'s `_detect_method` never recognized EUROPA runs at all** -- it checked for `"ours"` (a
+`run_dir/ours` directory) or `"plexil"` (a `check.log` substring) and fell back to `"generic_openral"` for
+everything else, including every real EUROPA run. Fixed: added the equivalent `check.log` substring check
+(`'"host": "EUROPA'`, the same convention `d0_europa_mission_a_check.py`'s own `PLAN` line already uses as
+PLEXIL's does). Also: `europa_revision` and `trace_locations.europa_events` were hardcoded `None`/absent
+("EUROPA baseline not built yet") -- both now resolve for real (`EUROPA_HOME`'s own git commit;
+`events.jsonl` at the run root, not under `ours/`).
+
+**Also found, not a code bug: two scenario manifests were stale.** `b1_deliver_oru.yaml`'s (covered, run three
+times this session, all methods) `required_capabilities` listed `grasp`/`place`/`release` -- the *primitives*
+`pick`/`place` were later consolidated from, the same historical pattern as Mission A's old `press`
+(F106-adjacent). Every real trace (Ours, PLEXIL's `PickItem.ple`, EUROPA's `dispatch`) uses `pick`, never a bare
+`grasp`. Fixed `b1`, and propagated the identical fix to `b2`/`b3`/`b4` (held-out, all three explicitly declared
+themselves "same set as B1" in their own comments -- not a speculative held-out change, a confirmed generic
+naming fix these three had already opted into by citing B1). `a2_cover_obstruction`'s own `grasp`/`release` for
+a *different* object (a cover, not an ORU) was left alone -- no real run exists to confirm or deny it, and a
+cover plausibly does need the raw primitives rather than `pick`/`place`'s "catalogued lifting interface"
+contract; not touched without evidence.
+
+**Confirmed working, not just assumed:** all 7 scenario manifests and 5 certificates still parse cleanly
+(`evaluation.scenario_schema`) against the current, post-scene-rebuild stack; every manifest's
+`required_capabilities` (after the fix above) names real `contracts.yaml` capabilities; every `scene_config`
+path and `task_variant` name resolves to a real file / real SRB task registration; `evaluation/tables.py`'s
+`success_rate_table`/`violation_table` run end to end against the six real rows with no crash, correctly
+stratify by (method, coverage), and correctly report `evaluator-covered: 0` for every group (the recorder was
+never attached to any of these six runs -- a known, already-tracked gap, not a new one; `None`-per-class flows
+through to a `0` total honestly labelled as "not comparable to n", never a fabricated "no violations").
+
+**Not exercisable tonight, confirmed why.** `experiments/operator_console/console.py` and
+`experiments/evaluator_recorder/recorder.py` are both live-only rclpy nodes (subscribe real ROS topics) --
+neither has any post-hoc mode, and none of the six runs had either attached (no `operator/`/`evaluator/`
+directory in any of them). Confirmed both still write to exactly the paths `rows.py`/`violations.py` expect
+(`<run_dir>/operator/events.jsonl`, `<run_dir>/evaluator/events.jsonl`) and both import cleanly. Wiring either
+into a method's launch script needs a live run and is tracked separately (`todo.md`, "Now -- small
+follow-ups") -- out of tonight's scope (validating existing infra against existing runs, not spending new live
+time).
+
+**Method note.** Every fix here was found by literally running the tool against real data and checking the
+output made sense (a scenario_id that matches no file, a trace flagged incomplete with no incomplete step, a
+timestamp field with epoch-scale numbers next to wall-since-start ones) -- not by reading the code and guessing
+where it might be wrong. Consistent with F104/F105/F106's own method note: real data finds real bugs that a
+synthetic fixture, however careful, does not think to construct.

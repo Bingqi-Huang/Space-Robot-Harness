@@ -17,13 +17,12 @@ simulator:
   destination: pdu_1
   episode_length_s: 1200.0
 
-required_capabilities:
+required_capabilities:   # pick/place carry their own grasp/release internally -- not two separate calls
   - navigate_to_feature
   - dock_at_feature
   - arm_ready
-  - grasp
+  - pick
   - place
-  - release
   - stow
   - observe
 
