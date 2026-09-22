@@ -117,4 +117,54 @@ through the shared capability boundary and the same evaluator Ours uses
 - `PickItem` was missing `pick`'s optional-but-practically-required `support` argument.
 
 The predefined recovery set is still not written (pick/place failure kinds are now settled by F92-F100, so this is
-now unblocked) and Mission A still waits on a live `press` (§21).
+now unblocked).
+
+## Mission A: rewritten onto the shared `press` capability (2026-09-22)
+
+`MissionA_Covered.ple` originally bypassed `press` with eight of its own stage-level Cartesian primitives (close
+jaws, plan/servo pre-press, approach, press, retract, re-ready, dating from before `press` existed as a whole
+capability). Rewritten to a single `press(target, feature)` call, composed from the same reusable library Mission B
+uses (`DriveAndDock`, `StowAndReturn`) instead of duplicating them -- three top-level nodes now, not thirteen.
+`press`'s own contract does not need `arm_ready` first ("plans its own way from wherever the arm is"); Ours' own
+covered-instance run called it anyway and it failed harmlessly, confirming the contract's claim rather than
+contradicting it, so it is not in the rewritten plan. Offline-verified (`plexiltest`,
+`scripts/MissionA_Covered_nominal.pst`) before any live time -- one non-ASCII character (`§` in a comment) broke
+the `plexilscript` compiler's lexer the first time; `MissionB_Covered_nominal.pst`'s own comments had already
+worked around this by spelling "section" out, not noted anywhere until this rewrite hit it too.
+
+### Traceability (nominal path; format: docs/baselines/authoring_spec.md)
+
+| Plan element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| `ToUnit`: `feature` | `pdu_2_panel/press` | mission brief ("PDU-2 reported a fault"); site_knowledge | (a) |
+| `Press`: `target` | "the round red push button set into the yellow sub-panel" | Ours' own covered-instance call (`R/artifacts/runs/mission_a_success_20260922/ours/events.jsonl`) | (a) |
+| `Press`: `feature` | `pdu_2_panel/press` (the one docked at) | same as `ToUnit` | (a) |
+| No `arm_ready` before `Press` | not required | `contracts.yaml` `press`'s own documented claim, and Ours' covered-instance call failing it harmlessly | (b) |
+| `Return`: `dock_x/y/yaw` | `(0.0, 0.0, 0.0)` | site_knowledge `dock`; matches `MissionB_Covered`'s `Return` | (a) |
+
+No row cites a held-out run or scenario name.
+
+### Recovery restored: one retry per base-move leg (2026-09-22; F106)
+
+Reusing `DriveAndDock`/`StowAndReturn` for Mission A silently dropped recovery the *old* flat Mission A plan had:
+its own `DriveToUnit`/`DockAtPanel`/`ReturnToDock` were each wrapped in a `Try` (one retry), a predefined
+recovery Mission B's library never had ("nominal path only", above) because nobody had hit a live failure on that
+class of leg yet. A live Mission A run did: `navigate_to_pose` (the return-to-dock leg) hit a generic Nav2
+`STATUS_ABORTED`, and with no retry left the plan finished `success: false`, 15 m / 178 deg off the dock. Restored,
+at the library level (`plans/lib/DriveAndDock.ple`'s `Nav`/`Dock`, `plans/lib/StowAndReturn.ple`'s `Return` --
+not `Stow`, no evidence yet it needs one): each leg is now `Try { PreCondition ok; Attempt1; Attempt2; }`, the
+identical shape the old plan used, gating on the same `InOut ok` these libraries already thread through every call
+site. Benefits Mission B too, since the library is shared. Verified offline before any live time: the existing
+nominal-path regression still passes unchanged (`plexiltest`, both missions -- the second attempt is never reached
+when the first succeeds); a fail-injection script (`command-failed` on the first `navigate_to_pose`, success on
+the second) confirms `Return2` actually executes and the plan still finishes `ok: true`. Full account: F106,
+`docs/research_findings.md`.
+
+Re-run live on a fresh graph: genuine `success: true`, PDU-2's fault cleared, dock error 0.18 m / -9.9 deg, 193 s
+sim time, video recorded (`artifacts/runs/plexil_mission_a_success_20260922`) -- `navigate_to_pose` succeeded on
+the first attempt this time (the STATUS_ABORTED was a flake, not a reliable repro; the retry exists for when it
+recurs, not because this particular run needed it). Panel (`plexil_mission_video.py`) needed one more generic
+fix: its top-level node list (`TOP`) was hardcoded to Mission B's five names (`ToDepot, Pick, ToShelf, Place,
+Return`), so it drew none of Mission A's own three (`ToUnit, Press, Return`) as active. Parameterized as `--top`
+(both this script and `plexil_timeline_from_logs.py`, which had the identical hardcoding for the same reason) --
+defaults to Mission B's list, so nothing else changes.

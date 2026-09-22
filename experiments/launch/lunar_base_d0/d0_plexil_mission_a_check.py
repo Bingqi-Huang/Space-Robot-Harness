@@ -8,6 +8,9 @@ also persists universalExec's full stdout (node-transition trace included, basel
 "Node:transition") to <D0_LOG>/plexil_node_trace.log -- the EXEC log line itself keeps only a 4-line tail.
 Run with D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_a_check.py.
 """
+# 2026-09-22: MissionA_Covered.ple was rewritten onto the shared `press` capability, composed from the same
+# reusable library Mission B uses (DriveAndDock, StowAndReturn) -- needs -L plans/lib now, the same fix
+# d0_plexil_mission_b_check.py already needed (F104): Mission A's own flat plan never called a library before.
 import subprocess
 import threading
 
@@ -24,6 +27,7 @@ env = dict(os.environ, PLEXIL_HOME=str(PLEXIL_HOME),
 log("PLAN", executive="PLEXIL universalExec 6.1.3", plan="MissionA_Covered.plx")
 t0, sim0 = time.time(), sim["t"]
 exec_proc = subprocess.Popen([str(PLEXIL_HOME / "bin/universalExec"), "-c", str(PLAN_DIR / "interface-config.xml"),
+                              "-L", str(PLAN_DIR / "plans/lib"),  # MissionA_Covered.plx now calls the reusable library nodes
                               "-p", str(PLAN_DIR / "plans/MissionA_Covered.plx")],
                              cwd=PLAN_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 exec_out = []

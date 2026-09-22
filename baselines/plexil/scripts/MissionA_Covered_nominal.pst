@@ -1,0 +1,20 @@
+// MissionA_Covered nominal-path simulation (execution_plan section 11.1): every capability call the covered plan makes
+// returns success, in the order MissionA_Covered.plx + the library nodes issue them (ToUnit: nav, dock; Press;
+// Return: stow, navigate_to_pose).
+
+script {
+  command navigate_to_feature ("pdu_2_panel/press":string, 1.5:real) = true:bool;
+  command-success navigate_to_feature ("pdu_2_panel/press":string, 1.5:real);
+
+  command dock_at_feature ("pdu_2_panel/press":string, 0.0:real, 1.5:real) = true:bool;
+  command-success dock_at_feature ("pdu_2_panel/press":string, 0.0:real, 1.5:real);
+
+  command press ("the round red push button set into the yellow sub-panel":string, "pdu_2_panel/press":string) = true:bool;
+  command-success press ("the round red push button set into the yellow sub-panel":string, "pdu_2_panel/press":string);
+
+  command stow (0.08:real) = true:bool;
+  command-success stow (0.08:real);
+
+  command navigate_to_pose (0.0:real, 0.0:real, 0.0:real) = true:bool;
+  command-success navigate_to_pose (0.0:real, 0.0:real, 0.0:real);
+}

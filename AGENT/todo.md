@@ -1,7 +1,7 @@
 # TODO
 
-Order: `execution_plan` §21 -- the proposed method before the external baselines. Mission A/B reliable on Ours
-(2026-09-22); PLEXIL and EUROPA→PLEXIL both now complete Mission B covered live too (F104, F105, 2026-09-22) --
+Order: `execution_plan` §21 -- the proposed method before the external baselines. All three methods (Ours, PLEXIL,
+EUROPA→PLEXIL) now complete both Mission A and Mission B covered live (F92-F100, F104, F105, F106, 2026-09-22) --
 see handoff.md. **Next: baselines / freeze / experiments**, not yet started as one coherent pass.
 
 ## Now -- small follow-ups
@@ -10,7 +10,11 @@ see handoff.md. **Next: baselines / freeze / experiments**, not yet started as o
 - [x] Merge `feat/plexil-baseline-live` back into `feat/experiment-campaign`.
 - [x] Delete the three failed PLEXIL Mission B debug run dirs; rename the successful one to
       `plexil_mission_b_success_20260922`.
-- [ ] Merge `feat/europa-mission-b` back into `feat/experiment-campaign` -- ask first.
+- [x] Merge `feat/europa-mission-b` back into `feat/experiment-campaign`.
+- [x] PLEXIL Mission A rewritten onto shared `press`; EUROPA Mission A domain built; both live, both succeed (F106)
+      -- uncommitted on `feat/experiment-campaign` directly, ask before committing.
+- [ ] `mission-a-model.nddl`/`mission-b-model.nddl` duplicate their shared Base/Posture/Jaws timelines and rules --
+      consolidate into one frozen capability model before the artifact freeze, not before (F105/F106 both note it).
 - [ ] Wire the evaluator-violations recorder (`experiments/evaluator_recorder/`) into every method's launch script
       (Ours, PLEXIL, EUROPA), not just where it was developed.
 - [ ] Add a call-start timestamp to the capability-server log (needed by the recorder's attribution).
@@ -25,17 +29,14 @@ see handoff.md. **Next: baselines / freeze / experiments**, not yet started as o
        cover_obstruction, status_mismatch, route_block) to lunar-mission literature in `docs/lunar_task_catalog.md`;
        decide the final set (see "Open questions" below) *before* extending any baseline artifact, or a covered case
        for one method becomes held-out fiction for another.
-2. [ ] Complete PLEXIL: Mission B's predefined recovery set (pick/place failure kinds are now settled -- F92-F100;
-       Mission B covered itself now confirmed live end to end, F104); rewrite Mission A's plan onto the shared
-       `press` capability (verified live, Ours' Mission A success, F92-F100 -- not itself a blocker any more) and
-       re-confirm Mission A covered live on the current stack (F52 was the older arm/old plan).
-3. [x] EUROPA: Mission B domain, offline verification, live run all done (F105) -- first live attempt succeeded
-       outright. EUROPA's Mission A domain not started at all.
+2. [x] PLEXIL: Mission A rewritten onto `press`, both missions covered live end to end (F104, F106). Predefined
+       recovery: base-move legs (`DriveAndDock`/`StowAndReturn`) now retry once (F106); pick/place legs' recovery
+       set still not written (their failure kinds are settled, F92-F100, but no policy authored yet).
+3. [x] EUROPA: Mission A + B domains, offline verification, live runs all done (F105, F106).
 4. [ ] **H3 has no evidence yet**: every capability is `routine`, the guard has only ever fired on e-stop. Add the
        explicit hard invariant/approval classes the chosen held-out scenarios actually need (§4.3, §10.2) -- see
        "Open questions".
-5. [ ] All three methods now complete Mission B covered live independently; still need Mission A covered on all
-       three (PLEXIL's plan needs rewriting onto `press`; EUROPA's Mission A domain does not exist yet), and a
+5. [ ] All three methods now complete both Mission A and Mission B covered live independently; still need a
        run-manifest/freeze pass actually exercising the merged evaluation infra
        (operator console, PLEXIL/EUROPA trace normalizers) against these corrected-arm runs, not just F103's dev runs.
 6. [ ] Scenario manifests + closed-capability certificates (`experiments/scenarios/`) exist for 2 covered + 5 held-out

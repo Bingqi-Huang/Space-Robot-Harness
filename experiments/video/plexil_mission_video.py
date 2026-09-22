@@ -41,12 +41,12 @@ DEFAULT_MISSION = ("Deliver the spare ORU staged on the depot stand to the spare
                     "rover to the dock with the arm stowed.")
 
 
-def plexil_timeline(events: list[dict], mission: str) -> tuple[list[float], list[dict]]:
+def plexil_timeline(events: list[dict], mission: str, top: list[str] = TOP) -> tuple[list[float], list[dict]]:
     """The state of the mission after every node-status/capability event, keyed to the sim clock the video plays
     at (`plexil_timeline_from_logs.py` already resolved PLEXIL's wall-clock logs to it). Mirrors
     `mission_video.py`'s `timeline()` in shape (a (times, states) pair a frame loop can `bisect` into), not in
     content -- see the module docstring for what differs and why."""
-    top_status = {n: "pending" for n in TOP}
+    top_status = {n: "pending" for n in top}
     top_active, lib_active, cap_now, log = None, None, None, []
     times, states = [], []
 
@@ -83,7 +83,7 @@ def plexil_timeline(events: list[dict], mission: str) -> tuple[list[float], list
                  "" if ok else str(e.get("failure_reason") or ""))
             cap_now = None
         times.append(t)
-        states.append({"plan": [(top_status[n], n) for n in TOP], "top_active": top_active, "lib_active": lib_active,
+        states.append({"plan": [(top_status[n], n) for n in top], "top_active": top_active, "lib_active": lib_active,
                        "now": cap_now, "log": list(log), "mission": mission})
     return times, states
 
@@ -166,7 +166,7 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
     return img
 
 
-PLACES = {"depot_stand/slot_0": "depot", "pdu_1_shelf/shelf": "PDU-1 shelf"}
+PLACES = {"depot_stand/slot_0": "depot", "pdu_1_shelf/shelf": "PDU-1 shelf", "pdu_2_panel/press": "PDU-2 panel"}
 
 
 def main() -> None:
@@ -182,6 +182,7 @@ def main() -> None:
                     default=Path("space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/site_structures.json"))
     ap.add_argument("--title", default="PLEXIL Baseline — Mission B")
     ap.add_argument("--mission", default=DEFAULT_MISSION)
+    ap.add_argument("--top", default=",".join(TOP), help="comma-separated top-level node names, for a plan shape other than Mission B's")
     ap.add_argument("--from-sim", type=float, default=-1e9)
     ap.add_argument("--to-sim", type=float, default=1e9)
     ap.add_argument("--width", type=int, default=OUT_W)
@@ -200,7 +201,7 @@ def main() -> None:
         times = [t0 + (t1 - t0) * i / max(n - 1, 1) for i in range(n)]
         print(f"no {times_path.name}: assuming the video spans sim {t0:.0f}-{t1:.0f} s")
 
-    stamps, states = plexil_timeline(events, a.mission)
+    stamps, states = plexil_timeline(events, a.mission, a.top.split(","))
     track = json.loads(a.track.read_text())["track"] if a.track else []
     places = {}
     if a.points.exists():

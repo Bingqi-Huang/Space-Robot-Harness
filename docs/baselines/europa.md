@@ -132,7 +132,39 @@ success: true`, 368 s sim time, video recorded (`artifacts/runs/europa_mission_b
 overlay panel (`experiments/video/europa_mission_video.py`) shows the mission's fixed goals alongside the solver's
 current derived plan, replaced whole on every replan. Full account: F105, `docs/research_findings.md`.
 
+## Domain: Mission A (2026-09-22)
+
+`domain/mission-a-model.nddl`: "PDU-2 reported a fault: restore it, verify, return the rover to the dock with the
+arm stowed." Reuses the same `Base`/`Posture`/`Jaws` timelines and `navigate_to_feature`/`dock_at_feature`/
+`navigate_to_pose`/`stow` rules `mission-b-model.nddl` already has and already validated live (F105) -- duplicated
+here, not shared, a deliberate short-term trade-off (`todo.md`: consolidate into one frozen capability model before
+the artifact freeze, not before). New: a `Panel` timeline (`Faulted`/`Restored`) and a `Unit` class pairing a panel
+with the `Feature` that presses its reset; `press`'s own rule constrains `feature` to actually be `unit.button`
+(the same reason `pick`/`place` keep `support` alongside `item` -- not left for the solver to pick freely), needs
+the base docked at the button, and transitions `Posture` `Stowed -> Ready` (matching `contracts.yaml`: press's tool
+withdraws afterward but does not return to travel posture, which is what leaves `stow` something real to do) and
+the unit's own `Panel` `Faulted -> Restored`. Given only the mission's own outcomes as goals (`--goal
+pdu_2@restored --goal stowed --final dock`), the solver derives `navigate_to_feature -> dock_at_feature -> press`
+itself from `press`'s own precondition, the same way Mission B's domain derives its plan from `pick`/`place`.
+Offline-verified end to end (`run_offline_mission_a.sh`) before any live time.
+
+## Live run: Mission A (2026-09-22)
+
+`experiments/launch/lunar_base_d0/d0_europa_mission_a_check.py` (mirrors the Mission B live check script) ran the
+3-step derivation (`navigate_to_feature, dock_at_feature, press`) live, then `stow, navigate_to_pose` toward the
+second goal. The return-to-dock `navigate_to_pose` hit a generic Nav2 `STATUS_ABORTED` (no error code/message --
+"typically an unreachable goal, an unpopulated/too-small costmap, or the controller failing to make progress"),
+not a domain or host.py bug -- confirmed by PLEXIL's independently-implemented Mission A run hitting the identical
+failure, on the identical leg, in the same time window (F106). `host.py`'s existing replan-on-failure loop (no
+code change needed) reissued the same goal; it solved and completed on the second attempt. Evaluator `RESULT`:
+`success: true`, PDU-2's fault cleared, dock error 0.23 m / -10.3 deg, video recorded
+(`artifacts/runs/europa_mission_a_success_20260922`). Panel extended with `pdu_2_panel/press` in the mini-map's
+`PLACES` label table (`europa_mission_video.py`) -- purely cosmetic, applies to any future mission touching PDU-2's
+panel. Full account: F106, `docs/research_findings.md`.
+
 ## Open
 
 - The plan is ordered by earliest start; concurrency between activities is not exploited (one capability at a time).
 - Predefined recovery beyond replan-on-failure, same status as PLEXIL's (above).
+- `mission-a-model.nddl` and `mission-b-model.nddl` duplicate their shared timelines/rules; consolidate before the
+  artifact freeze.

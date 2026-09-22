@@ -3,8 +3,9 @@
 //
 // Result comes back through `ok` (InOut); see lib/DriveAndDock.ple for why not node outcome.
 //
-// Nominal path only -- no retry yet. stow's reported failure kind/stage (planner error, joint blocked) is still
-// moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD.
+// Stow: no retry yet -- no evidence it needs one (stow's reported failure kind/stage, planner error vs. joint
+// blocked, is still moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD).
+// Return: one retry (Try), added 2026-09-22 -- same reasoning as lib/DriveAndDock.ple's Nav/Dock (F106).
 
 Boolean Command stow(Real);
 Boolean Command navigate_to_pose(Real, Real, Real);
@@ -16,6 +17,11 @@ StowAndReturn:
   In Real dock_yaw;
   InOut Boolean ok;
 
-  Stow:   { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
-  Return: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(dock_x, dock_y, dock_yaw); }
+  Stow: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+  Return: Try
+  {
+    PreCondition ok;
+    Return1: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(dock_x, dock_y, dock_yaw); }
+    Return2: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(dock_x, dock_y, dock_yaw); }
+  }
 }

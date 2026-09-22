@@ -193,7 +193,7 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
     return img
 
 
-PLACES = {"depot_stand/slot_0": "depot", "pdu_1_shelf/shelf": "PDU-1 shelf"}
+PLACES = {"depot_stand/slot_0": "depot", "pdu_1_shelf/shelf": "PDU-1 shelf", "pdu_2_panel/press": "PDU-2 panel"}
 
 
 def main() -> None:

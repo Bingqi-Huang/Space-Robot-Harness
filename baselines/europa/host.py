@@ -61,6 +61,10 @@ ITEM_DESCRIPTIONS = {
         "release_constraint": "below_overhang",
     },
 }
+# Mission A's serviced unit: same status as ITEM_DESCRIPTIONS, mission-instance authoring, not domain reasoning.
+UNIT_DESCRIPTIONS = {
+    "pdu_2": {"target": "the round red push button set into the yellow sub-panel"},
+}
 
 
 def ident(name):
@@ -68,10 +72,12 @@ def ident(name):
 
 
 # ---- mission instance and state as NDDL --------------------------------------------------------------------------
-def instance(site, items):
-    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, and the
-    mission's movable items (`items`: item name -> nothing needed but its own identity; where it starts is a fact,
-    not an instance object)."""
+def instance(site, items, units=None):
+    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, the
+    mission's movable items (`Item`, mission-b-model.nddl -- `items`: name -> nothing, where it starts is a fact)
+    and serviced units (`Unit`, mission-a-model.nddl -- `units`: name -> its button's feature name, a structural
+    property of the `Unit` constructor itself, not a fact). The same `instance()` serves either domain; the
+    unused class simply never gets an object."""
     lines = ['NamedPose dock = new NamedPose("dock");', 'Location elsewhere = new Location("elsewhere");']
     names = {"dock": "dock", "elsewhere": "elsewhere"}
     for f in site["points"]:
@@ -83,6 +89,10 @@ def instance(site, items):
         i = ident(item)
         lines.append(f'Item {i} = new Item("{item}");')
         names[i] = item
+    for unit, button in (units or {}).items():
+        i = ident(unit)
+        lines.append(f'Unit {i} = new Unit("{unit}", {ident(button)});')
+        names[i] = unit
     return lines, names
 
 
@@ -126,6 +136,9 @@ def capability_call(act, names, site):
         args.update(target=ITEM_DESCRIPTIONS[item]["target"], part=ITEM_DESCRIPTIONS[item]["part"])
     elif cap == "place":
         args["release_constraint"] = ITEM_DESCRIPTIONS[args["item"]]["release_constraint"]
+    elif cap == "press":
+        unit = args.pop("unit")  # a domain-only concept (which unit's button); press's own contract has no such arg
+        args["target"] = UNIT_DESCRIPTIONS[unit]["target"]
     return cap, args
 
 
@@ -164,7 +177,7 @@ def facts_from_result(state, cap, args, res, site):
         if feature and math.dist((pose["x"], pose["y"]), site["points"][feature]["xyz"][:2]) < NEAR_M:
             return {**state, "rover.base": ["At", {"loc": f"{ident(feature)}_a"}]}, False
         return {**state, "rover.base": ["At", {"loc": "elsewhere"}]}, False
-    if cap in ("arm_ready", "stow", "pick", "place"):
+    if cap in ("arm_ready", "stow", "pick", "place", "press"):
         arm = evd.get("arm")
         if arm is None:
             return state, False
@@ -179,7 +192,7 @@ def facts_from_result(state, cap, args, res, site):
     return state, False
 
 
-def initial_state(pose, arm, site, items_at):
+def initial_state(pose, arm, site, items_at, units):
     at_dock = math.dist((pose["x"], pose["y"]), (site["dock"]["x"], site["dock"]["y"])) < 0.6
     state = {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}]}
     if arm is not None:
@@ -187,17 +200,23 @@ def initial_state(pose, arm, site, items_at):
         state["rover.jaws"] = ["Empty", {}]  # every covered instance starts with empty jaws; nothing here detects otherwise
     for item, support in items_at.items():
         state[f"{ident(item)}.loc"] = ["On", {"support": ident(support)}]
+    for unit in units:
+        state[f"{ident(unit)}.panel"] = ["Faulted", {}]  # the mission's own report: this unit is the faulted one
     return state
 
 
-def parse_goal(token, item_names, loc):
+def parse_goal(token, item_names, unit_names, loc):
     """A `--goal`/`--final` token names a base location (existing: a feature/pose name, `dock`, or `elsewhere`), an
-    item's destination (`item@support`), or an arm posture (`stowed`/`ready`)."""
+    item's destination (`item@support`), a unit's restored status (`unit@restored`), or an arm posture
+    (`stowed`/`ready`)."""
     if token in ("stowed", "ready"):
         return "rover.posture", token.capitalize(), {}
-    if "@" in token and token.split("@", 1)[0] in item_names:
-        item, support = token.split("@", 1)
-        return f"{ident(item)}.loc", "On", {"support": loc[support]}
+    if "@" in token:
+        name, rest = token.split("@", 1)
+        if name in item_names:
+            return f"{ident(name)}.loc", "On", {"support": loc[rest]}
+        if name in unit_names and rest == "restored":
+            return f"{ident(name)}.panel", "Restored", {}
     return "rover.base", "At", {"loc": loc[token]}
 
 
@@ -260,7 +279,8 @@ def main():
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--model", default=str(HERE / "domain/skeleton-model.nddl"))
     ap.add_argument("--item", action="append", default=[], help="NAME:SUPPORT_FEATURE, the item's starting place")
-    ap.add_argument("--goal", action="append", default=[], help="a location/item-destination/posture to reach, in order")
+    ap.add_argument("--unit", action="append", default=[], help="NAME:BUTTON_FEATURE, a serviced unit that starts faulted")
+    ap.add_argument("--goal", action="append", default=[], help="a location/item-destination/unit-restored/posture to reach, in order")
     ap.add_argument("--final", help="the goal (of the same kinds as --goal) the run ends at")
     ap.add_argument("--port", type=int, default=47810)
     a = ap.parse_args()
@@ -273,7 +293,7 @@ def main():
         events.flush()
         print(kind, json.dumps(kw)[:300], flush=True)
 
-    items_at = dict(i.split(":", 1) for i in a.item)
+    items_at, units = dict(i.split(":", 1) for i in a.item), dict(u.split(":", 1) for u in a.unit)
     rclpy.init()
     node = rclpy.create_node("europa_host")
     client = node.create_client(QueryCapability, "/space/capability/query")
@@ -290,16 +310,16 @@ def main():
         return answer.strip().lower() == "continue"
 
     site = query(node, client, "site_map")
-    site_lines, names = instance(site, items_at)
+    site_lines, names = instance(site, items_at, units)
     loc = {v: k for k, v in names.items()}
-    item_names = set(items_at)
-    goals = [parse_goal(g, item_names, loc) + (False,) for g in a.goal]
+    item_names, unit_names = set(items_at), set(units)
+    goals = [parse_goal(g, item_names, unit_names, loc) + (False,) for g in a.goal]
     if a.final:
-        goals.append(parse_goal(a.final, item_names, loc) + (True,))
+        goals.append(parse_goal(a.final, item_names, unit_names, loc) + (True,))
     # the skeleton domain's LunarBot has no posture/jaws timeline at all -- only query and carry that state when
-    # there is an item to track, which is also exactly when the fuller domain (arm, jaws, item location) is in use
-    arm = query(node, client, "arm_state") if items_at else None
-    state = initial_state(query(node, client, "base_pose"), arm, site, items_at)
+    # there is an item/unit to track, which is also exactly when a fuller domain (arm, jaws, ...) is in use
+    arm = query(node, client, "arm_state") if (items_at or units) else None
+    state = initial_state(query(node, client, "base_pose"), arm, site, items_at, units)
     log("mission", goals=goals, state=state)
     link = Link(a.port)
     failures, n_plan = {}, 0

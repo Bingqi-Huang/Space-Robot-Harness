@@ -4856,3 +4856,65 @@ replan -- watching it go from a 7-step plan to a 1-step plan to a different 1-st
 happen). Caught one bug offline before rendering live footage: `plan` events serialize `activities` as JSON arrays
 (`[type, params]`), not objects -- `act["type"]` raised `TypeError`; fixed to `act[0]`, verified against a logic-only
 replay of the offline run's own `events.jsonl` before spending render time on the live video.
+
+## F106 — PLEXIL Mission A, both baselines: a dropped recovery, and one shared Nav2 flake both hit identically (2026-09-22)
+
+Both `domain/mission-a-model.nddl` (EUROPA) and the rewritten `MissionA_Covered.ple` (PLEXIL) were built and
+verified offline (F102-class domain derivation for EUROPA; `plexiltest` nominal-path regression for PLEXIL) before
+any live time, per the standing method note (F104, F105). Launched live in parallel, one graph per GPU
+(PLEXIL: domain 77/GPU0; EUROPA: domain 78/GPU1), both hit the identical failure on the identical leg:
+`navigate_to_pose(0,0,0)` (return to dock, the mission's last step, after PDU-2's fault was already genuinely
+cleared on both) returned Nav2 `STATUS_ABORTED` with no error code or message -- "typically an unreachable goal, an
+unpopulated/too-small costmap, or the controller failing to make progress". Two independently-implemented systems,
+sharing nothing but the capability boundary and the same graph class, failing on the same call is strong evidence
+this is a generic Nav2/environment flake, not a bug in either baseline's own logic -- consistent with the standing
+rule that a check reporting "uncertain"/"failed" is evidence for the model to reason about, not a defect to patch
+around on sight (`todo.md`: "a check that cannot certify is evidence, not a veto").
+
+**EUROPA needed no code change.** `host.py`'s existing replan-on-failure loop (`ATTEMPTS=3`, already built for
+exactly this, F102) reissued the identical goal; the second attempt solved and completed. This is the same
+recovery mechanism Mission B already exercised under an injected `pick` failure (F105) -- Mission A is not a new
+capability, just the first time a *live*, unforced failure happened to land on it.
+
+**PLEXIL did need a fix, but not a new one -- a restored one.** Rewriting `MissionA_Covered.ple` onto the shared
+`press` capability (this session, earlier) composed it from Mission B's reusable library (`DriveAndDock`,
+`StowAndReturn`) instead of duplicating logic. That library is explicitly documented "nominal path only -- no
+retry/back-off yet", because nobody had hit a live failure on that class of leg before. But the *old*, pre-rewrite
+Mission A plan had its own `DriveToUnit`/`DockAtPanel`/`ReturnToDock`, each wrapped in a `Try` (one retry) -- a
+predefined recovery its own header comment called out ("Predefined recovery: one retry of each base leg"). The
+rewrite, by switching to the shared library, silently dropped it. With no retry left, this run's PLEXIL plan
+finished `success: false`, the rover 15 m / 178 deg off the dock. execution_plan §5.2 requires "competent nominal
+logic and reasonable predefined recovery branches" in every PLEXIL plan; this was a real regression against that
+requirement, not a hypothetical one -- a live run demonstrated it.
+
+Fixed at the library level, not the plan: `plans/lib/DriveAndDock.ple`'s `Nav`/`Dock` and `plans/lib/
+StowAndReturn.ple`'s `Return` are now each `Try { PreCondition ok; Attempt1; Attempt2; }`, the identical shape the
+old plan used, gating on the same `InOut ok` idiom these libraries already thread through every call site (F101).
+Deliberately not touched: `Stow` (no evidence yet it needs retry) and PickItem/PlaceItem's legs (out of scope,
+`todo.md`'s separately-deferred "predefined recovery set" item). Benefits Mission B too, since the library is
+shared. Verified offline before spending more live time: the existing nominal-path regression passes unchanged for
+both missions (`plexiltest` -- the second attempt is structurally never reached when the first succeeds); a
+fail-injection script (`command-failed` on the first `navigate_to_pose`, success on the second) confirms `Return2`
+actually executes and the plan still finishes `ok: true`.
+
+**Both, re-run live, genuine success.** EUROPA's original run simply finished (no relaunch needed): `success: true`,
+dock error 0.23 m / -10.3 deg, video recorded (`artifacts/runs/europa_mission_a_success_20260922`). PLEXIL was
+relaunched fresh with the fix (the failed attempt's rover position is not a valid mission start state to resume
+from): `success: true`, dock error 0.18 m / -9.9 deg, 193 s sim time -- `navigate_to_pose` succeeded on the first
+attempt this time, consistent with a flake rather than a reliable repro (`artifacts/runs/
+plexil_mission_a_success_20260922`).
+
+**Panels.** EUROPA's (`europa_mission_video.py`) needed only its mini-map label table (`PLACES`) extended with
+`pdu_2_panel/press` -- cosmetic, generic to any future PDU mission. PLEXIL's (`plexil_mission_video.py`,
+`plexil_timeline_from_logs.py`) had its top-level plan-node list (`TOP`) hardcoded to Mission B's five names
+(`ToDepot, Pick, ToShelf, Place, Return`); with Mission A's own three (`ToUnit, Press, Return`) it recognized none
+of them and drew an empty graph. Parameterized as `--top` in both scripts (defaults to Mission B's list, so
+Mission B's own panel is unchanged) rather than hand-specialized for Mission A -- the same generic-improvement bar
+as the library retry fix above.
+
+**Method note.** The PLEXIL fix restores a recovery mechanism the *original author of Mission A* had already
+judged necessary, at the shared-library level rather than as a Mission-A-specific patch -- structurally the same
+class of fix as F104's adapter bug (a shared-infrastructure defect affecting the method generically, found and
+fixed from a real live failure, not tuned preemptively). It is not "hand-strengthening the baseline to make it
+pass this scenario": the retry is not conditioned on Mission A, PDU-2, or this failure's specifics, and it did
+not touch EUROPA at all, whose own equivalent mechanism (replanning) already existed and needed nothing.

@@ -3,8 +3,8 @@ EUROPA->PLEXIL machinery without the simulation: the same ROS interfaces (/space
 /space/capability/query service), a symbolic base/arm/jaws that land where the contract says, and scripted failures.
 
   --fail CAP:N[:far]   the N-th call of CAP fails (failure_kind 3, "no progress"); `far` (base moves only) leaves the
-                       base 5 m off the target instead of where it started; ignored for arm_ready/stow/pick/place,
-                       which simply do not change posture/jaws/held item on a failed call
+                       base 5 m off the target instead of where it started; ignored for arm_ready/stow/pick/place/
+                       press, which simply do not change posture/jaws/held item on a failed call
 Run on an isolated graph: ROS_DOMAIN_ID=92 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST.
 """
 import argparse
@@ -67,6 +67,8 @@ class SimBoundary(Node):
         elif cap == "place" and ok:
             self.held = None
             self.posture = "ready"
+        elif cap == "press" and ok:
+            self.posture = "ready"  # press reaches into the panel and does not fold back afterward on its own
         r = ExecuteCapability.Result()
         r.success = ok
         r.failure_kind = 0 if ok else 3

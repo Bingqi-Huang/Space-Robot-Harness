@@ -1,53 +1,35 @@
 // PLEXIL baseline -- Mission A, model-covered case (execution_plan §11.1, §21.5).
 //
-// "PDU-2 reported a fault: restore it, verify, return the rover to the dock with the arm stowed." In the covered case
-// the reported unit is the faulted one and its reset button is free, so the pre-engineered procedure is:
-// drive to the unit, dock at its panel, press the reset button with closed jaws, back away, stow, return to the dock.
-// Predefined recovery: one retry of each base leg. Every Command is a capability of the common boundary
-// (openral_ext/capability_server/contracts.yaml), positional arguments in the contract's input order; the adapter
-// (ros/plexil_capability_adapter) adds no logic.
+// "PDU-2 reported a fault: restore it, verify, return the rover to the dock with the arm stowed." In the covered
+// case the reported unit is the faulted one and its reset button is free, so the pre-engineered procedure is:
+// drive to the unit, dock at its panel, press the reset button, stow, return to the dock.
+//
+// Rewritten onto the shared whole-operation `press` capability (2026-09-22; research repo F92-F100 fixed the arm
+// that made this worth doing, F104 fixed the adapter bug that would have raced it to "done" before the robot
+// moved). The previous version bypassed `press` with eight stage-level Cartesian primitives of its own
+// (close jaws, plan/servo pre-press, approach, press, retract, re-ready, ...) -- `press`'s own contract already
+// does exactly that sequence internally ("the jaws close, the tool goes in past the button's tip ... then
+// withdraws and the jaws open") and explicitly does not need `arm_ready` first ("this plans its own way from
+// wherever the arm is, so arm_ready beforehand is neither required nor useful",
+// openral_ext/capability_server/contracts.yaml). Ours' own covered-instance call (research repo
+// artifacts/runs/mission_a_success_20260922/ours/events.jsonl) called `arm_ready` anyway and it failed --
+// harmlessly, exactly because press does not need it -- not repeated here. Composed from the same reusable
+// library Mission B uses (`DriveAndDock`, `StowAndReturn` -- baselines/plexil/plans/lib/), not duplicated.
 
-Boolean Command navigate_to_feature(String, Real);
-Boolean Command dock_at_feature(String, Real, Real);
-Boolean Command navigate_to_pose(Real, Real, Real);
-Boolean Command grasp();
-Boolean Command move_joints(Real[7], Real);
-Boolean Command stow(Real);
-Boolean Command plan_ee_to_feature(String, Real, String, Real);
-Boolean Command move_ee_to_feature(String, Real, Real, String, Real, Real, Real);
+LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
+LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
+Boolean Command press(String, String);
 String Lookup LastCapabilityResult();
 Command pprint(...);
 
 MissionA_Covered: Sequence
 {
   String Button = "pdu_2_panel/press";
-  Real Ready[7] = #(0.0 -1.0 0.0 -1.4 0.0 1.2 0.0);
+  String ButtonTarget = "the round red push button set into the yellow sub-panel";
+  Boolean ok = true;
 
-  DriveToUnit: Try
-  {
-    DriveToUnit1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(Button, 1.5); }
-    DriveToUnit2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(Button, 1.5); }
-  }
-  DockAtPanel: Try
-  {
-    DockAtPanel1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 0.0, 1.5); }
-    DockAtPanel2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 0.0, 1.5); }
-  }
-  // pressing is done with closed jaws: "nothing grasped" is the expected result, so no post-condition
-  CloseJaws: { Boolean ok; EndCondition isKnown(ok); ok = grasp(); }
-  ArmReady: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_joints(Ready, 0.05); }
-  PlanPrePress: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = plan_ee_to_feature(Button, 0.12, "press", 0.01); }
-  ServoPrePress: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.12, 0.0, "press", 0.015, 0.15, 25.0); }
-  Approach: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.04, 0.0, "press", 0.01, 0.05, 25.0); }
-  Press: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, -0.01, 0.0, "press", 0.01, 0.03, 15.0); }
-  Retract: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.12, 0.0, "press", 0.02, 0.08, 25.0); }
-  ArmReadyAgain: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_joints(Ready, 0.1); }
-  StowArm: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = stow(0.1); }
-  BackAway: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 1.5, 0.8); }
-  ReturnToDock: Try
-  {
-    ReturnToDock1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(0.0, 0.0, 0.0); }
-    ReturnToDock2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(0.0, 0.0, 0.0); }
-  }
-  Done: { pprint("MissionA_Covered complete; last:", Lookup(LastCapabilityResult())); }
+  ToUnit: { PreCondition ok; LibraryCall DriveAndDock(feature = Button, standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  Press:  { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = press(ButtonTarget, Button); }
+  Return: { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }
+  Done: { pprint("MissionA_Covered ok:", ok, "last:", Lookup(LastCapabilityResult())); }
 }

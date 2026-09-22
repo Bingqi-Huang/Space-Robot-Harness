@@ -8,8 +8,10 @@
 // step on `ok` (PreCondition), the idiom PLEXIL's own regression tests use for a typed result
 // (compilers/plexil/test/input/library-call1.ple).
 //
-// Nominal path only -- no retry/back-off yet. Failure kinds and reported stages for navigate_to_feature /
-// dock_at_feature are still moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD.
+// 2026-09-22: one retry per leg (Try, matching the old MissionA_Covered.ple's own DriveToUnit/DockAtPanel
+// pattern before Mission A was rewritten onto this library -- F106, a live Mission A run hit a generic Nav2
+// STATUS_ABORTED on the very same class of leg with no baseline-specific cause). Still no back-off; still no
+// retry on the actual failure kind/stage (that recovery set stays TBD, docs/baselines/plexil.md).
 
 Boolean Command navigate_to_feature(String, Real);
 Boolean Command dock_at_feature(String, Real, Real);
@@ -19,8 +21,18 @@ DriveAndDock:
   In String feature;
   In Real standoff_m;    // navigate_to_feature's stand-off along the feature's normal
   In Real approach_m;    // dock_at_feature's entry corridor length
-  InOut Boolean ok;       // true on entry (the caller already gated on it); false on exit if either leg failed
+  InOut Boolean ok;       // true on entry (the caller already gated on it); false on exit if every attempt failed
 
-  Nav:  { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(feature, standoff_m); }
-  Dock: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(feature, 0.0, approach_m); }
+  Nav: Try
+  {
+    PreCondition ok;
+    Nav1: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(feature, standoff_m); }
+    Nav2: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(feature, standoff_m); }
+  }
+  Dock: Try
+  {
+    PreCondition ok;
+    Dock1: { EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(feature, 0.0, approach_m); }
+    Dock2: { EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(feature, 0.0, approach_m); }
+  }
 }

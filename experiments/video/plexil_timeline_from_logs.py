@@ -29,20 +29,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sim_clock import wall_to_sim
 
+# Mission B's five top-level Sequence children; a mission with a different plan shape (e.g. Mission A's
+# ToUnit/Press/Return) passes its own list as main()'s third argument -- same names its own .ple declares.
 TOP = ["ToDepot", "Pick", "ToShelf", "Place", "Return"]
 LIB = ["DriveAndDock", "PickItem", "PlaceItem", "StowAndReturn"]
 _TRANSITION_RE = re.compile(r"Transitioning (\S+) (\S+) from (\S+) to (\S+) at ([\d.]+)")
 _CAP_LOG_RE = re.compile(r"^\[INFO\] \[([\d.]+)\] \[space_capability_server\]: CAPABILITY (\{.*\})\s*$")
 
 
-def parse_node_trace(trace_log: Path, to_sim) -> list[dict]:
+def parse_node_trace(trace_log: Path, to_sim, top: list[str] = TOP) -> list[dict]:
     events, top_ptr = [], {}
     for line in trace_log.read_text(errors="replace").splitlines():
         m = _TRANSITION_RE.search(line)
         if not m:
             continue
         name, ptr, _frm, to, wall = m.group(1), m.group(2), m.group(3), m.group(4), float(m.group(5))
-        if name in TOP:
+        if name in top:
             top_ptr.setdefault(name, ptr)
             if top_ptr[name] != ptr:
                 continue  # a library-internal node that happens to share its top-level caller's name
@@ -66,14 +68,15 @@ def parse_capability_log(log: Path, to_sim) -> list[dict]:
     return events
 
 
-def main(run_dir: str, out: str) -> None:
+def main(run_dir: str, out: str, top: list[str] = TOP) -> None:
     run = Path(run_dir)
     to_sim = wall_to_sim(run / "robot_motion")
-    events = parse_node_trace(run / "plexil_node_trace.log", to_sim) + parse_capability_log(run / "capability_server.log", to_sim)
+    events = parse_node_trace(run / "plexil_node_trace.log", to_sim, top) + parse_capability_log(run / "capability_server.log", to_sim)
     events.sort(key=lambda e: e.get("sim_t", e.get("sim_t_start", 0.0)))
     Path(out).write_text(json.dumps({"run": run_dir, "events": events}))
     print(f"{len(events)} events -> {out}")
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], sys.argv[2])
+    # optional 4th arg: comma-separated top-level node names for a plan whose shape isn't Mission B's
+    main(sys.argv[1], sys.argv[2], sys.argv[3].split(",") if len(sys.argv) > 3 else TOP)
