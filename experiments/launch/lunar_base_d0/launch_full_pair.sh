@@ -2,9 +2,10 @@
 # Mission B on GPU 0 (domain 77) and Mission A on GPU 1 (domain 78), each from scratch with 1080p video and a bag of the motion
 # topics the mini-map needs. Usage: launch_full_pair.sh <tag-for-B> <tag-for-A>   (run dirs under artifacts/runs; '-' skips one)
 # Never open a run's bag while its recorder is alive: a reader's SQLite lock crashes the recorder and the bag ends there.
-cd "$(dirname "$0")/../../.."
+HERE="$(cd "$(dirname "$0")" && pwd)"
+cd "$HERE/../../.."
 B=$PWD/artifacts/runs
-launch() { NAME=$1; DOM=$2; GPU=$3; MISSION=$4; SCENE=$5; VID=$6; RUN=$B/$NAME; mkdir -p $RUN; cp $B/gb2/record_qos.yaml $RUN/
+launch() { NAME=$1; DOM=$2; GPU=$3; MISSION=$4; SCENE=$5; VID=$6; RUN=$B/$NAME; mkdir -p $RUN; cp "$HERE/record_qos.yaml" $RUN/
   ( export D0_DOMAIN=$DOM D0_CAPABILITY_SERVER=1 D0_HOLD=1 D0_CHECK=ours_mission_check.py OURS_MISSION=$MISSION D0_VIDEO=$RUN/$VID D0_VIDEO_RES=1920,1080 D0_VIDEO_STRIDE=2 D0_VIDEO_SPEEDUP=1
     [ -n "$GPU" ] && export D0_GPU=$GPU; [ -n "$SCENE" ] && export D0_SCENE=$SCENE
     setsid nohup experiments/launch/lunar_base_d0/run_d0.sh $RUN > $RUN/runner.out 2>&1 & )

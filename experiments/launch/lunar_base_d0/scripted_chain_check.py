@@ -16,6 +16,8 @@ while not cap.wait_for_server(timeout_sec=1.0):
     spin(0.5)
 
 
+# the simulator can be put back to a saved state first (RESUME_SNAPSHOT=<log>/snapshots/before_step_<n>.pt: jaws open
+# only, F60); `d0_common.put_scene_back` does the restore, shared with ours_mission_check.py.
 def call(name, args, hard_sim_s=900.0):
     f = cap.send_goal_async(ExecuteCapability.Goal(capability=name, args_json=json.dumps(args)))
     rclpy.spin_until_future_complete(n, f, timeout_sec=90)
@@ -42,12 +44,15 @@ def worst(evidence):
 
 
 chain = json.loads(Path(os.environ["CHAIN_JSON"]).read_text())
+if os.environ.get("RESUME_SNAPSHOT"):
+    put_scene_back(Path(os.environ["RESUME_SNAPSHOT"]))
 for name, args in chain:
     t0 = sim["t"]
     log("CALL", capability=name, args=args, sim_t=round(t0, 1), jaw=round(float(jaw.get("q", -1.0)), 3))
     r = call(name, args)
     log("RESULT", capability=name, success=r["success"], reason=(r.get("failure_reason") or "")[:400], sim_s=round(sim["t"] - t0, 1),
-        servo=worst(r.get("evidence") or {}), jaw=round(float(jaw.get("q", -1.0)), 3), mission=dict(mission))
+        servo=worst(r.get("evidence") or {}), jaw=round(float(jaw.get("q", -1.0)), 3), arm={k: round(float(v), 3) for k, v in arm.items()},
+        mission=dict(mission))
     if not r["success"]:
         log("STOPPED", at=name)
         break

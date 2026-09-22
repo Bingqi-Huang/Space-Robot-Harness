@@ -25,75 +25,11 @@ run_dir.mkdir(parents=True, exist_ok=True)
 # the run tag puts the agent under the graph's teardown (D0_GRAPH_LOG when attached to a held graph): an agent blocked
 # in rclpy ignores SIGTERM, and two left over from stopped runs were still alive in the next run's ROS domain (2026-09-17)
 env = dict(os.environ, PYTHONPATH=f"{REPO}:{os.environ.get('PYTHONPATH', '')}", D0_RUN_TAG=os.environ.get("D0_GRAPH_LOG", os.environ["D0_LOG"]))
-# Step-wise development (research runs never use these): the simulator's full state is saved before every agent step
-# (<log>/snapshots/before_step_<n>.pt, with the rover's own localization estimate beside it). OURS_STOP_ON_FAILURE=1
-# stops the agent at the first failed capability or effect that does not hold, the graph held up (D0_HOLD=1). After
-# the fix, attach_d0.sh with OURS_RESUME_FROM=<earlier log> OURS_RESUME_BEFORE_STEP=<n> puts the simulation back to
-# before step n, gives the localization back its estimate from then, and continues the agent's record from there.
-from geometry_msgs.msg import PoseWithCovarianceStamped
-
-snap_dir = Path(os.environ["D0_LOG"]) / "snapshots"
-snap_dir.mkdir(exist_ok=True)
-snap_pub = n.create_publisher(String, "/srb/envs/snapshot", 10)
-snap_done = []
-n.create_subscription(String, "/srb/envs/snapshot/done", lambda m: snap_done.append(json.loads(m.data)), 10)
-while snap_pub.get_subscription_count() == 0:
-    spin(0.5)
-
-
-def snapshot(op, path):
-    snap_done.clear()
-    snap_pub.publish(String(data=json.dumps(dict(op=op, path=str(path)))))
-    while not snap_done:
-        spin(0.1)
-
-
-def put_scene_back(snap: Path) -> dict:
-    """Put the simulator back to a saved state, and give the rover's localization its estimate from then."""
-    snapshot("restore", snap)
-    est = json.loads(snap.with_suffix(".json").read_text())
-    ip = PoseWithCovarianceStamped()
-    ip.header.frame_id = "map"
-    ip.pose.pose.position.x, ip.pose.pose.position.y = est["x"], est["y"]
-    ip.pose.pose.orientation.z, ip.pose.pose.orientation.w = math.sin(est["yaw"] / 2), math.cos(est["yaw"] / 2)
-    ip.pose.covariance[0] = ip.pose.covariance[7] = 0.02 ** 2
-    ip.pose.covariance[35] = 0.02 ** 2
-    # published before AMCL has matched the new publisher, the message is lost (ob6_s15b kept a 0.16 m stale estimate):
-    # wait for the match, and re-send until the estimate is the saved one
-    ip_pub = n.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
-    while ip_pub.get_subscription_count() == 0:
-        spin(0.2)
-    while True:
-        ip_pub.publish(ip)
-        t_restore = sim["t"]
-        while sim["t"] - t_restore < 3.0:
-            spin(0.2)
-        p_est, yaw_est, _ = est_pose()
-        if math.hypot(p_est[0] - est["x"], p_est[1] - est["y"]) < 0.03:
-            break
-    # A restore is a claim about the whole robot, and the arm is half of it. g6d resumed a `pick` with the base put
-    # back to 3 mm and the arm still in the half-way posture the killed run had left it in, so the skill's first
-    # overview was taken pressed against a panel and the ORU was not in the frame at all -- a failure that looked
-    # like perception and was a resume that had not been checked (F65). Nothing here trusts "restore" without
-    # reading the joints back.
-    if est.get("arm"):
-        spin(1.0)
-        want = [est["arm"][f"joint{i}"] for i in range(1, 8)]
-        off = {j: round(arm[j] - q, 3) for j, q in est["arm"].items() if j in arm and abs(arm[j] - q) > 0.05}
-        if off:
-            # The arm is commanded back rather than assumed back: the joint target that holds it is a live ROS
-            # action, not part of the saved physics state, so whatever posture the killed run left behind can
-            # out-argue the restore. Driving it there also puts the controller's own target where the snapshot says.
-            dispatch("joints", {"joint_targets": want, "tolerance_rad": 0.05}, deadline=90.0)
-            spin(1.0)
-            off = {j: round(arm[j] - q, 3) for j, q in est["arm"].items() if j in arm and abs(arm[j] - q) > 0.05}
-        log("RESTORED_ARM", matches=not off, off_rad=off or None)
-        if off:
-            raise SystemExit(f"the restore did not put the arm back: {off} rad off the snapshot. The scene is not the "
-                             f"one the snapshot names, and a run from here would be measuring something else.")
-    log("RESTORED", snapshot=str(snap), estimate=est, truth_error=base_err([est["x"], est["y"]], est["yaw"]))
-    return est
-
+# Step-wise development (research runs never use these): `d0_common.put_scene_back` restores the simulator's full
+# state, saved before every agent step (<log>/snapshots/before_step_<n>.pt, with the rover's own localization
+# estimate beside it). OURS_STOP_ON_FAILURE=1 stops the agent at the first failed capability or effect that does
+# not hold, the graph held up (D0_HOLD=1). After the fix, attach_d0.sh with OURS_RESUME_FROM=<earlier log>
+# OURS_RESUME_BEFORE_STEP=<n> puts the simulation back to before step n and continues the agent's record from there.
 
 # The graph's own starting state, saved once while the scene is still untouched. A later run on the same held graph
 # puts the site back to the start with OURS_RESET=1 instead of booting Isaac again, which costs minutes every time a
