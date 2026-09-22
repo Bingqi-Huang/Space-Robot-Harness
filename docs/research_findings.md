@@ -4704,9 +4704,11 @@ agent-generated online (Ours), reported raw.
 
 First live run of `MissionB_Covered.plx` after the `p/integration` merge and an adapter rebuild (`RequestOperator`,
 `LastFailureKind/Stage` symbols confirmed present). Two failures before a clean run, each root-caused rather than
-retried blind:
+retried blind. `g_pb1`/`g_pb1_r2`/`g_pb1_v2`/`g_pb1_v3`'s run directories were debugging evidence, not campaign
+results, and are deleted once this account was written and the successful run reproduced the fixes; `g_pb1_v4`'s
+is kept, renamed (below).
 
-**g_pb1 (`artifacts/runs/plexil_mission_b_live_20260922`).** `universalExec` exited immediately: "Library node
+**g_pb1 (was `artifacts/runs/plexil_mission_b_live_20260922`).** `universalExec` exited immediately: "Library node
 DriveAndDock not found while expanding LibraryNodeCall node ToDepot". `d0_plexil_mission_a_check.py`'s
 `universalExec` invocation (copied verbatim for Mission B) never passed `-L <library dir>`; Mission A's flat plan
 never called a library, so the gap was invisible until Mission B's first live run. Fixed
@@ -4758,7 +4760,7 @@ elsewhere; `pick`'s `find` deliberately has no internal retry, by design -- reco
 plan is nominal-path-only (no recovery branches yet, docs/baselines/plexil.md), so it correctly reported failure
 and stopped rather than doing something not in the graph.
 
-**g_pb1_v4 (`artifacts/runs/plexil_mission_b_live_20260922_v4`) -- first clean, full, video-recorded pass.** Same
+**g_pb1_v4 (renamed `artifacts/runs/plexil_mission_b_success_20260922`) -- first clean, full, video-recorded pass.** Same
 plan, re-run once (a legitimate retry of a known-stochastic single-view failure, not a code change). All 9 steps
 succeeded with real, distinct sim-time durations (51.7/12.7/3.8/pick/80.9/13.7/65.0/2.8/45.3 s); evaluator
 `RESULT`: `{"oru_on": "pdu_1_shelf/shelf", "delivered": true, "success": true}`. 358 s sim time, ~19.4 min wall

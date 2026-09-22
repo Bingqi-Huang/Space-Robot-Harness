@@ -15,8 +15,8 @@ see handoff.md. **Next: baselines / freeze / experiments**, not yet started as o
       shows one, do not retune preemptively.
 - [ ] Killing a check script mid-navigate leaves Nav2's own goal running: cancel it
       (`/navigate_to_pose/_action/cancel_goal`, all-zero goal_id) before any restore.
-- [ ] Delete the three failed PLEXIL Mission B debug run dirs (`plexil_mission_b_live_20260922{,_v2,_v3}`, ~450 MB)
-      once F104's account no longer needs to point at them directly -- ask first.
+- [x] Delete the three failed PLEXIL Mission B debug run dirs; rename the successful one to
+      `plexil_mission_b_success_20260922`.
 
 ## Path to the campaign (§21 order)
 

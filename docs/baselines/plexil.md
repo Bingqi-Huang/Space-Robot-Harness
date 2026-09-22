@@ -106,7 +106,7 @@ pass, once pick/place's reported kinds and stages stop moving.
 
 `MissionB_Covered.plx` now runs to a genuine `delivered: true, success: true` on the live, corrected-arm graph
 through the shared capability boundary and the same evaluator Ours uses
-(`artifacts/runs/plexil_mission_b_live_20260922_v4`). Getting there fixed two real bugs, not the plan's own logic:
+(`artifacts/runs/plexil_mission_b_success_20260922`). Getting there fixed two real bugs, not the plan's own logic:
 
 - `d0_plexil_mission_b_check.py` was missing `-L plans/lib` (Mission A's flat plan never needed a library path).
 - The adapter (`ros/plexil_capability_adapter/src/CapabilityAdapter.cc`) acked `COMMAND_SENT_TO_SYSTEM` the instant

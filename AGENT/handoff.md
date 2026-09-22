@@ -15,7 +15,7 @@ Nothing pushed.
 
 Ours: Mission A and Mission B both run from scratch on the corrected arm, evaluator `success: true`, video recorded
 (F92-F100). **PLEXIL: Mission B covered now runs end to end on the live, corrected-arm graph** --
-`delivered: true, success: true`, video recorded (F104, `artifacts/runs/plexil_mission_b_live_20260922_v4`) -- the
+`delivered: true, success: true`, video recorded (F104, `artifacts/runs/plexil_mission_b_success_20260922`) -- the
 first time any baseline has completed a full mission on the current stack. Mission A already ran covered before
 (F52, older stack -- worth a fresh confirmation once `press` is fixed). EUROPA: generic host/bridge verified offline
 on a skeleton domain only (F102); Mission B domain not started. **Still no campaign**: the three methods have never
@@ -23,8 +23,8 @@ run the identical instance side by side, and nothing is frozen. `execution_plan`
 / experiments) is closer but not started.
 
 - `artifacts/runs/` debug archive from earlier this session (117 GB) still sits at `_debug_archive/`, not deleted.
-- Four PLEXIL Mission B run dirs from today's debugging (`plexil_mission_b_live_20260922{,_v2,_v3,_v4}`, ~600 MB
-  total) are evidence for F104's account, kept for now.
+- The three failed PLEXIL Mission B debug runs (F104) are deleted; the successful one is kept, renamed
+  `artifacts/runs/plexil_mission_b_success_20260922` (same convention as Ours' `mission_a/b_success_20260922`).
 
 ## F104 -- the PLEXIL adapter's early ack, not the plan, raced the whole mission to "done" in under a second
 
