@@ -7,60 +7,69 @@ drawing only, never for a decision (user: "that is cheating").
 
 ## Heads
 
-research `feat/manipulation-contracts`, openral `feat/manipulation-contracts`, SRB `feat/lunar-base-scene`. All committed.
+research `feat/manipulation-contracts` (116 commits ahead of `main`), openral `feat/manipulation-contracts` (71 ahead of `master`),
+SRB `feat/lunar-base-scene` (44 ahead of `main`). All committed, nothing merged back yet -- ask before merging; each branch still
+has the rest of `execution_plan` §21 (baselines, the freeze, the campaign) queued on it.
 
-## Where it stands
+## Where it stands -- Mission A and Mission B both reliable on the corrected arm, full recorded runs, both succeeded
 
-**Mission A (PDU-2 fault) has run end to end from scratch, twice, with evaluator success** (mc4, mc5; 1 press, faults cleared, PDU-2
-reported, dock, arm stowed); mc5 has video + a complete bag (`artifacts/runs/mc5`). **Mission B has not**: `pick`, the carry, the dock
-and the `place` calls all reach the shelf, but the ORU leaves the fingers when `place` starts (gc3, gt1c2). Cause found late on
-2026-09-22 (F98): the arm's drive gains are applied by PhysX per degree, so every joint was 57x softer than configured (10.5 N m/rad, damping
-ratio 0.05): it sagged under a 1 kg unit and rang at 1 Hz after any move. Fixed in SRB `lunarbot.py` (gains x 180/pi); bare test: kick
-settles in 0.3 s, ORU held to 0.004 rad.
+This closes the sequence the user set (`todo.md`: Mission B reliable, Mission A, then baselines/freeze/experiments). Next up is
+that last item, not yet scoped.
 
-**On the corrected arm: Mission A succeeded (mc6, evaluator success, video sent).** Mission B's pick+place chain is now verified
-too (gt2c8, scripted, no model, no video, `delivered: true`) after three more fixes found by auditing the whole `place` flow rather
-than reacting to one more run (F99, F100): `over` had no escape from a joint pinned at its own stop -- the same local, no-lookahead
-tracking `retreat` had (F99's fix, `joints_off_their_stops`, pure joint arithmetic, no IK), so the same dead end could equally turn
-up there; `plan_to` never told the planner about a carried item, a latent gap the `over` fix would have made live; `retreat_m`/
-`retreat_up_m` cleared the evaluator's own "not held" distance (0.30 m) only in the nominal case, not the worst case once each leg's
-own tolerance is spent (0.30/0.25, not 0.25/0.20). A full Mission B run with video is in progress (`mc7b`).
+- **Mission A**: `mc6`, from scratch, video sent (PDU-2 fault found, pressed, verified, dock, arm stowed, evaluator `success: true`).
+- **Mission B**: `mc7b`, from scratch, video sent (ORU delivered to PDU-1's shelf, dock, arm stowed, evaluator `success: true`).
 
-## What was done since ga8, by kind (F92-F98 carry the detail)
+Getting there fixed real bugs, found by auditing rather than by reacting to one more failed run (the user's explicit correction
+mid-session, after two rejected patches):
 
-- **Press v2**: the catalogue declares the button (`interface`: mushroom on a collar on a plate); `locate_disc` fits it from the wrist depth
-  with no thresholds; the shared servo drives it; jaws close first; contact is evidence (past-face, off-axis, jaw), the boundary's
-  independent `pressed` check judges. **Place v2**: `fit_wall` corrects the surveyed wall; over/lower/retreat are the shared servo;
-  `lower` stops on a stall and records where. No skill has a handwritten loop.
-- **One IK rule** for the boundary's stand feasibility and the skills: non-planned IK keeps the working branch or the seed; planned IK takes
-  any collision-free solution ranked by `posture_cost`; every solution is taken at the wrist-roll turn nearest the arm
-  (`nearest_equivalent`, F97). A dock is advice (`stand_advice`), not a veto.
-- **Claims**: `held_item` reads twice (neutral context, then the item) with a confidence; place verification is independent of the
-  skill's completion. Not built yet: `check_item_at`, `read_indicator`, the claim ledger (gc3 showed the gap: place "not
-  placed", a gold box on the shelf, the model tried to pick it up again).
-- **The robot model** (F96, F98): USD joint friction 0.1-0.4 (unitless, x transmitted force) stuck the arm; arm drive gains per degree.
-  Both were found in a bare Isaac script (`experiments/robot_check/{arm_steps,carry_static}.py`), not in a run.
-- **Posture pull is a rate** (0.05/s), no longer a step at the joint-rate limit (F97); place waits for stillness before `over`.
+- **F96/F98 -- the robot model itself.** USD joint friction 0.1-0.4 (unitless, x transmitted force) stuck the arm; separately, the
+  arm's drive gains are applied by PhysX per degree, so every joint was 57x softer than configured. Both found in a bare Isaac
+  script with the base fixed (`experiments/robot_check/{arm_steps,carry_static}.py`), one minute per variant, not in a run.
+- **F97 -- two joint-space defaults the soft arm had been hiding.** A planned IK solution can answer with the wrist roll a full
+  turn from the arm's own (`nearest_equivalent` takes the nearest turn inside the stop's margin); the servo's pull toward the
+  working posture was a step at the joint-rate limit, now a rate (0.05/s, ~20 s time constant).
+- **F99/F100 -- `place`'s retreat and `over`.** Both are local, no-lookahead Cartesian tracking with no look-ahead, so neither
+  chooses a configuration with room to move on from; a joint can end up pinned at its own stop with nothing in the way. The
+  accepted fix (after two rejected ones -- see F99/F100 in `docs/research_findings.md` for what was wrong with "tolerate the
+  stall" and "re-solve IK for the same pose") is pure joint arithmetic: `joints_off_their_stops` walks a joint found within 0.3 rad
+  of its stop (`posture_cost`'s own margin) back to exactly that clear, towards its own centre, nothing else touched, then
+  `plan_to` (which now also tells the planner about a carried item -- it never did). Retreat's distance was widened to clear the
+  evaluator's own "not held" check (0.30 m) in the worst case, not just the nominal one (0.30/0.25 m, not 0.25/0.20).
 
-## Method rules earned the hard way
+## Method rules earned the hard way this session
 
-- Separate the robot model from the stack first: a bare Isaac script with the base fixed took one minute per variant and found what
-  three days of runs did not. `Articulation.data.applied_torque` (the joint_states effort) is Isaac's replica with the configured gains,
-  not PhysX's torque.
-- Never open a run's bag while its recorder is alive (SQLite lock kills the recorder; both gc3 and mc4 bags were cut). Read closed bags.
+- **Audit before reacting.** Told explicitly to stop patching one failure at a time and instead read the whole of `place` for
+  every way it could still be wrong: found two more real gaps (`over` had no escape either; `plan_to` never saw a carried item)
+  without running anything.
+- **`check.log`'s bare `t` field is wall-clock seconds since the script started, not sim time** (`d0_common.log()`:
+  `time.time() - T0`). `sim_t`/`sim_s` fields are the real simulation clock. Conflating them cost a wrong "the mission is 46
+  minutes of sim time" explanation to the user; the actual sim-time content of a mission is much shorter (Mission A ~8 min,
+  Mission B ~8.5 min) -- the rest of a raw composed video is wall-clock padding (rendering overhead, or the graph left idle).
+  `mission_video.py --to-sim` filters on genuine `sim_t`; get the cutoff from `PROGRESS`'s `sim_s`, not `RESULT`'s `t`.
+- Killing a check script mid-`navigate`/`dock` does not cancel Nav2's own goal -- the client process dies, the server keeps
+  driving. Cancel it before any snapshot restore or the robot just fights the restore: `ros2 service call
+  /navigate_to_pose/_action/cancel_goal action_msgs/srv/CancelGoal "{goal_info: {goal_id: {uuid: [0]*16}, stamp: {sec: 0,
+  nanosec: 0}}}"` (all-zero goal_id + zero stamp cancels every goal on that server).
+- Never open a run's bag while its recorder is alive (SQLite lock kills the recorder, truncating the bag). Read closed bags.
 - Scripted capability chains (`experiments/launch/lunar_base_d0/scripted_chain_check.py` + `chain_*.json`, attach to a held graph,
-  no model) turn a 60-minute mission into a 15-minute test of one skill. `RESUME_SNAPSHOT` restores a jaws-open state only.
-- Look at the pictures before the numbers; compute geometry offline; read your own code back before running it; subtract.
+  no model, no video) turn a 30-minute mission into a 10-minute test of one or two skills. `RESUME_SNAPSHOT=<snap>.pt` restores a
+  jaws-open state (shared with `ours_mission_check.py` via `d0_common.put_scene_back`, no longer duplicated between them).
+- A skill failure is not always a bug: `pick`'s `find` has no internal retry by design ("the model answers within the deadline or
+  the stage returns with what it has") -- retrying a bad VLM read is the reasoner's job. The scripted chains have no reasoner, so
+  they just get relaunched once, same as the real loop would retry.
+- Don't let a script depend on an old run directory as if it were committed infra (`record_qos.yaml` was being copied out of a
+  15 GB scratch run, `gb2`; now lives at `experiments/launch/lunar_base_d0/record_qos.yaml`).
 
 ## Running it
 
 Skills are import-cached in `runtime_node`; a skill change needs the runtime restarted (`D0_RESTART_RUNTIME_PID`), an SRB or asset
 change needs the graph rebooted. Kill by run tag, never by name: `teardown_d0.sh <run dir>` with `D0_VIDEO=<mp4>` set to finalize the
-video. Full pair: `experiments/launch/lunar_base_d0/launch_full_pair.sh <tagB|-> <tagA|->` (1080p video + bag; A on GPU 1).
-Monitor `artifacts/runs/<tag>/ours/events.jsonl`; the evaluator's `RESULT` line is in `<tag>/check.log`. Stop the recorder by PID
-(`recorder.pid` can be stale: find it with `ps`), then `track_from_bag.py <run>/robot_motion <run>/track.json`, then
-`mission_video.py <run>/mission_x.mp4 <run>/ours/events.jsonl <out> --times <mp4>.times --track <run>/track.json --title ...`, then
-x264 (1280 wide, crf 29) to stay under the 30 MiB send limit.
+video. Full pair: `experiments/launch/lunar_base_d0/launch_full_pair.sh <tagB|-> <tagA|->` (1080p video + bag; A on GPU 1, `-` skips
+one side). Monitor `artifacts/runs/<tag>/ours/events.jsonl`; the evaluator's `RESULT` line is in `<tag>/check.log` (its own `t` is
+wall time -- see above). Stop the recorder by PID (`recorder.pid` can be stale: find it with `ps`), then `track_from_bag.py
+<run>/robot_motion <run>/track.json`, then `mission_video.py <run>/mission_x.mp4 <run>/ours/events.jsonl <out> --times <mp4>.times
+--track <run>/track.json --to-sim <from PROGRESS's sim_s, not RESULT's t> --title ...`, then x264 (1280 wide, crf 29-38 depending
+on length) to stay under the 30 MiB send limit.
 
 ## Rules
 
@@ -68,4 +77,5 @@ x264 (1280 wide, crf 29) to stay under the 30 MiB send limit.
 - Never navigate or decide on simulator truth. Whole-operation tools only; mechanics stay in skills. A skill retries the same target,
   never moves the base. Keys in `AGENT/VLM_provider.md` never enter logs or output.
 - Development resumes/scripted chains are not campaign results; never count them in paper metrics.
+- Ask before merging a feature branch back to its main/master; ask before deleting a run directory that might still be evidence.
 - Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies to the user in concise Simplified Chinese.

@@ -1,18 +1,13 @@
 # TODO
 
 Order: `execution_plan` §21 -- the proposed method before the external baselines. Sequence in force (user): Mission B reliable,
-Mission A, then baselines / freeze / experiments. One graph per GPU. Experiments record video (`D0_VIDEO`).
+Mission A, then baselines / freeze / experiments. **Both done (2026-09-22) -- see handoff.md.** One graph per GPU. Experiments
+record video (`D0_VIDEO`).
 
-## Now (2026-09-22)
+## Now
 
-- [x] **Mission B pick+place, on the corrected arm, verified.** gt2c8: scripted pick -> navigate -> dock -> place, no model, no
-      video, from the pre-pick snapshot. `delivered: true`. Found and fixed along the way (F98-F100): the arm's drive gains were
-      applied per degree (57x soft); `over`/`retreat` had no escape from a joint pinned at its own stop (both now share one, pure
-      joint-space, no IK); `plan_to` never told the planner about a carried item; retreat's distance cleared the evaluator's
-      "not held" check only in the nominal case, not the worst case with servo tolerance. Full run with video next.
-- [ ] **Full Mission B from scratch, with video.** `launch_full_pair.sh <tag> -`.
-- [x] **Mission A on the corrected arm.** mc6, evaluator success, video sent (trimmed to the active 8:20, the rest was the
-      reasoner sitting still on repeated lamp-verification observes).
+- [ ] **Baselines / freeze / experiments** -- the next item in the user's stated order, not yet started. `execution_plan` §21 has
+      the shape of it; nothing here has been scoped yet.
 - [ ] Servo gains, ramps and margins were tuned against the soft arm (F95/F96/F98): re-check a stall or a dip only if a run shows
       one. Do not retune preemptively.
 - [ ] Killing a check script mid-navigate leaves Nav2's own goal running: cancel it (`/navigate_to_pose/_action/cancel_goal`,
