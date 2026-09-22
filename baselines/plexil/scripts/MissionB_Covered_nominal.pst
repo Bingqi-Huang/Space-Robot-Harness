@@ -15,10 +15,10 @@ script {
 
   command pick ("the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand":string,
                 "the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)":string,
-                "spare_oru":string) = true:bool;
+                "spare_oru":string, "depot_stand/slot_0":string) = true:bool;
   command-success pick ("the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand":string,
                         "the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)":string,
-                        "spare_oru":string);
+                        "spare_oru":string, "depot_stand/slot_0":string);
 
   command navigate_to_feature ("pdu_1_shelf/shelf":string, 1.5:real) = true:bool;
   command-success navigate_to_feature ("pdu_1_shelf/shelf":string, 1.5:real);

@@ -245,9 +245,17 @@ private:
     goal.capability = capability;
     goal.args_json = args_json;
     rclcpp_action::Client<ExecuteCapability>::SendGoalOptions opts;
+    // Only ack a genuine rejection here. PLEXIL's own actionComplete gate (CommandHandleKnown, src/intfc/CommandImpl.cc)
+    // is satisfied by ANY known command_handle, terminal or not -- acking COMMAND_SENT_TO_SYSTEM the instant the ROS
+    // goal is merely *accepted* (a handshake, not the robot moving) made the executive treat every command as already
+    // finished, so the whole plan raced through all its nodes in under a second while the real capability calls were
+    // still running (research repo: PLEXIL Mission B live run, 2026-09-22). The command stays EXECUTING, with no ack
+    // and no known handle, until the terminal ack below actually arrives.
     opts.goal_response_callback = [cmd, intf](auto handle) {
-      intf->handleCommandAck(cmd, handle ? PLEXIL::COMMAND_SENT_TO_SYSTEM : PLEXIL::COMMAND_DENIED);
-      intf->notifyOfExternalEvent();
+      if (!handle) {
+        intf->handleCommandAck(cmd, PLEXIL::COMMAND_DENIED);
+        intf->notifyOfExternalEvent();
+      }
     };
     opts.result_callback = [this, cmd, intf, capability](
                              rclcpp_action::ClientGoalHandle<ExecuteCapability>::WrappedResult const &wrapped) {
@@ -269,8 +277,9 @@ private:
   }
 
   // RequestOperator(String question) -> String answer. No action server/goal handshake here (the console is a plain
-  // subscriber): ack SENT_TO_SYSTEM once the request is published, then leave the command EXECUTING -- exactly the
-  // async pattern send()/result_callback use above -- until a reply with a matching request_id arrives.
+  // subscriber): publish the request and leave the command EXECUTING with no ack at all -- see send()'s comment on
+  // why an early COMMAND_SENT_TO_SYSTEM ack is wrong, not just superfluous -- until a reply with a matching
+  // request_id arrives and onOperatorReply() delivers the one real ack below.
   void requestOperator(PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf)
   {
     std::vector<PLEXIL::Value> const &args = cmd->getArgValues();
@@ -289,8 +298,6 @@ private:
     m.text = question;
     m.metadata_json = "{\"request_id\": \"" + json_escape(request_id) + "\"}";
     request_pub_->publish(m);
-    intf->handleCommandAck(cmd, PLEXIL::COMMAND_SENT_TO_SYSTEM);
-    intf->notifyOfExternalEvent();
   }
 
   void onOperatorReply(PromptStamped::SharedPtr msg)

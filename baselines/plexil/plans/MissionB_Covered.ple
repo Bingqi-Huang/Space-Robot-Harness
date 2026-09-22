@@ -19,7 +19,7 @@
 // and writing recovery against them now would be redone. See docs/baselines/plexil.md.
 
 LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
-LibraryAction PickItem(In String target, In String part, In String item, InOut Boolean ok);
+LibraryAction PickItem(In String target, In String part, In String item, In String support, InOut Boolean ok);
 LibraryAction PlaceItem(In String support, In String release_constraint, In String item, InOut Boolean ok);
 LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
 String Lookup LastCapabilityResult();
@@ -33,7 +33,7 @@ MissionB_Covered: Sequence
   Boolean ok = true;
 
   ToDepot: { PreCondition ok; LibraryCall DriveAndDock(feature = "depot_stand/slot_0", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
-  Pick:    { PreCondition ok; LibraryCall PickItem(target = OruTarget, part = OruPart, item = Item, ok = ok); }
+  Pick:    { PreCondition ok; LibraryCall PickItem(target = OruTarget, part = OruPart, item = Item, support = "depot_stand/slot_0", ok = ok); }
   ToShelf: { PreCondition ok; LibraryCall DriveAndDock(feature = "pdu_1_shelf/shelf", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
   Place:   { PreCondition ok; LibraryCall PlaceItem(support = "pdu_1_shelf/shelf", release_constraint = "below_overhang", item = Item, ok = ok); }
   Return:  { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }

@@ -34,12 +34,14 @@
       <Param type="string">the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand</Param>
       <Param type="string">the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)</Param>
       <Param type="string">spare_oru</Param>
+      <Param type="string">depot_stand/slot_0</Param>
       <Result>true</Result>
     </Command>
     <CommandAck name="pick" type="string">
       <Param type="string">the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand</Param>
       <Param type="string">the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)</Param>
       <Param type="string">spare_oru</Param>
+      <Param type="string">depot_stand/slot_0</Param>
       <Result>COMMAND_SUCCESS</Result>
     </CommandAck>
     <Command name="navigate_to_feature" type="bool">
