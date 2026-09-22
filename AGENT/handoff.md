@@ -16,8 +16,13 @@ has the rest of `execution_plan` §21 (baselines, the freeze, the campaign) queu
 This closes the sequence the user set (`todo.md`: Mission B reliable, Mission A, then baselines/freeze/experiments). Next up is
 that last item, not yet scoped.
 
-- **Mission A**: `mc6`, from scratch, video sent (PDU-2 fault found, pressed, verified, dock, arm stowed, evaluator `success: true`).
-- **Mission B**: `mc7b`, from scratch, video sent (ORU delivered to PDU-1's shelf, dock, arm stowed, evaluator `success: true`).
+- **Mission A**: `artifacts/runs/mission_a_success_20260922` (was `mc6`), from scratch, video sent (PDU-2 fault found, pressed,
+  verified, dock, arm stowed, evaluator `success: true`).
+- **Mission B**: `artifacts/runs/mission_b_success_20260922` (was `mc7b`), from scratch, video sent (ORU delivered to PDU-1's
+  shelf, dock, arm stowed, evaluator `success: true`).
+- `artifacts/runs/` was ~300 directories, most from before this session; kept only what's cited as evidence in some doc under
+  `docs/`/`AGENT/`, or read by another worktree's code (checked against all seven). Everything else moved into
+  `artifacts/runs/_debug_archive/` (117 GB, not deleted -- ask before actually deleting it).
 
 Getting there fixed real bugs, found by auditing rather than by reacting to one more failed run (the user's explicit correction
 mid-session, after two rejected patches):
