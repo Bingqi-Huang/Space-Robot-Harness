@@ -86,8 +86,45 @@ Goals: reach `depot_stand/slot_0@work`, end at `dock`.
 - `--fail dock_at_feature:1..3` (base stays at approach): plans 2 and 3 = dock_at_feature → navigate_to_pose; after
   the third failure `no_plan (attempts exhausted)`; the host ends PLEXIL's loop cleanly.
 
+## Domain: Mission B (2026-09-22; F105)
+
+`domain/mission-b-model.nddl` adds `Posture`/`Jaws` timelines on `LunarBot` and an `Item`/`ItemLoc` class, plus
+`arm_ready`/`stow`/`pick`/`place` actions, to the base timeline `skeleton-model.nddl` already had (kept as its own
+file so the base-only regression, `run_offline.sh`, stays testable on its own). Given only the mission's own
+outcomes as goals (`spare_oru` delivered, arm stowed, base at dock -- `--goal spare_oru@pdu_1_shelf/shelf --goal
+stowed --final dock`), the solver derives the full 9-step plan itself: pick/place's own domain preconditions force
+it to insert `navigate_to_feature`/`dock_at_feature`/`arm_ready`, the same way nasa/europa's own Rover example
+derives `Go->Unstow->Place->TakeSample->PhoneHome` from the single goal `TakeSample(rock4)`. Getting a correct
+derivation found one real domain-modelling bug (`met_by` used where `contained_by` was needed for a
+cross-timeline precondition) and two bugs in EUROPA/`host.py` itself (a solver segfault on chained goals; a
+condition slave's empty token-owner corrupting the next solve's NDDL) -- full account: F105,
+`docs/research_findings.md`.
+
+An item's natural-language description (`pick`'s `target`/`part`) and catalogue release constraint (`place`'s
+`release_constraint`) are not NDDL parameters: the solver has no reason to search over them (there is exactly one
+way to describe an item), so they are filled in by `host.py`'s `capability_call` from a small
+`ITEM_DESCRIPTIONS` table, the same status as PLEXIL's plan-level `OruTarget`/`OruPart` constants
+(`docs/baselines/plexil.md`). `NEAR_M`/`ATTEMPTS`/the jaw-holding band moved from hard-coded constants into
+`config/host_config.json` (execution_plan §0 rule 11).
+
+### Traceability (nominal path; format: docs/baselines/authoring_spec.md)
+
+| Domain element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| `Item`, `ItemLoc` (`On`/`Held`) | one movable item, on a surveyed support or in the jaws | Mission B's own object (`--item spare_oru:depot_stand/slot_0`); matches Ours'/PLEXIL's covered-instance item | (a) |
+| `pick`/`place` contained_by `posture.Ready`/`base.At(support.work)` | the arm must be readied and docked first | Ours'/PLEXIL's covered-instance call order (research repo F92-F100, F104); not required by `pick`'s own contract, which plans its own way from wherever the arm is | (a) |
+| `stow` contained_by `jaws.Empty` | folding a held item through the rover is refused | `openral_ext/capability_server/node.py`'s own hardware-limit refusal for `stow`/`arm_ready` | (b) |
+| `arm_ready`/`stow`/`pick`/`place` duration bounds | 120 / 120 / 900 / 600 s | `contracts.yaml` `default_deadline_s` | (b) |
+| `pick`'s `target`/`part`, `place`'s `release_constraint` | ORU / bail-neck description, `below_overhang` | Ours' own covered-instance calls (`R/artifacts/runs/g8d,e,s,t/ours/events.jsonl`); matches PLEXIL's `OruTarget`/`OruPart`/`release_constraint` | (a) |
+
+No row cites a held-out run or scenario name. Recovery beyond replan-on-failure (the same `facts_from_result` ->
+replan loop the skeleton uses, extended to read `evidence.arm` for `arm_ready`/`stow`/`pick`/`place`'s own
+posture/jaws state on failure -- every capability's evidence carries it, no extra query needed) is deferred the
+same way PLEXIL's predefined recovery set is: pick/place's failure kinds are settled (F92-F100) but a *frozen*
+recovery policy is not yet written for either baseline.
+
 ## Open
 
-- Mission B domain and its result translation; the live launch/check script (modelled on
-  `experiments/launch/lunar_base_d0/d0_plexil_mission_a_check.py`).
+- The live launch/check script (modelled on `experiments/launch/lunar_base_d0/d0_plexil_mission_b_check.py`) and
+  a live run on the corrected-arm graph -- offline-verified only so far (`run_offline_mission_b.sh`).
 - The plan is ordered by earliest start; concurrency between activities is not exploited (one capability at a time).
