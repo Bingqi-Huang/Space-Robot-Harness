@@ -16,9 +16,11 @@ overlay panel**: Ours (F92-F100, `mission_b_success_20260922`), PLEXIL (F104, `p
 EUROPA→PLEXIL (F105, `europa_mission_b_success_20260922`, first live attempt succeeded outright -- every offline
 fix held, no live-specific debugging needed). EUROPA's domain (`mission-b-model.nddl`) is given only the mission's
 own outcomes as goals (item delivered, arm stowed, base at dock) and derives the full 9-step plan itself. Mission A
-PLEXIL already ran covered once (F52, older stack) but its plan still uses stage-level tools instead of the shared
-`press` capability, which has never been tested live at all. **Still no campaign**: the three methods have run
-Mission B covered independently, never side by side on one frozen instance set, and nothing is frozen yet.
+PLEXIL already ran covered once (F52, older stack) but its plan still uses stage-level Cartesian primitives instead
+of the shared `press` capability -- `press` itself is verified live (Ours' Mission A success run, F92-F100, called
+it and it verified); nobody has rewritten PLEXIL's Mission A plan to call it yet, or built EUROPA's Mission A domain
+at all. **Still no campaign**: the three methods have run Mission B covered independently, never side by side on one
+frozen instance set, and nothing is frozen yet.
 
 - `artifacts/runs/` debug archive from earlier this session (117 GB) still sits at `_debug_archive/`, not deleted.
 

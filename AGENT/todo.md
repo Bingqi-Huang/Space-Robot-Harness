@@ -26,15 +26,17 @@ see handoff.md. **Next: baselines / freeze / experiments**, not yet started as o
        decide the final set (see "Open questions" below) *before* extending any baseline artifact, or a covered case
        for one method becomes held-out fiction for another.
 2. [ ] Complete PLEXIL: Mission B's predefined recovery set (pick/place failure kinds are now settled -- F92-F100;
-       Mission B covered itself now confirmed live end to end, F104); re-confirm Mission A covered live on the
-       current stack (F52 was the older arm), then its plan once `press` has a live run of its own.
+       Mission B covered itself now confirmed live end to end, F104); rewrite Mission A's plan onto the shared
+       `press` capability (verified live, Ours' Mission A success, F92-F100 -- not itself a blocker any more) and
+       re-confirm Mission A covered live on the current stack (F52 was the older arm/old plan).
 3. [x] EUROPA: Mission B domain, offline verification, live run all done (F105) -- first live attempt succeeded
-       outright. EUROPA's Mission A domain not started (waits on `press`, same as PLEXIL's).
+       outright. EUROPA's Mission A domain not started at all.
 4. [ ] **H3 has no evidence yet**: every capability is `routine`, the guard has only ever fired on e-stop. Add the
        explicit hard invariant/approval classes the chosen held-out scenarios actually need (§4.3, §10.2) -- see
        "Open questions".
 5. [ ] All three methods now complete Mission B covered live independently; still need Mission A covered on all
-       three (blocked on `press`), and a run-manifest/freeze pass actually exercising the merged evaluation infra
+       three (PLEXIL's plan needs rewriting onto `press`; EUROPA's Mission A domain does not exist yet), and a
+       run-manifest/freeze pass actually exercising the merged evaluation infra
        (operator console, PLEXIL/EUROPA trace normalizers) against these corrected-arm runs, not just F103's dev runs.
 6. [ ] Scenario manifests + closed-capability certificates (`experiments/scenarios/`) exist for 2 covered + 5 held-out
        candidates but were only ever exercised on 5 development runs (F103) -- re-validate.
