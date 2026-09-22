@@ -4598,19 +4598,27 @@ took the friction off the arm; this is what remained.
 against their behaviour as it is, and nothing in the record shows them at fault. The servo's gains and ramps were tuned against the soft arm
 and are conservative for the arm as configured; they are not touched until a run shows them wrong.
 
-## F99 -- a joint-limited retreat looked like a failed place, not a cleared one
+## F99 -- a joint pinned at its stop is a joint-space fact, not a Cartesian one
 
 gt2c1, the first pick-carry-place chain on the corrected arm (F98): pick held the ORU through the whole carry, `over` and `lower`
 placed it 6 mm from the expected shelf height, and `place` still failed. The withdrawal leg of `retreat` (collision checking off,
 by design -- the open jaws start around the part they just released) stalled 15 mm short of its target with joint4 at -2.31 rad,
-0.046 rad from its -2.356 stop: the fixed release orientation, backing out horizontally under the `below_overhang` constraint,
-asked more of that one joint than the arm's own low, steep release pose had left to give. Nothing was in the way -- the servo's own
-progress test, not a collision, ended the stage.
+0.046 rad from its -2.356 stop. Nothing was in the way -- the servo's own progress test, not a collision, ended the stage.
 
-Retreat's job is to end clear of the item it just released, which a joint-limited near-miss already does; both of its servo calls
-now return `{"stalled": True, ...}` instead of raising (`stall_returns=True`, the same outcome type `press`'s contact stroke already
-uses), recorded in evidence. A genuine obstruction on the collision-checked second leg still raises, unchanged. What decides whether
-the place actually held is downstream and independent of this: the settle stage's wrist-image stillness check and the boundary's own
-`item_placed` verification, not the skill's own progress report.
+Two fixes were tried and rejected before this one, on the user's own read of each. The first let a joint-limited stall stand as
+retreat's result, on the reasoning that ending clear of the item is retreat's job and a 15 mm shortfall already does that -- this
+treats the symptom, not the question of why a plain 15 cm withdrawal ran a joint to its stop. The second re-solved inverse
+kinematics for the same (position, orientation) target from several seeds, on the reasoning that `over`/`lower` are local,
+incremental tracking with no look-ahead -- nothing ever chose the release configuration for room to retreat from, so the servo
+was stuck on one branch when another likely reaches the same pose without the joint at its edge. Asked why this still went
+through a Cartesian target and a seed search for a problem that is "one joint is stuck," the honest answer is it did not need to:
+a joint pinned at its stop is a fact about that joint, not about the pose. Finding it a target pose and re-solving IK for one is
+solving a harder problem than the one that exists.
 
-Not yet run to a conclusion: gt2c2 (the run that surfaced this) with the fix applied.
+The fix: `joints_off_their_stops` (`_eye_in_hand.py`) walks any joint `posture_cost` would already call "at its limit" (within
+0.3 rad of the stop -- the same threshold, not a new number) back to exactly that clear, towards its own working centre, and
+leaves every other joint untouched. No target pose, no inverse kinematics, no seed search. `plan_to` makes the joint move,
+collision-aware, since by the time a stall is detected the arm is already most of the way through the withdrawal and clear of
+what the released item sat against. A stall that is not at a joint's stop still raises, unchanged.
+
+Not yet run to a conclusion: gt2c3, with this fix, on the same snapshot gt2c1 stalled on.
