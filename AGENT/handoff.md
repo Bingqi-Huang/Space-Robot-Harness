@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-22 (F92-F98). Read `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then `AGENT/todo.md`.
+Updated 2026-09-22 (F92-F100). Read `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then `AGENT/todo.md`.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
 boundaries. No Mission-specific skill, hidden hint, numeric tuning or recovery graph. Simulator truth is for post-hoc diagnosis and
 drawing only, never for a decision (user: "that is cheating").
@@ -16,8 +16,15 @@ reported, dock, arm stowed); mc5 has video + a complete bag (`artifacts/runs/mc5
 and the `place` calls all reach the shelf, but the ORU leaves the fingers when `place` starts (gc3, gt1c2). Cause found late on
 2026-09-22 (F98): the arm's drive gains are applied by PhysX per degree, so every joint was 57x softer than configured (10.5 N m/rad, damping
 ratio 0.05): it sagged under a 1 kg unit and rang at 1 Hz after any move. Fixed in SRB `lunarbot.py` (gains x 180/pi); bare test: kick
-settles in 0.3 s, ORU held to 0.004 rad. **Nothing on the corrected arm has a full run behind it yet**: mc6 (Mission A, recorded) and
-gt2 (scripted pick-carry-place, no model) were started on it.
+settles in 0.3 s, ORU held to 0.004 rad.
+
+**On the corrected arm: Mission A succeeded (mc6, evaluator success, video sent).** Mission B's pick+place chain is now verified
+too (gt2c8, scripted, no model, no video, `delivered: true`) after three more fixes found by auditing the whole `place` flow rather
+than reacting to one more run (F99, F100): `over` had no escape from a joint pinned at its own stop -- the same local, no-lookahead
+tracking `retreat` had (F99's fix, `joints_off_their_stops`, pure joint arithmetic, no IK), so the same dead end could equally turn
+up there; `plan_to` never told the planner about a carried item, a latent gap the `over` fix would have made live; `retreat_m`/
+`retreat_up_m` cleared the evaluator's own "not held" distance (0.30 m) only in the nominal case, not the worst case once each leg's
+own tolerance is spent (0.30/0.25, not 0.25/0.20). A full Mission B run with video is in progress (`mc7b`).
 
 ## What was done since ga8, by kind (F92-F98 carry the detail)
 
