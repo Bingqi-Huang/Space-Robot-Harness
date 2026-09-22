@@ -4621,4 +4621,40 @@ leaves every other joint untouched. No target pose, no inverse kinematics, no se
 collision-aware, since by the time a stall is detected the arm is already most of the way through the withdrawal and clear of
 what the released item sat against. A stall that is not at a joint's stop still raises, unchanged.
 
-Not yet run to a conclusion: gt2c3, with this fix, on the same snapshot gt2c1 stalled on.
+Ran to a conclusion in F100 -- verified, but not by this fix alone.
+
+## F100 -- what auditing the whole `place` flow found, and the first clean pick-to-place delivery
+
+Told, correctly, to stop reacting to one more live failure and instead read the whole of `place` for every way it could still be
+wrong (user's explicit direction after F99's second attempt), three more gaps turned up without running anything:
+
+- **`over` had no escape from a joint pinned at its own stop.** It is the same local, no-lookahead Cartesian tracking `retreat`
+  is (F99): each step continues from wherever the arm already is, so nothing about it chooses a configuration with room to move
+  on from. The dead end F99 found in `retreat` could equally show up in `over`, on a different release pose, and had nothing to
+  catch it. Both stages now share one helper (`_move_or_free_a_joint`): a stall with the scene clear gets `joints_off_their_stops`
+  and a planned move: no target pose, no inverse kinematics, just the pinned joint walked back to `posture_cost`'s own 0.3 rad
+  "at its limit" margin.
+- **`plan_to` never told the planner about a carried item.** `state_valid` already attaches the held item's collision geometry to
+  every check it makes; `plan_to`'s own MoveIt request never did. Nothing had exercised this before, because every existing
+  caller of `plan_to` runs either before a grasp or after a release. Wiring `over`'s fallback to the same planner is the first
+  path that can fire mid-carry, and an unaware plan there could swing what the arm is holding into the scene it never checked
+  against. Fixed to match `state_valid`.
+- **The retreat distance cleared the evaluator's own "not held" definition (F99, 0.30 m) only in the nominal case.** Each leg's
+  own tolerance (0.015 m) can fall short of its target; the worst case at 0.25 + 0.20 m is 0.299 m -- inside the 0.30 m the check
+  asks for, not past it. 0.30 + 0.25 m clears it at 0.37 m worst case.
+
+A fourth thing found along the way was self-inflicted: the first draft of the retreat-distance fix put its explanation as a `#`
+comment inside `default_goal_json`, a literal JSON string in the YAML manifest -- not a comment there, and it broke the manifest
+outright. Caught by running the unit suite, not by another sim launch.
+
+**gt2c8** (scripted pick -> navigate -> dock -> place, the pre-pick snapshot, no model, no video): pick held through the full carry,
+`lower` stalled 4.2 mm from the expected height, `retreat`'s first leg hit joint4's stop 18.5 cm into the withdrawal and the new
+escape freed it (`joint4: -2.306 -> -2.056`), the second leg completed locally, settle read the item motionless (190,215 near
+pixels, comfortably over the 200 floor even at the wider retreat), and the evaluator's own `mission_state` read `oru_on:
+"pdu_1_shelf/shelf", delivered: true`. The one `pick` failure on the way there (gt2c7, the VLM pointing at the item's body instead
+of its handle, "nothing beyond the gripper in the view to fit the declared interface to") was not a code defect: `find` deliberately
+has no internal retry ("the model answers within the deadline or the stage returns with what it has"), on the same principle as
+everywhere else in this harness -- retrying a bad read is the reasoner's job, not something a skill does silently. The scripted
+chain has no reasoner, so it just tried again.
+
+Not yet run: the same chain end to end inside the real Mission B loop, with a model and with video.
