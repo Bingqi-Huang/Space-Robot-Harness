@@ -72,6 +72,15 @@ SRB or asset change needs the graph rebooted. Kill by run tag, never by name: `t
 limit: `ffmpeg -c:v libx264 -crf 31 -c:a aac -b:a 96k` re-encode (a decode warning mid-file from the teardown's own
 SIGINT-mid-fragment remux is harmless if the output duration still matches the source).
 
+**PLEXIL's own overlay panel** (`experiments/video/plexil_mission_video.py`, same layout/colours as Ours'
+`mission_video.py` -- MODEL card dropped, PLAN card is the fixed plan graph with live per-step state, NOW's
+rationale line replaced by the active library call): first, `<ROS python3.10> experiments/video/track_from_bag.py
+<run>/robot_motion <run>/track.json` (mini-map) and `experiments/video/plexil_timeline_from_logs.py <run dir>
+<run>/plexil_timeline.json` (resolves `plexil_node_trace.log`/`capability_server.log`'s wall-clock timestamps to
+sim time via the bag's own `/clock` -- needs `rosbag2_py`, so the ROS python, not `openral/.venv`); then
+`openral/.venv/bin/python experiments/video/plexil_mission_video.py <run>/mission_b_plexil.mp4
+<run>/plexil_timeline.json <out.mp4> --track <run>/track.json --width 1280`.
+
 ## Rules
 
 - One graph per GPU (A on 1, B on 0). All paths absolute. No `pgrep -f` / `pkill -f`.
