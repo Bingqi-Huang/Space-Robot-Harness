@@ -20,18 +20,27 @@ cd "$HERE/../../../openral"
 source /opt/ros/humble/setup.bash
 source install/setup.bash
 export ROS_DOMAIN_ID=${D0_DOMAIN:-77} ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  # D0_DOMAIN=78 for a second graph on GPU 1
+# camera images need large shared-memory segments, or most frames are lost in transport (fastdds_large_shm.xml)
+export FASTRTPS_DEFAULT_PROFILES_FILE="$HERE/fastdds_large_shm.xml"
 # Two graphs share this host (GPU 0 / GPU 1): the deploy CLI's argv-signature reaps at start and exit, and its
 # Fast-DDS SHM purge, would kill or silence the sibling (research repo F51). This script's own teardown is by run tag.
 export OPENRAL_SKIP_ORPHAN_REAP=1
-# the LLM/VLM gateway (AGENT/VLM_provider.md) for the scene VLM behind `observe` and Ours' reasoner; it needs no proxy,
-# and the host's SOCKS proxy breaks httpx without socksio (research repo F38)
-SPACE_LLM_API_KEY=$(grep -o 'sk-[A-Za-z0-9_-]*' "$HERE/../../../AGENT/VLM_provider.md" | head -1) && export SPACE_LLM_API_KEY
+# Both the reasoner and the scene/grasp VLM run on DeepSeek's own endpoint, on its key (the second one in
+# AGENT/VLM_provider.md). The shared gateway is no longer used: a `select` request that answered in 2-9 s from a shell
+# hung for the full 300 s deadline from inside the runner, run after run (research repo F58). It needs no proxy, and
+# the host's SOCKS proxy breaks httpx without socksio (research repo F38).
+SPACE_LLM_API_KEY=$(grep -o 'sk-[A-Za-z0-9_-]*' "$HERE/../../../AGENT/VLM_provider.md" | tail -1) && export SPACE_LLM_API_KEY
+SPACE_REASONER_API_KEY=$SPACE_LLM_API_KEY && export SPACE_REASONER_API_KEY
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 SCENE=${D0_SCENE:-scenes/deploy/srb_lunar_base_mission_b.yaml}
 if [ -n "$D0_VIDEO$D0_GPU$D0_SCENERY$D0_SCENARIO$D0_PROFILE$D0_GPU_PHYSICS" ]; then
   # A copy of the scene, adjusted for this run:
   #   D0_VIDEO=<file.mp4>  SRB streams a robot-following viewer camera to that file (srb/utils/video_stream.py);
-  #                        rendering costs wall time, so only for runs already known to pass.
+  #                        rendering costs wall time, so only for runs already known to pass. D0_VIDEO_RES ("W,H",
+  #                        default 960,540), D0_VIDEO_STRIDE (env steps per frame, 5 = 10 fps of sim time) and
+  #                        D0_VIDEO_SPEEDUP (1 = played at sim time) go with it. Raise the resolution before the
+  #                        frame rate: bv1 rendered enough to drag the sim to 0.06x real time and the arm's hold
+  #                        sagged 15 cm until `servo over shelf` stalled -- the render broke the run, not the skill.
   #   D0_GPU=1             SRB on the second GPU (a parallel graph; pair with D0_DOMAIN=78).
   #   D0_SCENERY=<name>    another SRB scenery for the same task (e.g. lunar_base_route_block).
   #   D0_SCENARIO=<name>   the task's env.scenario (e.g. heldout_cover_obstruction).
@@ -45,7 +54,9 @@ argv = d["simulator"]["argv"]
 if video:
     argv.insert(argv.index("--env"), "--video")
     d["simulator"].setdefault("env_set", {}).update(SRB_VIDEO_PATH=video, SRB_VIDEO_FOLLOW="robot",
-                                                   SRB_VIDEO_STRIDE=os.environ.get("D0_VIDEO_STRIDE", "5"))
+                                                   SRB_VIDEO_STRIDE=os.environ.get("D0_VIDEO_STRIDE", "5"),
+                                                   SRB_VIDEO_SPEEDUP=os.environ.get("D0_VIDEO_SPEEDUP", "1"),
+                                                   SRB_VIDEO_RES=os.environ.get("D0_VIDEO_RES", "960,540"))
     d["simulator"]["boot_timeout_s"] = 1800.0
 if gpu_physics:
     d["simulator"].setdefault("env_set", {})["SRB_SIM_DEVICE"] = "cuda"
@@ -87,7 +98,9 @@ if [ "${D0_PLANNING_SCENE:-1}" != 0 ]; then
   # plans in, on by default (D0_PLANNING_SCENE=0 turns it off); tagged for the teardown
   D0_RUN_TAG="$LOG" setsid .venv/bin/python ../openral_ext/planning_scene/node.py > "$LOG/planning_scene.log" 2>&1 &
 fi
-timeout 14400 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
+# The check is an actuator client too. A failed boot must not leave it waiting
+# to command a later graph in the same ROS domain after teardown.
+D0_RUN_TAG="$LOG" timeout 14400 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
 echo "CHECK_EXIT $?" >> "$LOG/check.log"
 if [ -n "$D0_HOLD" ]; then
   # step-wise development: the graph stays up after the check for attach_d0.sh (continue from the failed step);

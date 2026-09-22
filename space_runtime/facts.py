@@ -28,10 +28,45 @@ def empty_facts() -> dict:
         "recent": [],  # last RECENT tool steps: proposal, guard outcome, result
         "reasoner": None,  # {"model", "endpoint"} currently attached
         "reasoner_history": [],  # every attach: {"seq", "model", "endpoint"}
+        "objects": {},  # movable item (as the mission agent named it) -> {"state": in_gripper|on <support>|unknown, "seq", "by"}
+        "attempts": [],  # manipulation operations and their outcomes: {"seq", "operation", "args", "success", "stage", "why", "saw"}
         "active_execution": None,  # {"seq", "capability", "args"} between execution_started and _finished
         "reports": [],  # operator-facing reports/requests the agent emitted
         "terminal": None,  # {"kind": report|request|budget, "seq"}
     }
+
+
+def attempt_summary(ev: dict) -> dict:
+    sk = ev["evidence"]["skill"]
+    out = {"seq": ev["seq"], "operation": ev["capability"], "args": ev["args"], "success": ev["success"],
+           "stage": sk.get("failed_stage") or sk.get("stage"), "why": sk.get("why", ""), "sim_s": sk.get("sim_s")}
+    tries = [{k: a[k] for k in ("attempt", "outcome", "fit") if k in a} for a in sk.get("attempts", [])]
+    if tries:
+        out["tries"] = tries
+    # Reconciliation (method mechanism, not a skill filter): how much of the catalogue's declared interface the
+    # wrist depth image agreed with where the skill took hold -- the picture against the record, in two numbers.
+    for a in sk.get("attempts", []):
+        if a.get("fit"):
+            out.setdefault("reconciliation", []).append({
+                "interface_agreement": a["fit"]["agreement"], "residual_m": a["fit"]["residual_m"],
+                "points": a["fit"]["points"]})
+    find = sk.get("find") or {}
+    views = [v.get("vlm", {}) for v in find.get("views", [])] + [find.get("locate", {})]
+    saw = sorted({v["what_is_visible"] for v in views if v.get("what_is_visible")})
+    if saw:
+        out["vision_model_saw"] = saw[:3]
+    out["measurements"] = {k: {name: value for name, value in sk[k].items()
+                               if name not in ("before", "after", "before_depth", "gripper_mask")}
+                           for k in ("hold_check", "bring_in") if k in sk}
+    out["base_pose"] = ev["evidence"].get("base_pose")
+    # Preserve the physical execution conditions across reasoner restarts. These
+    # are evidence, not held facts or a prescribed recovery sequence.
+    out["execution_conditions"] = {
+        key: sk[key] for key in ("contact_scene", "target_lock", "last_ik", "last_state_validity",
+                                "contact_path_observation", "closure_precondition", "decision_required")
+        if key in sk
+    }
+    return out
 
 
 def apply(f: dict, ev: dict) -> None:
@@ -62,13 +97,51 @@ def apply(f: dict, ev: dict) -> None:
         evd = ev["evidence"]
         f["recent"][-1]["result"] = {"success": ev["success"], "failure_reason": ev["failure_reason"],
                                      "sim_s": evd.get("sim_s"), "goal": evd.get("goal")}
+        if "skill" in evd:  # an operation's own record: the stage it reached and what its camera / vision model saw
+            f["attempts"].append(attempt_summary(ev))
+            # A disagreement between sources is an anomaly naming them (plan v4 §5), not a detail inside the attempt
+            for r in f["attempts"][-1].get("reconciliation", []):
+                if r["interface_agreement"] < 0.5:
+                    f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": (
+                        f"source disagreement: the equipment catalogue's lifting interface, fitted where the vision model "
+                        f"placed the item, agreed with the wrist depth image over only {r['interface_agreement']:.0%} of its "
+                        f"surface (mean residual {r['residual_m'] * 1000:.1f} mm over {r['points']} pixels)")})
         f["robot"].update({key: evd[src] for key, src in (("base", "base_pose"), ("tcp", "tcp_pose"), ("arm", "arm")) if isinstance(evd.get(src), dict)})
         # a capability that now succeeds resolves its own earlier failures
         f["anomalies"] = [a for a in f["anomalies"] if not (ev["success"] and a["capability"] == ev["capability"])]
         if not ev["success"]:
-            f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": ev["failure_reason"]})
+            # a remote service that did not answer is an outage of the stack, not an outcome of the robot's work: the
+            # anomaly says so, so the record separates "the method failed here" from "the gateway was down"
+            dep = (evd.get("skill") or {}).get("dependency_unavailable")
+            f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": ev["failure_reason"],
+                                   **({"service_outage": dep} if dep else {})})
     elif k == "effect_verified":
         f["verified_effects"].append({key: ev[key] for key in ev if key not in ("kind", "wall_t")})
+        # object facts change only on verified evidence
+        if ev["effect"] == "item_held":
+            if ev["holds"]:
+                f["objects"][ev["target"]] = {"state": "in_gripper", "seq": ev["seq"], "by": "verified item_held"}
+            elif f["objects"].get(ev["target"], {}).get("state") == "in_gripper" or ev["jaw"] == "holding_object":
+                f["objects"][ev["target"]] = {"state": "unknown", "seq": ev["seq"], "by": "item_held did not verify"}
+        if ev["effect"] == "item_still_held" and not ev["holds"]:
+            # Failed confirmation invalidates the held fact; it does not prove the item fell or the jaws are empty.
+            # Preserve the observation so the agent can resolve the uncertainty.
+            seen = f" -- the gripper's camera shows {ev['seen']}" if ev.get("seen") else ""
+            if ev.get("record_and_jaw_expect_held"):
+                seen += (f" (read twice, the second time with the facts about what a held handle looks like; the pick "
+                         f"record and the jaw angle still say held)")
+            for name in ev["items"]:
+                f["objects"][name] = {"state": "unknown", "seq": ev["seq"],
+                                      "by": f"holding not confirmed after {ev['capability']}{seen} (jaw {ev['jaw_rad']} rad)"}
+        if ev["effect"] == "item_placed":
+            held = [name for name, o in f["objects"].items() if o["state"] == "in_gripper"]
+            for name in held:
+                f["objects"][name] = ({"state": f"on {ev['support']}", "seq": ev["seq"], "by": "verified item_placed"} if ev["holds"]
+                                      else {"state": "unknown", "seq": ev["seq"],
+                                            "by": "item_placed did not verify" + (
+                                                f": the jaws let go with the tool {ev['let_go_above_expected_m'] * 100:+.0f} cm from where the support "
+                                                f"should take the item, and the skill stopped at {ev.get('skill_stopped_at')}"
+                                                if ev.get("let_go_above_expected_m") is not None else "")})
     elif k == "query_answered":
         f["recent"][-1]["result"] = {"success": ev["success"], "value": ev["value"], "failure_reason": ev["failure_reason"]}
         if ev["success"]:

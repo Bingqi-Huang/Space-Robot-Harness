@@ -26,6 +26,9 @@ def render(facts: dict, step: int, max_steps: int) -> str:
     lines += [f"- view pose {name}: x={v['x']} y={v['y']} yaw={v['yaw']} (looks at {_j(v['looks_at'])})" for name, v in site["view_poses"].items()]
     lines.append(f"- rover dock: {_j(site['dock'])}")
     out.append("## SITE (surveyed, fixed infrastructure)\n" + "\n".join(lines))
+    if site.get("equipment_catalogue"):
+        out.append("## EQUIPMENT CATALOGUE (documented prior knowledge; not current observations)\n"
+                   + _j(site["equipment_catalogue"]))
     r = f["robot"]
     out.append("## ROBOT STATE (latest robot-observable evidence)\n"
                f"base estimate: {_j(r['base']) if r['base'] else 'not yet read'}\n"
@@ -36,6 +39,16 @@ def render(facts: dict, step: int, max_steps: int) -> str:
     out.append("## VERIFIED EFFECTS (independent verification of what physically happened; latest last)\n" + ("\n".join(eff) or "(none yet)"))
     obs = [f"- [{o['seq']}] {o['query']}{_j(o['args']) if o['args'] else ''} -> {_j(o['value'])}" for o in f["observations"][-8:] if o["query"] != "site_map"]
     out.append("## OBSERVATIONS (query answers; latest last)\n" + ("\n".join(obs) or "(none yet)"))
+    objs = [f"- {name}: {o['state']} (record #{o['seq']}, {o['by']})" for name, o in f["objects"].items()]
+    out.append("## MOVABLE ITEMS (changed only by verified effects)\n" + ("\n".join(objs) or "(no verified manipulation yet)"))
+    tries = [f"- [{a['seq']}] {a['operation']}{_j(a['args'])} -> {'success' if a['success'] else 'failed'} at stage {a['stage']}"
+             + (f": {a['why']}" if a["why"] else "") + (f"; tries {_j(a['tries'])}" if a.get("tries") else "")
+             + (f"; base estimate {_j(a['base_pose'])}" if a.get("base_pose") else "")
+             + (f"; skill measurements {_j(a['measurements'])}" if a.get("measurements") else "")
+             + (f"; RECONCILIATION interface fit vs equipment catalogue {_j(a['reconciliation'])}" if a.get("reconciliation") else "")
+             + (f"; execution conditions {_j(a['execution_conditions'])}" if a.get("execution_conditions") else "")
+             + (f"; the vision model saw {_j(a['vision_model_saw'])}" if a.get("vision_model_saw") else "") for a in f["attempts"][-10:]]
+    out.append("## MANIPULATION ATTEMPTS (operations on items, latest last)\n" + ("\n".join(tries) or "(none yet)"))
     anomalies = [f"- [{a['seq']}] {a['capability']}: {a['reason']}" for a in f["anomalies"]]
     out.append("## UNRESOLVED ANOMALIES\n" + ("\n".join(anomalies) or "(none)"))
     if len(f["reasoner_history"]) > 1:

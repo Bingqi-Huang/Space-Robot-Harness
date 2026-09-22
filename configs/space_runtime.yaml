@@ -33,11 +33,25 @@ verification:
   jaw:  # EG2 jaw angle, rad: 0.10 closed on nothing, 0.82 open (F49)
     empty_max_rad: 0.12
     open_min_rad: 0.6
+  hold:  # item_held after pick: the item's image moves less than this fraction of a left-behind item's lift displacement
+    flow_fraction: 0.35
+    near_m: 0.6  # fallback when the skill did not record its gripper's own reach
+    beyond_gripper_m: 0.12  # a held item lies within this of the gripper's own surface, outside its silhouette
+    min_pixels: 200
+    min_lift_m: 0.05
+  press:  # pressed: the tool reached this far past the face the view measured, and is this far back off it again
+    min_contact_m: 0.005
+    min_retreat_m: 0.04
+  place:  # item_placed: jaws open, tool this far from the release point, the scene still between two frames
+    min_clear_m: 0.10
+    near_m: 1.0
+    settle_moved_mm: 3.0  # the item counts as still if the region moved less than this at its own depth
 
 # ---- reasoner -----------------------------------------------------------------------------------------------------
 reasoner:
-  model: DeepSeek-V4-Pro
-  endpoint: https://llmapi.paratera.com/v1
+  model: deepseek-flash
+  endpoint: https://api.deepseek.com
+  api_key_env: SPACE_REASONER_API_KEY  # DeepSeek's own endpoint (AGENT/VLM_provider.md); the scene VLM runs there too
   timeout_s: 180
   # DeepSeek's thinking mode stays on (user decision): offline A/B over run oa1's 42 decision points, off = 3.9 s median
   # per step vs 13.3 s on, but the reasoning capability matters more than the latency (research repo F53)

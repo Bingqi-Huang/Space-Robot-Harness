@@ -17,6 +17,7 @@ Run inside a sourced graph (ROS Humble + openral install + ros/install), repo ro
 import argparse
 import json
 import os
+import queue
 import threading
 import time
 from pathlib import Path
@@ -46,7 +47,14 @@ from space_runtime.tools import DECOMPOSE, REPORT_TOPIC, SET_TASK_STATUS, Harnes
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
-QUERY_RESEND_S = 180.0  # wall seconds before a query is sent again (a VLM localisation takes up to a minute)
+#: How long to wait for a query's answer before sending it again. Humble drops the response to the first service
+#: call after discovery, and a read-only query is free to repeat -- but one timer served two unrelated things: how
+#: long a lost response costs, and how long the slowest legitimate answer takes. At 180 s every run paid three
+#: minutes at the start for one dropped `site_map`, with the rover standing still (F90). What a query actually does
+#: is in its own contract: the three that go out to the vision model declare `uses_model`, and nothing else can take
+#: longer than the boundary needs to read its own state.
+QUERY_RESEND_S = 180.0      # a query answered by the remote vision model
+QUERY_RESEND_FAST_S = 4.0   # a query the boundary answers from its own state
 
 
 def wait(future):
@@ -75,12 +83,14 @@ class Agent:
         self.cfg, self.max_steps = cfg, rc["max_steps"]
         self.store = FactStore(run_dir / "events.jsonl")
         self.guard = Guard(cfg["guard"])
-        self.client = HarnessToolClient(model_id=model, base_url=rc["endpoint"], api_key=os.environ["SPACE_LLM_API_KEY"],
+        self.client = HarnessToolClient(model_id=model, base_url=rc["endpoint"], api_key=os.environ[rc.get("api_key_env", "SPACE_LLM_API_KEY")],
                                         timeout_s=rc["timeout_s"], thinking=rc["thinking"])
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())
         self.renderer = HarnessRenderer(self.store, self.max_steps)
-        self.palette = ToolPalette(execute_rskill_ids=frozenset([*CONTRACTS["effects"], *CONTRACTS["queries"], SET_TASK_STATUS, DECOMPOSE]))
+        self.palette = ToolPalette(execute_rskill_ids=frozenset([*(k for k, c in CONTRACTS["effects"].items() if not c.get("engineering")),
+                                                                 *(k for k, c in CONTRACTS["queries"].items() if not c.get("engineering")),
+                                                                 SET_TASK_STATUS, DECOMPOSE]))
 
     def event(self, kind: str, **data) -> dict:
         return self.store.append(kind, sim_t=round(self.sim_t, 2), **data)
@@ -90,10 +100,11 @@ class Agent:
         # queries are read-only: a request whose response is lost (Humble's first call right after discovery can drop it,
         # run ob1 hung 30 min on site_map) is simply sent again
         req = QueryCapability.Request(query=name, args_json=json.dumps(args))
+        resend = QUERY_RESEND_S if (CONTRACTS["queries"].get(name) or {}).get("uses_model") else QUERY_RESEND_FAST_S
         future = self.qry.call_async(req)
         while not future.done():
             t = time.time()
-            while not future.done() and time.time() - t < QUERY_RESEND_S:
+            while not future.done() and time.time() - t < resend:
                 time.sleep(0.05)
             if not future.done():
                 future = self.qry.call_async(req)
@@ -101,8 +112,30 @@ class Agent:
         return dict(success=r.success, value=json.loads(r.value_json) if r.success else None, failure_reason=r.failure_reason)
 
     def execute(self, name: str, args: dict) -> dict:
-        gh = wait(self.cap.send_goal_async(ExecuteCapability.Goal(capability=name, args_json=json.dumps(args))))
-        r = wait(gh.get_result_async()).result
+        inbox = queue.SimpleQueue()
+        gh = wait(self.cap.send_goal_async(
+            ExecuteCapability.Goal(capability=name, args_json=json.dumps(args)),
+            feedback_callback=inbox.put,
+        ))
+        if gh is None or not gh.accepted:
+            return dict(success=False, failure_kind=255, failure_reason="capability goal rejected", evidence={})
+        future = gh.get_result_async()
+        last = None
+        while True:
+            while not inbox.empty():
+                msg = inbox.get()
+                feedback = msg.feedback
+                evidence = json.loads(feedback.evidence_json or "{}")
+                key = (feedback.state, evidence.get("seq"))
+                if key != last:
+                    self.event("execution_feedback", capability=name,
+                               operation_id=bytes(msg.goal_id.uuid).hex(),
+                               phase=feedback.state, evidence=evidence)
+                    last = key
+            if future.done():
+                break
+            time.sleep(0.05)
+        r = future.result().result
         return dict(success=r.success, failure_kind=r.failure_kind, failure_reason=r.failure_reason,
                     evidence=json.loads(r.evidence_json or "{}"))
 
@@ -111,16 +144,22 @@ class Agent:
         state = self.store.facts["ledger"]
         return MissionState.from_state_dict(state) if state else None
 
+    def proposed(self, **data) -> None:
+        """A `tool_proposed` event with what the model said around the call: its reply text and, where the endpoint
+        returns it, its reasoning -- the record is the transcript, and a video of the run shows the model's own
+        words rather than a paraphrase."""
+        self.event("tool_proposed", **data, llm_s=getattr(self, "_llm_s", None), **self.client.last_reply)
+
     def dispatch(self, call) -> None:
         if isinstance(call, EmitPromptTool):
             tool = "report_to_operator" if call.target_topic == REPORT_TOPIC else "request_operator"
-            self.event("tool_proposed", tool=tool, args={"text": call.text}, rationale=call.rationale)
+            self.proposed(tool=tool, args={"text": call.text}, rationale=call.rationale)
             self.event("operator_report" if tool == "report_to_operator" else "operator_request", text=call.text)
             return
         name, args = call.rskill_id, json.loads(call.goal_params_json or "{}")
         if name == DECOMPOSE:
             subtasks, target = [t for t in args["subtasks"] if t.strip()], args.get("target_task_id", "")
-            self.event("tool_proposed", tool="decompose_mission", args={"target_task_id": target, "subtasks": subtasks}, rationale=call.rationale)
+            self.proposed(tool="decompose_mission", args={"target_task_id": target, "subtasks": subtasks}, rationale=call.rationale)
             ledger = self.ledger()
             if not target:
                 # replan: closed tasks stay as history, every open task is replaced by the new list
@@ -137,7 +176,7 @@ class Agent:
             if ok:
                 self.event("ledger_changed", ledger=ledger.to_state_dict())
             return
-        self.event("tool_proposed", tool=name, args=args, rationale=call.rationale)
+        self.proposed(tool=name, args=args, rationale=call.rationale)
         if name == SET_TASK_STATUS:
             ledger = self.ledger()
             ok = ledger is not None and ledger.active() is not None
@@ -161,16 +200,25 @@ class Agent:
         self.event("execution_started", capability=name, args=args)
         r = self.execute(name, args)
         self.event("execution_finished", capability=name, args=args, **r)
-        for effect in verify(name, args, r["evidence"], self.cfg["verification"]):
+        held = [n for n, o in self.store.facts["objects"].items() if o["state"] == "in_gripper"]
+        # what the record says is carried is looked at again, through the boundary's own read-only query. A query that
+        # does not answer leaves the fact as it was: a service outage is not evidence that the payload is gone (F58).
+        look = self.query("held_item", {}) if held and name not in ("place", "release") else None
+        for effect in verify(name, args, r["evidence"], self.cfg["verification"], held,
+                             look["value"] if look and look["success"] else None):
             self.event("effect_verified", capability=name, **effect)
+        self.event("verification_finished", capability=name)
 
     def run(self, mission: str | None) -> None:
         f = self.store.facts
         if f["mission"] is None:
             self.event("mission_received", text=mission)
         self.event("reasoner_attached", model=self.client.model_id, endpoint=self.client.base_url)
-        if f["site"] is None:
-            self.event("site_knowledge", site=self.query("site_map", {})["value"])
+        # Refresh the published site/equipment revision on attachment. This is
+        # prior knowledge; it never overwrites verified movable-object state.
+        site = self.query("site_map", {})
+        if site["success"]:
+            self.event("site_knowledge", site=site["value"])
         step = sum(ev["kind"] in ("tool_proposed", "reasoner_step_failed") for ev in self.store.events)
         while f["terminal"] is None:
             if step >= self.max_steps:
@@ -182,9 +230,10 @@ class Agent:
                     self.event("fdir_changed", fault="estop", active=bool(m.latched), detail=m.detail)
             step += 1
             self.renderer.step = step
+            self.event("reasoner_step_started", step=step)  # the model is thinking from here until the next proposal
             t = time.time()
             res = self.core.tick(world_state=None, renderer=self.renderer, palette=self.palette, force=True)
-            llm_s = round(time.time() - t, 1)
+            llm_s = self._llm_s = round(time.time() - t, 1)
             if res.tool_call is None:
                 raw = self.client.last_raw or {}
                 self.event("reasoner_step_failed", tool=raw.get("name", "?"), args=raw.get("arguments", ""), llm_s=llm_s,

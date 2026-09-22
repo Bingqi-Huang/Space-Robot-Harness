@@ -1,92 +1,86 @@
 # Handoff
 
-State as of 2026-09-17 night. Research goal and plan: `AGENT/research_content.md`, `AGENT/execution_plan.md` (§21 order:
-the proposed method before the baselines; §8.2 granularity rule). Findings F1–F56 in `docs/research_findings.md` —
-**read F53–F56**. Tasks: `AGENT/todo.md`. Current design: **`docs/semantic_to_metric_manipulation_plan.md` (v4)**.
+Updated 2026-09-22 (F92-F100). Read `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then `AGENT/todo.md`.
+Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
+boundaries. No Mission-specific skill, hidden hint, numeric tuning or recovery graph. Simulator truth is for post-hoc diagnosis and
+drawing only, never for a decision (user: "that is cheating").
 
-**The picture in one line:** Claude Code for a lunar robot. The model owns the mission (what to observe, where to go,
-what to pick, what to try after a failure); tools are whole operations (`navigate`, `dock`, `pick`, `place`, `press`,
-`observe`), never stages; the harness runs them, keeps the record, verifies effects automatically and holds the
-boundaries; OpenRAL is the borrowed tool runner / skill format.
+## Heads
 
-## Where the research stands
+research `feat/manipulation-contracts` (116 commits ahead of `main`), openral `feat/manipulation-contracts` (71 ahead of `master`),
+SRB `feat/lunar-base-scene` (44 ahead of `main`). All committed, nothing merged back yet -- ask before merging; each branch still
+has the rest of `execution_plan` §21 (baselines, the freeze, the campaign) queued on it.
 
-- Ours (`space_runtime/`, on OpenRAL `ReasonerCore`) runs Mission A `covered` end to end with vision-only contact (oa2,
-  verifier success). Restart/model switch on the same record works (rs1).
-- Mission B (fetch the spare ORU, deliver to PDU-1) is blocked at the **pick**: 12 failures analysed (F55). The
-  VLM-point + open-loop approach is replaced by plan v4 (`pick` as one skill); nothing of v4 is implemented yet.
-- Baselines: PLEXIL runs Mission A through the common boundary (F52); PLEXIL Mission B, EUROPA→PLEXIL, Experiments I/II
-  not started.
+## Where it stands -- Mission A and Mission B both reliable on the corrected arm, full recorded runs, both succeeded
 
-## User decisions (keep)
+This closes the sequence the user set (`todo.md`: Mission B reliable, Mission A, then baselines/freeze/experiments). Next up is
+that last item, not yet scoped.
 
-- Ours before the baselines; tasks from `docs/lunar_task_catalog.md`; Ours may meet held-out situations before the
-  freeze with mission-generic changes only; freeze = git commits/tags, **no hash checks anywhere**.
-- Reasoner **DeepSeek-V4-Pro**, thinking on (offline replay, F55 §4). Shared VLM **GLM-5.3-Flash**. Gateway key in
-  `AGENT/VLM_provider.md` (never in code).
-- **Method boundary (research_content §3.2/§5.2–5.3/§5.7, revised):** baselines share robot, capabilities,
-  perception sources, raw evidence, low-level safety and the external evaluator — not Ours' mechanisms. Ours' facts,
-  context reconstruction, guard, internal effect verification and traces are the method; attribution by Ours-internal
-  ablations. **Architecture (plan v4 §2):** physical-effect capabilities = OpenRAL rSkills; perception control and
-  read-only queries = perception / world-state services; thin method-neutral capability contract. Fixed infrastructure
-  may use surveyed named places; movable objects only via perception → tracking → visual servo inside the skill.
-  No playbook-style decision rSkills. No big refactor: move logic out of `capability_server` when new work touches it.
-- **Granularity (plan v4, 2026-09-17):** model-facing tools are whole operations with mission-level arguments
-  (`pick(target, part)`, `place(support)`, `press(target)`); stages (candidates, VLM selection, tracking, servo,
-  close-in, hold check) and mechanical parameters live inside the skill. A skill retries only on the same target;
-  changing target, moving the base, another operation or asking the operator returns to the model with the stage and
-  evidence. Harness verifies `held` / `placed` automatically. Hardware-protecting limits while driving/holding go to
-  the shared low-level safety; the v3 guard rule "no base motion while holding" is withdrawn (Mission B carries).
-- **Manipulation internals (kept from v3):** no object models, no world-coordinate targets; grasp candidates from the
-  wrist RGB-D view (classical first), VLM set-of-mark choice, KLT/depth tracking + IBVS, guarded close-in, image
-  checks. Isaac ROS FoundationPose rejected (needs meshes, ROS 2 Jazzy).
-- Ad-hoc patches are not acceptable; fix causes or redesign (F55 §5 lists what was reverted).
-- **Step-wise development:** never rerun a mission from scratch after a failure; restore the snapshot before the failed
-  step, fix, rerun that step. One simulation at a time.
-- Replies to the user: Simplified Chinese, plain words, concise; ask before deciding design questions for the user.
+- **Mission A**: `artifacts/runs/mission_a_success_20260922` (was `mc6`), from scratch, video sent (PDU-2 fault found, pressed,
+  verified, dock, arm stowed, evaluator `success: true`).
+- **Mission B**: `artifacts/runs/mission_b_success_20260922` (was `mc7b`), from scratch, video sent (ORU delivered to PDU-1's
+  shelf, dock, arm stowed, evaluator `success: true`).
+- `artifacts/runs/` was ~300 directories, most from before this session; kept only what's cited as evidence in some doc under
+  `docs/`/`AGENT/`, or read by another worktree's code (checked against all seven). Everything else moved into
+  `artifacts/runs/_debug_archive/` (117 GB, not deleted -- ask before actually deleting it).
 
-## How to run
+Getting there fixed real bugs, found by auditing rather than by reacting to one more failed run (the user's explicit correction
+mid-session, after two rejected patches):
 
-- Mission dev run with snapshots (from `openral/`):
-  `D0_HOLD=1 OURS_STOP_ON_FAILURE=1 D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_CHECK=ours_mission_check.py
-  D0_CAPABILITY_SERVER=1 OURS_MISSION=b setsid nohup ../experiments/launch/lunar_base_d0/run_d0.sh <log>
-  > <log>/runner.out 2>&1 < /dev/null &` (`OURS_MISSION=a` for Mission A; `D0_TRACE_OBJECT=spare_oru` logs the object).
-- Snapshots: `<log>/snapshots/before_step_<n>.{pt,json}` (SRB `envs/snapshot` + the AMCL estimate). Resume after a fix:
-  `[D0_RESTART_BOUNDARY=1] OURS_MISSION=b OURS_STOP_ON_FAILURE=1 OURS_RESUME_FROM=<log> OURS_RESUME_BEFORE_STEP=<n>
-  setsid nohup experiments/launch/lunar_base_d0/attach_d0.sh <graph log> <new log> &` (works on a held graph or a fresh one).
-- Take a held graph down: `experiments/launch/lunar_base_d0/teardown_d0.sh <graph log>`.
-- Record: `<log>/ours/{events.jsonl,report.md,agent.log}`; boundary `capability_server.log`; frames `evidence/`.
-- Offline reasoner comparison on recorded decision points: `experiments/reasoner_replay/replay.py`.
-- Scripted checks: `D0_CHECK=d0_mission_{a,b}_check.py`, `vision_check.py`, `d0_plexil_mission_a_check.py`; options
-  `D0_VIDEO`, `D0_SCENARIO=<heldout_…>`, `D0_SCENERY=lunar_base_route_block`, `D0_STEPS`, `D0_PLANNING_SCENE=0`.
-- Video: `D0_VIDEO=<mp4>` + `SRB_VIDEO_SPEEDUP=1` → `<mp4>.times`; `python3 experiments/video/overlay.py`.
-- Speed: sim ≈ 0.375× wall; reasoner steps take minutes (V4-Pro), so dev runs are long. GPU PhysX crashes in SRB.
+- **F96/F98 -- the robot model itself.** USD joint friction 0.1-0.4 (unitless, x transmitted force) stuck the arm; separately, the
+  arm's drive gains are applied by PhysX per degree, so every joint was 57x softer than configured. Both found in a bare Isaac
+  script with the base fixed (`experiments/robot_check/{arm_steps,carry_static}.py`), one minute per variant, not in a run.
+- **F97 -- two joint-space defaults the soft arm had been hiding.** A planned IK solution can answer with the wrist roll a full
+  turn from the arm's own (`nearest_equivalent` takes the nearest turn inside the stop's margin); the servo's pull toward the
+  working posture was a step at the joint-rate limit, now a rate (0.05/s, ~20 s time constant).
+- **F99/F100 -- `place`'s retreat and `over`.** Both are local, no-lookahead Cartesian tracking with no look-ahead, so neither
+  chooses a configuration with room to move on from; a joint can end up pinned at its own stop with nothing in the way. The
+  accepted fix (after two rejected ones -- see F99/F100 in `docs/research_findings.md` for what was wrong with "tolerate the
+  stall" and "re-solve IK for the same pose") is pure joint arithmetic: `joints_off_their_stops` walks a joint found within 0.3 rad
+  of its stop (`posture_cost`'s own margin) back to exactly that clear, towards its own centre, nothing else touched, then
+  `plan_to` (which now also tells the planner about a carried item -- it never did). Retreat's distance was widened to clear the
+  evaluator's own "not held" check (0.30 m) in the worst case, not just the nominal one (0.30/0.25 m, not 0.25/0.20).
 
-## Stack facts (don't rediscover)
+## Method rules earned the hard way this session
 
-- `/odom` wheel-inertial; AMCL on a lidar-surveyed map; Nav2 goals in `map`; SLAM off; truth only for evaluation
-  (and dev-only snapshot restore). Cameras D435i front + wrist, 15 Hz, work lights; wrist image level in `grip`.
-- Capability boundary: `openral_ext/capability_server/{contracts.yaml,node.py}` (`/space/capability/execute`, `/query`);
-  PLEXIL adapter `ros/plexil_capability_adapter`. Today it still implements `approach_target`, VLM `observe` /
-  `locate_in_view` and feature-pose lowering (to move per plan v3 §2). Effect verification and the guard live in
-  `space_runtime/` (Ours' harness — correct per the method boundary).
-- Arm: RM-75 (`docs/lunar_bot_rm75_spec.md`); MoveIt plans end 0.9–3 cm from goal; 1 kg payload sags ~4.5 cm.
-- OpenRAL rSkill manifests: `openral/rskills/*/rskill.yaml` (kinds procedural, ros_action, detector, segmenter, vlm,
-  playbook); entrypoints `openral/python/rskill/src/openral_rskill/`; reasoner palette/tools in
-  `openral/python/reasoner`; integration notes `docs/openral_integration_notes.md`.
+- **Audit before reacting.** Told explicitly to stop patching one failure at a time and instead read the whole of `place` for
+  every way it could still be wrong: found two more real gaps (`over` had no escape either; `plan_to` never saw a carried item)
+  without running anything.
+- **`check.log`'s bare `t` field is wall-clock seconds since the script started, not sim time** (`d0_common.log()`:
+  `time.time() - T0`). `sim_t`/`sim_s` fields are the real simulation clock. Conflating them cost a wrong "the mission is 46
+  minutes of sim time" explanation to the user; the actual sim-time content of a mission is much shorter (Mission A ~8 min,
+  Mission B ~8.5 min) -- the rest of a raw composed video is wall-clock padding (rendering overhead, or the graph left idle).
+  `mission_video.py --to-sim` filters on genuine `sim_t`; get the cutoff from `PROGRESS`'s `sim_s`, not `RESULT`'s `t`.
+- Killing a check script mid-`navigate`/`dock` does not cancel Nav2's own goal -- the client process dies, the server keeps
+  driving. Cancel it before any snapshot restore or the robot just fights the restore: `ros2 service call
+  /navigate_to_pose/_action/cancel_goal action_msgs/srv/CancelGoal "{goal_info: {goal_id: {uuid: [0]*16}, stamp: {sec: 0,
+  nanosec: 0}}}"` (all-zero goal_id + zero stamp cancels every goal on that server).
+- Never open a run's bag while its recorder is alive (SQLite lock kills the recorder, truncating the bag). Read closed bags.
+- Scripted capability chains (`experiments/launch/lunar_base_d0/scripted_chain_check.py` + `chain_*.json`, attach to a held graph,
+  no model, no video) turn a 30-minute mission into a 10-minute test of one or two skills. `RESUME_SNAPSHOT=<snap>.pt` restores a
+  jaws-open state (shared with `ours_mission_check.py` via `d0_common.put_scene_back`, no longer duplicated between them).
+- A skill failure is not always a bug: `pick`'s `find` has no internal retry by design ("the model answers within the deadline or
+  the stage returns with what it has") -- retrying a bad VLM read is the reasoner's job. The scripted chains have no reasoner, so
+  they just get relaunched once, same as the real loop would retry.
+- Don't let a script depend on an old run directory as if it were committed infra (`record_qos.yaml` was being copied out of a
+  15 GB scratch run, `gb2`; now lives at `experiments/launch/lunar_base_d0/record_qos.yaml`).
 
-## Things that bit (keep)
+## Running it
 
-- `openral deploy sim` reaps openral processes → `OPENRAL_SKIP_ORPHAN_REAP=1` (run_d0.sh).
-- Runs execute a frozen copy of `run_d0.sh`; checks load at start — never edit a script a live run executes.
-- Kill only explicit PIDs; `pgrep -f`/`pkill -f`/pattern `case` matches have killed the calling shell.
-- Stale agents ignore SIGTERM → kill -9; check the ROS domain is clean before a run. Parallel sims → 0.05×.
-- A publisher's first message is lost before discovery (AMCL `/initialpose`): wait for the match.
-- Verifier `oru_on: ""` can mean knocked off, not grasped — check jaw and handle height.
+Skills are import-cached in `runtime_node`; a skill change needs the runtime restarted (`D0_RESTART_RUNTIME_PID`), an SRB or asset
+change needs the graph rebooted. Kill by run tag, never by name: `teardown_d0.sh <run dir>` with `D0_VIDEO=<mp4>` set to finalize the
+video. Full pair: `experiments/launch/lunar_base_d0/launch_full_pair.sh <tagB|-> <tagA|->` (1080p video + bag; A on GPU 1, `-` skips
+one side). Monitor `artifacts/runs/<tag>/ours/events.jsonl`; the evaluator's `RESULT` line is in `<tag>/check.log` (its own `t` is
+wall time -- see above). Stop the recorder by PID (`recorder.pid` can be stale: find it with `ps`), then `track_from_bag.py
+<run>/robot_motion <run>/track.json`, then `mission_video.py <run>/mission_x.mp4 <run>/ours/events.jsonl <out> --times <mp4>.times
+--track <run>/track.json --to-sim <from PROGRESS's sim_s, not RESULT's t> --title ...`, then x264 (1280 wide, crf 29-38 depending
+on length) to stay under the 30 MiB send limit.
 
-## Where things are
+## Rules
 
-- Research repo `main` (feature branch merged 2026-09-17). openral fork `master` (camera mounts, wrist depth relay,
-  servo zero-twist fix). SRB `feat/lunar-base-scene` (lunar base, 15 Hz cameras, work lights, lidar 10 Hz,
-  publish-on-new, video `.times`, `envs/snapshot`); SRB `main` untouched.
-- Runs (not in git): `artifacts/runs/` (oa*, ob*, vc*, rs1, pf*); replay results `artifacts/reasoner_replay/`.
+- One graph per GPU (A on 1, B on 0). All paths absolute. No `pgrep -f` / `pkill -f`.
+- Never navigate or decide on simulator truth. Whole-operation tools only; mechanics stay in skills. A skill retries the same target,
+  never moves the base. Keys in `AGENT/VLM_provider.md` never enter logs or output.
+- Development resumes/scripted chains are not campaign results; never count them in paper metrics.
+- Ask before merging a feature branch back to its main/master; ask before deleting a run directory that might still be evidence.
+- Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies to the user in concise Simplified Chinese.

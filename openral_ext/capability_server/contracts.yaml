@@ -5,6 +5,9 @@
 # space_harness_msgs/ExecuteCapability or QueryCapability with the same names and arguments.
 #
 # Forbidden here (§8.2): mission logic -- orderings, recoveries, "after X do Y". A contract says what one call means.
+# Granularity (plan v4, execution_plan §8.2): a capability the mission agent sees is one physical operation with
+# mission-level arguments. `engineering: true` marks stage-level capabilities (Cartesian moves, jaw, vision-guided
+# stand-off) kept for engineering checks and for authoring procedures; they are not rendered as mission tools.
 #
 # Frames: `map` is the robot's own localization (AMCL on the surveyed base map); `chassis_base_link` is the rover.
 # Inputs: {name: [type, required, description]}; types: number, number[N], string, string(a|b).
@@ -38,28 +41,34 @@ effects:
     description: Drive the 7 arm joints to target angles.
     inputs:
       joint_targets: ["number[7]", true, "RM-75 joint1..joint7, rad"]
-      tolerance_rad: [number, false, "per-joint tolerance (default 0.05)"]
-    default_deadline_s: 60
+      tolerance_rad: [number, false, "per-joint tolerance (default 0.08)"]
+    default_deadline_s: 120
     authority_class: routine
-    lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_joints
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-posture
+    records_evidence: true
+    engineering: true
 
   arm_ready:
     description: >-
-      Raise the arm from its travel pose (or any pose) into the ready posture in front of the rover, from which
-      end-effector motions start.
+      Raise the arm from its travel pose into the ready posture, along a path the robot's planner finds through what
+      it knows and what its cameras have measured standing beside it.
     inputs:
-      tolerance_rad: [number, false, "per-joint tolerance (default 0.05)"]
-    default_deadline_s: 60
+      tolerance_rad: [number, false, "per-joint tolerance (default 0.08)"]
+    default_deadline_s: 120
     authority_class: routine
-    lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_joints
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-posture
+    records_evidence: true
 
   stow:
-    description: Fold the arm into its travel pose.
+    description: >-
+      Fold the arm into its travel pose for driving, along a path the robot's planner finds through what it knows and
+      what its cameras have measured standing beside it. The jaws must be empty: put a held item down first.
     inputs:
-      tolerance_rad: [number, false, "per-joint tolerance (default 0.1)"]
-    default_deadline_s: 60
+      tolerance_rad: [number, false, "per-joint tolerance (default 0.08)"]
+    default_deadline_s: 120
     authority_class: routine
-    lowers_to: OpenRAL/rskill-procedural-lunar_bot-stow
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-posture
+    records_evidence: true
 
   plan_ee_pose:
     description: >-
@@ -73,6 +82,7 @@ effects:
     default_deadline_s: 120
     authority_class: routine
     lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
+    engineering: true
 
   move_ee_to_pose:
     description: Servo the tool centre point in a straight Cartesian motion to a pose in `chassis_base_link` and hold.
@@ -85,6 +95,7 @@ effects:
     default_deadline_s: 60
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+    engineering: true
 
   navigate_to_feature:
     description: >-
@@ -97,12 +108,28 @@ effects:
     authority_class: routine
     lowers_to: OpenRAL/rskill-nav2-mobile_base-navigate_to_pose
 
+  move_base_delta:
+    description: >-
+      Move the base by a small offset given in the rover's own frame (x forward, y left, yaw counter-clockwise),
+      holding everything else. For adjusting a stance the arm could not work from; the site's own places are reached
+      with navigate_to_feature / dock_at_feature.
+    inputs:
+      dx_m: [number, false, "forward, m (default 0)"]
+      dy_m: [number, false, "left, m (default 0)"]
+      dyaw_rad: [number, false, "counter-clockwise, rad (default 0)"]
+    default_deadline_s: 120
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-mobile_base-move_base_to_pose
+    engineering: true
+
   dock_at_feature:
     description: >-
       Close onto the pose from which the arm reaches a site feature (hull + arm reach out along its normal), or
       `standoff_m` further out on that axis (to back away). Entered along the axis. The arm works off the rover's
       rear, so at this pose the rear faces the feature: the front camera looks away from it and the wrist camera can
       see the work area.
+      The default distance is the roomiest stand the arm can put its tool at the work from; `work_stands` lists
+      the stands that reach the work wherever the dock lands, with the `standoff_m` that parks at each.
     inputs:
       feature: [string, true, "site interaction point"]
       standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 0)"]
@@ -126,6 +153,7 @@ effects:
     default_deadline_s: 120
     authority_class: routine
     lowers_to: OpenRAL/rskill-moveit-multi-eef_pose
+    engineering: true
 
   move_ee_to_feature:
     description: >-
@@ -142,6 +170,7 @@ effects:
     default_deadline_s: 60
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+    engineering: true
 
   approach_target:
     description: >-
@@ -159,6 +188,7 @@ effects:
     default_deadline_s: 300
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+    engineering: true
 
   move_tool:
     description: >-
@@ -177,6 +207,7 @@ effects:
     default_deadline_s: 60
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-move_ee_to_pose
+    engineering: true
 
   grasp:
     description: >-
@@ -186,6 +217,70 @@ effects:
     default_deadline_s: 20
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-lunar_bot-grasp
+    engineering: true
+
+  pick:
+    description: >-
+      Pick up a stationary item by its catalogued lifting interface, with the arm and the wrist RGB-D camera, and
+      lift it clear of where it stood. The arm needs no preparation. The item must be within the arm's reach behind
+      the rover (dock at the item's work pose first). Say where the work is: the place frame the item stands on
+      and how high the interface sits above it. The skill takes one view there, asks the vision-language model which
+      surface in the view is the described item, fits the interface's declared shape to the depth image near it,
+      and reports how much of that shape the picture agreed with. How to take hold is declared, not measured: the
+      jaws close across the neck, the tool approaches along the support's surveyed normal, the fingers seat on the
+      pads. The tool then servos in on the interface as re-fitted every frame, closes the jaws and checks the hold
+      while lifting. On failure it reports the stage it reached (find, select, approach, grasp, hold), why, and
+      what the camera and the vision model saw. It ends with the item held clear of where it stood and the arm in
+      that carrying posture: the rover can drive like this, and
+      the arm must not be folded (stow, arm_ready) until the item is set down.
+    inputs:
+      target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
+      part: [string, true, "the contact region to hold, described in words (e.g. the narrow neck of the T-shaped handle)"]
+      item: [string, false, "the item's name in the equipment catalogue; the skill then keeps its catalogued size clear of the rover while carrying"]
+      support: [string, false, "the place frame the item stands on (e.g. depot_stand/slot_0), from site_map"]
+      grasp_height_m: [number, false, "how high the lifting interface sits above the site frame: the place frame's own z from site_map plus the item's handle_height_above_base_m from the equipment catalogue. This is where the camera is pointed"]
+    default_deadline_s: 900
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-pick
+    records_evidence: true
+    requires_remote_service: vision_language_model  # a choice among the grasps it finds; a non-answer fails the call
+
+  place:
+    description: >-
+      Set the item held in the jaws down on a surveyed support: carry it above the support point, lower it until the
+      support takes its weight, open the jaws, retreat clear and check that the item stays put. The support must be
+      within the arm's reach behind the rover (dock at the support's work pose first). On failure it reports the stage
+      reached (over, lower, release, retreat, settle) and why.
+      For a side grasp beneath an overhanging head, select below_overhang so withdrawal stays parallel to the
+      horizontal support before lifting clear; unconstrained withdraws along the current tool axis.
+    inputs:
+      support: [string, true, "a surveyed place point of type place from the site map, e.g. pdu_1_shelf/shelf"]
+      release_constraint: ["string(unconstrained|below_overhang)", false, "the grasp interface's release constraint from equipment knowledge; default unconstrained"]
+      item: [string, false, "the held item's name in the equipment catalogue; the skill then brings its catalogued size over the support clear of the support's edges"]
+    default_deadline_s: 600
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-place
+    records_evidence: true
+
+  press:
+    description: >-
+      Press a push button the site survey declares at a feature: the button is found in the wrist camera by the shape
+      the catalogue gives it, the tool stands off in front of it facing its plate, the jaws close, the tool goes in
+      past the button's tip by the declared travel, then withdraws and the jaws open. `target` only says which
+      feature in the view is meant, for the vision model to point at; where the button is comes from its declared
+      shape, not from the pointer. The target must be within the arm's reach behind the rover (dock at the feature's
+      work pose first). The arm does not need to be in any particular posture: this plans its own way from wherever
+      the arm is, so `arm_ready` beforehand is neither required nor useful. On failure it reports the stage reached
+      (locate, approach, press, retreat) and why. The effect `pressed` is verified from the jaw encoder and the arm's
+      own kinematics against the fitted button: jaws closed, tool on the button's axis, past its tip, and back off.
+    inputs:
+      target: [string, true, "which feature is meant, as the wrist camera will see it up close: its colour and shape (e.g. the round red push button on a yellow panel). The view is a few tens of centimetres across, so say nothing about where it is relative to things elsewhere on the site -- the status lamp above it, for one, is not in the frame"]
+      feature: [string, true, "the site interaction point of the target, e.g. pdu_2_panel/press (the one you docked at)"]
+    default_deadline_s: 420
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-press
+    records_evidence: true
+    requires_remote_service: vision_language_model  # it finds the target by looking; a non-answer fails the call
 
   release:
     description: Open the jaws fully.
@@ -198,7 +293,8 @@ queries:
   site_map:
     description: >-
       The surveyed site (fixed infrastructure, `map`): every named interaction point with its type, position and
-      outward normal, the camera view poses of the equipment, and the rover dock. Movable objects are not in it.
+      outward normal, the camera view poses of the equipment, the graded road network the rover drives on, and the
+      rover dock. Includes sourced equipment catalogue/interface descriptions, but no current movable-object poses.
     inputs: {}
   observe:
     description: >-
@@ -207,6 +303,7 @@ queries:
       gripper, looking along the tool. The camera sees what its pose frames (move the rover or the arm to frame
       something); equipment carries no readable name labels, so describe the target by appearance and position. The
       answer is an observation, not ground truth; the frame is kept as evidence.
+    uses_model: true   # answered by the remote vision model, so it can legitimately take tens of seconds
     inputs:
       camera: ["string(front|wrist)", true, "which camera"]
       question: [string, true, "what to look for, e.g. the colour of a status lamp or whether a place is occupied"]
@@ -215,13 +312,17 @@ queries:
       Find a target described in words in one camera's current image (vision-language model) and measure it with the
       camera's depth: whether it is visible, its pixel position and box, and its 3-D position in `chassis_base_link`.
       Both cameras are RGB-D (RealSense D435i). The frame is kept as evidence.
+    uses_model: true   # answered by the remote vision model, so it can legitimately take tens of seconds
     inputs:
       camera: ["string(front|wrist)", true, "which camera"]
       target: [string, true, "what to find, described by appearance and position"]
+    engineering: true
   manifest:
     description: >-
       Mission control's logistics manifest: what each depot staging slot is recorded to hold, and the catalogue data of
-      the standard items (size, mass, carry handle and its height above the item's base). It is the record, not an
+      the standard items (size, mass, carry handle, documented contact regions and interface dimensions with source).
+      Catalogue descriptions are prior equipment knowledge; current location and contact identity require observation.
+      It is the record, not an
       observation: it can be out of date.
     inputs: {}
   arm_state:
@@ -236,6 +337,43 @@ queries:
   jaw:
     description: Jaw joint angle, rad (0.10 = closed on nothing, 0.82 = open).
     inputs: {}
+  held_item:
+    description: >-
+      Two separate things about the gripper, not reconciled with each other. `observed`: whether anything is between
+      the fingers and what it looks like, from the wrist camera (vision-language model on the current frame), asked
+      without being told what to expect. `record`: what the last pick that succeeded took and from which support,
+      with the jaw angle at that moment -- the boundary's own record of a call it made, not an observation.
+      `jaw_rad` is the jaw now. The jaw angle alone cannot tell a jaw closed on nothing from one closed on a thin
+      edge, and a payload that has dropped out leaves the jaws exactly where the grasp left them, so neither number
+      identifies a load. Nor does the camera, when the load hangs from a handle: the jaws are clamped to the handle
+      and the wrist camera looks straight at it, so the item's own body is below the frame and the head fills it.
+      An `observed` description that does not match the `record` is more likely that geometry than a wrong payload;
+      which of the two to act on is the caller's judgement. Use it to check a grasp, to find out whether something
+      is still being carried, or to see what the gripper is on when a call failed for a reason that does not say.
+    uses_model: true   # answered by the remote vision model, so it can legitimately take tens of seconds
+    inputs: {}
+  space_context:
+    description: >-
+      The body this robot is standing on and what it does to physics: its name, the gravity in force, and the
+      light it gets. Gravity is not a constant of the software and it is not Earth's. A load hanging from the
+      jaws leans atan(a/g) off vertical under a base acceleration a, and swings to about twice that after the
+      step that starts it, so driving that would be gentle on Earth is six times the lean on the Moon; what a
+      given grasp holds through is a property of that grasp, which the equipment catalogue describes. These are
+      facts, not limits: the boundary keeps its own hardware-protecting limits whatever you conclude from them.
+    inputs: {}
+
+  work_stands:
+    description: >-
+      Where the rover can stand to work at a surveyed point. A stand is listed only if the whole job can be done
+      from it: every pose the skill for that kind of point has to take (a grasp's stand-off and seat, a press's
+      stand-off, face and view), each with an arm configuration that does not hit the robot itself, wherever within
+      the docking band -- `dock_error_m` either side -- the rover actually lands. Each stand carries the `standoff_m`
+      to pass to dock_at_feature to park there. Choosing the stand is yours; nothing about the camera's view depends
+      on it. An empty list is a fact: no parking place lets the arm do this job.
+    inputs:
+      feature: [string, true, "site interaction point, e.g. depot_stand/slot_0"]
+      grasp_height_m: [number, false, "how high above the site frame the part sits; defaults to the boundary's own work height, which is the tallest catalogued handle over any support"]
+
   locate_feature:
     description: >-
       Where a surveyed site interaction point is relative to the rover: position and outward normal in

@@ -70,8 +70,17 @@ n.create_subscription(Odometry, "/odom", lambda m: vel["odom"].append((round(m.t
 truth = {}  # latest /openral/pose_truth: evaluator-only
 from sensor_msgs.msg import JointState
 jaw = {}  # EG2 jaw joint (rad): 0.10 closed on nothing, 0.82 open -- "clamped, not hanging" is measured, not inferred
-n.create_subscription(JointState, "/srb/env0/robot/joint_states",
-                      lambda m: jaw.update(q=m.position[m.name.index("eg2_joint1")]) if "eg2_joint1" in m.name else None, 10)
+arm = {}  # the seven arm joints (rad), by name: a snapshot restore is checked against these, never trusted (F65)
+
+
+def _on_joint_states(m):
+    if "eg2_joint1" in m.name:
+        jaw.update(q=m.position[m.name.index("eg2_joint1")])
+    arm.update({k: float(v) for k, v in zip(m.name, m.position) if k in ARM_JOINTS})
+
+
+ARM_JOINTS = frozenset(f"joint{i}" for i in range(1, 8))
+n.create_subscription(JointState, "/srb/env0/robot/joint_states", _on_joint_states, 10)
 n.create_subscription(Odometry, "/openral/pose_truth", lambda m: truth.update(p=m.pose.pose.position, q=m.pose.pose.orientation), 10)
 T0 = time.time()
 sim = dict(t=0.0)  # SRB's /clock: a rendering graph runs at a fraction of real time, and every skill
@@ -108,15 +117,23 @@ def mat_to_quat(R):
     return q
 
 
+def tf_buffered(target, source):
+    """The transform already in the buffer, without spinning: safe from a second thread while the main thread spins
+    (rclpy's executor is not re-entrant -- two threads spinning one node corrupt its wait set). None when not there."""
+    if not buf.can_transform(target, source, Time()):
+        return None
+    tr = buf.lookup_transform(target, source, Time()).transform
+    return (np.array([tr.translation.x, tr.translation.y, tr.translation.z]),
+            quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w))
+
+
 def tf(target, source, timeout=10.0):
     t = time.time()
     while time.time() - t < timeout:
         rclpy.spin_once(n, timeout_sec=0.05)
-        if buf.can_transform(target, source, Time()):
-            tr = buf.lookup_transform(target, source, Time()).transform
-            p = np.array([tr.translation.x, tr.translation.y, tr.translation.z])
-            R = quat_to_mat(tr.rotation.x, tr.rotation.y, tr.rotation.z, tr.rotation.w)
-            return p, R
+        got = tf_buffered(target, source)
+        if got is not None:
+            return got
     raise RuntimeError(f"no TF {target} <- {source}")
 
 
@@ -164,8 +181,11 @@ def to_rover(p_w, R_w):
     return Rb.T @ (np.asarray(p_w) - pb), Rb.T @ R_w
 
 
-def handle_pos(name):
-    p, R = tf("srb/world", f"srb/env0/lb_{name}")
+def handle_pos(name, spin=True):
+    got = tf("srb/world", f"srb/env0/lb_{name}") if spin else tf_buffered("srb/world", f"srb/env0/lb_{name}")
+    if got is None:
+        return None
+    p, R = got
     return p + R @ np.array(IX["objects"][name]["handle"]["xyz"])
 
 
@@ -373,3 +393,72 @@ def run(name, fn, *args, **kw):
         sys.exit(1)
     return res
 
+
+
+# ---- snapshot restore -----------------------------------------------------------------------------------------------
+# Step-wise development (research runs never use these): the simulator's full state is saved before every agent step
+# (<log>/snapshots/before_step_<n>.pt, with the rover's own localization estimate beside it). `put_scene_back` puts a
+# held graph back to one of these (or any other saved snapshot -- a scripted chain check's own pre-pick state, say).
+from geometry_msgs.msg import PoseWithCovarianceStamped  # noqa: E402
+
+snap_dir = Path(os.environ["D0_LOG"]) / "snapshots"
+snap_dir.mkdir(exist_ok=True)
+snap_pub = n.create_publisher(String, "/srb/envs/snapshot", 10)
+snap_done = []
+n.create_subscription(String, "/srb/envs/snapshot/done", lambda m: snap_done.append(json.loads(m.data)), 10)
+while snap_pub.get_subscription_count() == 0:
+    spin(0.5)
+
+
+def snapshot(op, path):
+    snap_done.clear()
+    snap_pub.publish(String(data=json.dumps(dict(op=op, path=str(path)))))
+    while not snap_done:
+        spin(0.1)
+
+
+def put_scene_back(snap: Path) -> dict:
+    """Put the simulator back to a saved state, and give the rover's localization its estimate from then."""
+    snapshot("restore", snap)
+    est = json.loads(snap.with_suffix(".json").read_text())
+    ip = PoseWithCovarianceStamped()
+    ip.header.frame_id = "map"
+    ip.pose.pose.position.x, ip.pose.pose.position.y = est["x"], est["y"]
+    ip.pose.pose.orientation.z, ip.pose.pose.orientation.w = math.sin(est["yaw"] / 2), math.cos(est["yaw"] / 2)
+    ip.pose.covariance[0] = ip.pose.covariance[7] = 0.02 ** 2
+    ip.pose.covariance[35] = 0.02 ** 2
+    # published before AMCL has matched the new publisher, the message is lost (ob6_s15b kept a 0.16 m stale estimate):
+    # wait for the match, and re-send until the estimate is the saved one
+    ip_pub = n.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
+    while ip_pub.get_subscription_count() == 0:
+        spin(0.2)
+    while True:
+        ip_pub.publish(ip)
+        t_restore = sim["t"]
+        while sim["t"] - t_restore < 3.0:
+            spin(0.2)
+        p_est, yaw_est, _ = est_pose()
+        if math.hypot(p_est[0] - est["x"], p_est[1] - est["y"]) < 0.03:
+            break
+    # A restore is a claim about the whole robot, and the arm is half of it. g6d resumed a `pick` with the base put
+    # back to 3 mm and the arm still in the half-way posture the killed run had left it in, so the skill's first
+    # overview was taken pressed against a panel and the ORU was not in the frame at all -- a failure that looked
+    # like perception and was a resume that had not been checked (F65). Nothing here trusts "restore" without
+    # reading the joints back.
+    if est.get("arm"):
+        spin(1.0)
+        want = [est["arm"][f"joint{i}"] for i in range(1, 8)]
+        off = {j: round(arm[j] - q, 3) for j, q in est["arm"].items() if j in arm and abs(arm[j] - q) > 0.05}
+        if off:
+            # The arm is commanded back rather than assumed back: the joint target that holds it is a live ROS
+            # action, not part of the saved physics state, so whatever posture the killed run left behind can
+            # out-argue the restore. Driving it there also puts the controller's own target where the snapshot says.
+            dispatch("joints", {"joint_targets": want, "tolerance_rad": 0.05}, deadline=90.0)
+            spin(1.0)
+            off = {j: round(arm[j] - q, 3) for j, q in est["arm"].items() if j in arm and abs(arm[j] - q) > 0.05}
+        log("RESTORED_ARM", matches=not off, off_rad=off or None)
+        if off:
+            raise SystemExit(f"the restore did not put the arm back: {off} rad off the snapshot. The scene is not the "
+                             f"one the snapshot names, and a run from here would be measuring something else.")
+    log("RESTORED", snapshot=str(snap), estimate=est, truth_error=base_err([est["x"], est["y"]], est["yaw"]))
+    return est

@@ -53,6 +53,8 @@ def capability_tools() -> list[dict]:
     for group, tag in (("effects", "EFFECT (acts on the robot; runs to completion before your next step)"),
                        ("queries", "QUERY (read-only)")):
         for name, c in CONTRACTS[group].items():
+            if c.get("engineering"):  # stage-level capabilities are not mission tools (plan v4 granularity rule)
+                continue
             inputs = c.get("inputs") or {}
             props = {k: {**_json_type(t), "description": d} for k, (t, _, d) in inputs.items()}
             tools.append(_function(name, f"{tag}. {' '.join(c['description'].split())}", props,
@@ -84,6 +86,12 @@ def local_tools() -> list[dict]:
 
 def decode(name: str, args: dict):
     rationale = str(args.pop("rationale", ""))
+    if len(rationale.split()) < 3:
+        # The contract asks for a sentence; an empty or placeholder rationale is a call that has not been justified,
+        # which is the same thing as a reply with no call in it -- not an answer, and re-asked the same way. gb3's
+        # `dock_to_pose {0, 0, 0}` came with the rationale "placeholder" after 50 s of reasoning that had chosen a
+        # different tool and a different target (research repo F92).
+        raise ROSReasonerInvalidPlan(f"tool {name!r}: no rationale ({rationale!r}); an unjustified call is not an answer")
     try:
         if name in CONTRACTS["effects"] or name in CONTRACTS["queries"]:
             return ExecuteRskillTool(rskill_id=name, goal_params_json=json.dumps(args), rationale=rationale)
@@ -114,9 +122,11 @@ class HarnessToolClient:
         self.extra = {} if thinking else {"extra_body": {"thinking": {"type": "disabled"}}}
         self.last_prompt_tokens = None
         self.last_raw = None
+        self.last_reply = {}  # what the model said beside the call: its text, and its reasoning where the endpoint returns it
 
     def select_tool(self, *, context_text: str, palette, system_prompt: str):
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": context_text}]
+        self.last_reply = {}
         try:
             resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto", **self.extra)
             if not resp.choices[0].message.tool_calls:
@@ -127,6 +137,7 @@ class HarnessToolClient:
             raise ROSPlanningError(f"LLM call failed: {exc}") from exc
         self.last_prompt_tokens = resp.usage.prompt_tokens if resp.usage else None
         msg = resp.choices[0].message
+        self.last_reply = {"content": msg.content or "", "reasoning": getattr(msg, "reasoning_content", None) or ""}
         if not msg.tool_calls:
             raise ROSReasonerInvalidPlan(f"no tool call in the response: {(msg.content or '')[:300]!r}")
         call = msg.tool_calls[0]

@@ -2760,3 +2760,1901 @@ generator ablation are dropped. Granularity rule recorded in `execution_plan` §
 gains the held/placed checks; `guard.py` and its config are unchanged (invariants already empty); the PLEXIL adapter
 gets simpler (one Command per operation); F55's reverted patches stay reverted; the snapshot workflow is the
 development loop for G3–G5. Expected Mission B step count falls from 60+ to roughly 15–25.
+
+### F57 — `pick` as one call: what the wrist camera has to see, and the constants that hid it
+
+2026-09-18, runs g3a–g3bn (`artifacts/runs/g3*`), `openral/python/rskill/src/openral_rskill/{procedural_pick.py,
+grasp_perception.py,_eye_in_hand.py}`, SRB `lunarbot.py` + `ground_manipulation/visual_ext.py`.
+
+**1. The gate is passed at the nominal placement (g3bn).** One `pick("the spare ORU ...", "its carry handle")` call:
+the skill found the handle, the vision model chose the neck under the head, the first approach stalled 2.2 cm short and
+the skill retried *on the same target* (the plan's locality rule) and held it. Jaw 0.172 rad (a 12 mm neck between the
+pads), TCP 2.1 cm from the truth handle, Ours' independent `item_held` true: 7.85 cm of lift, 4 px of image motion on
+the item against the 232 px it would have shown if left behind. 237 s of sim time. The truth handle settles back after
+the call returns -- the 1 kg arm sag of F51, not a slip (F55's reading of `handle_rise_m` alone was wrong: g3aw's
+handle rose 1.023 -> 1.085 m *during* the lift and the call still reported 1.7 cm afterwards).
+
+**2. What the skill does.** `pick(target, part)` takes no geometry: side views of the reach zone from the arm's own
+working branch, class-agnostic antipodal candidates from the wrist depth (G1), one vision-language choice among the
+numbered marks (G2), the planner to the stand-off in the grasp's own orientation, then a closed loop -- the part
+followed by its own image template -- for the last stretch. Nothing in the loop knows what an ORU is; the only
+object-specific text is the site's payload-handle convention in the selection prompt.
+
+**3. Look-move-look does not converge; the closed loop does.** Re-running the generic detector per frame and
+re-associating the candidate walked the goal 8 cm sideways over an approach (servo trace, g3ap): the narrowing view
+offers new antipodal pairs and the nearest one is not the same part. Following the part's own template instead
+(`PartTracker`: NCC in a window predicted from the arm's own motion, template rescaled by the depth ratio and turned by
+the camera's own roll, matches at the wrong distance rejected) removed the item pushing entirely -- the handle moved
+3 mm during a whole approach (g3aw) where the open-loop version moved it 5 cm.
+
+**4. Three defects, one cause: the camera's geometry written down as constants.** Each was found by looking at the
+evidence pictures, not at the trajectory numbers.
+- *The roll.* Which side of the tool axis the camera looks from decides the grasp's half-turn. Choosing it by
+  projecting the measured camera offset across the *optical* axis cancels exactly the lateral component it is meant to
+  keep (the optical axis is 17 deg off the tool axis, so in the tool frame it carries 0.29 of y): every view got the
+  opposite roll (g3bg, `servo_00.jpg` is the chosen view upside down). Taking the lateral part *in the tool frame*
+  fixes it for any mount. The roll itself belongs to the part -- the camera goes to the side the part is measured to be
+  free on -- and must not be chosen to spare the tracker a rotation: doing that picked the opposite roll and the
+  approach diverged, the tool sliding 18 cm sideways in 1.6 s with the error growing (g3bh).
+- *The half turn itself.* Turning the wrist where the tool stands swings the camera's view by twice the mount's 17 deg
+  and the part leaves the image (g3bl `turned.jpg`: only the rover deck). The planner now takes the tool to the
+  stand-off *in the grasp's orientation* in one move, which puts the part back on the tool axis, and the visual servo
+  does only the last 10 cm.
+- *The self-depth.* "Nearer than 0.17 m is the gripper" was written into `seen_through`, with copies at 0.20, 0.22 and
+  0.16 elsewhere. After the camera moved, the gripper's own pixels read as *an obstacle in front of every candidate
+  pose* and no view of the work zone was allowed at all (g3bm: every side view `reachable: false`).
+
+**5. The fix is one derivation, not four numbers.** `tool_in_view(K, T_camera_tool, rows)` computes, from the mount
+(TF) and the tool's own dimensions, how far the gripper reaches along the optical axis and which image band it always
+occupies; the self-occlusion depth, the framing rows, the candidate depth floor, the tracker's "the gripper covers the
+part" test and the lift check all read it. Checked against the old mount it reproduces the hand-tuned values that were
+in the manifest (0.203 m vs 0.20, row 107 vs 108) -- they were always geometry, not tuning. The manifest lost four
+entries.
+
+**6. The wrist camera itself was wrong twice.** Its intrinsics were `focal 10 mm / aperture 16 mm` = 77 deg, which is
+the D435's *depth* field, not the colour stream the skills work in; it now renders the D435i's own 640x480 colour
+intrinsics (15.4/16.0, fx = fy = 616, 55 x 42 deg). And it sat 0.048 m off the tool axis aimed at the grasp point,
+which left two thirds of every frame filled by the fingers. The mount was recomputed (not tuned): 0.12 m off the axis,
+0.22 m behind the TCP, aimed 0.15 m beyond it -- the gripper then occupies the bottom fifth of the frame with both pad
+tips visible, and the part being approached sits in the middle of the image. G0's dataset and the G1/G2 offline scores
+were taken with the old camera and stand as such.
+
+**7. Method note.** Every one of these was visible in a single evidence image and invisible in the numbers; the runs
+that only printed distances (g3ab..g3bd) cost hours and settled nothing. The servo now writes one picture per frame
+with the tracked point, the match score, the roll correction and why a frame was rejected.
+
+### F58 — The two things that stopped `pick` being callable by the agent were not about grasping
+
+2026-09-18, runs g4a–g4h, `openral/python/rskill/src/openral_rskill/{_eye_in_hand.py,grasp_perception.py,
+procedural_pick.py}`.
+
+**1. A skill may not own a subscription it closes.** `pick` created its wrist RGB-D subscriptions per call and
+destroyed them at the end, from the worker thread that runs the skill. `rclpy` handles belong to the executor: the
+destroy raced `executor.spin()` on the runner's own thread, which died with `InvalidHandle` -- and with it every later
+goal on that runner, including the ones the agent had not sent yet. The symptom (each capability after the first
+returning "no result") pointed at the boundary, the capability server and the agent in turn; none of them was at
+fault. Sensor streams are now the *node's*, created once and never destroyed; the skill borrows them. The general
+rule for this codebase: a skill may create work for the executor, never take work away from it.
+
+**2. The vision model's latency is set by the request, and the request was ours to choose.** Every G4 attempt before
+g4h died at stage `select` on a vision-language call that never returned. Measured and excluded, in this order:
+gateway health (three concurrent asks answered in 12.7 s, all ten choices correct), concurrency (sequential was
+*slower*), the GIL (9.3 s with four camera pump threads running), CPU load (24 cores, load 13), a proxy (the runner's
+environment has none -- the "proxied process" was my own shell), stale keep-alive sockets, and the SDK version (raw
+`httpx` timed out identically). What was left was the request itself, and it reproduced on demand with the same
+recorded frames:
+
+| what the one request carried | bytes | two trials |
+|---|---|---|
+| overview + both marked views, full size | 265 KB | 60 s no answer, 16 s |
+| both views side by side, 448 px wide each | 69 KB | 60 s no answer, 45 s |
+| **one marked view** | **54 KB** | **15 s, 7 s** |
+
+`select` now asks one question per marked view, carrying that view alone, and stops at the first view that answers;
+on three real frames it answered in 12, 74 and 78 s and chose the neck mark in every one. The overview left the
+request: the item's identity is carried by the words, and the separate `item_visible` / `what_is_visible` fields left
+with it -- a choice of null is the same answer, and a model spends its time on what it is asked to write. The three
+concurrent asks became one on the G2 dataset's own evidence: a single answer and the majority of three both scored
+20/28.
+
+**3. Why this belongs in the record.** Neither defect is about manipulation, and both would have been read as "the
+grasp method is unreliable" from the mission log alone. The harness already separates them: a call that fails because
+a remote service did not answer is recorded as `dependency_unavailable` / `requires_remote_service` and reported under
+"service outages (not the robot's doing)", not as a failed operation. A study that compares methods across an agent
+loop needs that line drawn before the numbers are collected, not after.
+
+
+### F59 — What the robot can reach is the harness's business, and what it is holding is not an obstacle
+
+2026-09-18, runs g4h–g4l, `openral_ext/workspace/{reach.py,footprint.py}`, `openral_ext/planning_scene/node.py`,
+`openral_rskill._eye_in_hand.working_on`.
+
+**1. An item in the planner's scene is an item the robot can never pick up.** Measured obstacles (F57 gap 1) put what
+the cameras see standing in the arm's work zone into MoveIt's scene, so a planned move goes round the things no map
+knows about. The ORU is one of those things. With it in the scene, no arm configuration was allowed to put the tool at
+its handle; with the same request and the measurement dropped, the pose solved. Measured at the depot, one dock pose,
+one tool orientation, `/compute_ik` with collisions on:
+
+| | measurement present | measurement dropped |
+|---|---|---|
+| tool at the handle | no solution | solves |
+| tool at the 7 cm stand-off | solves | solves |
+
+The general rule this needs is not an exception for ORUs. A skill that is working on something says which piece of the
+world its tool is about to be inside -- a sphere the size of the gripper itself, published as a collision object on
+`/space/manipulation_target` and renewed while the skill runs. The world model leaves the measurement inside that
+sphere out; everything outside it is an obstacle as before, and a declaration that stops being renewed (the skill
+ended, or died) expires within two of the model's own cycles. While the item is in the jaws the sphere follows the
+tool, which is also what makes carrying it past other structures safe. Nothing in it is item-specific: the radius is
+the tool's own dimensions, the centre is where the tool is going.
+
+**2. Where the rover parks was a table of hand-written numbers.** `interaction.py` carried `REACH = {"press": 0.45,
+"pick": 0.40, ...}`: one distance past the hull per kind of job, baked into `interaction.json` and read by the
+boundary, which docked there without ever asking the arm. A single number per job cannot be right -- the arm reaches a
+shell around its shoulder, so the distance depends on how high the work is. The 0.40 was read off a press at panel
+height and reused for a handle 0.29 m above the shoulder.
+
+The replacement is a model of the robot, not of the site: `openral_ext/workspace/reach.py` samples the arm's own
+kinematics from the live URDF (the model MoveIt plans with) on the working branch the skills use, and bins the tool
+poses it can hold by point and approach direction; `footprint.py` says how close the hull may come to the surveyed
+structures, with the dock's own measured error as the margin. `dock_at_feature` now proposes stands from the reach
+map, rules out the ones the hull cannot take, and settles each with the robot's own IK -- one docking error nearer and
+further as well, because that is how accurately a dock lands. A feature with no such stand is answered before the
+rover drives anywhere: *the rover cannot park anywhere that lets the arm work here*.
+
+**3. What the survey then said about the site.** Running that decision over every interaction point: the three PDU
+panels were being approached from 0.20 m too far (their presses worked at the edge of the envelope -- Mission A's own
+record has a `move_tool` failing at 1.127 m and succeeding at 1.082 m), and two features -- `depot_stand/slot_1` and
+the crate staged on it -- have no legal stand at all: the hull cannot clear the stand at any distance from which the
+arm reaches the handle. That is a fact about the scene the robot can now state, instead of a mission that fails at the
+last centimetre.
+
+**4. Why G3 looked fine.** The G3 gate passed at a dock that landed 6 cm short of its work pose, which was enough for
+the measured-obstacle problem to stay hidden behind a stand-off that happened to be reachable. A gate that only ever
+runs one placement measures the luck of one dock; the reach model is what turns that into a statement about the site.
+
+### F60 — A grasp cannot be restored, a jaw angle is not a grip, and one blocked view should not end a pick
+
+2026-09-18, runs g4m–g4w. `openral_rskill.{procedural_pick,grasp_perception,_eye_in_hand}`,
+`openral_ext/capability_server/{contracts.yaml,node.py}`, `space_runtime/{verification,facts,agent}.py`,
+`experiments/launch/lunar_base_d0/ours_mission_check.py`.
+
+**1. The simulator's snapshot cannot restore a grasp, so no run may resume from one.** `envs/snapshot` writes back every
+joint angle, every joint target and every object pose, but the contact that holds a payload is not state — PhysX
+rebuilds it from the geometry, and a 1 kg item hanging from a bail does not survive the rebuild. Measured: the
+snapshot held the ORU at (6.133, −14.347, **0.668**) with all six jaw joints at 0.325 rad; after the restore the ORU
+sat at (5.958, −14.103, **0.193**) — 0.475 m straight down, 0.30 m sideways, on the ground where the rover stood.
+Two runs (g4n, g4o) were spent on a payload that had never been carried: g4o drove the length of the site with empty
+jaws and reached for the shelf. Only snapshots taken with the jaws open are honest resume points; `before_step_<n>`
+before a `pick` is one, `before_step_<n>` after it is not.
+
+**2. A jaw angle measures how far the fingers are apart, not whether anything is between them.** `JAW_OPEN_MIN_RAD`
+was 0.78, four hundredths under the commanded 0.82 — and the jaws come to rest at 0.776. Every open jaw therefore read
+as a held item: the boundary refused `arm_ready` in g4p ("the jaws are holding something (jaw 0.776 rad)"), and the
+same constant would have failed `place` at its own settle check. It was written down twice, in `_eye_in_hand.py` and
+in `node.py`, for one gripper. Now 0.6, defined once, read by the boundary from the skills (the harness config already
+used 0.6). The deeper point is that the angle was never the right evidence: 0.10 rad is closed on nothing, 0.175 is
+closed on a 13.6 mm edge, and a payload that slips out leaves the jaws exactly where the grasp left them.
+
+**3. `held_item`: what the gripper has, read from its own camera.** A new read-only query at the shared boundary asks
+the vision model what is between the fingers and answers `{holding, what}` with the jaw angle beside it as a number,
+not as the verdict. Offline on four frames whose answer was known it scored 4/4 in 1.8–2.6 s (`hold_after.png` →
+"white T-shaped block"; the frame where g4s reached for the shelf → not holding). Nothing is said to the model about
+what is expected to be there: an answer shaped by the question is not evidence (F57 §4, F58 §2), and comparing it with
+the record is the caller's job. Being a perception service it is shared with the baselines, like `observe`; using it
+to keep authoritative facts honest is Ours' mechanism (research_content §3.2).
+
+**4. An effect verified once is not a fact for the rest of the mission.** `item_held` held after `pick` and was never
+questioned again. In g4s the ORU dropped back onto the depot stand as the rover pulled away; the jaw read 0.1 rad in
+the evidence of *every* call from there to the shelf, and nothing compared it with the record, so `place` reached out
+holding nothing and stalled against the PDU panel — a failure that looks like a manipulation failure and is not one.
+The harness now looks again after every call that is not `place` or `release` (`item_still_held`, through `held_item`),
+and an item that is no longer there goes back to `unknown` with the picture that unseated it. Where it went, and what
+the mission does about it, stay the agent's to work out. A query that does not answer leaves the fact alone: a service
+outage is not evidence that the payload is gone (F58 §3).
+
+**5. The first view that answered was deciding the grasp.** F58 §2 cut `select` to one marked view per question and
+stopped at the first view with a choice — a concession to a gateway that timed out on anything larger. On DeepSeek's
+own endpoint a marked view is read in 1–6 s, and the concession had become the defect: this model essentially always
+answers, so the first view always won. In g4q that was the only view taken from above, and the mark it chose lay on
+the depot stand 42 cm behind the ORU's handle, reported as "the narrow neck directly under the T-shaped head"; the
+approach then failed 99 cm short. `select` now takes every view first and judges all of them in one question (the
+numbering already ran across views). Offline on g4m's own two views it chose the low view's mark 7 — the grasp that
+actually held — in 2 of 3 asks, where the high view's mark 6 had slipped out of the jaws on the lift.
+
+**6. What holds the payload is interlock, not friction** (user, 2026-09-18): the grasp goes across the neck *just*
+under the T-head, so the head rests on the closed fingers. This is why a static lift check cannot predict a carry.
+In g4s the chosen candidate was 13.6 mm wide (jaw closed to 0.175 rad, exactly as predicted), it passed `item_held`
+with a 7.2 cm lift, and it dropped as soon as the rover moved. A lift proves friction; only the head sitting on the
+fingers survives a drive.
+
+**7. A blocked view, or an unreachable candidate, should not end the call.** Taking every view before choosing means
+more views, and the lowest of them stand close in: g4v stopped 0.12 rad short against contact on the way to one and
+failed the whole `pick`. Three places treated a local obstruction as a fatal one, and all three are now local: a view
+the arm cannot reach is one view fewer; a candidate the arm cannot stand in front of goes into `tried` and the next
+one is asked for (plan v4 §4's own rule — g4q's was 99 cm away on the wrong structure, g4u's 21 cm away on the ORU
+itself); and the retreat back to the view's posture is a convenience, not a requirement. Also removed: the move back
+to the chosen view's posture before approaching. It was a no-op while the chosen view was the one the arm stood in;
+with every view taken first it became a move across the work zone, and in g4r it stalled and failed the call —
+`approach` works from the frame's own TF and plans to the stand-off from wherever the tool is.
+
+**8. Operational.** A `pgrep -f` kill left one agent of a stopped run alive; it drove the robot alongside the next
+run's agent for twenty minutes (g4u), which knocked the ORU off its stand mid-`pick`. The rule was already in the
+handoff — kill explicit PIDs — and the missing half is: verify afterwards that the domain is clean. The scene's own
+starting state is now saved as `snapshots/initial.pt` when a graph boots, so a mission can be retried from the top
+with `OURS_RESET=1` instead of rebooting Isaac; it is a jaws-open state, the only kind a restore can honestly return
+to (§1).
+
+### F61 — Where to look was written down, and looking from above made the grasp that holds unmeasurable
+
+2026-09-19, runs g4w, g5a–g5e. `openral_rskill.{procedural_pick,grasp_perception}`, `rskill-procedural-pick`.
+
+**1. Three constants decided where the camera looked, and none of them knew what it was looking for.** The overview
+posture was one written-down pose (`overview_pose: [-0.85, 0, 1.10, 50, 0]`); the working views came from
+`aim_points`, which picks whatever stands above its surroundings -- its own docstring says "nothing here knows where
+it was put" -- and their direction came from `side_view_pitch_deg: [10, 20, 30, 40]`, every one of them looking down.
+In g4w four of the five views went to other structures, and the one that did find the handle saw it from above.
+
+**2. From above, the grasp that holds cannot be measured at all.** The ORU's lifting interface is a 12 mm neck under
+a 90x45x14 mm head with 55 mm of free height (F49 §2): the jaws take the neck and the head rests on them. A row-wise
+depth profile of g4w's top view finds the neck exactly where F49 says it is -- **12.3 mm wide at 0.629 m, both sides
+100% clear** -- and the candidate generator still produced nothing near it. Not a defect in the generator: seen from
+above, the neck's 55 mm of free height projects to about **8 px ≈ 8 mm**, below `pad_height_m` (14 mm), and a grasp
+face that short is correctly refused. At the handle's own distance every candidate in all 26 was 19-27 mm, which is
+the handle's *other* axis -- the one F49 recorded as squeezing out of the jaws at 28 mm. The vision model was never
+choosing badly; the grasp that holds was not in the list to choose.
+
+**3. What replaced the constants.** The overview is now a place to look from, not a posture: lower and shallower
+poses are offered in turn until one is actually reached (g5b stopped 0.13 m short of the written-down one, "blocked
+by contact", and failed the call). The item is then found *once*, on the overview, with `find_regions` +
+`locate_region` -- three functions that had been written and never called -- and every working view is a view of it,
+aimed at the item's own top (a lifting handle stands on top of its payload; the overview's height map says how high
+it stands, no model of the item). The viewing directions now include the horizontal (`pitch 0, 5`). Asking the model
+to point at the *part* in the top view was dropped: it answered "dot 14 lies on the gray carry handle" about a
+surface 0.2 m behind the handle. The overview finds the item; the part is looked for from the side.
+
+**4. Measured.** On the same scene, with the views aimed at the item and taken from the side (g5d): a candidate
+**12.4 mm at 0.554 m** in the pitch-5 view and **12.6 mm at 0.551 m** at pitch 10 -- their graspable length 16 mm,
+just over the 14 mm the pads need, where the top view had 8 mm. The vision model chose across the neck, and the
+grasp held: **jaw 0.172 rad** (F57's own figure for a 12 mm neck between the pads), lift 7.5 cm, 34 px of item
+motion against the 285 px of a scene left behind. In g5e the model again chose the thin axis twice out of three.
+
+**5. Still open: the tool body against a 2.5-D height map.** `approach` is where it now fails: of five attempts across g5d and g5e, one held, two were refused
+for a surface the tool body would touch on the way in, one stalled 2.4 cm short and one lost the track 10 cm out.
+Reaching a neck under an overhanging head means putting the fingers into 55 mm of free height from the side, and the
+path is narrow. The successful grasp is worth reading twice: the candidate it approached was 26 mm, and the jaws
+still closed to 12 mm -- the item settled onto the neck as they closed. Form closure is what holds, and it is not
+only decided by which candidate is chosen.
+
+Measured in g5f, with the grasp point at [-1.086, 0.014, 0.94]: the tool point the guard refuses is
+[-0.907, 0.010, 0.89] -- the tool's own body 17.9 cm behind the grasp, correctly outside the 0.10 m the guard
+excludes around it -- and the cell it crosses measures a surface at 0.913 m, so the body is 2.3 cm *below* what was
+measured there, not short of a margin. Reaching a neck that sits in 55 mm of free height means putting the tool
+body over the payload it is picking up, and `surface_heights` is a 2.5-D map on 5 cm cells: it keeps the highest
+point of each cell and no shape, so it cannot tell a tool passing beside the box from one driven into it. The
+oracle's `pinch_pick` makes the same horizontal move and succeeds -- it checks nothing. Two ways out, both real
+work: leave the *target's own* measured surface out of the guard (F59's rule, which `working_on` applies to MoveIt's
+scene but not to the skill's own check), or give the check a representation that can hold an overhang.
+
+
+**6. The grasp holds a lift and does not hold a drive, and that is not a speed setting.** With the observation
+strategy fixed, `pick` succeeded three times running inside full Mission B runs (g5h, g5i, g5k), each time across the
+12 mm neck: jaw 0.171-0.184 rad, lifts of 6-13 cm, 0.2-4.9 px of item motion against the 225-423 px a scene left
+behind would have shown. Each time the payload came out of the jaws on the first drive afterwards, and the harness
+said so at once (`item_still_held`, §4) instead of letting the mission reach the shelf empty. Nav2's smoother was
+then set to ramp at 0.5 m/s^2 instead of 2.5 while the jaws hold something -- a shared-substrate limit applied by the
+boundary to every method's base moves, read from the jaw alone (plan v4 §2) -- and the payload still came out, *on
+the first metre*: measured at (5.887, -14.356, 0.548) against the slot it started in at (5.820, -14.390, 0.555), so
+7.5 cm sideways and no height lost. The jaw went 0.171 -> 0.100, closed on nothing, and the gripper's own camera
+showed an empty hand: the item slid from between the pads rather than the jaws opening. The head resting on the
+fingers constrains the item downwards, which is what makes a *lift* hold; it constrains nothing against the moment a
+horizontal acceleration puts on a 1 kg body hanging from a 12 mm neck, and the pads are 14 mm tall (`pad_height_m`)
+-- too short a purchase on a 55 mm neck to stop it tilting out. Where this goes next is a question about the grasp
+and the payload interface, not about a parameter: how deep the neck sits between the pads (F49 §2 measured a flange
+jamming at 50 mm of depth and squeezing out at 28 mm), or whether carrying should hold the arm in a posture that
+turns the moment into a push against the pads.
+
+### F62 — `press` exists; Mission A now deadlocks between three parts that are each right
+
+2026-09-19, runs ma1–ma2. `openral_rskill.{procedural_press,grasp_perception}`, `rskill-procedural-press`,
+`capability_server/{contracts.yaml,node.py}`, `space_runtime/verification.py`.
+
+**1. The fold is built.** `press(target)` is a procedural rSkill of the shape plan v4 §3/§4 asked for: locate (the
+target's pixel from the vision model in the wrist view, its depth from the same frame, the point those give in the
+rover frame) → approach (stand off facing the surface, look again from there and correct once) → press (guarded
+straight close-in until the face takes the load, read the way `place` reads a support taking a payload) → retreat.
+The model's palette gains one operation and loses nothing: `approach_target`, `move_tool` and `grasp` were already
+`engineering: true`, which had left the model with **no contact capability at all** since that change. The harness
+verifies `pressed` from the robot's own kinematics against the point the view measured -- far enough past the face,
+and clear of it again afterwards -- never the skill's success flag. One new perception function was needed:
+`locate_point` asks the vision model for a pixel, because a button is a patch on a panel and `find_regions` will not
+separate it from the panel for set-of-mark selection. Offline on a real wrist frame of the PDU it found the button
+twice (128,322 and 125,325 for two different wordings) and correctly answered "not visible" for a thing that was not
+there; the pixel round-trip through every quarter turn of the gravity-up view is exact.
+
+**2. Two defects of my own, both in the wiring rather than the skill.** `contracts.yaml` gained `press` while
+`lower_effect` did not, so the boundary raised `KeyError: 'press'` **and the agent was told nothing**: the action's
+own exception path leaves `failure_reason` empty, unlike the query path, which turns any exception into a typed
+answer ("every failure is a typed answer to the caller, not a dead service"). The agent spent five steps re-wording
+its target and re-docking against a blank failure. Effects need the same treatment as queries.
+
+**3. Mission A now deadlocks, and every part of the deadlock is correct.** With `press` wired, ma2 surveyed all three
+PDUs from their view poses, read the lamps (pdu_1 green, pdu_2 red) and went to the faulted one -- and then never
+pressed anything in 23 steps:
+- `dock_at_feature` stands where **the reach model** says the arm can work: 0.905 m from the point, 0.20 m closer
+  than the old hand-set distance (F59 §3 measured that the old one was too far). Right.
+- At 0.905 m, `arm_ready` fails -- twice, the second time with the tolerance relaxed: "no collision-free path". The
+  **ready posture is a written-down set of joint angles** that assumes the rover is parked further out. Right, for
+  where it was written.
+- The agent worked the cause out by itself, retreated 1.5 m, raised the arm there (it succeeded), and drove back in
+  -- and `dock` stopped 7 cm short: **Nav2 will not push a raised arm into a panel**. Right.
+- It then diagnosed *that* correctly too ("the raised arm blocks the final approach"), and tried to stow -- "no
+  collision-free path". The arm can now neither be raised nor stowed where it stands. **Deadlock.**
+
+No part is at fault and the mission cannot proceed, because **nothing owns the joint feasibility of arm posture and
+base position**. The reach model answers "can the arm reach the work from here", Nav2 answers "can the hull get
+there", the postures are constants from an era of standing further back, and the agent is left to discover the
+interaction empirically -- which it did, twice, and still could not escape. `press` itself needs none of it: it
+plans from wherever the arm is. Its contract now says so, which avoids entering the state; it does not dissolve it.
+
+### F63 — The carry is a moment problem, not a speed problem; and three ways a new capability fails to arrive
+
+2026-09-19, runs g5h–g5p, ma1–ma4, g6a. `openral_rskill.{procedural_pick,procedural_press}`,
+`capability_server/node.py`, `rskill-procedural-press/rskill.yaml`, `space_runtime/`.
+
+**1. What the carry actually needed.** F61 §6 left the payload coming out of the jaws in the first metre of every
+drive and recorded the wrong conclusion — that ramping Nav2 down had not changed it. Two things had to change
+together, and both are about the *moment* on a 12 mm neck held by 14 mm pads, not about speed:
+
+- **The lever.** After a successful lift the arm was left wherever the grasp ended — the tool 1.144 m out from the
+  chassis origin. `bring_in()` now walks the held item in along the tool axis before anything else moves: 1.144 →
+  0.838 m in g5m. The same angular acceleration at the base becomes a third less tangential acceleration at the
+  payload, and it costs one arm move.
+- **The drive limits.** Nav2's velocity smoother is retuned at the boundary whenever a base move is issued while the
+  jaws hold something (0.25 m/s, 0.5 m/s² carrying; 0.5 m/s, 2.5 m/s² free), and restored after. This is **shared
+  substrate, not Ours' method**: it reads the jaw alone, applies to every method's base moves, and is recorded in the
+  boundary's own log. A baseline that carries a payload gets it too.
+
+With both, g5m drove the whole depot → PDU-1 leg with `item_still_held` verified true on arrival — the first carry
+this project has ever completed. It came out on the **dock** at the far end.
+
+**2. What is still open, and the fix that has never run.** The dock is where the rover turns. The carrying limits
+capped linear acceleration but left angular acceleration at the free-driving constant, so on a 0.84 m lever the turn
+delivered ~0.84 m/s² to the payload — worse than the straight-line ramp the 19-metre leg had just survived. The
+boundary now derives it: `α = 0.5 / max(lever, 0.2)`, the lever read from the actual tool pose, so the tangential
+acceleration at the payload stays at the 0.5 m/s² that is known to hold. **This has never been exercised** (g6a was
+started for exactly this and is still running at the time of writing). Everything in §1 above is measured; this
+sentence is the one claim in F63 that is not.
+
+**3. A capability can fail to arrive three times before it is ever called.** Wiring `press` in cost more than
+writing it, and each failure was silent in a different way:
+
+- `actions: ["press"]` is not in `openral_core`'s controlled action vocabulary. Pydantic rejected the manifest, the
+  **local rSkill index silently skipped it**, and the runner fell through to HF Hub — reporting "network
+  unreachable" for a file sitting on disk. The vocabulary's word for pushing a face is `push`; the capability the
+  model sees is still `press` (that mapping lives in `contracts.yaml`, which is where it belongs).
+- `lower_effect` had no `press` branch (F62 §2), and the action path turns an exception into a blank failure.
+- `procedural_press` began with the same disease F61 diagnosed in `pick`: it looked wherever the arm happened to be
+  left, and ma4's first `press` photographed "the gripper against a dark starfield". `face_the_work_zone()` now
+  derives a looking posture — the tool pointed out of the rover's back, where a `dock` puts the work, at whatever
+  height and pitch the arm can actually hold — instead of a written-down posture. This is the third time the same
+  root cause has been fixed in a different place; a posture constant is a bug until proven otherwise.
+
+**4. Process, on the record.** Mission B was not finished when I started Mission A: the turn-limit fix of §2 had
+never been run, and I moved on to build `press` and then to run ma1–ma4 on top of an unverified carry. The user
+stopped it. The standing rule — finish the thing under test before opening the next one — is not a style preference;
+it is what keeps a claim like §1's attached to a run that actually happened. Both halves of this finding exist
+because the rule was applied late rather than early.
+
+### F64 — The visual servo was chasing a goal that moved when the tool moved
+
+2026-09-19, runs g5p (two failures), g6a (one). `openral_rskill.procedural_pick.{approach,take_standoff,grasp_rotation}`.
+
+**1. The symptom looked like a tracking problem and was not.** Three `approach` stages in a row ended with "lost
+sight of the chosen grasp 8 frames running while still 13–15 cm away", and the honest reading of that message — the
+template tracker gives up when the item fills the frame — is wrong. The pictures say something else: in g5p's
+`servo_10` the part is dead centre with 10.3 cm to go, and nine frames later in `servo_19` it has been swept to the
+right edge of the image with **13.2 cm** to go. The tool was further from the grasp than it had been, and the whole
+scene had rotated. The `take_standoff` trace of g6a shows the same thing numerically: the error runs
+0.012 → 0.009 → 0.016 → 0.020 → 0.012 m and the TCP walks a closed loop, never converging.
+
+**2. The goal pose was a function of the tool's own pose.** `goal_now()` recomputed the grasp orientation on every
+frame from `view = p_base - view_base`, where `view_base` was updated to the *current* camera position on every
+successful measurement. The camera is bolted to the gripper. `grasp_rotation` points the tool's z away from the
+camera (`if np.dot(z, view_b) < 0: z = -z`), so once the tool swung past the part far enough for the camera to
+change sides, z flipped 180°, the tool swung back, the camera changed sides again — a bang-bang limit cycle, not a
+slow divergence. Offline, with the part's geometry held fixed and only the camera's position varied, the commanded
+tool z flips from `[-1,0,0]` to `[+1,0,0]` between 180° and 240° of camera swing.
+
+**3. The fix is to decide the approach direction once.** Which side a grasp is taken from is a property of the view
+that *chose* it, not of where the tool has got to. `set_view_dir()` fixes it at that moment; the servo loop keeps
+updating **where** the part is and never **which side** it is taken from. The same offline check with the direction
+fixed gives a spread of exactly 0.0 over every tool pose — the loop is open.
+
+**4. Why four earlier picks succeeded.** g5h/i/k/m are not evidence against any of this. A bang-bang loop of this
+shape is conditionally stable: when the stand-off already puts the tool near the grasp orientation, the sign never
+flips and the servo converges in a few centimetres. The 2/3 success rate was the initial angle, not chance — which
+is exactly the kind of thing a success rate hides, and the reason "it works, four times running" was the wrong
+claim to record in F61 §1 without reading the failures underneath it.
+
+**5. What the fix uncovered (g6b).** With the loop open, the first live approach behaved as it never had: 43 frames
+tracked and **0 missed** through the stand-off, the tool's roll within a tenth of a degree, the part square in the
+middle of every frame. It still failed — and the message was the same sentence ("lost sight … 8 frames running"),
+which is why the sentence was never a diagnosis. The tracker was matching at **score 1.00** and throwing the match
+away: `no depth where it matches`. A grasp that holds is a thin one (12 mm across, ~20 px at 0.37 m) and behind it
+is sky, which returns no range; the depth image had no value at a pixel the template was certain of. The pixel is
+the strong measurement in that geometry and the range is the weak one — and the arm's own motion already implies
+the range. `measure()` now takes the predicted distance when the match is confident enough (0.9) and marks it
+`depth_predicted`, so a trace says which frames were ranged and which were inferred. This is not the same mistake
+as §2 wearing a different hat: the prediction is the tracked point carried through the camera's *measured* motion,
+so the distance still comes from the arm, never from the match. Offline: with sky behind the neck the old path
+loses a 1.00 match and the new one returns 0.360 m marked predicted; given a real depth image both return the
+measured 0.352 m.
+
+### F65 — A resume is a claim about the whole robot, and nobody was checking the arm
+
+2026-09-19, runs g6a–g6e. `experiments/launch/lunar_base_d0/{ours_mission_check.py,d0_common.py}`, `AGENT/handoff.md`.
+
+**1. Three graphs were booted to test a one-line change.** `handoff.md` said "changing skill code needs a new graph",
+and it was wrong: the rSkills run inside `capability_server`, which `attach_d0.sh`'s `D0_RESTART_BOUNDARY=1` kills and
+restarts. Every `pick` change from F64 was therefore paid for with eight minutes of Isaac Sim start-up and twenty
+minutes of driving to the depot — about an hour and a half, to reach a scene that `OURS_RESUME_BEFORE_STEP=7` puts
+back in **twenty seconds**. The note is corrected. The user's instruction was blunter than the fix: don't start from
+the beginning; the simulator has snapshots.
+
+**2. The first resume measured something other than the scene it named.** g6d restored `before_step_7` with the base
+within 3 mm of its saved estimate — and the arm still in the half-way posture the killed run had left it in. `pick`'s
+first overview was taken pressed against a panel, the ORU was not in the frame at all, and the call failed at `find`
+with "none of the structures in view from here is the described item". That reads as a perception failure. It was a
+resume nobody had checked: the joint target that holds the arm is a live ROS action, not part of the physics state
+the snapshot saves, so whatever the previous run was commanding can outlive a restore.
+
+**3. So the restore is now verified, like everything else here.** The snapshot's metadata records the seven joint
+angles beside the localization estimate; after a restore the joints are read back; a mismatch is driven to the saved
+posture through the boundary and read back again; and a mismatch that survives that stops the run rather than
+continuing into a scene that is not the one named. `RESTORED_ARM` says which of those happened. This is the same
+principle the method applies to effects, turned on the harness's own development tooling — which had been trusted
+precisely because it was "just" tooling.
+
+**4. What it cost to not have it.** Two of the three `pick` diagnoses in F64 came out of runs whose approach never
+started, and one whole run (g6d) was spent on a failure that existed only because the resume was silently wrong. A
+development loop that cannot restore a known state is not faster than booting from scratch; it is slower, because it
+looks like it worked.
+
+
+### F66 — The development resume restarted the client, not the skill owner
+
+2026-09-19, diagnosis from g6c/g6e; validation in progress in g7a.
+
+`capability_server/node.py:call_rskill` sends an ExecuteRskill action. The independent
+`openral_rskill_ros/runtime_node` owns execution; `_import_procedural_entrypoint` uses
+`importlib.import_module`, with no reload. The original runtime PID 273922 started at 09:34:32,
+before `procedural_pick.py` was modified at 09:55:47 (commit 5171284, 09:56:24).
+The runner had already loaded pick before that change. `D0_RESTART_BOUNDARY=1` only restarted
+its client. Thus g6d/g6e cannot validate the unranged-frame fix; conclusions assigning all
+remaining failures to base stance were premature. No new grasp algorithm follows from this finding.
+
+Development tooling now accepts `D0_RESTART_RUNTIME_PID=<explicit PID>` on attach.
+`restart_runtime.py` checks that PID belongs to the named graph and is runtime_node,
+restarts it with its actual launch configuration, and records the process provenance without
+logging credentials. Isaac, HAL and the independent safety kernel are retained. g7a restores
+g6e's jaws-open snapshot before step 7. This is a development continuation, not a frozen
+autonomous experiment or an autonomous-success result.
+
+**Resume validation correction:** editing the live attach script let its old bash process resume
+at an obsolete byte offset and start its check again after the original check was killed. Two
+agents therefore overlapped in g7a; it is invalid. The unintended old check truncated g6e's
+`check.log` and restarted its `events.jsonl` from step 7. The original capability log and appended
+agent log retain the earlier failures, but g6e's original event journal is no longer intact.
+The attach script now executes a frozen per-run copy, as run_d0 already did. Old attach parents,
+checks and agents were explicitly stopped before g7b resumed the unchanged g6c step-7 snapshot.
+
+**Scope audit before g7b:** the pick manifest contained a site-specific standard-handle grasp
+instruction. It was removed; the selector retains its generic image-based instruction and the
+caller's target/part. Separately, place's settling evidence omitted `fx`, although the independent
+verifier indexes `settle["fx"]`. The producer now records the actual frame's calibrated focal
+length, consistent with pick's hold evidence. No tolerance, stand-off or mission sequence changed.
+Both changes are generic contract/prompt corrections; placement is still unvalidated live.
+
+
+### F67 — Starting place implicitly released the item; evidence must survive retries
+
+2026-09-19, source audit while g7b pick was running. The shared EyeInHandSkill initialized
+`_jaw_open=True` and emitted GRIPPER_BINARY on every tick. With the real place/robot manifests
+and g5m's recorded held jaw (0.169 rad), its first tick emitted `gripper: [1.0]`, before place
+reached release. This is a generic operation-state bug, not a scene-specific grasp problem.
+The initial gripper command is now absent until set_jaw explicitly requests one. Two targeted
+command-semantics tests passed: startup/arm hold preserve the grasp, explicit release emits open.
+Physics validation is still required. Place also now declares the joint-position actuator its
+servo uses, and supplies calibrated `settle.fx` to the independent verifier.
+
+The first approach in g7b failed and entered a local retry. Retrying overwrote the original
+servo images and replaced approach evidence in the result, preventing reliable diagnosis.
+Pick now writes separate attempt directories, records each attempt's selection/approach evidence,
+and writes attempt.json after the attempt. This changes evidence retention only, not candidates,
+controllers, retries, tolerances or strategy. g7b still uses the earlier loaded implementation;
+these changes require the next runtime restart.
+
+
+### F68 — A verified lift was followed by an unverified carry retraction
+
+2026-09-19, g7b step 7. With the actual current tracker loaded and the site-specific grasp
+hint removed, attempt 2 selected the 12.1 mm stem from image evidence. Lift 0.139 m, jaw
+0.1696 rad and recomputed image flow 1.5 px vs 406.9 px expected for a left-behind item
+supported holding at the end of lift. The later bring_in moved TCP from [-1.109,-0.009,1.159]
+to [-0.808,-0.039,1.151]; final jaw was 0.100 rad (empty). The skill said success/held, but
+Ours' independent verifier rejected item_held. No authoritative held fact was created.
+
+The carry retraction code called plan_to with only an endpoint joint goal despite documenting
+constant tool orientation. Intermediate orientation was unconstrained and the trajectory was
+not retained, so its exact rotation during this failed run cannot be reconstructed. This is a
+confirmed mismatch in path semantics; it is not yet proof that rotation alone caused the slip.
+Retraction now uses the existing place carry servo: fixed TCP orientation, per-step MoveIt
+state-validity checks, and the same carry tolerances/rate/time budget relocated from place
+into both manifests (not tuned to this mission). It checks the jaw after retraction and sets
+outcome=held only afterwards. A failed optional retraction can still return a held item if
+the measured jaw supports that; an empty jaw returns a typed bring_in failure.
+
+g7c restores the original jaws-open g6c step-7 snapshot with runtime PID 912950 and all current
+changes, including F67. It stops at the first failed capability/effect for development diagnosis.
+No altered run here is a frozen-campaign autonomous success.
+
+g7c outcome: failed at bring_in with empty jaw, correctly reported by the new check. Lift
+was 0.079 m (jaw 0.1703 rad, image flow 7.8 px versus 632 px expected). Retraction moved
+0.25 m in 8.14 s, endpoint error 0.0073 m / 0.0198 rad, final jaw 0.100 rad. Maintaining
+orientation did not suffice. Hold-before/after images show relative sliding, and grasp-close
+jaw was 0.3672 rad before it narrowed to 0.1703. Existing traces do not retain the whole
+motion, so the exact loss time and mechanical cause remain unresolved.
+
+g7d continues the full g7c record/current physics without teleporting. Its robot-motion bag
+records clocks, TF, joint state and actual arm/gripper commands; no truth topics enter the
+agent. The harness attempt summary previously omitted current-schema VLM descriptions,
+selection reasons, operation base estimate and hold/retraction measurements. It now retains
+those existing facts for the model to interpret. No recovery plan or handle hint is added.
+Development attach can now omit OURS_RESUME_BEFORE_STEP to continue a stopped live graph's
+full record without restoring physics. This is still a development continuation, not a
+frozen autonomous campaign result.
+
+
+### F69 — Reproduce successful contact before replacing the grasp interface
+
+2026-09-19. Active scope is r3 of `manipulation_contracts_proposal.md`: compatible success
+reference → generic reproduction → complete the mission. No full NBV or control-ownership
+framework. Details, provenance and limits: `docs/success_reference_reproduction.md`.
+
+The current unchanged assets support grasp and transport: reference_r3_pregrasp restored an
+open-jaw snapshot, executed the existing D0 reference from MoveIt pregrasp, lifted and carried
+through destination docking. Jaw 0.174 at closure, 0.169 after lift, about 0.172 at destination.
+Thus a jaw reading near 0.17 alone is not evidence of loss. Release completed; retreat stalled.
+The next check, before any restore, independently reported the ORU delivered on PDU-1's shelf.
+No stow/dock or initial-state autonomous success is claimed. Oracle coordinates remain evaluator-only.
+The original straight-joint READY reference first failed before grasp; the recovery is explicitly
+recorded, not hidden as a complete clean reference run.
+
+A more specific g7c discrepancy precedes bring_in: chosen candidate 1 is on the wider mounting
+pedestal. Recomputing the original depth reproduces its 26.2 mm span; nearby visible neck rows
+measure about 12 mm. The VLM called it the neck, and a separate VLM confirmation repeated that
+mistake. That confirmation layer was discarded. Replaying selection with both old and clarified
+part wording chose candidate 22 once; this does not establish a prompt-only reliability improvement.
+
+The generic candidate chain tracked only centre and depth, allowing a narrow neck and coaxial
+wide base to join. Requiring continuity of both contour boundaries, using the existing pixel
+continuity tolerance, exposes a 12.1 mm neck candidate in that same frame. Twelve archived depth
+frames retain before/after candidates. This is offline geometry evidence, not physical success.
+The shared equipment catalogue now exposes sourced contact-region relationships and dimensions
+from the equipment specification, separate from observed poses; Ours refreshes it on reattachment.
+No per-object grasp coordinates, tuned numerical threshold, or simulator asset change was added.
+
+g8a validates these changes on the same held graph, with a new skill runtime and robot/TF/RGB-D
+recording started before the verified open-jaw restore. The reasoner independently used the catalogue
+to request the neck between head and pedestal. Minimal stage feedback reaches the journal.
+Live cancellation and successful completion of the new pick remain to be measured.
+
+
+### F70 — A committed neck contact drifted into background before closure
+
+2026-09-19, g8a. The reasoner used the sourced interface catalogue to request the narrow neck,
+excluding the head and mounting pedestal. The VLM selected candidate 15, width 12.0 mm, on the
+neck midsection. The first approach nevertheless failed at 6.9 cm with lost visibility, before
+closing. Its own images show the match moving from the neck to the lower-right background while
+scores remained near 1.0. The automatic next observation was explicitly canceled to analyze the
+first divergence. It is not a slip experiment: the jaws never closed on this attempt.
+
+Replay of the recorded wrist RGB-D and robot TF reproduces 5.3 cm target-estimate drift with the
+loaded adaptive-template implementation. Independent simulator TF records 663 object samples
+with zero translation during this approach; truth is used only to establish stationarity, not
+as tracker input. Freezing the template alone still permits association with the adjacent base.
+A fixed reference template/depth, association inside the measured contact's projected half-width,
+and a spatial contact committed in odom preserve matches over all 109 replayed approach frames.
+This is a counterfactual replay on the recorded camera trajectory, not proof of a new physical grasp.
+
+The fix uses no object-specific numbers or oracle pose. Robot pose feedback re-expresses the
+same odom contact and axes each cycle; visual matches check visibility and report discrepancy,
+not overwrite the point. Losing visibility before terminal self-occlusion invalidates the lock
+and returns a typed failure. One pick call now selects one contact; automatic full re-observation
+and re-selection were removed, leaving recovery strategy with the caller. The shared contract
+explicitly describes stationary targets and the controller's actual feedback source.
+
+The g8a cancellation exercised the minimal feedback/stop chain: final result was cancelled,
+worker_stopped=true and hold_command_applied=true; the harness then independently reported
+item_held=false. Jaws were already open and remained open. This does not test cancellation while
+holding a payload or establish a physical-rest acknowledgement; physical_stop_confirmed=false.
+
+g8b reloads the runtime and restores the same open-jaw initial state for physical validation.
+Evidence: g8a/offline_reference/{tracking_replay.json,object_stationarity.json}; replay script
+artifacts/perception/oracle_grasp_review/replay_g8a_tracking.py; g8b/source_snapshot and development.json.
+
+
+### F71 — Visual neck grasp survives lift and retraction; carry handoff exposed a reporting bug
+
+2026-09-19, g8b, development restore from g6c step 7. The model independently chose arm_ready,
+observe, locate_feature, then pick with the catalogue's neck description. Candidate 8 spans
+12.1 mm. Approach retained 46 matched frames without a miss; last reported match discrepancy
+was 1.68 mm. Closure jaw 0.1711, measured TCP lift 0.100 m, retraction 0.250 m, final jaw 0.172;
+the harness independently verified item_held=true. Closed robot/RGB-D bag and offline TF
+confirm handle world height 1.015 → 1.100 → 1.102 m through lift/retraction. The current assets
+therefore do not require modification to achieve this grasp. This is one successful development
+pick, not a frozen initial-state Mission B success or a controlled reliability comparison.
+
+The first navigation request failed before dispatch: drive_limits successfully sent carrying
+parameters, then indexed every evidence value as an array. The newly included scalar lever_m
+raised TypeError. The boundary now returns the complete configured arrays and scalar evidence
+unchanged. g8c continues the same physical grasp and complete journal without restoring a held
+snapshot or restarting skills. Its recording starts before the continuation.
+
+Evidence: g8b/ours/events.jsonl seq 48–65; g8b/offline_reference/phase_samples.json and
+relative_pose.csv; g8b/capability_server.log traceback; g8c/development.json.
+
+
+### F72 — Carry and destination docking retain grip; single-frame held query gives a false negative
+
+2026-09-19, g8c. After the scalar drive-limit evidence correction, navigate_to_pose completed
+81.64 sim seconds of transport; the harness then confirmed held=true. dock_at_feature reached
+the shelf work pose (1.3 cm reported error). The following VLM held query returned false despite
+a jaw angle of 0.175 rad, and the development stop-on-failure check stopped the agent.
+
+Closed-bag evaluator TF confirms retained grip: handle in TCP approximately [0.0005,0.0113,0.0153] m
+at departure, [0.0003,0.0059,0.0187] at arrival, [0.0009,0.0080,0.0181] after docking; neck/jaw
+axis alignment remains above 0.9995. The saved wrist image also shows the neck between the
+fingers. Thus this failure is a perception/verification false negative, not another physical slip.
+Simulator truth remains diagnostic-only and is not injected into the continuation.
+
+The authoritative object fact already transitions to unknown after failed confirmation, but its
+explanation asserted empty jaws. Corrected that wording to 'holding not confirmed'. g8d preserves
+the complete record/current physics and lets the model resolve the conflict. Its first chosen
+tool was held_item, which returned true on a fresh image. No repeated offline prompt trials or
+physical modification were used to force a positive result. Place/stow/dock still pending.
+
+A separate development-check defect was observed in g8b: STOP_ON_FAILURE killed the agent as
+soon as execution_finished=false arrived, before its independent held query completed. A new
+verification_finished event now marks completion of effect verification; subsequent checks
+wait for it before stopping/snapshotting. These edits were made after g8d's processes loaded
+and are not part of its executing source snapshot; they need validation on the next launch.
+
+Evidence: g8c/ours/events.jsonl seq 75–86; g8c/offline_reference/relative_pose.csv;
+g8c/evidence/wrist_0001945.92.jpg; g8d/ours/events.jsonl seq 89–90.
+
+
+### F73 — Placement was initially within bounds; upward withdrawal disturbed the released item
+
+2026-09-19, g8d/e. Do not infer the cause from the final outboard/tilted pose alone. At release
+entry the ORU root was [11.7611,4.3954,0.5150] m, 8.5 degrees from upright; the surveyed support
+is [11.75,4.4065,0.5]. Just after opening, it settled to root z=0.5097, up cosine 0.9986.
+Then during retreat it rose again to z=0.5725, moved outboard and ultimately settled near
+[11.6843,4.2307,0.5032], tilted 19.1 degrees. That endpoint fails both along-support location
+and upright criteria. The evaluator was not relaxed. g8e drove clear, inspected and was stopped
+after sufficient diagnostic evidence; no successful place/stow/dock is claimed.
+
+The direct geometric discrepancy from the successful reference: reference tool pitch at release
+was about +0.6 degrees, g8d about -21 degrees. Place preserves the measured wrist orientation
+after transport. Its axial withdrawal therefore commanded +53.7 mm upward motion over a
+150 mm retreat. The object's renewed lift starts during that movement, consistent with the
+open fingers catching the overhanging head. No contact-force trace identifies the exact colliding
+body; this contact explanation is an inference from synchronized motion and interface geometry.
+The later extra upward stroke also stalled; the first axial stroke itself reached its goal.
+
+Minimal shared correction: equipment knowledge for a neck with an overhanging head states a
+release constraint, below_overhang. The mission caller can pass this semantic constraint to
+place (default unconstrained retains axial withdrawal). The skill computes a support-parallel
+withdrawal for a side grasp, followed by its existing upward clearance. No new distances, object
+coordinates, asset changes, or mission-specific branch. The selected constraint and retreat
+goal are returned as evidence. Every method uses the same capability/metadata.
+
+Executing the actual modified geometric code on recorded robot TF preserves the 150 mm stroke
+and removes the 53.7 mm rise. This is counterfactual goal evidence, not proof of collision-free
+withdrawal or successful placement. Both constraint values validate through the real shared
+contract, lowering function, and RSkillManifest. Physical validation pending.
+
+Evidence: g8d/offline_reference/{relative_pose.csv,support_relation.json,withdrawal_replay.json};
+artifacts/perception/oracle_grasp_review/replay_release_withdrawal.py; reference_r3_pregrasp
+closed bag and corresponding CSV. g8e/diagnostic_stop.json records the explicit process stop.
+
+
+## F74 — Contact geometry first: oblique closing axis (2026-09-19, development)
+
+User narrowed work to correct approach/contact/closure; lift, bring_in and transport are deferred.
+g8f selected the neck and tracked 91 frames without a reported miss, closed at 0.2174 rad, lifted,
+then slipped during bring_in. This does not invalidate g8b’s success but does invalidate any claim
+that the visual pick is already reliable.
+
+Closed-bag RGB-D replay recovered the selected g8b/g8f observations (image MAE 0.334/0.330;
+RGB/depth receipt differences about 1 ms). The original candidate gave both closing-axis endpoints
+the same depth, imposing camera-frontoparallel closing. Fitting the visible neck surface gives
+a 0.44-degree tangent error for successful g8b and about 7.0 degrees for g8f, consistent with
+g8f's approximately 7.4-degree physical closure misalignment. This identifies an upstream geometric
+defect; it does not prove it is the only determinant of grasp retention.
+
+`refine_contact` now fits the selected part's local RGB-D surface, intersects its image direction
+with that plane, and constructs a tangent closing axis before odom target commitment. Actual-code
+replay changes g8b by 0.44 degrees and g8f by 7.21 degrees; the reconstructed axes are orthogonal
+to the fitted normal. Selection identity/point are unchanged. No object truth, object name,
+asset CAD or target-specific angle enters the control calculation. The hidden cross-section
+depth approximation remains to be evaluated against actual closure, not tuned preemptively.
+
+USD inspection found every EG2 collider inherited `regolith_contact` (0.5/0.5, multiply) from
+the rover. User explicitly authorized a reasonable friction increase. The gripper now has an
+independent 0.8/0.6 material, using the existing equipment-material range as a declared simulation
+assumption, not a hardware measurement. Wheel/body binding is unchanged. With multiply, against
+equipment 0.8/0.6, effective static/dynamic friction is 0.64/0.36 instead of 0.40/0.30.
+Authoring recipe: `space_robotics_bench/assets/lunar_base/process/set_gripper_material.py`.
+PhysX combination semantics: https://nvidia-omniverse.github.io/PhysX/physx/5.1.0/_build/physx/latest/struct_px_combine_mode.html
+
+Contact-only fixture g8g_contact runs production pick through grasp and raises an intentional
+`contact_diagnostic_complete` before hold/lift. It cannot assert held or run bring_in. It is not
+a mission capability or autonomous success. Its temporary manifest is outside the mission library.
+The explicit PhysxMaterialAPI schema was added to the authoring recipe after g8g boot, so g8g
+must not be cited as validation of the final multiply-combined material; reload before that claim.
+Live contact result pending.
+
+
+F74 contact validation update: g8g never reached contact (diagnostic client omitted the normal pick deadline; fixed).
+g8h loaded the final gripper material and selected a neck, but stopped before closure on lost tracking.
+Closed-bag TF shows premature object displacement with jaws still open. Before that, `take_standoff` rejected
+normal-direction IK then substituted a -30-degree approach. It checked only the stand-off, not the final
+contact. Thus tracking loss is not evidence to relax the tracker: the object really moved.
+
+Removed the pitch-search list and tilted-approach substitution. Equally clear sides now preserve both
+antipodal wrist rolls, ordered by current rotational distance; both stand-off and contact IK must succeed
+before the approach starts. The chosen roll remains fixed in odom during servo. Real-frame replay confirms
+contour-sign reversal leaves the same physical side options. g8i_contact validates this on the same
+open-jaw fixture and material; no lift/carry. Result pending.
+
+## F75 — Shared contact geometry and explicit closure conditions (2026-09-19, development)
+
+The solution-focused audit is `contact_closure_audit.md`. g8i ended before motion: contact IK failed.
+Its known-success-pose probe was after skill cleanup, so it did not establish the exact in-call scene.
+Code nevertheless confirmed a solid gripper envelope filling the jaw gap, ground-to-top work-zone columns,
+different planning/servo target exclusions, no consumer acknowledgement, and a close-in failure path that
+could proceed to closure without checking orientation. The two-second declaration expiry does not explain
+g8i's 0.04-s approach; that earlier possibility was explicitly withdrawn.
+
+Implemented: export seven EG2 collision meshes and six authored joints from the existing robot USD into
+the planning model; measured jaw state accompanies IK/whole-robot validity checks. Only authored adjacent
+joint collision exclusions replace the old broad gripper-link exemptions. These are source collision
+meshes, not a claim of identical PhysX cooked convex decomposition. No target geometry or oracle pose is
+embedded. Robot package builds and expanded URDF contains the six real gripper joints.
+
+The local work-zone node now triangulates valid neighbouring depth pixels instead of filling columns,
+with timestamped camera transforms. Long edges cannot bridge the minimum supported feature size.
+No target sphere or item-wide removal is applied. A shared prepare service acknowledges MoveIt's
+ApplyPlanningScene result and retains the stationary scene until release. Invalid/occluded measurements
+remain unknown: pick separately checks observed free rays for actual gripper surface samples along insertion.
+This is not a dynamic obstacle map or a complete concurrent ownership protocol.
+
+Pick's close-in uses the existing per-step joint servo and shared whole-robot collision checks, preserving
+the previous Cartesian speed limits. The separate height-map target authorization functions were removed.
+Close-in stalls no longer count as completion; actual position/orientation and target validity are checked
+again before closure. Pose error alone does not prove retained grasp. No lift or bring_in validation here.
+
+Read-only evidence in `artifacts/perception/contact_revision/`: the recorded g8b successful preclosure
+configuration now passes whole-robot validity and collision-aware IK in the acknowledged measured scene,
+with target_excluded=false; the old model rejected it. Five g8h configurations from the strongest recorded
+object-motion increments were compared against the currently undisturbed fixture: one reports eg2_base
+contact with measured/work_zone (~0.056 mm), four do not. This is a useful counterexample to blanket
+permission, not exact replay of the moving object's collision history or a robust contact-margin claim.
+Actual depth-surface replay on g8b/g8f passed; four existing command/cancellation tests passed.
+
+Harness attempt summaries/context retain scene, target validity, collision/IK, observation and closure
+conditions without creating held facts or prescribing recovery. The old g8i result survives reducer replay.
+The more specific final failure classification was edited after g8j runtime loaded: it is not physically
+validated by that run. g8j is contact-only; setup first corrected a temporary diagnostic manifest ID and
+reissued a stranded client request, before any pick execution. Its physical result is recorded below.
+
+F75 live update: g8j selected a neck and acknowledged measured_scene_144; contact IK and whole-robot
+validity succeeded. It stopped before insertion/closure on free-ray coverage (best candidates: 294
+unobserved samples), and released the scene normally. Closed-bag view recovery localizes the deficit
+to fingertips in the last portion of insertion; replay differs slightly because frames/TF are recovered
+by nearest recorded samples. This is no longer the old contact-IK failure.
+
+The added observability check initially conflated positive infinity with invalid depth. Installed IsaacLab
+CameraCfg documents clipping behavior 'none' as returning inf for ranges beyond the maximum; the current
+wrist camera has an authored far clip, while the ROS Image relay previously omitted this semantics.
+See the [official CameraCfg documentation](https://isaac-sim.github.io/IsaacLab/v2.2.0/source/api/lab/isaaclab.sensors.html#isaaclab.sensors.CameraCfg.depth_clipping_behavior)
+and installed `/home/bingqi/isaaclab/source/isaaclab/isaaclab/sensors/camera/camera_cfg.py`.
+
+SRB now publishes its actual CameraCfg near/far and positive-infinity meaning as sensor metadata;
+the bridge relays it unchanged, and Frame preserves it. Only explicitly declared beyond-far returns
+certify rays inside that sensor range. NaN, zero, missing metadata and out-of-image samples remain unknown.
+No numeric clipping distance is embedded in pick. Counterfactual replay on g8j's closed RGB-D using
+the unchanged authored camera configuration passes the same insertion coverage check without changing
+the grasp or coverage threshold. This was not metadata recorded live in g8j; g8m fresh boot validates
+the producer/relay/consumer path. Gripper FK also now computes TCP and fingers in one requested state,
+avoiding the current TF of a moving TCP as the reference for recorded-state geometry.
+
+Integration bookkeeping: g8k failed during sensor startup because the new publisher call passed one
+Publisher to an existing Sequence-based subscriber check; corrected. g8l's live metadata stayed unknown
+because the producer omitted IsaacLab's documented `depth` alias; corrected and raw data_types/clipping
+behavior retained. Neither executed pick. g8m fresh boot publishes the real `rgb/depth`, clipping='none',
+near=0.001/far=1.999, positive_infinity=beyond_far_clip metadata end to end (depth_semantics_live.yaml).
+These bounds come from the running sensor config, not skill constants.
+
+g8m reached closure: 2.86 mm / 0.0226 rad controller error, jaw 0.1825 rad. Closed-bag TF evaluation
+shows no object displacement during approach and the neck between the fingers. See contact_evaluation.json
+and the contact_closed.png image. This is contact evidence, not a held/lift result.
+
+**Run-isolation correction:** the previous statement that g8k/l never executed pick was only true at
+their initial teardown. Their check clients were not tagged and survived the simulator teardown. g8l
+subsequently issued another joints action immediately after g8m closure (bag wall 631.509 s), then failed
+find on the displaced scene. Thus g8m postclosure motion is contaminated, not evidence against friction
+or the stop action. The recorded stop command itself matches measured joints. Pending g8k client and
+launcher were explicitly terminated. run_d0 and attach_d0 now tag the timeout/check clients with their
+graph, so teardown owns actuator clients as well as ROS servers. g8n repeats from the other existing
+open-jaw fixture with unchanged capability code; only its active check remains.
+
+
+g8n completed observation (6 views, 28 candidates) and selected the neck, but stopped before motion:
+all offered stand-offs returned IK -31. The evidence preserved ik_no_solution and explicitly did not
+claim physical impossibility. Comparison with g8m isolates a remaining second feasibility rule:
+free_sides sampled one point 60 mm along either part-axis sign, kept only the highest visibility vote,
+and therefore pruned the opposite antipodal roll before the shared geometry could check it.
+The generic fix enumerates both mathematical jaw symmetries; current orientation orders them, while
+IK, whole-robot collision and observed insertion coverage authorize them. No new pitch, target point,
+IK seed list or scene-specific pose is introduced. Read-only replay checks this before another motion.
+
+Read-only g8n replay confirms the pruned opposite roll has both stand-off/contact IK and whole-robot
+validity, with zero missing sampled free-ray evidence; the original roll still fails IK. Stored at
+`artifacts/perception/contact_revision/g8n_antipodal_probe.json`. The attached bag missed the bridge's
+volatile TF because of subscriber QoS; replay reconstructs those robot-only frames using the actual
+sensor bridge calibration and recorded robot body TF. It does not read object transforms for solving.
+The same graph's startup bag provides the static frame roots. g8o records explicit TF QoS and reloads
+the skill runtime (1050798), then repeats the g8b step-10 fixture. Result below.
+
+
+g8o selected the neck and passed shared stand-off/contact IK, whole-robot endpoint checks and insertion
+observation coverage. It reached close-in, then stopped 13 mm / ~2 degrees before its goal: the next
+joint state collided between measured/work_zone and eg2_link6 (0.382 mm reported penetration).
+Jaws remained open. Closed-bag robot/object TF confirms zero object displacement during approach;
+final_wrist.png and contact_evaluation.json retain the actual stopped geometry. Endpoint feasibility
+is therefore not a physical trajectory success. Do not loosen collision tolerance or reinstate the
+old near-enough closure path. Exact collision position/normal and tested joints were missing from this
+result; state_validity now returns those fields for the harness (source change after g8o, not loaded
+in its runtime). No claim yet whether the hit is permissible contact, reconstruction error or trajectory
+tracking error. No stable contact/closure claim and no lift/bring-in execution in these diagnostics.
+
+Final state: only g8m graph retained, runtime 1050798; all recorders/checks finished. Temporary diagnostic
+skill symlink removed from the palette. All source changes remain uncommitted. The next investigation
+is the last insertion corridor/contact identity using the recorded state, not another whole pick sweep.
+
+
+## F76 — Formal grasp/transport attempt still stops before closure (2026-09-19)
+
+User authorized attempting full pick and transport after the audit corrections. g8p restores g8b's
+open-jaw before_step_10 fixture in g8m's graph; runtime 1054384 reloads the collision evidence additions,
+and the capability boundary is restarted. The mission agent issues the semantic pick through the normal
+boundary; STOP_ON_FAILURE waits for independent verification. No motion/control/friction changes in this attempt.
+
+Six views / 28 candidates, selected neck candidate 7. The applied scene, stand-off/contact endpoint IK,
+whole-robot endpoint validity and sampled insertion visibility pass. Stand-off settles to 1.7 mm / 0.0253 rad.
+Final approach fails about 20 mm / 3 degrees from its estimated goal. The rejected configuration reports
+measured/work_zone vs eg2_link2, penetration 0.0387 mm, with contact position, normal and tested joints now
+retained. This is a planning collision, not proof of an actual physical impact. Jaws remain 0.82 rad/open;
+independent item_held=false. No closure, lift, bring-in, navigation or transport is executed.
+
+Closed-bag evaluation: zero object displacement after approach starts. The reported planning contact
+transforms near the neck's front/side corner: relative to authored handle center approximately
+[+6.45, -15.23, -17.66] mm. Robot/object truth is used only for this evaluation, never for control.
+Final actual closing-axis error against the neck axis is about 15.9 degrees. The controller's 3-degree
+error is relative to its estimated goal, not to the true contact frame. Candidate 7's local surface fit
+has RMS 1.59 mm and rotates the image proposal by 20.52 degrees; earlier successful flat-face fit g8m
+had RMS ~7e-8 m. Mixed-face fitting is a plausible direction-estimation cause, not yet a proven exclusive
+root cause. The next targeted analysis is the selected contact surface/frame and executed orientation;
+do not expand this into friction tuning or a transport-slip diagnosis before grasp is established.
+
+Evidence: g8p/{pick_result,physical_evaluation,collision_evaluation}.json, ours/events.jsonl,
+offline_reference/, and closed robot_motion/. Source/assets and development metadata retained.
+This restored development attempt is not a frozen paper-campaign trial. Only g8m graph is retained;
+g8p agent/check/recorder ended, no competing client remains.
+
+
+## F77 — Expected contact is a scoped permission, not absent geometry (2026-09-19)
+
+**Trigger and scope.** User identified the over-strong final-approach requirement:
+a grasp must establish contact. g8p's predicted 0.039 mm intersection alone does not
+prove physical infeasibility or a false positive. Its reported body was eg2_link2,
+not a distal jaw. Implement expected contact without globally ignoring the gripper
+or deleting the target, and retain the same capability for every mission/method.
+
+**Implementation.** The locked RGB-D candidate supplies an oriented region in odom:
+measured width/length and the existing gripper perception depth-discontinuity span.
+The shared scene labels only whole measured triangles within that region as
+`measured/contact`; every other triangle (including crossing boundaries), surveyed
+structure and robot collision model stays in place. Robot geometry identifies
+`eg2_link5/6` as distal jaw bodies. Only those two link/patch pairs are allowed for
+contact endpoint IK/validity and final insertion/closure. Free-space standoff motion
+retains strict checks; free-ray coverage separately counts expected-contact samples
+for the same link/region predicate. Permission is revoked before lift. Every phase
+waits for ApplyPlanningScene and records its evidence; all operation exits restore
+the original ACM and unsplit scene before releasing the scene owner.
+
+**Integration evidence.** `artifacts/perception/contact_permission/integration.json`
+records a real idle-graph MoveIt check: immutable registration, endpoint_check,
+insertion, two revocations, and release. All **26,455 measured triangles** and
+unrelated ACM pairs were preserved. Release restored the original ACM and removed
+the temporary label. No motion was sent. The check accounts for MoveIt's serialized
+object pose/mesh poses and omission of all-false ACM rows. The four existing gripper
+command/cancellation tests pass. `openral_msgs` rebuilt successfully.
+
+The same integration exposed images arriving 20 ms ahead of their robot TF. The
+scene now selects the newest timestamp-matched frame in the sensor QoS history,
+not a latest-pose substitution or a guessed time offset. Registration rejection
+also exercises cleanup without attempting to remove a never-created object.
+
+**Limits.** Permission uses distal-jaw-body granularity, not isolated pad meshes.
+The regional box labels observed surfaces; it is not an object shape or evidence
+that insertion is physically correct. eg2_link2 remains protected. This change
+neither proves g8p would grasp if allowed nor repairs a 16-degree estimated-axis
+error. No contact-force guarantee, crash recovery, or held-object attachment is
+claimed. Full physical validation is g8q, a development continuation, not a frozen
+campaign run.
+
+**g8q physical result.** Resumed g8b before step 10 through the production harness,
+with runtime 1079879. Candidate 8 measured 12 mm wide; registration split 785
+triangles into the contact patch. Endpoint permission, revocation before standoff,
+and final insertion permission were all acknowledged. Standoff reached 1.2 mm /
+0.0342 rad error. Final insertion stalled 27 mm / about 1 degree from its commanded
+goal, with last MoveIt state validity **true** and no reported contacts. The final
+command-minus-measured joints were approximately [0.01, 0, -0.01, -0.02, -0.07,
+0.03, -0.05] rad. No closure or transport occurred; independent item_held=false,
+jaw=0.82. This is a servo no-progress result, not another collision veto; physical
+interference versus controller/model/tracking cause is **not yet established**.
+Failure cleanup acknowledged geometry/permission restoration. Agent/check ended;
+recorder 1079792 closed cleanly. Preserve the sole g8m_contact graph.
+
+Artifacts: `artifacts/runs/g8q/{pick_result.json,ours/events.jsonl,robot_motion/,
+source_snapshot/}`. Next session should analyze the closed bag and compare actual
+versus commanded joint/TCP motion with g8b, before another modification or run.
+Do not infer stable grasp from the permission check or the absence of a collision
+veto. OpenRAL commits 6154482 + 56ce9b8; SRB 1928821.
+
+
+## F78 — Empty-jaw close-in fixed; one pick → carry → dock chain; selection and loaded servo remain (2026-09-19)
+
+**g8q cause (closed-bag replay).** Object and base never moved. At sim 2315.5–2316.3 the distal jaws straddled
+the neck (jaw centre ~3 mm from the ORU axis, evaluator TF only). The TCP was then ~15 mm past the skill's own
+goal; the servo carried it 26 mm sideways, ~20 mm back and 10 mm up, then declared no progress 27 mm out.
+Measured joints followed commands: not an obstruction. Offline replay of the servo law through the live graph's
+MoveIt FK, with per-joint lags fitted from the bag (0.34–1.44 s), reproduces it: as-is 11.7 s, 12 mm overshoot,
+23.5 mm lateral; without the sag integral no overshoot but 18.5 mm lateral; without integral and null-space
+posture pull 5.5 s, 8 mm lateral. Fix: `servo(sag_integral=False, posture_gain=0.0)` for pick's close-in only
+(empty jaws, short straight insertion). Other servo users unchanged.
+
+**g8r (same code, runtime 1093996, g8b before_step_10).** VLM chose candidate 10, 27.4 mm wide, ~10 cm below the
+neck: the pedestal (as g7c). Its p30 view offered no neck mark; p20's neck mark 2 was ignored. Contact IK then
+failed correctly; nothing touched. The catalogue lists the neck thickness, pick measures each candidate's width,
+and nothing compares them: C2's "semantic choice and geometry refer to the same part" is not implemented.
+STOP_ON_FAILURE ended the agent, so model recovery was not exercised; the failure text would not have told it why.
+
+**g8s (same code).** Neck candidate 12 (12.1 mm). Close-in 2 mm / 0.004 rad in 9.2 s, 88 frames, 0 missed.
+Jaw 0.170, lift 0.061 m, flow 0.3 px vs 412 px expected; independent held=true. bring_in stalled at joint4's
+limit, jaw retained. navigate_to_feature and dock_at_feature to PDU-1 with item_still_held verified after each.
+place failed at `over`: stalled 1.1 cm / 2 deg from goal (carry tolerance 1.0 cm), jaw 0.173, item_placed=false,
+item still in the jaws. Throughout the carry after bring_in the held joint command differed from measured by
+0.3–0.75 rad on joints 1/3/5/7 (arm against joint4's stop): the servo command integrates from itself and winds
+up at a joint stop. Loaded `over` also lagged (joint6 ~0.1 rad). Cause of the `over` stall not yet established.
+Development continuations, not campaign trials. Evidence: g8q/g8r/g8s `robot_motion/` (closed), `ours/events.jsonl`.
+
+**Place and carry (g8s/g8t closed bags, evaluator TF only).** place's `over` goal is the support's x/y at the
+current TCP height; nothing checks that the hanging item clears the support. Entering place the ORU base rode at
+0.56 m (g8s) / 0.52 m (g8t) over a 0.50 m shelf. g8s: the ORU came to rest on the shelf (0.505 m) with jaws
+closed; the arm stalled 1.1 cm short. g8t: the ORU struck the shelf, jaw 0.231 then 0.100 (empty), item fell onto
+the shelf (evaluator delivered=true by accident). Carry: rigid after lift (0.4–3.6 deg), but from bring_in the ORU
+pivots 16–32 deg about the jaw closing axis and the neck slides 16–18 mm until the head rests on the fingers;
+swings pry the jaw from 0.17 to 0.18–0.23 during driving/docking. Retention is the head interlock, not clamp force.
+g8t without STOP_ON_FAILURE: the model observed, backed off, confirmed empty jaws and searched; the wrist VLM
+wrongly reported the item on the ground. Stopped by the user.
+
+**g8u.** Model re-docked (approach 2.0 m) before pick; VLM chose the neck correctly (15.5 mm, 0.74 m range).
+pick failed at contact_scene/register: "selected region contains no complete measured surface triangles" (F77
+permission precondition). Cause of zero triangles not yet established. Evidence of g8s–g8u is written under
+g8r/evidence (runtime restarted during g8r keeps its log dir).
+
+**Fragile vetoes removed (user principle: checks fall back to the harness; no per-task tuning).** A skill check that
+cannot certify something is evidence, not a veto; a confirmed problem returns a typed reason with the facts the model
+needs, and the model chooses the next operation (never mechanical parameters). (1) Contact permission with zero
+measured triangles in the selected region now registers "nothing exempted" and continues; every other collision
+check remains (planning_scene/node.py). (2) Insertion free-ray observation is recorded, not blocking (openral
+2a24b9c). (3) Pick attempt summaries carry the selected mark's id, measured width and range into the context, so a
+27 mm pick against the catalogue's 12 mm neck is visible to the model. Kept: target-drift gate, closure pose check,
+empty-jaw and lift checks (confirmed problems). `restart_runtime.py` also restarts the planning_scene node.
+g8v runs without STOP_ON_FAILURE from g8b before_step_10, stopping after a verified dock at PDU-1.
+
+**Carry and place root cause (g8s bag vs the robot's collision model).** After bring_in the ORU's box overlapped
+the rover's deck collision box by 13–93 mm (x) and 60–105 mm (z) for the whole carry: bring_in had pulled the
+hanging item onto the rear deck. That one fact explains the 0.4–0.75 rad joint lag, the 16–32 deg pivot and the
+jaw prying. Nothing checked it: state validity saw the arm and gripper, never the item. Offline, live MoveIt with
+the catalogue envelope attached reports held_item vs chassis_base_link/base_link at those configurations and
+nothing against the robot just after the lift. Fix (openral 0179a1d): the envelope (upright square prism over any
+yaw, extended by the neck length it can slide) joins every state-validity check while held; world objects are
+exempt (the measured scene holds the item itself); bring_in may raise before walking in; place travels over the
+support with the envelope above it and drops it on release. Boundary: pick/place take an optional catalogue `item`.
+
+**Shelf.** The PDU shelf (0.42 x 0.56 m, back strip 0.20 m above the plate) left 2.4 cm behind a centred ORU; both
+g8s and g8t struck the back strip (far edge 4.64–4.66 m vs strip 4.627 m). User approved a larger shelf: 0.60 x
+0.72 m, place point at the plate centre, ~10 cm clear (SRB 6839574). Regenerated site boxes are now axis-aligned
+(the committed ones were skewed min-area rectangles). place's over tolerance 1.0 cm → 3 cm / 0.08 rad (a third of
+the clearance). The evaluator's window (±12 / ±18 cm, 15 deg) already exceeds what the new shelf allows; unchanged.
+Needs a fresh graph (the running Isaac holds the old shelf).
+
+## F79 — The IK acceptance rule: on the working branch, or next to the seed (2026-09-20, development)
+
+**g9m (runtime started 10:33:40, openral b6798bc).** pick reached `held`: the VLM chose the 12.4 mm neck over the
+27 mm pedestal, close-in stalled 1.3 cm out inside every direction's budget, jaw 0.1695, lift 0.1502 m, flow 0.5 px
+against 409.9 px expected, `item_held` verified. **bring_in then moved nothing.** Its own record: `in_by_m 0.25`,
+`raised_by_m 0.02`, and the servo refused at 25.5 cm / 16 deg — the whole distance. The height ladder is the reason:
+`raise 0.00` not clear, `raise 0.02` clear, and **0.04 through 0.20 all `reachable: false`**. The single clear height
+had millimetres of margin; `last_state_validity` shows `held_item` against `site/depot_stand` at 2.7 mm, and the
+held joints sat 0.03–0.07 rad below their commands (the load sagging), so the pull-in's first step was already
+invalid. The evaluator kept reading `oru_on: depot_stand/slot_0` while the model drove off to PDU-1. dde1be6, which
+removes the window that caused those `reachable: false`, was committed at 10:35:30 — 110 s after that runtime
+started. g9m ran code the fix was not in, so it re-ran a known failure rather than testing anything.
+
+**g9n (fresh graph, openral dde1be6).** pick failed at `find`: "the arm cannot take an overview of the work zone
+from where the rover stands (4 postures tried)". `last_ik` says `error_code 1` — MoveIt **did** solve it — refused
+by `branch_jump_rad 1.868 > 1.2`. The model's response was sound (it repositioned the base), but no base pose helps.
+
+**Cause.** dde1be6 replaced the working-branch window with a distance from the seed. Every `ik()` call seeded at
+`READY` is a deliberate reconfiguration — `find`'s overview, `rolled_view`, the working views — and the wrist joints
+carry that change: joint6/joint7 are deliberately absent from `POSTURE` because the tool rotation asked for
+determines them. So the reconfigurations solve *on the working branch* and still land 1.6–2.6 rad from the seed.
+The window alone was equally wrong the other way: it refused poses the arm was already in and made every bring_in
+height unreachable (g9l, b6798bc widened it, dde1be6 removed it). The two criteria each cover one case.
+
+**Rule (fbb33c9).** A solution is this arm's own configuration when it is on the working branch **or** within
+`BRANCH_JUMP_RAD` of the seed; it is refused only when it is neither. Reach, collision and the servo decide the rest.
+`move_to` now reports which of the two happened, because that is what tells the caller whether to move at all.
+
+**Measured offline against the live MoveIt before any run** (`/compute_ik`, `/compute_fk`, read-only):
+
+| case | on branch | jump (rad) | verdict |
+|---|---|---|---|
+| overview dz 0, dpitch 0 | yes | 2.57 | accept |
+| overview dz −0.08, dpitch −10 | no (joint1, joint4) | 4.99 | refuse — the wrist wraps a full turn |
+| overview dz −0.16, dpitch −20 | yes | 1.57 | accept |
+| overview dz 0, dpitch −20 | yes | 1.87 | accept |
+| bring_in raise 0.00 / 0.02 / 0.04 | yes | 0.00 / 0.10 / 0.23 | accept |
+| bring_in raise 0.06 / 0.08 | no (joint4) | 0.39 / 0.65 | accept — next to the seed |
+| bring_in raise 0.10 and above | — | — | IK error −31: a real reach limit, not the rule |
+| mirrored branch (F57) | no (joint1–5) | 2.90 | refuse |
+
+`find` takes the first posture it can also plan to, so one accepted overview is enough. bring_in's usable heights go
+from **0.02 alone** to **0.02/0.04/0.06/0.08**, and the pull-in walks 0.15 m at raise 0.08 before the next step is a
+different configuration. The 1.2 rad threshold now sits in a measured gap: accepted off-branch solutions jump at
+most 0.65, refused ones at least 2.90. That is the first of the three numbers the plan owes a measured source.
+
+**Method note.** g9m and g9n both cost a full graph and a pick to learn something a read-only query of the live
+MoveIt answered in seconds. The IK rule is a pure function of a solution, a seed and `POSTURE`: it belongs in an
+offline bench (`/compute_ik` on the held graph) before a runtime restart, not in a mission run.
+
+**g9o (same graph, same snapshot, openral fbb33c9 — the rule is the only variable against g9n).** `find` took its
+overview and selected candidate 3, the 12.4 mm neck, from three views; g9n's `attempt_01/` had not one image in it.
+bring_in's ladder inverted: `0.00` and **`0.02` both not clear**, `0.04/0.06/0.08/0.10` reachable *and* clear, `0.12`
+and above a real IK limit. It raised 0.04 and stalled 10.9 cm from a 0.25 m goal — about **14 cm of travel, against
+g9m's zero**. pick `held`, lift 0.154 m, flow 0.5 px against 499.5 expected, `item_held` verified.
+
+**The carry still lost the ORU.** During `navigate_to_feature(pdu_1_shelf/shelf)` the jaw went 0.169 → **0.100**
+(closed on nothing) and the evaluator returned `oru_on: depot_stand/slot_0`. That reading is decisive rather than
+noisy: `on_support` requires `free = |handle - tcp| > NOT_HELD_M`, so naming a support *means* the item is out of the
+gripper. 14 cm of retraction did not take the ORU off the stand's support; driving away stripped it from the jaws.
+
+**The harness caught it without being told.** `navigate_to_feature`'s `item_still_held` verified **false** on jaw
+encoder plus wrist image — the skill had reported success — and the model went straight to a front-camera `observe`
+looking for the box on the ground. Independent effect verification and model-owned recovery, both working, on a
+failure nothing had anticipated.
+
+**Open, and not to be guessed at.** Whether the ORU ever left the support, and at which instant it came down, is one
+measurement on the closed bag (`/tf` evaluator poses plus `/srb/env0/mission_state`): the ORU's base height over the
+stand across grasp → hold lift → bring_in → the first metres of the drive. Insufficient raise (the IK ceiling at
+0.10), sag after `hold_here`, and the drive's own acceleration call for different fixes; the trace separates them.
+
+**The carry, measured from the evaluator TF of a successful and a failed bag (g8s, g9m).** The question the code
+could not answer — why two runs carried the ORU and none since — is answered by one quantity: how far the item had
+been moved toward the rover, relative to the stand's near edge, at the moment it sagged. Stand box (live planning
+scene) 0.616 deep x 1.300 x 0.610; slot 0 at (5.82, -14.39, 0.55), so the edge the rover faces is y = -14.192 and
+the slot's inset is 0.198 m — with the 0.392 m deep ORU centred there, its near face is 2 mm from that edge.
+
+| | peak over the slot | travel toward the rover | at its lowest | outcome |
+|---|---|---|---|---|
+| g8s (before the envelope) | 0.102 m | **0.228 m — past the edge** | 0.021 m over slot level, 0.070 m *outside* the stand | held, carried ✓ |
+| g9m (with the envelope) | 0.141 m | **0.105 m — still over the stand** | back on the slot surface | released ✗ |
+
+**Both runs sag, by 8–14 cm within seconds of the lift; sag is not the fault.** What decides the outcome is where
+the item is when it sags: past the stand's edge it keeps hanging in the jaws, over the stand it lands and is let go.
+g9m's ORU was on the slot **before the rover moved at all** — the drive did not tear it out, it left it behind.
+
+**Why the travel collapsed.** `carry_item` models the payload as an upright square prism swept over every yaw:
+`side = hypot(0.45, 0.392) = 0.597`, half 0.298 against the real half depth of 0.196. The evaluator TF refutes the
+sweep: across both runs the ORU's tilt stays 0.5–10 deg and its yaw within a few degrees of where it started — it
+does not turn in the jaws. The phantom 0.102 m per side is exactly the travel that disappeared (0.228 → 0.105).
+
+**The budget, and what closes it.** Travel needed is the item's own half depth plus a margin, `0.196s + 0.03`;
+travel available is the arm's limit minus the envelope's excess, `0.228 - 0.102s` (the arm stops at joint4's limit,
+g8s/g8t both at -2.24/-2.33 rad of ±2.356). They meet at **s ≤ 0.664, i.e. `target: {longest: 0.30}`**; at 0.25 m
+the margin is 3.2 cm. Removing the unjustified yaw sweep instead makes the budget close at full size. The two are
+independent and both are one small change; neither is a tuned constant.
+
+**What the stand is, and what the stand-off does not check (g9p).** Two scene facts were wrong, not one. The
+`site/depot_stand` box took the prop's bounding height, 0.610 m, while the asset that authors it says plainly
+`top surface 0.55 m, front (+X) edge free for the arm, back lip`: the 6 cm is a lip along the back, and the box
+spread it over the table, the slots and the free front edge alike. An ORU standing on a slot at 0.550 therefore
+began 6 cm *inside* the obstacle, and since the held envelope reaches `neck_height` (0.055) below the item's own
+base, it had to rise **0.115 m** before the arm's checks would let it move at all, where physics asks 0. The hold
+lift is 0.15, so bring_in had 0.035 m against a measured 0.07 m of sag, and the first heights of its ladder came
+back `clear: false`. Bounding a prop at its declared working surface gives 0.093 m instead.
+
+Shrinking the ORU to 0.25 m was tried in the same pass and **reverted**: it cannot help. The body scale cancels out
+of the vertical budget exactly (`handle_above_base = body height + 0.10`, the handle being synthesized after scaling
+in absolute metres, which also left the 12 mm neck untouched). What it did do was move the rover. The boundary
+stands where the arm reaches the work height, and the work height is the tallest handle over a support
+(`ITEM_HANDLE_M`); a shorter unit lowered it from 1.017 to 0.854, the reach model parked 14 cm closer, and every one
+of pick's working views became unreachable. Swept against the live MoveIt over the skill's own grid
+(back x rise x pitch, 96 poses), the views survive on the aim's *distance*, barely on its height:
+
+| aim x (chassis) | −1.02 | −1.00 | −0.98 | −0.96 | −0.94 | −0.92 | −0.90 |
+|---|---|---|---|---|---|---|---|
+| reachable views of 96 | 15–20 | 10–17 | 6–15 | 1–9 | 0–5 | 0–1 | **0** |
+
+g9o's aim sat at −0.954 and worked on 3–8 of 96; g9p's at −0.908 and had none.
+
+**Harness gap this exposes (not a scene fault).** `stand_distance` chooses the parking place by asking whether the
+arm reaches the *work heights*, plus footprint clearance and a docking error either way. It never asks whether the
+skill's own observation poses are reachable from there, and those are the tighter constraint by far — behind and
+above the target, folding toward the rover. So the boundary can hand back a stand from which the item can be
+grasped but not seen. That is a property of the robot's geometry, not of any mission, and belongs in the stand
+choice.
+
+**The overview is written in the chassis frame, and the stand-off is not a constant (g9p, g9q).** Bounding the
+depot stand at its table moved the boundary's parking place from 1.096 m to 0.950 m — a closer stand now passes
+`arm_reaches`, and candidates are offered roomiest first. Both pick failures that followed come from that 14 cm,
+and they are different failures:
+
+*g9p* — every working view unreachable. The views sit 0.15–0.34 m behind the aim and pitched down at it, so a
+nearer target folds them into the rover. Swept on the live MoveIt, 96 poses per aim: 15–20 survive at aim
+x = −1.02, 3–8 at −0.95, **none** at −0.91, and the aim's height barely matters.
+
+*g9q* — the views were reachable, and the aim still landed on the ORU's body (0.910) instead of its handle (1.022).
+Not framing: measured through the robot's own camera-in-tool transform, the closer stand frames the handle *better*
+(image row 210 against 11, depth 0.318 against 0.372). The overview's own regions prove it was seen — one sits at
+chassis z = 1.059, the handle's head, 0.023 m from the located dot and well inside the 0.2 m window the aim
+searches. What discarded it is `surface_heights`, which drops every measured point within 0.15 m of an arm link as
+the arm's own body. The overview is taken at a **fixed chassis pose** `[-0.85, 0, 1.10, 50, 0]`: at the 1.096 m
+stand the tool sits 0.258 m from the handle and the handle survives; at 0.950 m it sits **0.135 m** from it and the
+skill deletes the thing it came to find.
+
+**What the measurement says the fix is.** Taking the same overview relative to the item instead of to the chassis
+makes its geometry identical at both stand-offs (handle at 0.411 m, 47.6 deg down) — the property wanted, since the
+stand-off is chosen by the boundary and will keep changing. And the stand choice itself asks only whether the arm
+reaches the *work*; the poses it must observe from are the tighter constraint, and a stand that fails them is one
+the skills arrive at and cannot start from. Both follow from the robot's own geometry — the arm's self-filter
+radius, the camera's place on the gripper — not from any mission.
+
+## F80 — The stand is reasoned about, and the pick works (2026-09-20, development)
+
+**What was wrong.** Three scene/skill faults and one architectural one, all measured:
+
+1. `site/depot_stand` took the prop's bounding height, 0.610, while the asset that authors it says its table is
+   0.55 and its front edge is left free for the arm; the 6 cm is a lip along the back. An ORU standing on a slot
+   began 6 cm *inside* the obstacle, so the held envelope had to rise 0.115 m before the arm's own checks would let
+   it move, where physics asks 0. Bounding a prop at its declared working surface gives 0.093 m of clearance at the
+   hold lift instead of 0.035.
+2. The held item was checked as a prism swept over every yaw, 0.597 m square against a 0.45 x 0.392 m unit. Four
+   carry bags say the ORU does not turn in the jaws (yaw within 14 deg of where it started, modulo the box's own
+   symmetry) and pivots at most 15.4 deg about the jaw axis. It is now checked as the box it is, widened across
+   that axis by the measured pivot.
+3. `find` opened with an overview from a pose fixed in the chassis frame, built a 5 cm height map, took the tallest
+   cell within 0.2 m of a located blob for "the item's top", and aimed 24 viewpoints at that guess. All of it was
+   machinery for deciding where to point the camera, and it assumed a parking distance the boundary decides. It is
+   one view now, level with the part, because an upright handle neck shows the width the jaws close on from the
+   side and not at all from above (F60). Where that is comes from the caller.
+4. **The boundary chose where to park and said nothing about what it gave up.** `stand_distance` takes the roomiest
+   stand its reach model offers and settles it with kinematics: 0.96 m at the depot, where the arm reaches the
+   handle and can only look at it from 20 deg above -- and from above the head hides the 12 mm neck, so five
+   candidates came back at 19-27 mm, the pedestal, and none at the declared width (g9t, reproduced offline on the
+   saved depth). Four predicates over the nominal work point failed to tell 0.96 from the 1.10 every successful
+   pick had used: standing off by the camera's set-back, reach-map room at the point and at that remove, the
+   working-branch rule, an insertion from a stand-off. A **level look** tells them apart cleanly, because that is
+   what the measurement needs.
+
+**What was done about (4) is the part that matters.** Not a predicate inside `stand_distance`. `work_stands`
+reports, per distance, whether the tool reaches the work and the shallowest angle above horizontal the wrist camera
+can look from, with the stand-off taken from the pick skill's own manifest so both answer with one number; each row
+carries the `standoff_m` that parks there. `dock_at_feature` now says its default distance is chosen for reach
+alone. What each part needs is already in the catalogue's grasp interface. The model reads both and decides.
+
+**It does.** Offline against the real reasoner, with the real records and no hint: it computes the grasp height as
+the place frame's z plus the catalogued handle height (1.017, exact), reads "a neck under an overhanging head" and
+concludes it needs a level look, asks `work_stands`, and docks with `standoff_m` 0.12 -- 1.08 m, the nearest stand
+that allows one. Live in g9w and g9x it did the same, unprompted, and wrote the reason into its own task ledger.
+An earlier interface where the query reported what the standoff counted *from* had it pass 0.96 and park at 1.92:
+the inference was right and the interface was ambiguous, which is the sort of thing the offline check finds in
+seconds.
+
+**g9x, the first pick that works end to end.** One level view, 5.7 s of sim time against the old flow's 92 s, one
+candidate, the VLM naming it as the neck between head and pedestal. `bring_in` then ran **without stalling at all**
+-- no `why` -- over **0.30 m**, against 0.228 m in the best previous run and 0 m in g9m, with six usable heights
+starting at `raise 0.00` clear, the falsifiable prediction fault (1) implied. `item_held` verified, jaw 0.174,
+lift 0.152. The evaluator's `oru_on` stayed empty through the drive that follows.
+
+**Method.** Every step above was settled offline before a simulator ran: the IK rule and the view sweep against the
+live MoveIt, the detector replayed on the run's own saved depth, the reasoner's inference asked of the real model
+with the real records. Two runs were still lost to code that a read-back would have caught (a `#` comment inside an
+embedded JSON block; a path passed where an image array was expected), which is why that read-back is now a rule.
+
+**g9x's carry, and what it uncovers.** The pick held: bring_in ran its full 0.30 m without stalling, `item_held`
+verified at jaw 0.174 and a 0.152 m lift, and the evaluator's `oru_on` stayed empty. The drive then lost it. At the
+shelf `item_still_held` verified **false** at jaw 0.100 -- closed on nothing -- and the ORU's truth pose is
+(5.620, -14.009, 0.086), pitched 48 deg, on the ground **0.44 m from the slot it came off**. It did not ride to
+PDU-1 and fall; it slid out of the jaws within the first metre, and the rover drove the rest of the way empty.
+
+This failure has been hidden until now. Every earlier run either never moved the item off its support (bring_in
+travelled 0-0.14 m, g9m/g9o) or ended with the arm pressed against joint4's stop, which held the posture rigid
+(g8s/g8t, both of which carried). g9x is the first time the ORU has hung free, clear of the stand, while the base
+accelerated -- and a 12 mm neck between jaws that close to 0.174 rad did not survive it. The handle is built so a
+vertical pull is taken by the head resting on the fingers (F49); nothing in it resists the neck being shaken out
+sideways.
+
+The question is whether the base's acceleration threw it or the arm's hold relaxed after bring_in, and those need
+different answers. The bag carries the ORU's evaluator TF and the joint states: the ORU's height and the jaw angle
+against time across the first metre of the drive separate them. Not to be guessed at.
+
+## F81 -- the carry never had a dynamics problem: a cmd_vel overwrote the arm
+
+Six runs lost the ORU within the first metre of the drive. The dynamics were derived carefully -- lunar gravity from
+the published `space_context`, a swing budget from the largest disturbance the jaw had been measured to take, the
+linear and angular allowances split because they add at the load -- and ga1 drove under those limits, at a peak base
+speed of 0.08 m/s against g9x's 0.20, and lost it anyway. Peak load tilt barely moved: 14.3 deg in g9x, 12.9 in ga1.
+Base roll and pitch are 0.00 deg throughout both runs, parked and driving, so terrain was never in it either.
+
+The bag's wrist camera settled it in one look. From t=184.6 to 186.0 the ORU's head sits still above the closed jaws
+against empty sky. At 186.08 a base structure fills the frame; by 186.5 the head is visibly skewed; the jaw falls
+0.183 -> 0.163 -> 0.133 -> 0.104 and by 187.4 the jaws are empty. Reading the numbers alone had produced four
+successive wrong hypotheses in a day. **Look at the pictures first, then measure.**
+
+What the pictures showed was the load being flung, and the joints say by what. The arm is motionless from t=183.0 to
+185.78 -- joint2 at 41.6 deg to a tenth of a degree. At 186.00 it moves; by **186.22, 0.22 s later, joint2 is at
+60.0 deg and joint6 at -39.1** (+18.4 and -36.3 deg); the load's handle travels 21 mm along the tool's own approach
+axis in that same interval, and the jaw is pried from 0.170 to 0.183. From 187.5 on the arm oscillates between
+joint2 34.5 and 50.8 for the remainder of the run. Nothing in the mission commanded any of this.
+
+**The cause is at the SRB/ROS action boundary.** `LunarBot`'s action vector is one concatenation: base drive, then
+the arm's 14 slots (`[mode flag, 6 ik twist, 7 joint targets]`, `SwitchableArmAction`), then the binary gripper. Every
+`cmd_vel` message rebuilds the *whole* vector through `map_cmd_to_action`, which is the **teleoperation** mapping of
+one shared twist -- for this robot it returns a zero mode flag and seven zeroed joint targets that its own comment
+calls "an ignored placeholder" -- and then keeps only the dimensions in `_held_mask`. That mask was set by
+`hold = msg_type is BoolMsg`: the gripper was protected because it is a Bool, the arm was not because it is a
+`Float32MultiArray`. So the first cmd_vel of the drive switched the arm out of joint-position mode and zeroed its
+targets, and every cmd_vel after that did it again at 20 Hz.
+
+The bag contains its own control. The last arm command is at sim_t 176.54, when `pick` finishes; the arm is then
+uncommanded for **9.4 s and does not move at all**. It whips at 186.0, the instant the base first moves. Absence of
+arm commands is not what does it; the arrival of cmd_vel is.
+
+This is why every earlier explanation failed. Halving the drive speed could not help, because the disturbance is a
+joint step, not an acceleration. The gripper was never commanded open -- it is the one term the mask protected -- yet
+the load still left. The loss always fell inside the first metre because it happens on the *first* cmd_vel. And the
+two runs that did carry (g8s, g8t) had the arm pressed against joint4's stop, which absorbed the step.
+
+The fix is one line of semantics: **a client that commands an action term owns it**, so `hold = True` for every term
+rather than for Bool terms alone. Teleoperation never publishes on the per-term topics, and the base's own term
+(`four_wheel_steer`) has no publisher at all -- the base is driven by the `action/cmd_vel` Twist -- so nothing that
+worked before is latched.
+
+**A second, independent weakness, found on the way and worth keeping.** The jaws closed with the ORU's neck only
+3.2 mm inside the fingertips. The gripper's own collision meshes, forward-kinematic at the measured jaw angle, put
+the fingertips at tool z +0.006 and the pads' clamping ridges back to -0.030, with the jaw body closing the pocket at
+-0.043. The skill drove the contact to -0.012 and accepted a residual of up to 0.012 -- one manifest number,
+`pad_offset_m`, serving as both the target and its own tolerance, so a contact that had not entered the jaws at all
+was inside budget. Target and tolerance are now two quantities from one measurement of the pads (`pad_band_m`):
+seat at their middle, accept half their length. The seat moves 6 mm deeper, which lengthens the escape the load must
+travel from 33 mm to 40 mm. It is hardening, not the cause.
+
+## F82 -- the carry holds, and what it cost the mission next
+
+With the action-ownership fix in (F81), ga4 carried the ORU twice without losing it. `pick` verified at sim_t
+184.88 on the first attempt (`item_held`, jaw 0.199); the rover drove depot -> PDU-1 over 86 s of sim time and
+`item_still_held` verified at jaw 0.182; it later drove PDU-1 -> depot over 77 s and `item_still_held` verified at
+jaw 0.194. Six earlier runs had lost the load inside the first metre. The jaw never approached the 0.13 that means
+closed on nothing.
+
+The jaw angle also measures the fix to the seat. ga1 closed at 0.170 with the neck 3.2 mm inside the fingertips;
+ga4 closed at 0.199. The fingers turn about a proximal pivot, so for the same 12 mm neck a larger angle is a
+contact nearer that pivot -- the deeper seat, read straight off the encoder.
+
+**The mission still did not finish, and the reason is a harness gap worth the paper.** At PDU-1 the model asked
+what was in the jaws. The wrist camera is on the gripper, and the gripper is clamped to the T-handle: the handle's
+head fills the frame and the ORU's gold body hangs below it, out of view. The model answered accurately -- "a
+smooth light-grey case, flat matte top, no lifting eye, no gold MLI foil" -- which is exactly what the head looks
+like. From two such observations the model concluded it was carrying the white cargo crate, wrote itself a recovery
+task, and drove the correct payload back to the depot to put it down.
+
+Nothing in that chain is a mistake by the model. It asked a reasonable question; the only instrument the harness
+offered was one that physically cannot answer it. The boundary's `held_item` query was *defined* as a camera
+reading, with the comment that the comparison against "what the record says is carried" belongs to the caller --
+but the record was never given to any caller. The boundary dispatched the `pick`, saw it succeed, and knew the
+catalogued item and the support it came from.
+
+`held_item` now returns both, labelled and unreconciled: `observed` (the camera, still asked blind, because an
+answer shaped by the question is not evidence) and `record` (the item and support of the last pick that succeeded,
+with the jaw at that moment). The contract states the geometry that makes them disagree -- a load held by a handle
+puts its body below the wrist camera's frame -- and leaves which to act on to the caller. That is the pattern the
+paper argues for: the harness owns the authoritative fact and the honest observation, and the agent owns the
+judgement between them.
+
+## F83 -- the carry budget was a pendulum, and a T-handle does not resist twist
+
+ga4 carried the ORU through two long straight drives and lost it on the first turn. The third move was
+`navigate_to_pose` to a heading 180 deg from the one it held, and the boundary applied the carry limits it derives
+(`max_velocity [0.25, 0, 0.36]`, `max_accel [0.071, 0, 0.06]`, `lever_m 1.109`); the base held ~0.36 rad/s, exactly
+the allowance. The arm did not move -- joint2 stayed at -45.7 deg to a fifth of a degree through the whole event,
+so the action-ownership fix (F81) held. Something else took the load.
+
+The wrist camera shows the handle head tipping further out of square with the jaws frame by frame, and the
+transforms say by how much. The load's yaw lags the base's and the lag grows monotonically through the turn:
++99.2 deg at t=583.0 (the standing offset), +103.1 at 587.4, +107.5 at 588.7, +113.4 at 589.5, **+122.7 at 591.8**
+-- **23.5 deg of twist relative to the jaws**, accumulated over about 181 deg of heading change. The jaw angle
+tracks it: 0.188 held, 0.232 pried at the widest, then 0.164, 0.110, 0.100 and the ORU on the ground.
+
+The catalogue says why. The neck is 12 mm across the jaws and 30 mm along the approach. Turned by phi about its own
+upright axis it presents `12 cos(phi) + 30 sin(phi)` to jaws that closed on 12: at 23 deg that is **22.7 mm**,
+nearly twice the width they hold. A `neck_with_overhanging_head` takes a vertical pull by geometry and a sideways
+swing on the pads. Against twist it has only friction on a thin rectangle, and the rectangle is 2.5 times wider than
+it is thick.
+
+The derived limits could not have prevented this, because they model the load as a point pendulum:
+`a = g tan(theta/2)` bounds the lateral acceleration that leans a hanging mass, and the angular allowance was the
+same budget divided by the lever. Nothing in it is about what the *grasp* can transmit. A straight drive never
+accumulates relative twist, which is why the same grasp survived 86 s and 77 s of driving and failed inside 9 s of
+turning.
+
+Two quantities follow from the measurement, and they are different in kind. The geometry gives the twist a grasp
+tolerates: the jaws give about 2 mm before the neck walks out, so `phi_tol = asin(2/30)` is about **4 deg**. The run
+gives how much twist a heading change costs: 23.5 deg of lag for 181 deg of turn, about **13%**. Together they bound
+the heading change this grasp can take in one move at roughly **30 deg** -- which would have refused the 180 deg
+turn. The ratio is one measurement from one run and is owed a second before it is trusted as a number; the geometry
+is not.
+
+## F84 -- the lifting interface takes the roll by geometry too, and the gripper is 3x its own datasheet
+
+F49 established the principle and applied half of it: a payload interface must give **form closure, not friction**,
+so the T-handle's head rests on the fingers and a vertical pull is taken by geometry. Rotation was left to friction,
+and rotation is what F83 measured coming apart -- 23.7 deg of roll about the approach axis while the two drives that
+held moved 4.9 and 4.8 on that same axis.
+
+With 55 mm of free neck the fingers had 27 mm of empty travel below them. The head is the upper stop; there was no
+lower one. The handle now has a **collar** of the head's own footprint below a slot, and the fingers sit in the slot:
+to roll, one finger must rise out of it and the other drop into it, and both are stopped within the slack. Neither
+number is picked for this payload -- the slot is the gripper's own finger height (18 mm, `eg2_link5/6` span
+y +-0.009 in their meshes) plus 3 mm each side, and the collar reaches as far across as those fingers touch (27 mm):
+
+    roll allowed = asin(3/27) = 6.4 deg     measured: 4.9 and 4.8 held, 23.7 lost it
+
+The handle frame stays at 0.4669 above the item's base, so the catalogue height, `work_stands` and the reasoner's
+own 0.55 + 0.467 = 1.017 are untouched. The column also used to start at the item's *bounding* top -- the highest
+point anywhere on it -- and hung in the air above the surface under its own footprint; it now starts at what is
+measured beneath that footprint and sinks 20 mm into it.
+
+**A measurement that stands against the simulation, not against the run.** The gripper's drives were at their
+4.0 N.m limit on all six joints for every sample the item was held, and the load still pried them from 0.188 to
+0.232 rad -- so grip force is genuinely the binding term. But the Inspire-Robots EG2-4C2 this robot names is a
+**0-20 N** gripper (manufacturer's own page), and 4.0 N.m over the 0.045-0.06 m finger lever is 65-90 N: the
+simulated gripper is **three to four times the hardware**. F49's note that 65 N is "inside the EG2-4C2 band" is
+wrong, and F49 itself recorded that at the physically faithful 0.9 N.m the payload levered the jaws open. The user's
+decision is to keep the simulated force -- lunar equipment is not a commercial catalogue part -- and fix the
+interface, which is the right way round: a grasp that needs three times its gripper's rated force is not a grasp.
+
+## F85 -- two things the harness knew and did not say: where a level look survives docking, and which way is off a surface
+
+**pick.** ga6's handle change cost the pick, and the model was not at fault. `work_stands` reported a level look
+from 1.080 m and nothing nearer; the model docked at exactly that stand (`standoff_m` 0.12). The rover landed at
+**1.068 m** -- 12 mm short -- and at 1.065 m the same query says the shallowest look is 10 deg above horizontal. The
+24 mm slot is not readable from there: replayed on the run's own saved depth, the candidate search finds a
+continuous 90 mm surface where the neck should be isolated (the collar's own top face, seen through the slot) and
+returns **nothing** at the declared 12 mm; with the old permissive default it returns three candidates, all 26.4 mm
+-- the pedestal below the collar.
+
+The boundary was promising a level look on a 15 mm-wide condition against a docking band it verifies at **60 mm**.
+Reporting the precision would only have turned that into a refusal. The fix is in the interface instead: along the
+approach the handle's head and collar are now **shallower than the neck** (24 mm against 30), so the neck is the
+nearest surface from any direction with open air on both sides -- which is what the candidate search asks of any
+part. The level look stops being a precondition, and the stop against roll, which is the collar's reach *across*
+the jaws, is untouched.
+
+**place.** ga5 reached `place` for the first time and stalled at `over`, 5.5 and 6.8 cm out, with
+`site/pdu_1` against `held_item` 1.5 mm and 8.2 mm deep. The shelf is mounted correctly -- 0.6 m deep, protruding
+from the cabinet's front face, its surveyed point at its own centre. The item is what does not fit: the held
+envelope is 0.485 m across (0.392 widened by the measured 16 deg pivot), which leaves 58 mm behind it on a 600 mm
+shelf whose back is the cabinet wall, and the approach spends it.
+
+The surveyed point is the middle of the surface; nothing told the skill which way is *off* it. That direction is
+the support's own outward normal, surveyed beside the point and never passed on. `place` now receives it and steps
+along it until the robot's own collision check passes, no further than half the item's depth -- past that the item
+is more off the surface than on it -- and records what it cost. No new number: the step is the smallest feature the
+perception resolves and the limit is the item's own size.
+
+## F86 -- the shelf, computed instead of argued
+
+Three sessions of inference about why `place` stalled ended with one instruction: it is a geometry question, so
+compute it from the actual models and the actual scene, and if the shelf is too small make it bigger. Doing that
+took minutes and found three defects, two of which no run had pointed at.
+
+**1. Props were boxed where they are not.** `prop_boxes` built each obstacle as `[0, size_m[2]]`, and `size_m` is a
+prop's *extent*, not where its top is: a prop that keeps its modelled origin need not start at z = 0. Read straight
+out of the authored glTF accessors, the service shelf spans **0.16..0.53** in its own frame and the PDU service
+panel **0.60..1.12**. Their collision boxes sat at 0..0.37 and 0..0.52 -- a phantom obstacle in the air underneath
+each, and no obstacle at all where the tray and the panel actually are. The panel's box was 0.6 m below the panel.
+This is the third time the same mistake has been found (F79 bounded a stand at its lip, F80 at its bounding height);
+it is now the asset's job to say where it is, in `z_range_m`.
+
+**2. The shelf could not take the payload.** It is a tray with a 3 cm rim, cantilevered off the cabinet on
+brackets, 0.6 m deep with the wall directly behind it. The ORU is checked as a 0.485 m envelope, so centred on its
+surveyed point the item sat **58 mm** from that wall, and the approach spent it: `place` stalled 5.5 cm out with
+`site/pdu_1` against `held_item`. The tray is now stretched in depth alone -- scaling it all round would lift its
+surface out of the arm's working band -- to 0.75 m, with its place frame at 0.40 rather than the centre. 1.42x was
+tried first and the scene builder refused it: the deeper tray reached 30 mm into the rover's own work pose. Back
+clearance 58 -> **158 mm**, no problems reported.
+
+**3. The handle's bars are what a downward look sees through the slot.** ga7's view left **8.7 mm** of neck showing
+where the candidate search needs `pad_height_m` = 14 mm, so it found the neck at exactly 12 mm wide with clear air
+on both sides and discarded it as too short -- 0 candidates at the declared width, while the permissive default
+returned the 26 mm pedestal. Each millimetre of bar depth costs `tan(look)` of visible neck. Bars 24 -> 12 mm deep
+and slot 24 -> 28 mm gives 25.9 mm of neck from 10 deg above, and the roll stop moves only from 6.3 to 10.5 deg --
+where the neck still presents 14.3 mm to jaws holding 14.95, so it is not pried. Measured: 4.9 deg held, 23.7 lost.
+
+The lesson is the instruction: a question about whether one solid fits on another is arithmetic over data the
+repository already holds. Three of these were sitting in the asset files the whole time.
+
+## F87 -- Mission B, end to end
+
+ga8, every effect verified, `CHECK_EXIT 0`:
+
+    RESULT {"scenario": "covered", "destination": "pdu_1", "oru_on": "pdu_1_shelf/shelf",
+            "crate_on": "depot_stand/slot_1", "delivered": true, "success": true}
+
+| sim_t  | step                | evidence                                          |
+|--------|---------------------|---------------------------------------------------|
+| 179.52 | pick                | `item_held` true, jaw 0.170, lift 0.162 m, first attempt |
+| 285.34 | navigate to PDU-1   |                                                   |
+| 305.48 | dock                | `item_still_held` true, jaw 0.171                 |
+| 332.92 | place               | `item_placed` true, jaw 0.82, tool clear by 0.18 m |
+| 339.40 | stow                | `arm_stowed` true                                 |
+| 338.3  | evaluator           | `delivered: true`                                 |
+| 393.60 | return dock         | map position error 0.019 m, yaw 1.5 deg           |
+
+Before today the chain stood at: pick worked, carry always lost the load inside the first metre, and `place` had
+never been reached. Ten defects were found and fixed between those two states, and they are worth separating by
+what kind of thing they were.
+
+**Two were the harness withholding what it already knew.** The boundary dispatched the `pick`, saw it succeed and
+knew the catalogued item -- and answered "what am I holding" with a camera that is clamped to the handle and
+cannot see the payload, so the model correctly read "a grey rectangular block" and drove the right payload back
+to the depot (F82). The site survey records an outward normal beside every place point, and `place` was never
+given it, so when its own collision check refused the surveyed centre it had no direction to move in (F85).
+
+**Three were geometry no run ever pointed at, found by computing instead of inferring.** A prop's collision box
+was built from how *tall* it is rather than where it is, putting the service shelf 16 cm and the PDU panel 60 cm
+below themselves. The shelf was 0.6 m deep against a 0.485 m envelope with a wall behind it. The handle's own
+bars occluded the slot they bound, leaving 8.7 mm of neck where the candidate search needs 14 (F86). Three
+sessions of reasoning from run logs had not touched any of them; the arithmetic took minutes.
+
+**One was the simulator's action boundary**, and it is the one the whole carry turned on: every `cmd_vel` rebuilt
+the full action vector through the *teleoperation* mapping and kept only the dimensions marked held, and only the
+Bool gripper was marked. The first cmd_vel of every drive zeroed the arm (F81).
+
+**The rest were the harness's own numbers being wrong about themselves**: a seat depth and its tolerance sharing
+one constant, a transient swing tolerance spent as a sustained one, a turn taking the whole budget the line above
+it split in half, an orphaned scene lock that refused every later operation.
+
+The model's side needed no correction at any point. It computes the grasp height as the place frame's z plus the
+catalogued handle height, asks `work_stands` and docks where a level look exists, reconciles what the pick
+measured against the catalogue in its own report ("measured neck width 0.0119 m vs catalogue closing width
+0.012"), and when told what it was carrying, acted on the record rather than the picture.
+
+## F89 -- what the robot does when nobody is commanding it
+
+Three things the user saw in gb2's video, all one root: the rover stood still for the first minute, the arm moved
+continuously and without purpose throughout, and at rest it was folded somewhere that looked nothing like a
+working posture.
+
+**Measured from the bag.** The rover first moves 2 cm at sim 79.7 s. For the first 150 s the arm's fastest joint
+is at **3.88 rad/s median, in 100 % of samples** -- its velocity limit is 3.92. Joint2 swings between -33 and
+-56 deg, joint4 between +59 and +101, joint6 between **-22 and +50**, with a period of a few seconds, until a
+skill first claims the arm at sim 159 s. After that the median joint speed is 0.0003 rad/s.
+
+**Why.** `RosInterface` starts its action buffer at zeros, and for `SwitchableArmAction` a zero is not "do
+nothing": element 0 is the mode flag, and 0 selects twist mode against a persistent desired pose that has never
+been set. Nav2's velocity smoother publishes `cmd_vel` at ~20 Hz whether or not the rover is moving, and every
+one of those rebuilt the whole action row through the teleoperation mapping (F81's other half -- `hold=True` only
+latches a term once something has commanded it, and nothing had). So the arm chased an unset pose at its limit
+for as long as the mission took to reach its first arm call.
+
+The fix belongs where the knowledge is: the term now answers `hold_action()` with joint-position mode at its own
+measured joints, and the interface writes that into the buffer and latches it before any subscription is live. A
+robot with nobody commanding it holds its posture.
+
+**And what it holds.** `stow` was `[0, -0.6, 0, 1.2, 0, 0.6, 0]`: the arm folded up over the deck, tool 0.209 m
+behind the rover origin at 1.455 m, the wrist camera pointing **forward** and 21 deg above the horizon -- and off
+the working branch the skills seed their IK from. It is now `[0, 0.40, 0, -0.70, 0, -1.27, pi]`: tool 0.694 m
+behind the origin at 1.404 m, camera **level and facing the way this arm works**, elbow bent 40 deg, on the
+branch, and 26 mm past the rear hull face so it changes nothing about what the rover can back up to. Every
+candidate was computed from the robot's own URDF against four conditions at once -- level, rearward, inside the
+hull, on the branch -- rather than adjusted until it looked right.
+
+Seven files carried a copy of that pose and an eighth carried it as the spawn state. That they all had to be
+found by grep is its own finding.
+
+## F90 -- three minutes at the start of every run, for one dropped response
+
+Every run stood still for the first minute of sim time. Measured from gb2's bag and events: the base first moves
+at sim 79.7 s, and between `reasoner_attached` and the first thing the agent does there are **180.1 s of wall
+clock** -- against 3 to 25 s for every LLM call after it.
+
+`QUERY_RESEND_S = 180.0`, to the tenth of a second. Humble drops the response to the first service call after
+discovery (`wait_for_service` returning is not enough), so the agent resends a read-only query when no answer
+comes. One timer set that interval, and it had been set for the slowest thing a query can legitimately do -- a
+vision-model localisation, up to a minute. So the cost of a lost response was pinned to the duration of the
+slowest answer, two quantities with nothing to do with each other.
+
+What a query does is in its own contract. The three that go out to the vision model declare `uses_model` and keep
+the long wait; everything the boundary answers from its own state is resent after 4 s.
+
+Unverified: no run has started since.
+
+## F91 -- the robot looked once, and 6 cm of docking error decided the mission
+
+gb2 called `pick` three times at the same handle and lost all three, and the model's side is again blameless. It
+asked `work_stands`, docked at the level-look stand (1.08 m) and the approach stalled 2.6 cm short of the grasp; it
+reasoned that the neck was beyond reach, docked at the nearest stand (0.93 m), and the view measured nothing; it
+split the difference at 1.035 m, and the view measured nothing again. Three stands, 15 cm apart end to end, and the
+part was in plain sight in all of them.
+
+**The picture the stage saved settles it.** At 1.035 m, looking 10 deg above the horizontal, the ORU's T-handle
+fills the upper third of the frame: head bar, slot, collar bar, against black sky. Replayed offline on that run's
+own saved depth, the candidate search returns **nothing** -- and returns **five candidates** the moment one gate is
+removed, the best of them **12.9 mm across at 0.418 m**, which is the 12 mm neck, on the slot, with clear air both
+sides. The view was never the problem.
+
+**Defect 1: the image was made to certify what the catalogue declares.** `find_candidates` dropped any candidate
+whose measured extent along the pads was under `pad_height_m` (14 mm). The width already takes the honest route --
+the interface declares `closing_width_m` and the image confirms it to four pixels -- but the length did not, and the
+two are not measured alike. A width is a cut across the part in the image plane and reads true from any direction
+the part is seen in the round from. A length runs *up* the part: any look off its own square foreshortens it, and
+whatever overhangs it cuts into it. At 10 deg above the horizontal a 28 mm slot read **9.5 mm**, and the part was
+thrown away for being short. The catalogue had already said the interface takes the pads. The floor is now what the
+perception can resolve at all when the length is declared, and the pads' own height when it is not.
+
+**Defect 2: the stage looked once.** `find` pointed the camera straight back along the rover's own axis, tried three
+elevations, took the first one the arm could reach, and made whatever that single frame measured the outcome of the
+mission. Nothing retried, nothing moved, nothing looked again -- with seven joints and a wrist camera, and with the
+part in the picture. That is what turned a 6 cm docking band into a mission outcome. The stage now takes the views
+the arm can reach, in order of what each costs the measurement, and a pose out of reach, a view that measures
+nothing and a view whose marks are all on something else are each one view fewer, not the end of the operation.
+
+**What the azimuth is and is not worth, computed rather than assumed.** The first version of this fix ordered the
+side looks before the steeper ones, on the reasoning that an elevation decides what can be measured and an azimuth
+does not. The robot's own kinematics agree about reach -- straight back, a level look at this handle exists only
+from 1.08 m, past where the arm reaches the grasp, while 30 deg round the side it exists from **0.92 m to 1.14 m**,
+and the grasp with it. The *asset* disagrees about measurement. The neck is a rib, 12 mm across the jaws and 30 mm
+along the approach, so seen from phi round the side it presents `12 cos(phi) + 30 sin(phi)`: **17 mm at 10 deg**,
+against a declared 12 mm the search accepts to 2.7 mm. A level look from the side is a look that cannot measure this
+part. So the order is the other way round -- every elevation from where the rover is facing, then the azimuths --
+and the azimuths are there for a contact that is not facing the way the survey said. Two hours of plausible
+reasoning, one line of arithmetic over the asset file.
+
+**And the harness stopped promising what its own error rate breaks.** `work_stands` answered about the stand as a
+point and then said, in words, that docking is verified to 0.06 m -- leaving the caller to carry a margin it has no
+way to compute. That is not a fact; it is a fact plus a footnote that cancels it. Each promise is now answered at
+the end of the docking band where it is hardest to keep: reach runs out with distance, so it is asked at `d + 0.06`,
+and the look shallows with distance, so it is asked at `d - 0.06`. Both are monotone in the distance, so one point
+bounds each and it costs nothing. Computed on the arm's own model, that leaves stands from **0.99 m to 1.08 m** that
+both reach the grasp and offer a look wherever the dock lands -- where the old answer offered a level look at
+exactly one distance, 1.08 m, at which the arm cannot reach the grasp at all.
+
+    stand   reaches the grasp at d+6cm     shallowest look at d-6cm
+    0.960   yes                            none
+    0.990   yes                            30 deg
+    1.035   yes                            20 deg
+    1.080   yes                            20 deg
+    1.095   no                             10 deg
+
+Two rules come out of this, and they are the same rule twice. **A promise the harness makes must survive the error
+the harness itself admits** -- it owns both numbers, and handing the caller a fact and a caveat that cancels it is
+handing over nothing. And **a capability that gives up after one observation is weaker than the robot it runs on**:
+the mechanics belong inside the skill, so looking again belongs inside the skill too, not in the model's head as a
+re-dock.
+
+Unverified: no run has started since.
+
+**Superseded the same day.** The user's ruling on reading this: thresholds on absolute numbers are the wrong
+scheme altogether, and a handle is an affordance -- how to grasp it is declared, and vision only has to say where
+it is. Both fixes above (the declared-length floor and the multi-pose look) were reverted; `pick` now fits the
+catalogue's interface shape to the depth image and servos on the fit (`interface_fit.py`,
+`docs/grasp_target_selection_proposal.md`). The docking-band answer in `work_stands` stands.
+
+## F92 -- the model decided one thing and called another: a schema-valid answer that was not an answer
+
+gb3, 2026-09-21, the first run of the rebuilt `pick`. Step 7: the rover had just arrived at the depot approach
+point (`base_at_commanded_pose` verified at sim 85). The model thought for **50.2 s** -- 39,297 characters of
+`reasoning_content`, the first run to record it -- and its reasoning ends, verbatim:
+
+    Plan for steps:
+    7. dock_at_feature(slot_0, standoff 0.135)
+    8. observe(wrist, "describe the object on the stand ahead of the gripper ...")
+    9+. pick(...)
+    Let me go.
+    ... It says reaches_the_work: true. OK.
+    Go.
+
+The tool call that came with it was `dock_to_pose {"x": 0, "y": 0, "yaw": 0}` with the rationale **"placeholder"**.
+Not the tool it had chosen, not the feature, not the standoff; the pose is the map origin, which is the dock. Every
+field is schema-valid, the pose is a legal target, and the guard allowed it. The rover drove 1.9 m back toward the
+dock, `dock_to_pose` timed out after 180 s short of it, the verifier reported `base_at_commanded_pose: false`, the
+model read that in its next context, wrote a fresh plan and drove back to the depot. Cost: about 200 s of
+simulation and nothing else. Recovery worked exactly as the harness is designed to make it work -- verification
+independent of the model, context rebuilt from the record, the model replans -- and it worked at the price of a
+timeout.
+
+**What this is.** Not a wrong strategy: the strategy in the reasoning was right. Not a malformed reply: the reply
+parsed. It is a *degenerate* answer -- the function-call channel came back with defaults and a placeholder after a
+long reasoning channel -- and the harness had nothing that looks at an answer's quality, only at its validity and,
+later, its effect. That is a failure class of its own, distinct from the two the harness already handles (an
+answer the guard refuses; an effect the verifier refutes), and it is the class that costs time rather than safety.
+
+**Why it took 50 s and 39 k characters to get there is also the harness's doing.** The reasoning dithers for pages
+over the stand: *"The explicit hint in the tool description pushes toward choosing based on look angle ... Choose
+it. Confirmed ... let me reconsider the standoff one final time."* The `work_stands` contract still discusses the
+look angle at length -- text written when a level look was a precondition. It no longer constrains anything (F91:
+the fit takes the interface from any elevation), but the description still makes the model deliberate about it,
+and the deliberation is what ran the answer channel dry. A contract that describes a constraint the harness no
+longer has is not neutral: it is a prompt.
+
+**What the harness can do about a degenerate answer, in order of how little it has to know.**
+
+1. *Treat a non-answer as no answer.* The contract already requires a rationale on every call; a rationale that is
+   empty or a single placeholder token is a call that has not been justified, in the same sense as a reply with no
+   tool call in it -- and the core already re-asks for that (`reasoner_step_failed`, one retry, the failure in the
+   record). No task knowledge, no geometry, no thresholds: an unjustified call is not an answer.
+2. *Check the answer against the model's own reasoning.* The endpoint returns the reasoning; when it names a tool
+   (`dock_at_feature(slot_0, ...)`) and the call names another (`dock_to_pose`), the two channels disagree and the
+   record can say so. Cheap to detect for the tool name; fragile for arguments. Worth recording; not worth acting
+   on automatically beyond (1).
+3. *Do not describe constraints the harness no longer has.* The look-angle text in `work_stands` goes.
+4. *Bound what a wrong call can cost.* The 180 s was `dock_to_pose`'s own timeout on a 1.9 m drive; the loss was
+   the timeout, not the detection. Progress-based termination is the general remedy and already exists for the arm
+   (stall detection in the servo); the base's docking skill only has a deadline.
+
+For the paper this is the third leg of the argument, and the run supplied it unasked: a harness for a fallible
+reasoner has to hold three things -- what the model may not do (invariants), whether what it did worked
+(verification), and whether what it said is an answer at all (answer integrity). The first two carried this run;
+the third is the gap, and it is small.
+
+Recorded, not yet acted on. Whether to add (1) and (3) is the user's call.
+
+## F93 -- a stand has to reach the whole job, and "reaches" has to mean "without hitting itself"
+
+gb6 docked at the boundary's default stand (0.96 m), found the handle at 0.96 agreement, and had no arm
+configuration for any of six stand-off options. ma4 and ma5 did the same at a button: `press` failed at `locate`,
+twice, from two different stands (0.589 m and 0.784 m), with every one of twelve viewing poses unreachable.
+
+**The boundary's answer was wrong in the same way three times.** `work_stands` asked MoveIt for an arm configuration
+at one pose per job with collisions off. gb2 reached the handle's point and stalled short of the seat (F88); gb6
+reached the seat and had none for the stand-off, 7-14 cm nearer the rover than the handle; ma5 reached a button and
+every configuration for its stand-off and view folded the forearm into the arm's own base. Asked offline of the
+live MoveIt -- IK with collisions off, then `check_state_validity` on each solution -- the pure kinematics says all
+of stand-off, view and stroke are reachable for a button 0.5-1.1 m out, and MoveIt names the contact for the ones
+the planner refuses: `base_link x Link5`, `base_link x Link6`, `base_link x eg2_*`. The button was 0.784 m from the
+rover's origin and the arm has to fold to reach a tool 0.68 m out.
+
+The rule that replaces it: a stand is listed only if, for every pose the skill for that kind of point takes (a
+grasp's stand-off, seat and view; a press's stand-off, stroke and view), some seed of a fixed bank yields a
+configuration with no robot-vs-robot contact, at the near, middle and far end of the docking band. World contacts are
+ignored because they depend on where the rover will stand; its own geometry does not. Every candidate distance is
+scanned -- the window for a press, D in [0.95, 1.10] m, was not among the twelve stands with the most room, which
+is what the boundary used to look at. Result: press default 1.06 m (was 0.589 / 0.805), pick 1.065 m.
+
+## F94 -- press: three gates, one cause
+
+At the new stand `press` ran further than it ever had, and each step ended on a fact about a number written down.
+
+`locate` refused a button in plain view at the frame's centre because it measured 0.3142 m against
+`min_depth_m: 0.315`. The gripper's own reach in its camera follows from the mount and the tool -- 0.285 m -- and a
+surface beyond it cannot be the gripper. (The silhouette mask `tool_in_view` also produces was tried and refused: it
+over-covers by construction and reaches the button's lower edge.)
+
+The stroke then ran its full 3 cm and met nothing, because the simulator's panel does not resist the tool; the skill
+reported a miss. **The evaluator had counted the press and cleared PDU-2's fault** -- `faults.pdu_2 false`,
+`presses.pdu_2 1` -- the first time the new skill ever pressed a button. The skill was waiting for a signal the world
+does not give and calling its absence failure. It now records `contact.resisted` and returns; the `pressed` verifier
+already judged by kinematics alone (how far past the measured face the tool went, how far back it came), never by the
+skill's flag. This is the harness's own rule -- an unsure check is not a veto, its facts go to whoever decides -- and
+the skill had not followed it.
+
+A third run failed at `locate` because the model described the button as "below the large round status lamp": the
+frame is a few tens of centimetres across and the lamp is not in it, so the vision model correctly said no button
+was visible below it. The contract asked for a description "by appearance and position". It asks for what the
+close view shows now.
+
+## F95 -- the servo was a limit cycle, in position and again in orientation
+
+`pick` stalled 2.6 cm short in gb2 and 2.9 cm short in gb7r1 with the target steady and the arm reaching it. The
+bag's `switchable_arm` command against the joint states showed the command itself swinging with a 3 s period, the
+measured joints trailing it by 0.5-0.75 s. `servo` integrates the measured error into the command each 50 ms cycle
+at up to 20 per second, limited only by a 5 cm/s speed cap: that is a limit cycle for any delay of the arm over 0.3 s.
+Copied line for line into a model of the loop (`experiments/servo_loop.py`) against arms answering 0.3, 0.6 and 1.0 s
+late, the law as written swings +-26, +-39 and +-59 mm and never settles; a gain of 1 per second and no sag
+integral settles in under 2.5 s at every delay and holds +-2 mm with 3 mm of noise on the goal. The second integrator
+the sag term adds is destabilising by itself (+-38 mm at a gain of 1.5 with it on), which is why it stays for the
+stages that carry a load and off for the ones that do not.
+
+The gain was added as an opt-in parameter for the empty-jaw stages, and the stand-off then settled in 0.72 s to 3 mm.
+The close-in still swung +-9 mm sideways at 1.6 Hz with the goal steady to 0.8 mm: the orientation term takes the
+whole rotation error every cycle too, a 20/s loop about a 0.2 m lever. The same gain applies to it now. By the time
+the finger met the collar the tool had drifted 16 mm sideways and 7 mm low -- the slot leaves the fingers 5 mm to
+either side -- which the forward kinematics of the blocked configuration showed and the slot itself did not: in the
+live planning scene every tool pose inside the slot, +-10 mm in height and 40 mm in depth, is collision-free.
+
+What the three findings share for the paper: every one was found from the record of a failed run and settled
+offline -- a live planner asked what it would accept, a bag replayed against the loop's own arithmetic -- before
+another run was started.
+
+## F96 -- the arm's joints were stuck by the friction the robot's USD authors on them
+
+The arm never held what it was told, and a good part of the session went on the consequences: the arm answered 0.5-0.75 s late (F95), settled above its command, sagged 5-6 cm over a carry, and on the last runs its wrist saturated at its torque limit at rest and whipped when the arm first moved, twisting the ORU's T-handle out of the jaws (gb8r3: jaw 0.169 to 0.098 within 6 s of place starting). Skills, gains and the harness were tuned around a plant that was misbehaving.
+
+**Where it was found.** The bag of a real run: while `pick` waited on the vision model the command was one constant vector for 40 s, and joints 1, 3, 5 and 7 sat 2-7 degrees from it with their drives at the torque limit (60, 30, 10, 10 N m). Not a tracking error, not a second command source (one distinct vector in 1200 messages). Then a bare simulation with nothing else in it -- the robot on a ground plane, a 0.10 rad step per joint (`experiments/robot_check/arm_steps.py`):
+
+| what was changed | joints 1-7, 0.10 rad step |
+|---|---|
+| as configured, base free | half way in ~7.5 s, drives saturated, end torque 10-29 N m |
+| base fixed | 0.05-0.3 s, end torque under 1.4 N m |
+| self collisions off | identical to as configured |
+| sleeping off, 1 g root given 50 kg | identical |
+| solver iterations 32 to 128, or step 5 ms to 2.5 ms | worse (less motion in the same time) |
+| USD joint friction 0.4 0.4 0.3 0.3 0.2 0.2 0.1 to 0 | 0.05-0.3 s, end torque under 1.2 N m |
+
+**Why.** PhysX's joint friction is a unitless coefficient on the force transmitted between the two links a joint connects, not a torque. In an articulation whose base is free that force is large enough that the coefficient times it exceeds what the drives can deliver. With the base fixed, or the coefficient zero, the same drives (stiffness 600, damping and limits as configured, checked against what PhysX holds) are fast and hold with almost no torque. The values are what the USD carried, not a typo in our configuration; the actuator group's `friction` option did not reach PhysX in this Isaac Lab (the read-back stayed at the USD's values), so the fix is in the asset: `experiments/robot_check/zero_arm_joint_friction.py`.
+
+**What it does not say.** It does not say the earlier findings were wrong: the ratchets of `hold_here`, the leash and the carry sag are real and separate, at centimetres. It does say that the gains, ramps and margins tuned in F92-F95 were tuned against an arm that lagged by seconds, and that the wrist saturation the place failures ended in was this. The first graph-level check is the next full runs.
+
+## F97 -- two joint-space defaults the sluggish arm had been hiding: a turn of the wrist, and a pull at the rate limit
+
+With the arm answering its command (F96), the first full pair of runs (gc3 Mission B, mc4 Mission A) failed at two places the
+servo had passed before, and both were joint-space rules that were wrong for any arm and had never been exercised on one
+that moves.
+
+**mc4, press retreat: "arm stopped making progress 0.1 cm / 7 deg from its goal ... at a joint stop: joint7 -6.24 (limit +-6.283)".**
+The button was pressed (jaw closed on nothing, 1 mm off axis, 6.9 mm past the face, retreated 107 mm; the independent check
+held) and the skill still failed. The bag: between sim 198 and 205 joint7 went from +1.89 to -5.58 in one planned move, a turn
+and a half, and ended 0.04 rad from its stop. The planned stand-off IK is seeded from several configurations; MoveIt answers
+with whatever turn of the roll its solver settled on, and a planned move executes the joints literally. The wrist roll spans
++-2 pi, so every pose has two solutions a turn apart. `nearest_equivalent` now takes each joint that can turn more than a
+full turn at the turn nearest the arm, inside the stop's margin, on both IK paths.
+
+**gc3, place: the carried ORU left the fingers 0.6 s after `over` began.** The world poses in the bag (evaluator truth, used
+here only to diagnose): the tool, held at z 1.217, fell to 1.10 in half a second with the *command* within 4 mm of its goal,
+rose to 1.33, and rang at 1 Hz with +-10 cm decaying over five seconds; the jaw read 0.158 then 0.093 (empty) as the tool
+accelerated upward; the ORU dropped 11 cm onto the shelf, upright, and the evaluator scored it delivered while the skill,
+correctly, reported a failed place. What moved was the elbow and wrist at 0.23-0.28 rad/s, the joint-rate limit. The servo's
+posture pull was `(centre - q) * gain`, scaled up to `max_dq` whenever it exceeded it, which with the arm anywhere off the
+window centre is always: a null-space self-motion at the rate limit, from a standstill, on every default-gain stage. The
+joints answer at their own lags, so a null-space motion that should leave the tool where it is moved it by 12 cm and excited
+the arm's slow mode. On the arm that stuck (F96) the pull was invisible. It is now a rate -- `posture_gain` per second of the
+distance from the window centre, 0.05 -- because the branch drifts over tens of seconds and a pull with a 20 s time constant
+holds it without exciting the arm. `place` also waits for the arm to be still before `over`, since the rover has just stopped.
+
+**What the run did with it.** The reasoner searched, saw a gold box on the shelf, and tried to pick it again to "decide
+whether it is really there": the harness had said "not placed" (true of the skill, false of the world) and had no instrument
+of its own that could say "it is on the shelf" -- the claim/instrument gap of the reconcile design, not yet built.
+
+**Also learned the hard way.** Reading a bag with SQLite while its recorder is alive crashes the recorder ("database is locked"):
+both bags of that pair were cut in the middle of the run, which is why the mini-map of that pair cannot be drawn.
+
+Not yet validated: the place chain on the fixed servo (scripted pick -> carry -> place on a held graph, then a full recorded run).
+
+## F98 -- the arm's drives were 57 times softer than configured: gains are applied per degree
+
+F97 named two joint-space defaults, and the scripted carry (pick, drive, dock, place on a held graph) showed they were not the
+cause of the place failures: the arm still swung the carried ORU +-10 cm at 1 Hz whenever it moved, with the command constant
+for ten seconds. The recorded efforts said "joint 4 at 30 N m, joints 5-7 at 10 N m, all at their limits, for tens of seconds"
+with a 1 kg unit in 1.625 m/s^2 -- a 1.6 N weight -- which no load can explain.
+
+**The reading was a replica.** Isaac Lab's implicit actuator reports `k * (target - position) - c * velocity`, clipped, with the
+gains it was configured with; PhysX applies what it applies. The "saturated" efforts were the replica of a configured gain acting on
+a joint error of 0.1-0.3 rad, and told nothing about the torque.
+
+**What PhysX does.** A bare-simulation script (`experiments/robot_check/carry_static.py`: the robot with its base fixed, in the carry
+pose recorded from gc3, nothing else in the scene): the elbow's target stepped 0.05 rad rings as a clean sinusoid at 1.0 Hz, amplitude
+decaying by 0.84 every half cycle (damping ratio 0.055), for six seconds. The generalized mass matrix PhysX reports for the arm gives
+0.12 kg m^2 about the elbow, which at the configured 600 N m/rad would ring at 11 Hz. Stiffness 150 rings at 0.5 Hz (frequency goes
+as the square root of the gain, so it is a gain and not an inertia), and a free base changes nothing. A stiffness of 600 * pi/180 =
+10.5 N m/rad and a damping of 7.65 * pi/180 = 0.13 N m s/rad reproduce both the frequency and the damping ratio. Multiplying both
+gains by 180/pi (34 377 and 438 in the configured units) settles the same kick in 0.3 s with no ringing; the configuration in
+`lunarbot.py` now writes the arm's gains converted, and the same test on that file holds the ORU to 0.001-0.004 rad.
+
+**What it explains.** The arm that "answers 0.5-0.75 s late" (F95), the wrist that sagged 5-6 cm over a carry (F96's list), the servo
+gains that had to be so low that a stall looked like success, the stand-off that rang after a planned move, and every place that ended
+with the ORU out of the fingers: a static load of 1 N m deflected an elbow by 0.1 rad, and any disturbance rang for five seconds. F96
+took the friction off the arm; this is what remained.
+
+**What it does not say.** The gripper, the steering and the wheels are configured in the same way and are left alone: they were tuned
+against their behaviour as it is, and nothing in the record shows them at fault. The servo's gains and ramps were tuned against the soft arm
+and are conservative for the arm as configured; they are not touched until a run shows them wrong.
+
+## F99 -- a joint pinned at its stop is a joint-space fact, not a Cartesian one
+
+gt2c1, the first pick-carry-place chain on the corrected arm (F98): pick held the ORU through the whole carry, `over` and `lower`
+placed it 6 mm from the expected shelf height, and `place` still failed. The withdrawal leg of `retreat` (collision checking off,
+by design -- the open jaws start around the part they just released) stalled 15 mm short of its target with joint4 at -2.31 rad,
+0.046 rad from its -2.356 stop. Nothing was in the way -- the servo's own progress test, not a collision, ended the stage.
+
+Two fixes were tried and rejected before this one, on the user's own read of each. The first let a joint-limited stall stand as
+retreat's result, on the reasoning that ending clear of the item is retreat's job and a 15 mm shortfall already does that -- this
+treats the symptom, not the question of why a plain 15 cm withdrawal ran a joint to its stop. The second re-solved inverse
+kinematics for the same (position, orientation) target from several seeds, on the reasoning that `over`/`lower` are local,
+incremental tracking with no look-ahead -- nothing ever chose the release configuration for room to retreat from, so the servo
+was stuck on one branch when another likely reaches the same pose without the joint at its edge. Asked why this still went
+through a Cartesian target and a seed search for a problem that is "one joint is stuck," the honest answer is it did not need to:
+a joint pinned at its stop is a fact about that joint, not about the pose. Finding it a target pose and re-solving IK for one is
+solving a harder problem than the one that exists.
+
+The fix: `joints_off_their_stops` (`_eye_in_hand.py`) walks any joint `posture_cost` would already call "at its limit" (within
+0.3 rad of the stop -- the same threshold, not a new number) back to exactly that clear, towards its own working centre, and
+leaves every other joint untouched. No target pose, no inverse kinematics, no seed search. `plan_to` makes the joint move,
+collision-aware, since by the time a stall is detected the arm is already most of the way through the withdrawal and clear of
+what the released item sat against. A stall that is not at a joint's stop still raises, unchanged.
+
+Ran to a conclusion in F100 -- verified, but not by this fix alone.
+
+## F100 -- what auditing the whole `place` flow found, and the first clean pick-to-place delivery
+
+Told, correctly, to stop reacting to one more live failure and instead read the whole of `place` for every way it could still be
+wrong (user's explicit direction after F99's second attempt), three more gaps turned up without running anything:
+
+- **`over` had no escape from a joint pinned at its own stop.** It is the same local, no-lookahead Cartesian tracking `retreat`
+  is (F99): each step continues from wherever the arm already is, so nothing about it chooses a configuration with room to move
+  on from. The dead end F99 found in `retreat` could equally show up in `over`, on a different release pose, and had nothing to
+  catch it. Both stages now share one helper (`_move_or_free_a_joint`): a stall with the scene clear gets `joints_off_their_stops`
+  and a planned move: no target pose, no inverse kinematics, just the pinned joint walked back to `posture_cost`'s own 0.3 rad
+  "at its limit" margin.
+- **`plan_to` never told the planner about a carried item.** `state_valid` already attaches the held item's collision geometry to
+  every check it makes; `plan_to`'s own MoveIt request never did. Nothing had exercised this before, because every existing
+  caller of `plan_to` runs either before a grasp or after a release. Wiring `over`'s fallback to the same planner is the first
+  path that can fire mid-carry, and an unaware plan there could swing what the arm is holding into the scene it never checked
+  against. Fixed to match `state_valid`.
+- **The retreat distance cleared the evaluator's own "not held" definition (F99, 0.30 m) only in the nominal case.** Each leg's
+  own tolerance (0.015 m) can fall short of its target; the worst case at 0.25 + 0.20 m is 0.299 m -- inside the 0.30 m the check
+  asks for, not past it. 0.30 + 0.25 m clears it at 0.37 m worst case.
+
+A fourth thing found along the way was self-inflicted: the first draft of the retreat-distance fix put its explanation as a `#`
+comment inside `default_goal_json`, a literal JSON string in the YAML manifest -- not a comment there, and it broke the manifest
+outright. Caught by running the unit suite, not by another sim launch.
+
+**gt2c8** (scripted pick -> navigate -> dock -> place, the pre-pick snapshot, no model, no video): pick held through the full carry,
+`lower` stalled 4.2 mm from the expected height, `retreat`'s first leg hit joint4's stop 18.5 cm into the withdrawal and the new
+escape freed it (`joint4: -2.306 -> -2.056`), the second leg completed locally, settle read the item motionless (190,215 near
+pixels, comfortably over the 200 floor even at the wider retreat), and the evaluator's own `mission_state` read `oru_on:
+"pdu_1_shelf/shelf", delivered: true`. The one `pick` failure on the way there (gt2c7, the VLM pointing at the item's body instead
+of its handle, "nothing beyond the gripper in the view to fit the declared interface to") was not a code defect: `find` deliberately
+has no internal retry ("the model answers within the deadline or the stage returns with what it has"), on the same principle as
+everywhere else in this harness -- retrying a bad read is the reasoner's job, not something a skill does silently. The scripted
+chain has no reasoner, so it just tried again.
+
+Not yet run: the same chain end to end inside the real Mission B loop, with a model and with video.
