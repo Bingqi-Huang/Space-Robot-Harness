@@ -1,13 +1,16 @@
 # TODO
 
 Order: `execution_plan` §21 -- the proposed method before the external baselines. Mission A/B reliable on Ours
-(2026-09-22); `p/integration` merged the same day; PLEXIL Mission B now runs end to end live (F104, 2026-09-22) --
+(2026-09-22); PLEXIL and EUROPA→PLEXIL both now complete Mission B covered live too (F104, F105, 2026-09-22) --
 see handoff.md. **Next: baselines / freeze / experiments**, not yet started as one coherent pass.
 
-## Now -- small follow-ups (each needs a build step or a live graph, not just an edit)
+## Now -- small follow-ups
 
 - [x] Rebuild `ros/plexil_capability_adapter`; fix its premature-completion ack bug (F104).
-- [ ] Merge `feat/plexil-baseline-live` back into `feat/experiment-campaign` -- ask first.
+- [x] Merge `feat/plexil-baseline-live` back into `feat/experiment-campaign`.
+- [x] Delete the three failed PLEXIL Mission B debug run dirs; rename the successful one to
+      `plexil_mission_b_success_20260922`.
+- [ ] Merge `feat/europa-mission-b` back into `feat/experiment-campaign` -- ask first.
 - [ ] Wire the evaluator-violations recorder (`experiments/evaluator_recorder/`) into every method's launch script
       (Ours, PLEXIL, EUROPA), not just where it was developed.
 - [ ] Add a call-start timestamp to the capability-server log (needed by the recorder's attribution).
@@ -15,8 +18,6 @@ see handoff.md. **Next: baselines / freeze / experiments**, not yet started as o
       shows one, do not retune preemptively.
 - [ ] Killing a check script mid-navigate leaves Nav2's own goal running: cancel it
       (`/navigate_to_pose/_action/cancel_goal`, all-zero goal_id) before any restore.
-- [x] Delete the three failed PLEXIL Mission B debug run dirs; rename the successful one to
-      `plexil_mission_b_success_20260922`.
 
 ## Path to the campaign (§21 order)
 
@@ -27,14 +28,14 @@ see handoff.md. **Next: baselines / freeze / experiments**, not yet started as o
 2. [ ] Complete PLEXIL: Mission B's predefined recovery set (pick/place failure kinds are now settled -- F92-F100;
        Mission B covered itself now confirmed live end to end, F104); re-confirm Mission A covered live on the
        current stack (F52 was the older arm), then its plan once `press` has a live run of its own.
-3. [ ] EUROPA: Mission B NDDL domain against the current manipulation contracts; retry cap and "near" distance into
-       config; verify online feedback/replanning on Mission B, not just the base-only skeleton domain (F102).
+3. [x] EUROPA: Mission B domain, offline verification, live run all done (F105) -- first live attempt succeeded
+       outright. EUROPA's Mission A domain not started (waits on `press`, same as PLEXIL's).
 4. [ ] **H3 has no evidence yet**: every capability is `routine`, the guard has only ever fired on e-stop. Add the
        explicit hard invariant/approval classes the chosen held-out scenarios actually need (§4.3, §10.2) -- see
        "Open questions".
-5. [ ] Run all three methods on the Mission A/B covered cases through the current stack until infrastructure defects
-       are gone (evaluator, run-manifest, operator console, PLEXIL node-trace normalizer are all still unexercised
-       against the corrected arm and the merged code).
+5. [ ] All three methods now complete Mission B covered live independently; still need Mission A covered on all
+       three (blocked on `press`), and a run-manifest/freeze pass actually exercising the merged evaluation infra
+       (operator console, PLEXIL/EUROPA trace normalizers) against these corrected-arm runs, not just F103's dev runs.
 6. [ ] Scenario manifests + closed-capability certificates (`experiments/scenarios/`) exist for 2 covered + 5 held-out
        candidates but were only ever exercised on 5 development runs (F103) -- re-validate.
 7. [ ] Freeze method artifacts (git tags), run Experiment I, then the §5.7 Ours-internal ablations, then Experiment II

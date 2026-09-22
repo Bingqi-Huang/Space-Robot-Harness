@@ -4777,3 +4777,82 @@ exact command each of the 8 threads was blocked on, and separately caught the no
 whole plan had already "finished" before the robot moved. Two library file bugs (missing `-L`, missing `support`)
 were each caught by one offline `plexiltest`/`plexilc` pass before spending live-sim time confirming the fix,
 per the standing rule (compute/verify offline before a live run, not after).
+
+## F105 — EUROPA Mission B domain: one real modelling bug and two solver bugs, all found and fixed offline (2026-09-22)
+
+`domain/mission-b-model.nddl` (arm posture, jaws, a movable item's location, alongside the existing base timeline)
+extends `execution_plan` §11.2's skeleton domain (F102) to Mission B. Given only the mission's own outcomes as
+goals -- the item delivered, the arm stowed, the base back at dock -- the solver derives the full 9-step plan
+itself (arm_ready, navigate/dock to the depot, pick, navigate/dock to the shelf, place, stow, navigate home),
+matching PLEXIL's hand-sequenced Mission B plan (F104) without anyone having sequenced it. Verified offline
+end to end (`run_offline_mission_b.sh`, `sim_boundary.py` standing in for the capability server, extended to
+simulate arm_ready/stow/pick/place) before any live-sim time, including with an injected `pick` failure
+(replans, retries pick, completes). Two of three bugs found this way were in `host.py`/EUROPA itself, not the
+domain text -- worth recording precisely, not just "it works now":
+
+**1. `met_by` vs `contained_by` for a precondition the action does not itself change.** The first version of
+`pick`/`place`/`stow` used `met_by(condition object.base.At ...)` (and similar for `posture`/`jaws`) for every
+precondition, copying the pattern the existing `navigate_to_feature`/`dock_at_feature` rules use for the timeline
+those actions actually *transition*. For a condition on a timeline the action does *not* itself change (pick
+doesn't move the base or change posture), that is the wrong relation: `met_by` requires a token that ends exactly
+when the action starts, and the solver satisfied it with a token that was never connected back to any real fact --
+producing a "solved" plan consisting of a single `place`, no preceding `pick`, dispatched straight from the
+initial state (`sim_boundary.py` happily "succeeded" it since it does not itself validate physical preconditions).
+Confirmed against nasa/europa's own Rover example (`examples/Rover/Rover-model.nddl`), which is known to derive a
+correct multi-step plan from one goal: `Instrument::TakeSample`/`Place` use `contained_by(condition
+object.navigator.At at)` for the identical situation (checking the rover's position without moving it), and
+`Rover::Go` uses `contained_by(condition object.instrument.location.Stowed)` the same way in reverse. Fixed by
+switching every cross-timeline precondition to `contained_by`, keeping `met_by` only for the timeline an action's
+own effect transitions (matching Rover::Go's own `met_by(condition object.navigator.At _from)` for the timeline
+it does move). Diagnosis method: a hand-written minimal reproduction problem run directly against `europa_plan`,
+not repeated changes to the full offline chain.
+
+**2. `europa_plan` segfaults inside its own `TemporalNetwork::cleanupTEQ`, via a backtracking retraction
+(`gdb -batch -ex run -ex bt`), once two `precedes`-chained goals are given to one solve.** Reduced to a minimal
+repro: the same problem with one goal solves cleanly (steps: 71, the full derived plan); the same problem with
+any two of the three goals `precedes`-chained together segfaults before producing any output. A single goal
+alone never crashed, including each of the same two individually. This is a genuine bug in nasa/europa's own
+2019-era `TemporalNetwork` component, not a domain-modelling error -- not something to fix by editing NDDL.
+Worked around in `host.py`, not patched around in the domain: each `solve()` call now receives only the single
+next unmet goal (`goals[:1]`), never the remaining chain. The sequencing semantics do not change -- each solve
+still finds its own minimal path to the next goal from wherever the previous one left off, which is what the
+`precedes` chain meant in the first place -- only *where* the chain lives moved, from one NDDL problem's
+constraints to the host's own replanning loop, which was already built to do exactly this.
+
+**3. `PSToken::getOwner()` returns empty for a `met_by` condition slave, not the timeline it is actually a fact
+of.** `host.py`'s `post_state()` (the activity's post-state, per §11.2 step 6 -- reads the latest-starting slave
+per timeline) was keying its output dict by `slave["timeline"]` unconditionally; a met_by condition slave's empty
+owner produced a `""` key, which `problem()`'s next NDDL emission rendered as `fact(.Stowed s4);` -- a missing
+timeline name, invalid syntax, so the *next* `solve()` call failed to parse (steps: 0) rather than genuinely
+having no plan, and the host correctly but uselessly escalated to the operator over a bug, not a real deadlock.
+Fixed: `post_state()` skips a slave with no owner name (its effect slave on the same timeline still carries the
+real post-state; the condition slave was never the post-state to report in the first place).
+
+**Method note.** All three were caught by one clean, complete offline pass (`run_offline_mission_b.sh` plus a
+handful of standalone `europa_plan` reproductions for the two solver-level bugs) before any live-sim time was
+spent -- consistent with F104's own method note that live time is for confirming a fix already verified offline,
+not for finding the bug in the first place. `run_offline.sh` (the skeleton regression) also needed an environment
+fix unrelated to Mission B: it never sourced `openral/install/setup.bash`, so `host.py`'s newer
+`openral_msgs.msg.PromptStamped` import (added for the operator-console mechanism after F102 was written) failed;
+caught by simply re-running the existing skeleton regression before trusting any new result, per the standing
+rule that a changed shared file gets its existing regression re-run, not assumed unaffected.
+
+**Live, first attempt, full success (2026-09-22).** `experiments/launch/lunar_base_d0/d0_europa_mission_b_check.py`
+(modelled on the PLEXIL live check script: starts `host.py` against the *real* boundary instead of
+`sim_boundary.py`, alongside `universalExec` running the same generic `ActivityDispatch.plx`) ran the identical
+9-step derivation live on the corrected-arm graph -- `arm_ready, navigate_to_feature, dock_at_feature, pick,
+navigate_to_feature, dock_at_feature, place, stow, navigate_to_pose` -- with no live-specific issues at all: every
+offline fix held on the first try. Evaluator `RESULT`: `{"oru_on": "pdu_1_shelf/shelf", "delivered": true,
+"success": true}`, 368 s sim time (PLEXIL's own live Mission B, F104, was 358 s), video recorded
+(`artifacts/runs/europa_mission_b_success_20260922`). This is the first time all three methods -- Ours (F92-F100),
+PLEXIL (F104), EUROPA→PLEXIL -- have completed Mission B covered on the current stack.
+
+A dedicated overlay panel (`experiments/video/europa_mission_video.py`, `europa_timeline_from_logs.py`,
+`sim_clock.py` factored out of `plexil_timeline_from_logs.py` for both to share) reads `host.py`'s own
+`events.jsonl` directly -- it already carries exactly the structure a viewer needs (each goal, each freshly
+*derived* plan, each dispatch/result) -- and renders two cards PLEXIL's panel has no equivalent of: **GOALS** (the
+mission's fixed outcomes) and **PLAN** (the solver's current derived activity list, replaced whole on every
+replan -- watching it go from a 7-step plan to a 1-step plan to a different 1-step plan is watching the planning
+happen). Caught one bug offline before rendering live footage: `plan` events serialize `activities` as JSON arrays
+(`[type, params]`), not objects -- `act["type"]` raised `TypeError`; fixed to `act[0]`, verified against a logic-only
+replay of the offline run's own `events.jsonl` before spending render time on the live video.

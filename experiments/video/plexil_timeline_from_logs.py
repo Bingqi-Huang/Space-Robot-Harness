@@ -26,40 +26,13 @@ import re
 import sys
 from pathlib import Path
 
-import rosbag2_py
-from rclpy.serialization import deserialize_message
-from rosidl_runtime_py.utilities import get_message
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sim_clock import wall_to_sim
 
 TOP = ["ToDepot", "Pick", "ToShelf", "Place", "Return"]
 LIB = ["DriveAndDock", "PickItem", "PlaceItem", "StowAndReturn"]
 _TRANSITION_RE = re.compile(r"Transitioning (\S+) (\S+) from (\S+) to (\S+) at ([\d.]+)")
 _CAP_LOG_RE = re.compile(r"^\[INFO\] \[([\d.]+)\] \[space_capability_server\]: CAPABILITY (\{.*\})\s*$")
-
-
-def wall_to_sim(bag: Path):
-    """A monotone (wall_ns, sim_s) table from the bag's own `/clock`, for `np.interp`-free linear lookup."""
-    import bisect
-    reader = rosbag2_py.SequentialReader()
-    reader.open(rosbag2_py.StorageOptions(uri=str(bag), storage_id="sqlite3"), rosbag2_py.ConverterOptions("", ""))
-    types = {t.name: t.type for t in reader.get_all_topics_and_types()}
-    reader.set_filter(rosbag2_py.StorageFilter(topics=["/clock"]))
-    msg_t = get_message(types["/clock"])
-    wall, sim = [], []
-    while reader.has_next():
-        _, data, recv_ns = reader.read_next()
-        msg = deserialize_message(data, msg_t)
-        wall.append(recv_ns / 1e9)
-        sim.append(msg.clock.sec + msg.clock.nanosec * 1e-9)
-
-    def convert(w: float) -> float:
-        i = bisect.bisect_left(wall, w)
-        if i <= 0:
-            return sim[0]
-        if i >= len(wall):
-            return sim[-1]
-        w0, w1, s0, s1 = wall[i - 1], wall[i], sim[i - 1], sim[i]
-        return s0 if w1 <= w0 else s0 + (s1 - s0) * (w - w0) / (w1 - w0)
-    return convert
 
 
 def parse_node_trace(trace_log: Path, to_sim) -> list[dict]:

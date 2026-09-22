@@ -11,6 +11,7 @@ mkdir -p $RUN
 export ROS_DOMAIN_ID=92 ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST PLEXIL_HOME=$HOME/Programs/plexil
 export PATH=$PLEXIL_HOME/scripts:/usr/bin:/bin   # no conda: ROS Humble's python 3.10
 source /opt/ros/humble/setup.bash
+source $REPO/openral/install/setup.bash   # openral_msgs (host.py's operator-console PromptStamped)
 source $REPO/ros/install/local_setup.bash
 export LD_LIBRARY_PATH=$REPO/ros/install/lib:$HERE/plexil/build:$PLEXIL_HOME/lib:$LD_LIBRARY_PATH
 (cd $HERE/plexil/plans && plexilc ActivityDispatch.ple > /dev/null)

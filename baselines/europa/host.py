@@ -12,7 +12,15 @@ The domain stays frozen: a situation it cannot plan for needs an operator. It as
 answer is logged, and only an explicit "continue" resumes the loop (anything else stops the run) -- what a "no plan"
 means and whether the operator can actually fix it is baseline logic, not this mechanism's.
 
-  python host.py --run-dir <dir> --goal depot_stand/slot_0@work --goal dock --final dock
+  python host.py --run-dir <dir> --goal depot_stand/slot_0@work --goal dock --final dock                    # skeleton
+  python host.py --run-dir <dir> --model domain/mission-b-model.nddl --item spare_oru:depot_stand/slot_0 \\
+      --goal spare_oru@pdu_1_shelf/shelf --goal stowed --final dock                                          # Mission B
+
+Mission B's goals are deliberately only the mission's own outcomes (item delivered, arm stowed, base back at dock):
+navigate_to_feature/dock_at_feature/arm_ready are not goals at all, because they do not need to be -- pick/place's
+own domain preconditions (domain/mission-b-model.nddl) force the solver to derive them, the same way the point of
+using EUROPA over a hand-sequenced plan is that a single high-level goal expands into the steps that satisfy it
+(nasa/europa's own Rover example: TakeSample(rock4) alone yields Go->Unstow->Place->TakeSample->PhoneHome).
 """
 import argparse
 import json
@@ -35,9 +43,24 @@ REPLY_TOPIC = "/space/operator/reply"
 HERE = Path(__file__).resolve().parent
 PLANNER = HERE / "planner/build/europa_plan"
 CONFIG = HERE / "config/PlannerConfig.xml"
+HOST_CONFIG = json.loads((HERE / "config/host_config.json").read_text())
 HORIZON = 10000
-NEAR_M = 3.0  # dock_at_feature closes "the last metre" after navigate_to_feature: a base this close to the feature can dock
-ATTEMPTS = 3  # the same call failing this often ends the run -- the domain has no other way to that state
+NEAR_M = HOST_CONFIG["near_m"]      # dock_at_feature closes "the last metre" after navigate_to_feature: a base
+                                     # this close to the feature can dock
+ATTEMPTS = HOST_CONFIG["attempts"]  # the same call failing this often ends the run -- the domain has no other way there
+JAW_HOLD = (HOST_CONFIG["jaw_holding_min_rad"], HOST_CONFIG["jaw_holding_max_rad"])  # d0_common.py's own bands
+
+# An item's natural-language description (pick's target/part) and catalogue release constraint (place's) are text
+# the solver has no reason to search over -- there is exactly one way to describe an item. This is mission-instance
+# authoring, the same status as PLEXIL's plan-level OruTarget/OruPart constants (docs/baselines/plexil.md), kept
+# outside the NDDL domain on purpose (domain/mission-b-model.nddl's own comment on pick/place).
+ITEM_DESCRIPTIONS = {
+    "spare_oru": {
+        "target": "the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand",
+        "part": "the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)",
+        "release_constraint": "below_overhang",
+    },
+}
 
 
 def ident(name):
@@ -45,8 +68,10 @@ def ident(name):
 
 
 # ---- mission instance and state as NDDL --------------------------------------------------------------------------
-def instance(site):
-    """Site objects of the skeleton domain: the dock, `elsewhere`, and every surveyed feature with its two stances."""
+def instance(site, items):
+    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, and the
+    mission's movable items (`items`: item name -> nothing needed but its own identity; where it starts is a fact,
+    not an instance object)."""
     lines = ['NamedPose dock = new NamedPose("dock");', 'Location elsewhere = new Location("elsewhere");']
     names = {"dock": "dock", "elsewhere": "elsewhere"}
     for f in site["points"]:
@@ -54,6 +79,10 @@ def instance(site):
         lines += [f'Location {i}_a = new Location("{f}@approach");', f'Location {i}_w = new Location("{f}@work");',
                   f'Feature {i} = new Feature("{f}", {i}_a, {i}_w);']
         names.update({i: f, f"{i}_a": f"{f}@approach", f"{i}_w": f"{f}@work"})
+    for item in items:
+        i = ident(item)
+        lines.append(f'Item {i} = new Item("{item}");')
+        names[i] = item
     return lines, names
 
 
@@ -80,8 +109,10 @@ def solve(model, text, run_dir, n):
 
 # ---- activity -> capability call ---------------------------------------------------------------------------------
 def capability_call(act, names, site):
-    """An activity's parameters are the capability's arguments: a feature goes by its site name, a named pose as its
-    coordinates."""
+    """An activity's parameters are the capability's arguments: a feature/item goes by its site/catalogue name, a
+    named pose as its coordinates; an item's fixed description text is filled in from ITEM_DESCRIPTIONS (its own
+    comment says why that is not a domain parameter)."""
+    cap = act["type"].split(".", 1)[1]
     args = {}
     for p, v in act["params"].items():
         if p == "pose":
@@ -90,40 +121,84 @@ def capability_call(act, names, site):
             args[p] = names[v]
         else:
             args[p] = v
-    return act["type"].split(".", 1)[1], args
+    if cap == "pick":
+        item = args["item"]
+        args.update(target=ITEM_DESCRIPTIONS[item]["target"], part=ITEM_DESCRIPTIONS[item]["part"])
+    elif cap == "place":
+        args["release_constraint"] = ITEM_DESCRIPTIONS[args["item"]]["release_constraint"]
+    return cap, args
 
 
 def post_state(act):
-    """The activity's planned post-state on each timeline it touches: its latest-starting slave there."""
+    """The activity's planned post-state on each timeline it touches: its latest-starting slave there. A `met_by`
+    condition slave (the state a transition starts FROM) comes back with no owner at all (PSToken::getOwner()
+    empty, verified against a raw plan dump) rather than the timeline it is actually a fact of -- skipped, or its
+    empty-string key corrupts the next solve's problem text (`fact(.Stowed ...)`, invalid NDDL, confirmed offline)."""
     post = {}
     for s in sorted(act["slaves"], key=lambda s: s["start"][0]):
-        post[s["timeline"]] = [s["type"].split(".")[1], s["params"]]
+        if s["timeline"]:
+            post[s["timeline"]] = [s["type"].split(".")[1], s["params"]]
     return post
 
 
 # ---- raw result -> plan-database facts (the baseline's result translation, §11.2 step 6) -------------------------
-def facts_from_result(state, act, cap, args, res, site):
+def facts_from_result(state, cap, args, res, site):
     """The facts the host believes after one capability call, and whether the activity ended as planned.
 
-    success: the plan's own post-state holds (the contract did what it says).
+    success: the plan's own post-state holds (the contract did what it says) -- `post_state`, called by the caller.
     failure of a base move: where the robot's own pose estimate (evidence.base_pose) left it -- near the feature it
     was going to (within NEAR_M: dock_at_feature can close in from there) or `elsewhere` (only Nav2 moves from there).
-    An empty result (the boundary never accepted the call) changes nothing.
+    failure of an arm/manipulation call: every capability's evidence carries the arm's own state (posture, jaw angle
+    -- openral_ext/capability_server/node.py's `_execute` attaches it unconditionally), so no extra query is needed.
+    A failed pick with empty jaws leaves the item exactly where the state already has it (nothing moved); a failed
+    place with empty jaws (dropped in transit, on no surveyed support) is not a state this domain can represent --
+    the same open gap `AGENT/todo.md` already tracks for Ours (gc3), not solved here either. An empty result (the
+    boundary never accepted the call) changes nothing.
     """
-    if res["success"]:
-        return {**state, **post_state(act)}, True
-    pose = res["evidence"].get("base_pose")
-    if pose is None:
-        return state, False
-    feature = args.get("feature")
-    if feature and math.dist((pose["x"], pose["y"]), site["points"][feature]["xyz"][:2]) < NEAR_M:
-        return {**state, "rover.base": ["At", {"loc": f"{ident(feature)}_a"}]}, False
-    return {**state, "rover.base": ["At", {"loc": "elsewhere"}]}, False
+    evd = res.get("evidence") or {}
+    if cap in ("navigate_to_feature", "dock_at_feature", "navigate_to_pose"):
+        pose = evd.get("base_pose")
+        if pose is None:
+            return state, False
+        feature = args.get("feature")
+        if feature and math.dist((pose["x"], pose["y"]), site["points"][feature]["xyz"][:2]) < NEAR_M:
+            return {**state, "rover.base": ["At", {"loc": f"{ident(feature)}_a"}]}, False
+        return {**state, "rover.base": ["At", {"loc": "elsewhere"}]}, False
+    if cap in ("arm_ready", "stow", "pick", "place"):
+        arm = evd.get("arm")
+        if arm is None:
+            return state, False
+        new = {**state, "rover.posture": ["Ready" if arm.get("posture") == "ready" else "Stowed", {}]}
+        item = args.get("item")
+        if item:
+            holding = JAW_HOLD[0] < arm.get("jaw_rad", 1.0) < JAW_HOLD[1]
+            new["rover.jaws"] = ["Holding", {"item": ident(item)}] if holding else ["Empty", {}]
+            if holding:
+                new[f"{ident(item)}.loc"] = ["Held", {}]
+        return new, False
+    return state, False
 
 
-def initial_state(pose, site):
+def initial_state(pose, arm, site, items_at):
     at_dock = math.dist((pose["x"], pose["y"]), (site["dock"]["x"], site["dock"]["y"])) < 0.6
-    return {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}]}
+    state = {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}]}
+    if arm is not None:
+        state["rover.posture"] = ["Ready" if arm.get("posture") == "ready" else "Stowed", {}]
+        state["rover.jaws"] = ["Empty", {}]  # every covered instance starts with empty jaws; nothing here detects otherwise
+    for item, support in items_at.items():
+        state[f"{ident(item)}.loc"] = ["On", {"support": ident(support)}]
+    return state
+
+
+def parse_goal(token, item_names, loc):
+    """A `--goal`/`--final` token names a base location (existing: a feature/pose name, `dock`, or `elsewhere`), an
+    item's destination (`item@support`), or an arm posture (`stowed`/`ready`)."""
+    if token in ("stowed", "ready"):
+        return "rover.posture", token.capitalize(), {}
+    if "@" in token and token.split("@", 1)[0] in item_names:
+        item, support = token.split("@", 1)
+        return f"{ident(item)}.loc", "On", {"support": loc[support]}
+    return "rover.base", "At", {"loc": loc[token]}
 
 
 # ---- the PLEXIL link (HostLink adapter) --------------------------------------------------------------------------
@@ -184,8 +259,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
     ap.add_argument("--model", default=str(HERE / "domain/skeleton-model.nddl"))
-    ap.add_argument("--goal", action="append", default=[], help="a base location to reach, in order")
-    ap.add_argument("--final", help="the base location the run ends at")
+    ap.add_argument("--item", action="append", default=[], help="NAME:SUPPORT_FEATURE, the item's starting place")
+    ap.add_argument("--goal", action="append", default=[], help="a location/item-destination/posture to reach, in order")
+    ap.add_argument("--final", help="the goal (of the same kinds as --goal) the run ends at")
     ap.add_argument("--port", type=int, default=47810)
     a = ap.parse_args()
     run_dir, model = Path(a.run_dir), Path(a.model)
@@ -197,6 +273,7 @@ def main():
         events.flush()
         print(kind, json.dumps(kw)[:300], flush=True)
 
+    items_at = dict(i.split(":", 1) for i in a.item)
     rclpy.init()
     node = rclpy.create_node("europa_host")
     client = node.create_client(QueryCapability, "/space/capability/query")
@@ -213,11 +290,16 @@ def main():
         return answer.strip().lower() == "continue"
 
     site = query(node, client, "site_map")
-    site_lines, names = instance(site)
+    site_lines, names = instance(site, items_at)
     loc = {v: k for k, v in names.items()}
-    goals = [("rover.base", "At", {"loc": loc[g]}, False) for g in a.goal]
-    goals += [("rover.base", "At", {"loc": loc[a.final]}, True)] if a.final else []
-    state = initial_state(query(node, client, "base_pose"), site)
+    item_names = set(items_at)
+    goals = [parse_goal(g, item_names, loc) + (False,) for g in a.goal]
+    if a.final:
+        goals.append(parse_goal(a.final, item_names, loc) + (True,))
+    # the skeleton domain's LunarBot has no posture/jaws timeline at all -- only query and carry that state when
+    # there is an item to track, which is also exactly when the fuller domain (arm, jaws, item location) is in use
+    arm = query(node, client, "arm_state") if items_at else None
+    state = initial_state(query(node, client, "base_pose"), arm, site, items_at)
     log("mission", goals=goals, state=state)
     link = Link(a.port)
     failures, n_plan = {}, 0
@@ -226,7 +308,13 @@ def main():
             log("done", state=state)
             break
         n_plan += 1
-        plan = solve(model, problem(model, site_lines, state, goals), run_dir, n_plan)
+        # one goal per solve, not the whole remaining chain: nasa/europa's solver segfaults deep in its own
+        # TemporalNetwork (EUROPA::TemporalNetwork::cleanupTEQ, via a backtracking retraction) on this domain once
+        # two `precedes`-chained goals are given together, confirmed down to a minimal 2-goal reproduction offline,
+        # while any single goal alone -- including each one of the same two -- solves cleanly. The goal *sequence*
+        # semantics do not change: each solve still finds its own minimal path to the next unmet goal from
+        # wherever the previous one left off, which is what the chain meant in the first place.
+        plan = solve(model, problem(model, site_lines, state, goals[:1]), run_dir, n_plan)
         log("plan", n=n_plan, solved=plan["solved"], steps=plan["steps"],
             activities=[(x["type"], x["params"]) for x in plan["activities"]])
         if not plan["solved"]:
@@ -239,7 +327,10 @@ def main():
             cap, args = capability_call(act, names, site)
             log("dispatch", capability=cap, args=args)
             res = link.dispatch(cap, args)
-            state, as_planned = facts_from_result(state, act, cap, args, res, site)
+            if res["success"]:
+                state, as_planned = {**state, **post_state(act)}, True
+            else:
+                state, as_planned = facts_from_result(state, cap, args, res, site)
             # an intermediate goal, once reached, leaves the goal set; the final one must hold at the horizon
             while goals and not goals[0][3] and state.get(goals[0][0]) == [goals[0][1], goals[0][2]]:
                 goals.pop(0)
