@@ -4597,3 +4597,20 @@ took the friction off the arm; this is what remained.
 **What it does not say.** The gripper, the steering and the wheels are configured in the same way and are left alone: they were tuned
 against their behaviour as it is, and nothing in the record shows them at fault. The servo's gains and ramps were tuned against the soft arm
 and are conservative for the arm as configured; they are not touched until a run shows them wrong.
+
+## F99 -- a joint-limited retreat looked like a failed place, not a cleared one
+
+gt2c1, the first pick-carry-place chain on the corrected arm (F98): pick held the ORU through the whole carry, `over` and `lower`
+placed it 6 mm from the expected shelf height, and `place` still failed. The withdrawal leg of `retreat` (collision checking off,
+by design -- the open jaws start around the part they just released) stalled 15 mm short of its target with joint4 at -2.31 rad,
+0.046 rad from its -2.356 stop: the fixed release orientation, backing out horizontally under the `below_overhang` constraint,
+asked more of that one joint than the arm's own low, steep release pose had left to give. Nothing was in the way -- the servo's own
+progress test, not a collision, ended the stage.
+
+Retreat's job is to end clear of the item it just released, which a joint-limited near-miss already does; both of its servo calls
+now return `{"stalled": True, ...}` instead of raising (`stall_returns=True`, the same outcome type `press`'s contact stroke already
+uses), recorded in evidence. A genuine obstruction on the collision-checked second leg still raises, unchanged. What decides whether
+the place actually held is downstream and independent of this: the settle stage's wrist-image stillness check and the boundary's own
+`item_placed` verification, not the skill's own progress report.
+
+Not yet run to a conclusion: gt2c2 (the run that surfaced this) with the fix applied.
