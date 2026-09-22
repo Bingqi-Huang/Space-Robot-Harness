@@ -123,8 +123,16 @@ posture/jaws state on failure -- every capability's evidence carries it, no extr
 same way PLEXIL's predefined recovery set is: pick/place's failure kinds are settled (F92-F100) but a *frozen*
 recovery policy is not yet written for either baseline.
 
+## Live run (2026-09-22): first attempt, full success
+
+`experiments/launch/lunar_base_d0/d0_europa_mission_b_check.py` (modelled on the PLEXIL live check script) starts
+`host.py` against the real boundary in place of `sim_boundary.py`. Ran the identical 9-step derivation live on the
+corrected-arm graph with no live-specific issues -- every offline fix held. Evaluator `delivered: true,
+success: true`, 368 s sim time, video recorded (`artifacts/runs/europa_mission_b_success_20260922`); a dedicated
+overlay panel (`experiments/video/europa_mission_video.py`) shows the mission's fixed goals alongside the solver's
+current derived plan, replaced whole on every replan. Full account: F105, `docs/research_findings.md`.
+
 ## Open
 
-- The live launch/check script (modelled on `experiments/launch/lunar_base_d0/d0_plexil_mission_b_check.py`) and
-  a live run on the corrected-arm graph -- offline-verified only so far (`run_offline_mission_b.sh`).
 - The plan is ordered by earliest start; concurrency between activities is not exploited (one capability at a time).
+- Predefined recovery beyond replan-on-failure, same status as PLEXIL's (above).

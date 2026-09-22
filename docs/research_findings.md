@@ -4836,3 +4836,23 @@ fix unrelated to Mission B: it never sourced `openral/install/setup.bash`, so `h
 `openral_msgs.msg.PromptStamped` import (added for the operator-console mechanism after F102 was written) failed;
 caught by simply re-running the existing skeleton regression before trusting any new result, per the standing
 rule that a changed shared file gets its existing regression re-run, not assumed unaffected.
+
+**Live, first attempt, full success (2026-09-22).** `experiments/launch/lunar_base_d0/d0_europa_mission_b_check.py`
+(modelled on the PLEXIL live check script: starts `host.py` against the *real* boundary instead of
+`sim_boundary.py`, alongside `universalExec` running the same generic `ActivityDispatch.plx`) ran the identical
+9-step derivation live on the corrected-arm graph -- `arm_ready, navigate_to_feature, dock_at_feature, pick,
+navigate_to_feature, dock_at_feature, place, stow, navigate_to_pose` -- with no live-specific issues at all: every
+offline fix held on the first try. Evaluator `RESULT`: `{"oru_on": "pdu_1_shelf/shelf", "delivered": true,
+"success": true}`, 368 s sim time (PLEXIL's own live Mission B, F104, was 358 s), video recorded
+(`artifacts/runs/europa_mission_b_success_20260922`). This is the first time all three methods -- Ours (F92-F100),
+PLEXIL (F104), EUROPA→PLEXIL -- have completed Mission B covered on the current stack.
+
+A dedicated overlay panel (`experiments/video/europa_mission_video.py`, `europa_timeline_from_logs.py`,
+`sim_clock.py` factored out of `plexil_timeline_from_logs.py` for both to share) reads `host.py`'s own
+`events.jsonl` directly -- it already carries exactly the structure a viewer needs (each goal, each freshly
+*derived* plan, each dispatch/result) -- and renders two cards PLEXIL's panel has no equivalent of: **GOALS** (the
+mission's fixed outcomes) and **PLAN** (the solver's current derived activity list, replaced whole on every
+replan -- watching it go from a 7-step plan to a 1-step plan to a different 1-step plan is watching the planning
+happen). Caught one bug offline before rendering live footage: `plan` events serialize `activities` as JSON arrays
+(`[type, params]`), not objects -- `act["type"]` raised `TypeError`; fixed to `act[0]`, verified against a logic-only
+replay of the offline run's own `events.jsonl` before spending render time on the live video.

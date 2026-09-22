@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-22 (F105, EUROPA Mission B offline). Read `AGENT/research_content.md` and `AGENT/execution_plan.md`
+Updated 2026-09-22 (F105, EUROPA Mission B live -- first attempt, full success). Read `AGENT/research_content.md` and `AGENT/execution_plan.md`
 first, then `AGENT/todo.md`. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns
 facts, evidence, verification and hard boundaries. Simulator truth is for post-hoc diagnosis only, never a decision.
 
@@ -11,15 +11,14 @@ unchanged on `feat/experiment-campaign`/`feat/lunar-base-scene`. Nothing pushed.
 
 ## Where it stands
 
-Ours: Mission A and Mission B both run from scratch on the corrected arm, evaluator `success: true`, video recorded
-(F92-F100). PLEXIL: Mission B covered runs end to end live, video recorded (F104,
-`artifacts/runs/plexil_mission_b_success_20260922`) -- the first baseline to complete a full mission on the current
-stack. **EUROPA: Mission B domain built and verified end to end offline (F105)** -- given only the mission's own
-outcomes as goals (item delivered, arm stowed, base at dock), the solver derives the full 9-step plan itself
-(matching PLEXIL's hand-sequenced one) through `sim_boundary.py`'s stand-in boundary; not yet run live. Mission A
+**All three methods now complete Mission B covered live on the corrected-arm stack, each with video and its own
+overlay panel**: Ours (F92-F100, `mission_b_success_20260922`), PLEXIL (F104, `plexil_mission_b_success_20260922`),
+EUROPA→PLEXIL (F105, `europa_mission_b_success_20260922`, first live attempt succeeded outright -- every offline
+fix held, no live-specific debugging needed). EUROPA's domain (`mission-b-model.nddl`) is given only the mission's
+own outcomes as goals (item delivered, arm stowed, base at dock) and derives the full 9-step plan itself. Mission A
 PLEXIL already ran covered once (F52, older stack) but its plan still uses stage-level tools instead of the shared
-`press` capability, which has never been tested live at all. **Still no campaign**: the three methods have never run
-the identical instance side by side, and nothing is frozen.
+`press` capability, which has never been tested live at all. **Still no campaign**: the three methods have run
+Mission B covered independently, never side by side on one frozen instance set, and nothing is frozen yet.
 
 - `artifacts/runs/` debug archive from earlier this session (117 GB) still sits at `_debug_archive/`, not deleted.
 
@@ -67,9 +66,12 @@ conda, `PLEXIL_HOME` set, source ROS Humble + `openral/install/setup.bash`, `col
 `plexil_timeline_from_logs.py` (ROS python, needs `rosbag2_py`) then the video script itself (`openral/.venv`).
 
 EUROPA offline: `baselines/europa/run_offline_mission_b.sh <run_dir> [--fail CAP:N[:far]]`; builds
-`planner/build/europa_plan` and `plexil/build/libHostLink.so` itself if missing (plain `cmake`, no colcon). Live
-run: not yet built -- needs a check script modelled on `d0_plexil_mission_b_check.py` that starts `host.py` against
-the real graph instead of `sim_boundary.py`.
+`planner/build/europa_plan` and `plexil/build/libHostLink.so` itself if missing (plain `cmake`, no colcon). Live:
+`D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_b_check.py D0_HOLD=1 D0_VIDEO=<mp4> run_d0.sh <run dir>` (starts
+`host.py` against the real boundary, same graph/evaluator every method uses). EUROPA's overlay panel
+(`experiments/video/europa_mission_video.py`): `track_from_bag.py` + `europa_timeline_from_logs.py` (reads
+`host.py`'s own `events.jsonl`) then the video script (`openral/.venv`) -- GOALS (fixed) + PLAN (the solver's
+current derived activities, replaced whole on every replan), not a fixed graph like PLEXIL's panel.
 
 ## Rules
 
