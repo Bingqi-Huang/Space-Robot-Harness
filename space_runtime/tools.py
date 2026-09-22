@@ -16,6 +16,11 @@ name one tabletop object (`GroundedSubtask`), which rejects mission-level tasks 
 (research repo F53).
   report_to_operator       -> EmitPromptTool(target_topic=REPORT_TOPIC)
   request_operator         -> EmitPromptTool(target_topic=REQUEST_TOPIC)
+
+`Agent.dispatch()` (space_runtime/agent.py) publishes both as `PromptStamped` on their topic; `request_operator`
+additionally blocks the reasoning loop on `REPLY_TOPIC` until the operator console (experiments/operator_console)
+answers, then records the answer as an `operator_answered` event -- the operator PROTOCOL (when to escalate, what an
+answer means) stays outside this module.
 """
 import json
 
@@ -27,6 +32,9 @@ from openral_ext.capability_server.contracts import CONTRACTS
 
 REPORT_TOPIC = "/space/operator/report"
 REQUEST_TOPIC = "/space/operator/request"
+REPLY_TOPIC = "/space/operator/reply"  # console -> requester: the operator's answer, PromptStamped.metadata_json carries
+                                       # {"request_id": ...} echoed from the request plus the console-assigned
+                                       # {"authority_level", "interaction_id", "start_wall_t", "end_wall_t"}
 SET_TASK_STATUS = "local/set_task_status"
 DECOMPOSE = "local/decompose_mission"
 RATIONALE = {"type": "string", "description": "one sentence: why this call now"}

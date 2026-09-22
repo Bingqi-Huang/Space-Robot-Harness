@@ -1,0 +1,62 @@
+# execution_plan.md §12 scenario manifest. Catalog ref: docs/lunar_task_catalog.md §3 "B4" (catalog
+# marks this "A/B shared"; instantiated here under mission_b only -- see notes).
+manifest_version: 1
+scenario_id: mission_b/held_out/b4_route_block
+mission_family: mission_b
+coverage: held_out
+
+mission_brief: >
+  Deliver the spare ORU staged at the depot stand (slot 0 per the manifest) to the spares shelf of
+  {destination}, then return the rover to the dock with the arm stowed.
+
+simulator:
+  # NOT YET WIRED: openral/scenes/deploy/srb_lunar_base_route_block.yaml uses the base task variant
+  # "lunar_base_visual" (env.scenery=lunar_base_route_block only) -- it does not publish mission_state and
+  # has never been combined with env.scenario=covered under lunar_base_mission_b_visual. The combination
+  # below is the manifest's proposed instance, not a config that has been run.
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_b.yaml
+  task_variant: lunar_base_mission_b_visual
+  env_overrides: {env.scenario: covered}
+  scenery_override: lunar_base_route_block
+  seed: 0
+  destination: pdu_1
+  episode_length_s: 1200.0
+
+required_capabilities:   # no new capability -- Nav2's own obstacle avoidance handles the parked rover
+  - navigate_to_feature
+  - dock_at_feature
+  - arm_ready
+  - grasp
+  - place
+  - release
+  - stow
+  - observe
+
+mission_deadline_s: 1200.0
+space_context_profile: null
+perturbations_semantic_conditions:
+  - "an unmapped crew rover is parked across the depot loop's west leg at (5.0, -2.25); the surveyed localization map predates it (d0_route_block_check.py)"
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_b.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log -- ONLY IF the scenery override above is confirmed compatible with lunar_base_mission_b_visual (OPEN, see certificate)'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "same as B1 covered -- the obstruction changes the route, not the success definition"
+  fields_used: [delivered, success]
+
+held_out_basis: >
+  §3.3 condition 3 (capability substitution/composition): the same navigate_to_feature/dock_at_feature
+  capabilities must route around an obstacle not in the surveyed map; Nav2 itself already does this (in
+  scope, no new capability). lunar_task_catalog.md §4 rates literature support "medium" (JPL MER precedent
+  [29], general obstacle-avoidance requirement [1] p.14; the specific "another parked rover" precedent not
+  found -- noted honestly there).
+
+notes: >
+  Scene asset exists today (space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/lunar_base_route_block.usda,
+  scenery `lunar_base_route_block`) and a standalone navigation check exists
+  (experiments/launch/lunar_base_d0/d0_route_block_check.py, D0_SCENERY=lunar_base_route_block) -- but that
+  check runs raw navigate() waypoints, not a full Ours mission through ours_mission_check.py, and not
+  combined with a mission's own scenario=covered task logic. See .certificate.yaml: this instance is OPEN
+  pending confirmation that env.scenery + env.scenario compose under lunar_base_mission_b_visual.

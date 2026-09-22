@@ -8,8 +8,11 @@ harness palette and context. Each step:
     verification -> events appended to the record -> next step
 
 The agent owns mission strategy; nothing here decides what to do next. The run ends when the agent reports to mission
-control, asks it for help, or exhausts the mission step budget. `--resume` reopens an existing record (a restarted or
-switched reasoner continues from the facts, not from a conversation).
+control or exhausts the mission step budget; asking mission control for help (`request_operator`) instead pauses the
+loop -- the request is published for the operator console (experiments/operator_console), the step blocks on the
+console's reply, and the answer is recorded and rendered into the next step's context, mission-generic (no decision
+logic here about what the answer means). `--resume` reopens an existing record (a restarted or switched reasoner
+continues from the facts, not from a conversation).
 
 Run inside a sourced graph (ROS Humble + openral install + ros/install), repo root on PYTHONPATH:
     python3 -m space_runtime.agent --run-dir <dir> --mission "<objective>" [--resume] [--model <id>]
@@ -20,6 +23,7 @@ import os
 import queue
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import rclpy
@@ -33,7 +37,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rosgraph_msgs.msg import Clock
-from openral_msgs.msg import SafetyStatus
+from openral_msgs.msg import PromptStamped, SafetyStatus
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
@@ -43,7 +47,7 @@ from space_runtime.context import HarnessRenderer
 from space_runtime.facts import FactStore
 from space_runtime.guard import Guard
 from space_runtime.report import write_report
-from space_runtime.tools import DECOMPOSE, REPORT_TOPIC, SET_TASK_STATUS, HarnessToolClient
+from space_runtime.tools import DECOMPOSE, REPLY_TOPIC, REPORT_TOPIC, REQUEST_TOPIC, SET_TASK_STATUS, HarnessToolClient
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
@@ -75,6 +79,12 @@ class Agent:
         self.fdir_inbox = []
         self.node.create_subscription(SafetyStatus, "/openral/safety_status", self.fdir_inbox.append,
                                       QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
+        # operator channel (execution_plan §13.2): report/request publish PromptStamped; request_operator then blocks
+        # on the console's reply, matched by the request_id it minted -- the operator PROTOCOL stays outside this file
+        self.report_pub = self.node.create_publisher(PromptStamped, REPORT_TOPIC, 10)
+        self.request_pub = self.node.create_publisher(PromptStamped, REQUEST_TOPIC, 10)
+        self.operator_replies = queue.SimpleQueue()
+        self.node.create_subscription(PromptStamped, REPLY_TOPIC, self.operator_replies.put, 10)
         ex = SingleThreadedExecutor()
         ex.add_node(self.node)
         threading.Thread(target=ex.spin, daemon=True).start()
@@ -150,12 +160,29 @@ class Agent:
         words rather than a paraphrase."""
         self.event("tool_proposed", **data, llm_s=getattr(self, "_llm_s", None), **self.client.last_reply)
 
+    def wait_for_operator_reply(self, request_id: str) -> dict:
+        # blocks the reasoning loop, not any ROS thread: the background executor keeps spinning and fills the queue
+        while True:
+            msg = self.operator_replies.get()
+            meta = json.loads(msg.metadata_json or "{}")
+            if meta.get("request_id") == request_id:
+                return {"text": msg.text, "authority_level": meta.get("authority_level"),
+                        "interaction_id": meta.get("interaction_id"),
+                        "start_wall_t": meta.get("start_wall_t"), "end_wall_t": meta.get("end_wall_t")}
+
     def dispatch(self, call) -> None:
         if isinstance(call, EmitPromptTool):
             tool = "report_to_operator" if call.target_topic == REPORT_TOPIC else "request_operator"
             self.proposed(tool=tool, args={"text": call.text}, rationale=call.rationale)
-            self.event("operator_report" if tool == "report_to_operator" else "operator_request", text=call.text)
-            return
+            if tool == "report_to_operator":
+                self.report_pub.publish(PromptStamped(text=call.text))
+                self.event("operator_report", text=call.text)  # sets facts["terminal"]: the run ends here
+                return
+            request_id = uuid.uuid4().hex[:12]
+            self.request_pub.publish(PromptStamped(text=call.text, metadata_json=json.dumps({"request_id": request_id})))
+            self.event("operator_request_sent", request_id=request_id, text=call.text)
+            self.event("operator_answered", request_id=request_id, **self.wait_for_operator_reply(request_id))
+            return  # neither event kind is in facts.py's reducer: the run is not terminal, the next step continues
         name, args = call.rskill_id, json.loads(call.goal_params_json or "{}")
         if name == DECOMPOSE:
             subtasks, target = [t for t in args["subtasks"] if t.strip()], args.get("target_task_id", "")

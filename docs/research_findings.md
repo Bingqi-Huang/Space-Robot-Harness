@@ -4658,3 +4658,44 @@ everywhere else in this harness -- retrying a bad read is the reasoner's job, no
 chain has no reasoner, so it just tried again.
 
 Not yet run: the same chain end to end inside the real Mission B loop, with a model and with video.
+
+## F101 — PLEXIL 6.1.3 LibraryCall does not carry its callee's failure (2026-09-20, Session P, offline; renumbered from F79 at the `p/integration` merge, 2026-09-22)
+
+Mission B covered for PLEXIL is composed from reusable library nodes (`baselines/plexil/plans/lib/`: DriveAndDock,
+PickItem, PlaceItem, StowAndReturn). With `plexiltest` and `Node:outcome` tracing, an injected `command-failed` on
+`dock_at_feature` made the library root FAILURE while the calling `LibraryCall` node still ended SUCCESS, so the next
+legs ran; the documented `PostCondition <call>.outcome == SUCCESS` idiom did not hold one nesting level deeper. The
+library now returns an explicit `InOut Boolean ok` and every leg has `PreCondition ok` (PLEXIL's own regression-suite
+pattern); re-verified: a failed dock skips everything after it and the plan ends FAILURE. Any generated PLEXIL (the
+EUROPA→PLEXIL bridge) must use the same pattern. The adapter gained typed `LastFailureKind` / `LastFailureStage`
+Lookups (mechanical reads of the last result) so recovery branches need no JSON parsing. The predefined recovery set
+waits for pick/place failure kinds to settle; Mission A stays on stage-level tools until `press` is fixed (user).
+
+## F102 — EUROPA builds natively; the EUROPA→PLEXIL machinery replans offline (2026-09-20, Session P, offline; renumbered from F80)
+
+nasa/europa@ac5c332 builds with CMake on Ubuntu 22.04 / gcc 11 without Docker or root; swig 4.0, libantlr3c 3.4 and
+cppunit 1.15 are unpacked from jammy .debs (`baselines/europa/build_europa.sh`, `docs/baselines/europa.md`). Upstream
+examples solve (Light: 4 steps; Rover: from the single goal TakeSample(rock4) the solver derives
+Go→Unstow→Place→TakeSample→PhoneHome). Machinery: `planner/europa_plan` solves an NDDL problem in a fresh Plan
+Database; `host.py` runs solve → dispatch → result→facts (`facts_from_result`, a baseline artifact) → replan; a generic
+PLEXIL `ActivityDispatch` plan with a length-framed TCP `HostLinkAdapter` (UDP datagrams are too small for 56 KB pick
+evidence) calls the unmodified capability adapter. Offline against a stand-in boundary on a base-only skeleton domain:
+nominal run completes; a dock failure that leaves the base far away yields a new plan with an extra navigation; three
+identical failures stop the run as needing the operator. User decisions: replanning from the current state in a fresh
+Plan Database is accepted as the baseline's own method (no strengthening of the baseline); the host reads site map and
+initial pose directly from the boundary queries. The retry cap and "near" distance move to configuration with the
+Mission B domain, which waits for the manipulation contracts.
+
+## F103 — Experiment infrastructure in place; two structural gaps for the ALFUS metrics (2026-09-20, Session P, offline; renumbered from F81)
+
+Scenario manifests (`experiments/scenarios/`, A/B covered + five held-out with closed-capability certificates, all
+OPEN), §19 run-manifest backfill and a dry-run freeze tool (`openral_ext/run_manifest/`), per-run row extraction and
+tables with Wilson/bootstrap intervals (`evaluation/`), an operator console, a PLEXIL log normalizer and Experiment II
+worklog/delta tools. Exercised on 5 development runs only; development numbers are not results. Gaps found: (1) Ours'
+`request_operator` ended the run and only wrote a local event, so interaction time and ALFUS level could not be
+measured — user decision: the run pauses for the answer, which is fed back; the researcher is the campaign operator,
+a script only in development; the protocol rules come from a literature survey (`docs/operator_protocol.md`, pending).
+(2) PLEXIL runs never persisted universalExec's node transitions, so baseline traces stopped at the capability
+boundary (§14.6). Both are being implemented on `p/operator-mechanism`. `preplanned_transition_fraction` uses three
+categories (user): human-preauthored sequence (PLEXIL), planner-generated from a human-authored domain (EUROPA),
+agent-generated online (Ours), reported raw.

@@ -1,9 +1,9 @@
 """Dynamic context construction (execution_plan §4.5, §9.5): the snapshot the agent reads each step.
 
 Selects and formats facts from the authoritative record -- mission intent, site knowledge, robot state, verified
-effects, observations, unresolved anomalies, availability/FDIR/authority, the agent's own working plan and the recent
-tool steps. It never chooses or suggests the next action. Rebuilt from the record every step, so a restarted or
-switched reasoner sees exactly what the previous one would have.
+effects, observations, unresolved anomalies, availability/FDIR/authority, the agent's own working plan, the recent
+tool steps and any operator request/answer exchange. It never chooses or suggests the next action. Rebuilt from the
+record every step, so a restarted or switched reasoner sees exactly what the previous one would have.
 """
 import json
 
@@ -16,7 +16,7 @@ def _j(v) -> str:
     return json.dumps(v, separators=(",", ":"))
 
 
-def render(facts: dict, step: int, max_steps: int) -> str:
+def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = None) -> str:
     f = facts
     out = [f"## MISSION (from mission control)\n{f['mission']['text']}",
            f"## STEP\n{step} of the mission step budget {max_steps}"]
@@ -51,6 +51,14 @@ def render(facts: dict, step: int, max_steps: int) -> str:
     out.append("## MANIPULATION ATTEMPTS (operations on items, latest last)\n" + ("\n".join(tries) or "(none yet)"))
     anomalies = [f"- [{a['seq']}] {a['capability']}: {a['reason']}" for a in f["anomalies"]]
     out.append("## UNRESOLVED ANOMALIES\n" + ("\n".join(anomalies) or "(none)"))
+    # request_operator's request/answer pair: not folded into facts.py (mission-generic, no decision logic here about
+    # what the answer means), read straight off the record so a pending request's answer reaches the next step
+    ops = [e for e in (events or []) if e["kind"] in ("operator_request_sent", "operator_answered")]
+    if ops:
+        lines = [f"- [{e['seq']}] you asked mission control: {e['text']}" if e["kind"] == "operator_request_sent"
+                 else f"- [{e['seq']}] mission control answered ({e.get('authority_level') or 'authority level unspecified'}): {e['text']}"
+                 for e in ops[-8:]]
+        out.append("## OPERATOR EXCHANGES (your requests and mission control's answers, latest last)\n" + "\n".join(lines))
     if len(f["reasoner_history"]) > 1:
         out.append("## REASONER CONTINUITY\nthis record was continued by another reasoner session: "
                    + " -> ".join(f"{r['model']} (from record #{r['seq']})" for r in f["reasoner_history"]))
@@ -85,4 +93,4 @@ class HarnessRenderer(ContextRenderer):
         self.store, self.max_steps, self.step = store, max_steps, 0
 
     def render(self, *, world_state=None) -> str:
-        return render(self.store.facts, self.step, self.max_steps)
+        return render(self.store.facts, self.step, self.max_steps, self.store.events)
