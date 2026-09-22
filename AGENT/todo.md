@@ -1,13 +1,13 @@
 # TODO
 
-Order: `execution_plan` §21 -- the proposed method before the external baselines. Mission A/B reliable on Ours (2026-09-22);
-`p/integration` (PLEXIL Mission B, EUROPA, eval/operator/violations infra) merged in the same day -- see handoff.md.
-**Next: baselines / freeze / experiments**, not yet started as one coherent pass.
+Order: `execution_plan` §21 -- the proposed method before the external baselines. Mission A/B reliable on Ours
+(2026-09-22); `p/integration` merged the same day; PLEXIL Mission B now runs end to end live (F104, 2026-09-22) --
+see handoff.md. **Next: baselines / freeze / experiments**, not yet started as one coherent pass.
 
-## Now -- merge-time follow-ups (small, each needs a build step or a live graph, not just the merge)
+## Now -- small follow-ups (each needs a build step or a live graph, not just an edit)
 
-- [ ] Rebuild `ros/plexil_capability_adapter` (its `.cc` changed: `RequestOperator` Command, `LastFailureKind`/
-      `LastFailureStage` Lookups) before any PLEXIL run.
+- [x] Rebuild `ros/plexil_capability_adapter`; fix its premature-completion ack bug (F104).
+- [ ] Merge `feat/plexil-baseline-live` back into `feat/experiment-campaign` -- ask first.
 - [ ] Wire the evaluator-violations recorder (`experiments/evaluator_recorder/`) into every method's launch script
       (Ours, PLEXIL, EUROPA), not just where it was developed.
 - [ ] Add a call-start timestamp to the capability-server log (needed by the recorder's attribution).
@@ -15,6 +15,8 @@ Order: `execution_plan` §21 -- the proposed method before the external baseline
       shows one, do not retune preemptively.
 - [ ] Killing a check script mid-navigate leaves Nav2's own goal running: cancel it
       (`/navigate_to_pose/_action/cancel_goal`, all-zero goal_id) before any restore.
+- [ ] Delete the three failed PLEXIL Mission B debug run dirs (`plexil_mission_b_live_20260922{,_v2,_v3}`, ~450 MB)
+      once F104's account no longer needs to point at them directly -- ask first.
 
 ## Path to the campaign (§21 order)
 
@@ -22,8 +24,9 @@ Order: `execution_plan` §21 -- the proposed method before the external baseline
        cover_obstruction, status_mismatch, route_block) to lunar-mission literature in `docs/lunar_task_catalog.md`;
        decide the final set (see "Open questions" below) *before* extending any baseline artifact, or a covered case
        for one method becomes held-out fiction for another.
-2. [ ] Complete PLEXIL: predefined recovery set (pick/place failure kinds are now settled -- F92-F100); Mission A
-       plan once `press` has a live run (never pressed a button live yet).
+2. [ ] Complete PLEXIL: Mission B's predefined recovery set (pick/place failure kinds are now settled -- F92-F100;
+       Mission B covered itself now confirmed live end to end, F104); re-confirm Mission A covered live on the
+       current stack (F52 was the older arm), then its plan once `press` has a live run of its own.
 3. [ ] EUROPA: Mission B NDDL domain against the current manipulation contracts; retry cap and "near" distance into
        config; verify online feedback/replanning on Mission B, not just the base-only skeleton domain (F102).
 4. [ ] **H3 has no evidence yet**: every capability is `routine`, the guard has only ever fired on e-stop. Add the

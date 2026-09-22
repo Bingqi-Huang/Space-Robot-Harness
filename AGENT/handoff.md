@@ -1,97 +1,81 @@
 # Handoff
 
-Updated 2026-09-22 (p/integration merged). Read `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then `AGENT/todo.md`.
-Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
-boundaries. No Mission-specific skill, hidden hint, numeric tuning or recovery graph. Simulator truth is for post-hoc diagnosis and
-drawing only, never for a decision (user: "that is cheating").
+Updated 2026-09-22 (F104, PLEXIL Mission B live). Read `AGENT/research_content.md` and `AGENT/execution_plan.md`
+first, then `AGENT/todo.md`. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns
+facts, evidence, verification and hard boundaries. Simulator truth is for post-hoc diagnosis only, never a decision.
 
 ## Heads
 
-Single branch now: research `feat/experiment-campaign`, openral `feat/experiment-campaign`, SRB `feat/lunar-base-scene`.
-`p/integration` (Session P's parallel offline track: PLEXIL Mission B, EUROPA, evaluation infra, operator mechanism,
-evaluator violations) merged in today -- see "Merge note" below. Nothing pushed yet; ask before pushing.
+research `feat/plexil-baseline-live` (off `feat/experiment-campaign`, not merged back -- ask first), openral/SRB
+unchanged on `feat/experiment-campaign`/`feat/lunar-base-scene`. `p/integration` (PLEXIL Mission B, EUROPA,
+evaluation infra, operator mechanism, evaluator violations) merged into `feat/experiment-campaign` earlier today.
+Nothing pushed.
 
-## Where it stands -- Mission A and Mission B both reliable on the corrected arm; baseline/eval infrastructure now merged in
+## Where it stands
 
 Ours: Mission A and Mission B both run from scratch on the corrected arm, evaluator `success: true`, video recorded
-(`artifacts/runs/mission_a_success_20260922/`, `artifacts/runs/mission_b_success_20260922/`; F92-F100).
-PLEXIL: Mission B covered plan on reusable library nodes, nominal path verified offline (F101); Mission A already ran
-covered through the common boundary (F52). EUROPA: builds natively, generic host/bridge/replan verified offline on a
-skeleton domain (F102); Mission B domain not yet written. Evaluation/operator/violations infrastructure exists but is
-untested against the current manipulation contracts (F103). **None of this has been run together as one campaign.**
-The next item in the user's stated order (`execution_plan` §21) is baselines / freeze / experiments, not yet started.
+(F92-F100). **PLEXIL: Mission B covered now runs end to end on the live, corrected-arm graph** --
+`delivered: true, success: true`, video recorded (F104, `artifacts/runs/plexil_mission_b_live_20260922_v4`) -- the
+first time any baseline has completed a full mission on the current stack. Mission A already ran covered before
+(F52, older stack -- worth a fresh confirmation once `press` is fixed). EUROPA: generic host/bridge verified offline
+on a skeleton domain only (F102); Mission B domain not started. **Still no campaign**: the three methods have never
+run the identical instance side by side, and nothing is frozen. `execution_plan` §21's next item (baselines / freeze
+/ experiments) is closer but not started.
 
-- `artifacts/runs/` was cleaned earlier this session: kept only what's cited as evidence in some doc, or read by
-  another worktree's code; everything else is in `artifacts/runs/_debug_archive/` (117 GB, not deleted -- ask first).
+- `artifacts/runs/` debug archive from earlier this session (117 GB) still sits at `_debug_archive/`, not deleted.
+- Four PLEXIL Mission B run dirs from today's debugging (`plexil_mission_b_live_20260922{,_v2,_v3,_v4}`, ~600 MB
+  total) are evidence for F104's account, kept for now.
 
-### Robot-model fixes this session (F96-F100, `docs/research_findings.md`)
+## F104 -- the PLEXIL adapter's early ack, not the plan, raced the whole mission to "done" in under a second
 
-- **F96/F98 -- the robot model itself.** USD joint friction 0.1-0.4 (unitless, x transmitted force) stuck the arm; separately, the
-  arm's drive gains are applied by PhysX per degree, so every joint was 57x softer than configured. Both found in a bare Isaac
-  script with the base fixed (`experiments/robot_check/{arm_steps,carry_static}.py`), one minute per variant, not in a run.
-- **F97 -- two joint-space defaults the soft arm had been hiding.** A planned IK solution can answer with the wrist roll a full
-  turn from the arm's own (`nearest_equivalent` takes the nearest turn inside the stop's margin); the servo's pull toward the
-  working posture was a step at the joint-rate limit, now a rate (0.05/s, ~20 s time constant).
-- **F99/F100 -- `place`'s retreat and `over`.** Both are local, no-lookahead Cartesian tracking, so neither chooses a
-  configuration with room to move on from; a joint can end up pinned at its own stop with nothing in the way. Fix is pure joint
-  arithmetic: `joints_off_their_stops` walks a joint found within 0.3 rad of its stop back to exactly that clear, towards its
-  own centre, then `plan_to` (which now also tells the planner about a carried item -- it never did). Retreat's distance
-  widened to clear the evaluator's own "not held" check (0.30 m) in the worst case, not just the nominal one.
-
-## Merge note (`p/integration` -> `feat/experiment-campaign`, 2026-09-22)
-
-Submodule pins auto-resolved (Session P's openral/SRB commits were ancestors of the current ones -- no actual conflict).
-Real conflicts, hand-resolved:
-
-- `space_runtime/agent.py` -- combined both sides: `proposed()` (records the model's own reply text/reasoning next to
-  every `tool_proposed` event, this session's F90-era work) with Session P's operator request/reply mechanism
-  (`request_operator` now blocks the loop on `/space/operator/reply`, matched by `request_id`, instead of ending the
-  run). `context.py`/`tools.py`/`report.py` auto-merged cleanly (non-overlapping hunks).
-- `docs/research_findings.md` -- Session P's F79/F80/F81 renumbered to **F101/F102/F103** (this session had already
-  used F79-F100 for the robot-model work); no other file cited the old numbers except `handoff.md`/`todo.md`, both
-  rewritten here.
-- `AGENT/handoff.md`, `AGENT/todo.md` -- rewritten (both were due an overwrite anyway).
-
-**Not done as part of the merge, left as todo** (each needs either a live graph or a deliberate build step, not just a
-merge): rebuild `ros/plexil_capability_adapter` (its `CapabilityAdapter.cc` changed -- new `RequestOperator` Command
-and `LastFailureKind`/`LastFailureStage` Lookups); wire the evaluator-violations recorder into every method's launch
-script; add a call-start timestamp to the capability-server log; optionally give `space_runtime/facts.py` a reducer
-branch for `operator_answered` (`docs/operator_console.md` has the exact spec) if an operator answer ever needs to
-reach `guard.py`'s `approval_required` check -- not needed for the mechanism to work, since `context.py` already
-renders the exchange from the raw event log.
+Full account: `docs/research_findings.md` F104, `docs/baselines/plexil.md`. In short: `CapabilityAdapter.cc`'s
+`send()` acked `COMMAND_SENT_TO_SYSTEM` the instant a ROS action goal was merely *accepted* (a handshake); PLEXIL's
+own `CommandHandleKnown` (`src/intfc/CommandImpl.cc`) treats *any* known command handle, terminal or not, as
+"action complete" -- so every command in the plan "finished" the moment it was accepted, while the robot had done
+nothing. `RequestOperator` had the identical bug. Fixed: ack only on genuine rejection or the real terminal result.
+Root-caused by reading PLEXIL's own executive source, not guessed at, and confirmed with one `sudo py-spy dump
+--locals` (the user ran the `sudo`; this session has no non-interactive root) that named the exact stuck line and
+caught the buffered node-transition trace proving the whole plan had already "finished" before the robot moved. Two
+smaller library bugs found and fixed the same day, each caught offline (`plexiltest`/`plexilc`) before a live retry:
+missing `-L plans/lib` on the check script's `universalExec` invocation, and `PickItem` missing `pick`'s
+practically-required `support` argument.
 
 ## Method rules earned the hard way this session
 
-- **Audit before reacting.** Read the whole of a suspect skill for every way it could still be wrong before touching code,
-  rather than patching one observed failure and re-running.
-- **`check.log`'s bare `t` field is wall-clock seconds since the script started, not sim time** (`d0_common.log()`:
-  `time.time() - T0`). `sim_t`/`sim_s` fields are the real simulation clock. `mission_video.py --to-sim` filters on genuine
-  `sim_t`; get the cutoff from `PROGRESS`'s `sim_s`, not `RESULT`'s `t`.
-- Killing a check script mid-`navigate`/`dock` does not cancel Nav2's own goal -- the client process dies, the server keeps
-  driving. Cancel it before any snapshot restore: `ros2 service call /navigate_to_pose/_action/cancel_goal
-  action_msgs/srv/CancelGoal "{goal_info: {goal_id: {uuid: [0]*16}, stamp: {sec: 0, nanosec: 0}}}"`.
-- Never open a run's bag while its recorder is alive (SQLite lock kills the recorder, truncating the bag). Read closed bags.
-- Scripted capability chains (`experiments/launch/lunar_base_d0/scripted_chain_check.py` + `chain_*.json`, attach to a held
-  graph, no model, no video) turn a 30-minute mission into a 10-minute test of one or two skills. `RESUME_SNAPSHOT=<snap>.pt`
-  restores a jaws-open state; only jaws-open snapshots are valid restore points.
-- A skill failure is not always a bug: `pick`'s `find` has no internal retry by design -- retrying a bad VLM read is the
-  reasoner's job.
+- **Audit before reacting; read the source before guessing.** The adapter bug was root-caused by reading PLEXIL
+  6.1.3's own `CommandNode.cc`/`CommandImpl.cc`, not by trying fixes until one worked.
+- **`py-spy dump --pid <p> --locals`** (needs `sudo`; this environment has no non-interactive root, so the user ran
+  it once) is the decisive tool for "a process is alive but stuck": it named the exact line and the exact argument
+  values for all 8 threads at once, versus an unbounded amount of guessing from process/thread CPU state alone.
+- **`check.log`'s bare `t` field is wall-clock seconds since the script started, not sim time.** `sim_t`/`sim_s`
+  fields are the real simulation clock.
+- Killing a check script mid-`navigate`/`dock` does not cancel Nav2's own goal -- cancel it explicitly before any
+  snapshot restore.
+- Never open a run's bag while its recorder is alive. Read closed bags.
+- A skill failure is not always a bug: `pick`'s `find` has no internal retry by design -- a single bad VLM read is
+  answered by the caller retrying (the reasoner for Ours; one more live attempt, by hand, for a nominal-path-only
+  PLEXIL plan with no recovery branches yet), not by the skill looping internally.
 
 ## Running it
 
-Skills are import-cached in `runtime_node`; a skill change needs the runtime restarted (`D0_RESTART_RUNTIME_PID`), an SRB or
-asset change needs the graph rebooted. Kill by run tag, never by name: `teardown_d0.sh <run dir>` with `D0_VIDEO=<mp4>` set to
-finalize the video. Full pair: `experiments/launch/lunar_base_d0/launch_full_pair.sh <tagB|-> <tagA|->` (A on GPU 1, `-` skips
-one side). Monitor `artifacts/runs/<tag>/ours/events.jsonl`; the evaluator's `RESULT` line is in `<tag>/check.log` (its own `t`
-is wall time). Stop the recorder by PID, then `track_from_bag.py <run>/robot_motion <run>/track.json`, then
-`mission_video.py <run>/mission_x.mp4 <run>/ours/events.jsonl <out> --times <mp4>.times --track <run>/track.json --to-sim
-<PROGRESS's sim_s> --title ...`, then x264 (1280 wide, crf 29-38) to stay under 30 MiB.
+PLEXIL: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_b_check.py D0_HOLD=1 D0_VIDEO=<mp4>
+experiments/launch/lunar_base_d0/run_d0.sh <run dir>` (default scene is Mission B's); start a bag recorder the same
+way `launch_full_pair.sh` does for Ours if a diagnosis trace is wanted. Rebuild the adapter after any `.cc` change:
+`PATH` without conda, `PLEXIL_HOME=$HOME/Programs/plexil` set, source `/opt/ros/humble/setup.bash` +
+`openral/install/setup.bash`, `colcon build --merge-install --packages-select plexil_capability_adapter` from `ros/`.
+Recompile a changed `.ple`: `plexilc <file>.ple` (library nodes need `-L <lib dir>` at run time, not compile time);
+a changed `.pst` simulator script: `plexilscript <file>.pst`.
+
+Skills are import-cached in `runtime_node`; a skill change needs the runtime restarted (`D0_RESTART_RUNTIME_PID`), an
+SRB or asset change needs the graph rebooted. Kill by run tag, never by name: `teardown_d0.sh <run dir>` with
+`D0_VIDEO=<mp4>` set to finalize the video. Stop the recorder by PID before teardown. A video near the 30 MiB send
+limit: `ffmpeg -c:v libx264 -crf 31 -c:a aac -b:a 96k` re-encode (a decode warning mid-file from the teardown's own
+SIGINT-mid-fragment remux is harmless if the output duration still matches the source).
 
 ## Rules
 
 - One graph per GPU (A on 1, B on 0). All paths absolute. No `pgrep -f` / `pkill -f`.
-- Never navigate or decide on simulator truth. Whole-operation tools only; mechanics stay in skills. A skill retries the same
-  target, never moves the base. Keys in `AGENT/VLM_provider.md` never enter logs or output.
-- Development resumes/scripted chains are not campaign results; never count them in paper metrics.
+- Never navigate or decide on simulator truth. Whole-operation tools only; mechanics stay in skills.
+- Development resumes/debugging runs are not campaign results; never count them in paper metrics.
 - Ask before merging/pushing a branch back; ask before deleting a run directory that might still be evidence.
 - Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies to the user in concise Simplified Chinese.

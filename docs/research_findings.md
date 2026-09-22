@@ -4699,3 +4699,79 @@ a script only in development; the protocol rules come from a literature survey (
 boundary (§14.6). Both are being implemented on `p/operator-mechanism`. `preplanned_transition_fraction` uses three
 categories (user): human-preauthored sequence (PLEXIL), planner-generated from a human-authored domain (EUROPA),
 agent-generated online (Ours), reported raw.
+
+## F104 — PLEXIL raced through the whole Mission B plan in under a second: the adapter's early `COMMAND_SENT_TO_SYSTEM` ack, not the plan (2026-09-22, live)
+
+First live run of `MissionB_Covered.plx` after the `p/integration` merge and an adapter rebuild (`RequestOperator`,
+`LastFailureKind/Stage` symbols confirmed present). Two failures before a clean run, each root-caused rather than
+retried blind:
+
+**g_pb1 (`artifacts/runs/plexil_mission_b_live_20260922`).** `universalExec` exited immediately: "Library node
+DriveAndDock not found while expanding LibraryNodeCall node ToDepot". `d0_plexil_mission_a_check.py`'s
+`universalExec` invocation (copied verbatim for Mission B) never passed `-L <library dir>`; Mission A's flat plan
+never called a library, so the gap was invisible until Mission B's first live run. Fixed
+(`experiments/launch/lunar_base_d0/d0_plexil_mission_b_check.py`: `-L plans/lib`); reproduced and confirmed fixed
+offline first (`plexiltest -L plans/lib -p MissionB_Covered.plx -s MissionB_Covered_nominal.psx` -> `ok: true`)
+before touching the live graph again.
+
+**g_pb1_r2.** Reattached to the same held graph (no reboot). `ToDepot` (nav + dock) genuinely completed --
+`runtime_node`'s own logs confirmed the robot actually drove and docked -- but PLEXIL never moved past it: the arm
+never reached READY, `universalExec` sat at 0% CPU waiting on a Command result that never arrived, and nothing in
+any log changed for 20+ minutes. `sudo py-spy dump --pid <capability_server>` (needed to inspect the process; this
+session had no non-interactive sudo, so the user ran it) showed **all 8 of `capability_server`'s executor threads
+simultaneously inside `dispatch()`**, one per capability of the entire plan (both nav/dock legs, `arm_ready`,
+`pick`, `place`, the second `arm_ready`/stow posture) -- the whole mission's worth of calls had been issued within
+the same instant, deadlocking the fixed 8-thread pool on their own nested `send_goal_async`/`get_result_async`
+callbacks. `py-spy --locals` on the check script's own process caught `universalExec`'s buffered node-transition
+trace mid-flight: `Return` (the plan's *last* node) reached FINISHING at essentially the same wall-clock instant
+`ToDepot`'s nav started -- the entire 9-step plan had already "finished" in PLEXIL's own bookkeeping before the
+robot had done anything.
+
+**Root cause, confirmed against PLEXIL 6.1.3's own executive source** (`src/exec/CommandNode.cc`,
+`src/intfc/CommandImpl.cc`), not guessed at: a Command node's `actionComplete` condition -- which gates the
+FINISHING -> ITERATION_ENDED transition, i.e. whether the node is genuinely *done* -- is `CommandHandleKnown`:
+`result = (NO_COMMAND_HANDLE != arg->getCommandHandle())`. Any handle value counts, terminal or not.
+`ros/plexil_capability_adapter/src/CapabilityAdapter.cc`'s `send()` acked `COMMAND_SENT_TO_SYSTEM` in
+`goal_response_callback` -- fired the instant the ROS action goal is merely *accepted* (a handshake, milliseconds),
+long before the robot does anything -- which is enough on its own to satisfy `actionComplete`. The real terminal ack
+(`COMMAND_SUCCESS`/`FAILED`, in `result_callback`) was correct, but the early one made it moot: every command
+`send()` touched was already "complete" from PLEXIL's perspective the moment it was accepted. `requestOperator()`
+had the identical bug (acked `COMMAND_SENT_TO_SYSTEM` right after publishing, contradicting this file's own header
+comment -- "the Command stays EXECUTING (no Command Ack yet)" -- which describes the *intended* design that the code
+never implemented); its own smoke test apparently didn't catch this because a scripted console answer arrives
+fast enough to mask it. Fix: `goal_response_callback` now acks only on genuine rejection (`COMMAND_DENIED`);
+`requestOperator()` sends no ack at all until the real reply. `EndCondition isKnown(ok)` in the library nodes
+(`baselines/plexil/plans/lib/*.ple`) is not itself broken -- verified empirically, once the adapter fix was in,
+`navigate_to_feature`/`dock_at_feature`/`arm_ready` each took their real, distinct sim-time durations, not zero.
+
+**g_pb1_v2** (fresh graph, fixed adapter): `ToDepot` genuinely took 51.7 s + 13.2 s of sim time, `arm_ready` 3.7 s --
+real, sequential, no deadlock. `pick` then failed for an unrelated, legitimate reason: "this pick did not say what
+the item stands on, so there is nothing to look at: name the place frame (`support`) the item" -- `PickItem.ple`
+only ever passed `target`/`part`/`item` (contracts.yaml's `pick.support` is optional but `find` needs it in
+practice). Fixed: `PickItem.ple`/`MissionB_Covered.ple` now pass `support = "depot_stand/slot_0"` as `pick`'s 4th
+positional argument; recompiled (`plexilc`), offline-verified (`plexiltest`, nominal script updated with the extra
+argument), `ok: true`.
+
+**g_pb1_v3**: `pick` failed again, differently -- "nothing beyond the gripper in the view to fit the declared
+interface to", a single-view VLM miss at `find` (the same class of stochastic perception failure the harness sees
+elsewhere; `pick`'s `find` deliberately has no internal retry, by design -- recovery is the caller's job). The
+plan is nominal-path-only (no recovery branches yet, docs/baselines/plexil.md), so it correctly reported failure
+and stopped rather than doing something not in the graph.
+
+**g_pb1_v4 (`artifacts/runs/plexil_mission_b_live_20260922_v4`) -- first clean, full, video-recorded pass.** Same
+plan, re-run once (a legitimate retry of a known-stochastic single-view failure, not a code change). All 9 steps
+succeeded with real, distinct sim-time durations (51.7/12.7/3.8/pick/80.9/13.7/65.0/2.8/45.3 s); evaluator
+`RESULT`: `{"oru_on": "pdu_1_shelf/shelf", "delivered": true, "success": true}`. 358 s sim time, ~19.4 min wall
+(1280x720 video, no LLM latency in this baseline). This is the first time PLEXIL Mission B covered has run
+end-to-end on the corrected-arm stack through the shared capability boundary and evaluator.
+
+**Method note.** The premature-completion bug was invisible in every prior PLEXIL Mission A run (F52) because
+Mission A's flat plan has no library-node chaining to expose racing-through-the-whole-plan behaviour the same
+way, and was invisible in `plexiltest`'s own offline verification (F101) because `plexiltest`'s stub simulator
+doesn't reproduce real ROS-action goal-acceptance timing at all -- this bug is specific to the live adapter and
+could only be caught live. `py-spy --locals` on both the stuck process and the check script's own buffered stdout
+was the decisive diagnostic (a single dump, not repeated live re-runs): it named the exact stuck line and the
+exact command each of the 8 threads was blocked on, and separately caught the node-transition trace proving the
+whole plan had already "finished" before the robot moved. Two library file bugs (missing `-L`, missing `support`)
+were each caught by one offline `plexiltest`/`plexilc` pass before spending live-sim time confirming the fix,
+per the standing rule (compute/verify offline before a live run, not after).

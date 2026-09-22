@@ -92,7 +92,8 @@ target/part/item) -> `ToShelf` (DriveAndDock on `pdu_1_shelf/shelf`) -> `Place` 
 | `Return`: `dock_x/y/yaw` | `(0.0, 0.0, 0.0)` | site_knowledge `dock`, same event; matches `MissionA_Covered`'s `ReturnToDock` | (a) |
 | `DriveAndDock`: `standoff_m` / `approach_m` defaults | `1.5` | `contracts.yaml` `navigate_to_feature.standoff_m` / `dock_at_feature.approach_m` documented defaults | (b) |
 | `PickItem`/`StowAndReturn`: tolerance args | `0.08` | `contracts.yaml` `arm_ready.tolerance_rad` / `stow.tolerance_rad` documented default | (b) |
-| `Pick`: `target`, `part` | ORU / bail-neck description | Ours' own covered-instance calls, `R/artifacts/runs/g8d,g8e/ours/events.jsonl` (`tool_proposed` `pick`), read-only | (a) |
+| `Pick`: `target`, `part` | ORU / bail-neck description | Ours' own covered-instance calls, `R/artifacts/runs/g8d,e/ours/events.jsonl` (`tool_proposed` `pick`), read-only | (a) |
+| `Pick`: `support` | `depot_stand/slot_0` | same as `ToDepot`'s `feature`; caught by a live run failing at `find` without it (F104) | (a) |
 | `Pick`/`Place`: `item` | `"spare_oru"` | `openral_ext/capability_server/node.py` `ITEM_NAMES`; capability added F78 | (b) |
 | `Place`: `support` | `pdu_1_shelf/shelf` | site_knowledge; mission brief | (a) |
 | `Place`: `release_constraint` | `"below_overhang"` | `contracts.yaml` `place.release_constraint` (T-shaped bail = overhanging head); matches Ours' covered calls `R/artifacts/runs/g8s,g8t/ours/events.jsonl` | (a)/(b) |
@@ -100,3 +101,20 @@ target/part/item) -> `ToShelf` (DriveAndDock on `pdu_1_shelf/shelf`) -> `Place` 
 
 No row cites a held-out run or scenario name. Recovery rows (failure kind/stage -> branch) are deferred to the next
 pass, once pick/place's reported kinds and stages stop moving.
+
+### First live run, end to end (2026-09-22; F104)
+
+`MissionB_Covered.plx` now runs to a genuine `delivered: true, success: true` on the live, corrected-arm graph
+through the shared capability boundary and the same evaluator Ours uses
+(`artifacts/runs/plexil_mission_b_live_20260922_v4`). Getting there fixed two real bugs, not the plan's own logic:
+
+- `d0_plexil_mission_b_check.py` was missing `-L plans/lib` (Mission A's flat plan never needed a library path).
+- The adapter (`ros/plexil_capability_adapter/src/CapabilityAdapter.cc`) acked `COMMAND_SENT_TO_SYSTEM` the instant
+  a ROS action goal was merely *accepted*, which PLEXIL's own `CommandHandleKnown` treats as good enough to consider
+  the command complete -- so the whole plan "finished" in under a second while the robot had done nothing. Fixed:
+  no ack on acceptance, only on genuine rejection or the real terminal result. `RequestOperator` had the identical
+  bug, fixed the same way. Full account, including the `py-spy` diagnosis: F104, `docs/research_findings.md`.
+- `PickItem` was missing `pick`'s optional-but-practically-required `support` argument.
+
+The predefined recovery set is still not written (pick/place failure kinds are now settled by F92-F100, so this is
+now unblocked) and Mission A still waits on a live `press` (§21).
