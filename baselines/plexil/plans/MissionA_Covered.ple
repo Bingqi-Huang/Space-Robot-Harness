@@ -2,14 +2,21 @@
 //
 // The covered brief: "<X> reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if
 // within your authority, verify the result, and return the rover to the dock with the arm stowed."
-// A competent procedure for that brief, authored from the covered specification only:
-//   identify  -- the tripped unit from the units' own telemetry (PowerUnit Lookup over the site's five units), not
-//                from the report, since the brief asks to identify it;
+// A competent procedure for that brief, authored from the covered specification only (docs/baselines/authoring_spec.md,
+// locked 2026-09-23):
+//   identify  -- the tripped unit from the units' own telemetry (PowerUnit Lookup over the site's five units, the unit
+//                id then the parameter of every leg), not from the report, since the brief asks to identify it;
 //   restore   -- drive to its panel, dock, press the reset;
-//   verify    -- the breaker reads closed; a reset that did not take is pressed once more, then escalated;
-//   return    -- stow and drive back; verify again at the dock, escalate if the unit tripped again meanwhile.
-// Escalation is RequestOperator: this procedure has no further knowledge to apply, which is mission control's to
-// supply (recorded as ground re-authoring when it would need a new plan).
+//   verify    -- the breaker reads closed; a reset that did not take is pressed again, 3 attempts in all;
+//   return    -- stow and drive back; verify again at the dock.
+// Every capability call has at most 3 identical attempts (the library nodes' and Reset's Try, tier 1). When a leg is
+// out of attempts or a check fails for good, the plan asks mission control (RequestOperator) and commands nothing
+// more: the rover holds where it is (tier 2 escalation; recorded as ground re-authoring when it needs a new plan).
+// Nothing is keyed on why a call or a reset failed (tier 3 is forbidden).
+//
+// The root is an UncheckedSequence: a failed leg must not abort the plan before its escalation runs (a checked
+// Sequence fails, and skips every later node, as soon as one child fails). Every leg is gated on `ok`; `held` marks
+// that mission control has been asked, so exactly one escalation is sent.
 //
 // Composed from the reusable library (lib/DriveAndDock, lib/StowAndReturn). `press`'s own contract needs no
 // arm_ready first. Units, the press feature naming and each panel's look are site knowledge (site_map).
@@ -21,12 +28,13 @@ String Command RequestOperator(String);
 String Lookup PowerUnit(String, String);
 Command pprint(...);
 
-MissionA_Covered: Sequence
+MissionA_Covered: UncheckedSequence
 {
   String Unit = "";
   String ButtonTarget = "";
   String Answer = "";
-  Boolean ok = true;
+  Boolean ok = true;     // every leg so far succeeded
+  Boolean held = false;  // mission control was asked; nothing more is commanded
 
   Identify: Sequence
   {
@@ -47,13 +55,25 @@ MissionA_Covered: Sequence
   // node waits in its Sequence, so a later branch would be skipped the moment an earlier step changed that state
   NoTrippedUnit:
   {
-    if (Unit == "") { Answer = RequestOperator("Power telemetry shows no tripped unit; the reported fault cannot be located."); }
+    if (Unit == "") {
+      ok = false;
+      held = true;
+      Answer = RequestOperator("Power telemetry shows no tripped unit; the reported fault cannot be located. Holding; requesting instructions.");
+    }
     endif
   }
-  ToUnit: { PreCondition Unit != ""; LibraryCall DriveAndDock(feature = Unit + "_panel/press", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  ToUnit: { PreCondition ok; LibraryCall DriveAndDock(feature = Unit + "_panel/press", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  NotReached:
+  {
+    if (!ok && !held) {
+      held = true;
+      Answer = RequestOperator("Could not reach the panel of " + Unit + ": a call failed 3 times. No procedure applies; holding, requesting instructions.");
+    }
+    endif
+  }
   Reset: Try
   {
-    PreCondition ok && Unit != "";
+    PreCondition ok;
     Reset1: Sequence
     {
       PostCondition ok;
@@ -67,21 +87,39 @@ MissionA_Covered: Sequence
       Press2: { EndCondition isKnown(ok); ok = press(ButtonTarget, Unit + "_panel/press"); }
       Check2: { PreCondition ok; ok = Lookup(PowerUnit(Unit, "breaker")) == "closed"; }
     }
+    Reset3: Sequence
+    {
+      PostCondition ok;
+      Setup3: { ok = true; }
+      Press3: { EndCondition isKnown(ok); ok = press(ButtonTarget, Unit + "_panel/press"); }
+      Check3: { PreCondition ok; ok = Lookup(PowerUnit(Unit, "breaker")) == "closed"; }
+    }
   }
   ResetFailed:
   {
-    PreCondition Unit != "";
-    if (!ok) { Answer = RequestOperator("The reset of " + Unit + " did not restore it after two attempts; trip cause: "
-                                        + Lookup(PowerUnit(Unit, "trip_cause")) + ". No procedure applies; requesting instructions."); }
+    if (!ok && !held) {
+      held = true;
+      Answer = RequestOperator("The reset of " + Unit + " did not restore it after 3 attempts; trip cause: "
+                               + Lookup(PowerUnit(Unit, "trip_cause")) + ". No procedure applies; holding, requesting instructions.");
+    }
     endif
   }
   Return: { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }
+  NotReturned:
+  {
+    if (!ok && !held) {
+      held = true;
+      Answer = RequestOperator("Could not return to the dock: a call failed 3 times. No procedure applies; holding, requesting instructions.");
+    }
+    endif
+  }
   FinalCheck:
   {
-    PreCondition ok;
-    if (Lookup(PowerUnit(Unit, "breaker")) != "closed") {
+    if (ok && Lookup(PowerUnit(Unit, "breaker")) != "closed") {
+      ok = false;
+      held = true;
       Answer = RequestOperator(Unit + " tripped again after the reset; trip cause: " + Lookup(PowerUnit(Unit, "trip_cause"))
-                               + ". No procedure applies; requesting instructions.");
+                               + ". No procedure applies; holding, requesting instructions.");
     }
     endif
   }

@@ -1,12 +1,11 @@
 // Reusable library node (execution_plan §11.1): set the held item down on a surveyed support. `release_constraint`
-// and `item` are the contract's optional arguments (openral_ext/capability_server/contracts.yaml); "below_overhang"
-// matches the spare ORU's T-shaped bail (catalogue interface, F78) and what Ours called on this covered instance
-// (R/artifacts/runs/g8s, g8t).
+// and `item` are the contract's optional arguments (openral_ext/capability_server/contracts.yaml); the release
+// constraint is the item's catalogued grasp interface's (baselines/item_descriptions.json).
 //
 // Result comes back through `ok` (InOut); see lib/DriveAndDock.ple for why not node outcome.
 //
-// Nominal path only -- no retry yet. place's reported failure kinds and stages (over, lower, release, retreat,
-// settle) are still moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD.
+// Failure handling: at most 3 identical attempts (Try; docs/baselines/authoring_spec.md tier 1); no branch on
+// place's stage.
 
 Boolean Command place(String, String, String);
 
@@ -17,5 +16,11 @@ PlaceItem:
   In String item;
   InOut Boolean ok;
 
-  Place: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = place(support, release_constraint, item); }
+  Place: Try
+  {
+    PreCondition ok;
+    Place1: { EndCondition isKnown(ok); PostCondition ok; ok = place(support, release_constraint, item); }
+    Place2: { EndCondition isKnown(ok); PostCondition ok; ok = place(support, release_constraint, item); }
+    Place3: { EndCondition isKnown(ok); PostCondition ok; ok = place(support, release_constraint, item); }
+  }
 }

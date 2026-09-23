@@ -1,0 +1,18 @@
+{
+  "_about": "Shared by both baselines (docs/baselines/authoring_spec.md, 'Item descriptions for pick'): per kind of item, keyed by its equipment-catalogue name (interaction.json objects[*].item, the name manifest.inventory and the capability contracts use), pick's `target` and `part` and place's `release_constraint`. Written from the catalogue record (openral_ext/capability_server/contracts.py item_catalogue on the asset's .json: carry_handle, grasp_interface.contact_region / engagement / release_constraint) and the item's look (space_robotics_bench/assets/lunar_base/previews/<asset>_*.png). Read by baselines/europa/host.py and, through the adapter Lookup ItemDescription, by baselines/plexil/plans/MissionB_Covered.ple.",
+  "orbital replacement unit (ORU)": {
+    "target": "the orbital replacement unit (ORU): a box wrapped in crinkled gold MLI foil, with a black lifting post on top",
+    "part": "the slot on the narrow neck of the black lifting post on top, between the transverse head above and the collar below (fingers close on opposite sides of the neck)",
+    "release_constraint": "below_overhang"
+  },
+  "battery module": {
+    "target": "the battery module: a black drum-shaped module on a black base, with amber windows around its round face, and a black lifting post on top",
+    "part": "the slot on the narrow neck of the black lifting post on top, between the transverse head above and the collar below (fingers close on opposite sides of the neck)",
+    "release_constraint": "below_overhang"
+  },
+  "consumables container": {
+    "target": "the consumables container: a long silver-white rugged case with a grey front panel, and a black lifting post on top",
+    "part": "the slot on the narrow neck of the black lifting post on top, between the transverse head above and the collar below (fingers close on opposite sides of the neck)",
+    "release_constraint": "below_overhang"
+  }
+}

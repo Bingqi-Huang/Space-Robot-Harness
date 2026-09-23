@@ -1,11 +1,9 @@
 // Reusable library node (execution_plan §11.1): fold the arm into its travel pose (jaws must already be empty --
-// contracts.yaml `stow`) and drive back to the dock. Mirrors MissionA_Covered's StowArm + ReturnToDock legs.
+// contracts.yaml `stow`) and drive back to the dock.
 //
 // Result comes back through `ok` (InOut); see lib/DriveAndDock.ple for why not node outcome.
 //
-// Stow: no retry yet -- no evidence it needs one (stow's reported failure kind/stage, planner error vs. joint
-// blocked, is still moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD).
-// Return: one retry (Try), added 2026-09-22 -- same reasoning as lib/DriveAndDock.ple's Nav/Dock (F106).
+// Failure handling: each call at most 3 identical attempts (Try; docs/baselines/authoring_spec.md tier 1).
 
 Boolean Command stow(Real);
 Boolean Command navigate_to_pose(Real, Real, Real);
@@ -17,11 +15,18 @@ StowAndReturn:
   In Real dock_yaw;
   InOut Boolean ok;
 
-  Stow: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+  Stow: Try
+  {
+    PreCondition ok;
+    Stow1: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+    Stow2: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+    Stow3: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+  }
   Return: Try
   {
     PreCondition ok;
     Return1: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(dock_x, dock_y, dock_yaw); }
     Return2: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(dock_x, dock_y, dock_yaw); }
+    Return3: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(dock_x, dock_y, dock_yaw); }
   }
 }
