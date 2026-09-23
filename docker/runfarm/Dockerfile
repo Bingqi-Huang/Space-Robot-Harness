@@ -48,5 +48,8 @@ RUN groupadd -g ${GID} bingqi && useradd -m -u ${UID} -g ${GID} -s /bin/bash bin
 RUN printf '%s\n' 'source /opt/ros/humble/setup.bash' \
       'export ISAAC_SIM_PYTHON=/home/bingqi/Programs/isaac-sim/python.sh' \
       'export PATH="/home/bingqi/.local/bin:$PATH"' > /etc/profile.d/runfarm.sh
+# SRB's console script lives in Isaac Sim's bundled python (mounted at run time); the dev machine had it on PATH via
+# ~/.local/bin, which is not mounted
+RUN ln -s /home/bingqi/Programs/isaac-sim/kit/python/bin/srb /usr/local/bin/srb
 USER bingqi
 WORKDIR /home/bingqi
