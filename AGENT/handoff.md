@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-23 (baseline lock, run farm and physical validation decided; docs on `feat/baseline-lock`). Read
+Updated 2026-09-23 late (baseline lock decided; run farm on `pro6000` built; next: its equivalence test). Read
 `AGENT/research_content.md` and `AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan),
 **`docs/baselines/authoring_spec.md`** (the locked baseline specification), then `AGENT/todo.md`.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
@@ -8,10 +8,36 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 
 ## Heads
 
-- research `main` = steps 1-4 merged and pushed 2026-09-23; SRB `main`, openral `master` likewise.
-- `feat/baseline-lock` (research repo, worktree `.worktree/baseline-lock`): docs only -- authoring_spec lock,
-  heldout_design §7/§10/§11/§12, pointers in execution_plan §11.1 and research_content §5.2, todo/handoff.
-  Not committed yet; ask before commit/merge/push.
+- research `main` = steps 1-4 (pushed). `feat/baseline-lock` (2b13070, docs) and `feat/run-farm` (on top of it:
+  `docker/runfarm/`, §11 storage/pinning, this file) are both pushed to origin; merging into `main` awaits the user.
+- SRB `main`, openral `master`: unchanged since the steps 1-4 push.
+- Development now also happens on `pro6000` (Claude Code there; memory and session history synced). The two checkouts
+  sync through origin: commit + push on one, pull on the other (ask before every push).
+
+## Run farm (`pro6000`, heldout_design §11)
+
+- ssh `pro6000` (host astroeng), uid 1007, sudo needs the user's password: give the user root commands to run.
+- Repo at `/mnt/SharedData/Research/Space_Robot_Harness` (nofail bind of `/nvme02/bingqi/SharedData`; not `/nvme01`).
+  `artifacts/` is not synced (old dev runs stay on the dev machine); new runs go to `artifacts/runs/` there.
+- `~/Programs`, `~/isaaclab`, `~/.cache/{ov,openral,simforge,robot_descriptions}` rsynced from the dev machine.
+- Image `runfarm:22.04` built there (`docker build --network host --build-arg UID=$(id -u) --build-arg GID=$(id -g)
+  -t runfarm:22.04 docker/runfarm`). One run = one container: `docker/runfarm/runfarm.sh <gpu> <name> <cmd>` (own
+  network namespace; pinned cores; inside, the one GPU is device 0 -- leave `D0_GPU` unset).
+- git-lfs is in `~/.local/bin` (non-interactive ssh: `export PATH=$HOME/.local/bin:$PATH`).
+- Never touch the kernel / GRUB / Docker daemon there: a half-installed 7.0.0-31 kernel (DKMS fails) predates us;
+  GRUB is pinned to 6.17.0-29 by the admin.
+- The dev machine runs one simulation at a time (two unpinned Isaac processes ran at 0.05x each, F54 §4).
+- Physics stays CPU PhysX (user decision 2026-09-23).
+
+## Next
+
+1. Equivalence + profile on pro6000 (todo 6): `runfarm.sh 0 rf-equiv D0_PROFILE=1 D0_CAPABILITY_SERVER=1
+   D0_CHECK=d0_plexil_mission_a_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml
+   /mnt/SharedData/Research/Space_Robot_Harness/experiments/launch/lunar_base_d0/run_d0.sh
+   /mnt/SharedData/Research/Space_Robot_Harness/artifacts/runs/rf_equiv_1` -- outcome (fault cleared, docked),
+   sim/wall ratio (dev machine: PLEXIL A 0.28 on the pre-F109 scene), SRB per-tick buckets. First container run:
+   expect a few minutes of shader compilation. Then 6 ways at once; re-cost the campaign from the measurement.
+2. In parallel: todo 7 (baselines to the lock, offline) and todo 8 (physical validation, offline geometry first).
 
 ## Decisions of 2026-09-23 (with the user)
 

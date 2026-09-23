@@ -14,11 +14,13 @@ docs on `feat/baseline-lock`. Start each next task on a new branch (`feat/<name>
 
 ## Work order -- `docs/heldout_design.md` §10
 
-6. [ ] **Run farm on `pro6000`** (§11; parallel with 7-8). Ubuntu 22.04 image built here (the dev machine's
-       `ros-humble-*` set; `~/Programs/{isaac-sim,plexil,europa,europa-deps}`, `~/isaaclab` copied as is; same user and
-       home), rsync over; nvidia-container-toolkit + docker group (sudo); repo synced to the same absolute path; runs on
-       `/nvme01`; one container per run per GPU.
-   - [ ] Equivalence: one covered run reproduced (outcome + sim/wall ratio), then 6-way concurrent; re-cost from it.
+6. [ ] **Run farm on `pro6000`** (§11; parallel with 7-8). Done 2026-09-23: image `runfarm:22.04` (Dockerfile,
+       `docker/runfarm/`) built on both machines (uid 1000 here, 1007 there); home installs + caches rsynced; repo at
+       the same path (`/mnt/SharedData` = nofail bind mount of `/nvme02/bingqi/SharedData`); nvidia-container-toolkit,
+       docker group; `runfarm.sh` pins each container to 10 cores + HT on its GPU's socket. Physics stays CPU PhysX
+       (user, 2026-09-23).
+   - [ ] Equivalence + profile: PLEXIL Mission A covered on the final scene with `D0_PROFILE=1`, in a container on
+         pro6000 GPU 0 (outcome, sim/wall ratio, per-tick buckets); then the same 6 ways concurrently; re-cost.
 7. [ ] **Baselines built to the lock**, offline only (parallel with 6 and 8):
    - [ ] every call under a 3-attempt `Try` (PLEXIL library); EUROPA `ATTEMPTS` 3 (already).
    - [ ] delete adapter Lookups `LastFailureKind`, `LastFailureStage`, `jaw`.
@@ -62,7 +64,7 @@ docs on `feat/baseline-lock`. Start each next task on a new branch (`feat/<name>
 ## Open decisions (user)
 
 - `artifacts/runs/` holds ~100 development run dirs, 330 GB; cleanup deferred by the user (2026-09-23).
-- Commit / merge / push of `feat/baseline-lock` (docs) awaits approval.
+- Merge of `feat/baseline-lock` + `feat/run-farm` into `main` (both pushed 2026-09-23) awaits approval.
 
 ## Design items not yet built (pick up when a run needs them)
 
