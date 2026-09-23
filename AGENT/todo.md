@@ -14,7 +14,8 @@ on main (AGENT.md §1). Local commits since 2026-09-23 are NOT pushed yet (resea
 ## Work order -- `docs/heldout_design.md` §10
 
 7. [x] Baselines built to the lock (offline): PLEXIL 51 cases, EUROPA A x 5 units + failure paths, B 15 x 3.
-8. [x] Physical validation: nine scripted chains, final batch on frozen code (F112 table; fill any gap there first).
+8. [~] Physical validation: 8 of 9 held-out sequences end to end on frozen code (F112 table). Missing: the consumables
+       container pick at the landing stand -- blocked by AMCL's 0.3 m bias there (Open, below).
 9. [ ] Covered live re-runs on the final scene: PLEXIL, EUROPA, Ours x Mission A (one PDU, BESS, ISRU) and Mission B
        (ORU to a PDU shelf, container to habitat). One run each; failures classified by the lock's change-control table.
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
@@ -51,6 +52,8 @@ on main (AGENT.md §1). Local commits since 2026-09-23 are NOT pushed yet (resea
 
 ## Open (fix when a run meets it)
 
+- **Before step 9**: AMCL is 0.26-0.33 m off on the landing pad's ramp (<= 0.1 m elsewhere; `artifacts/runs/
+  bag_loc_error.py` on `chain_l2b_habitat_f`); Mission B's consumables container starts there. User decision on the fix.
 - MPPI "Resulting plan has 0 poses" (~1 in 15 legs): the global planner's start pose freezes while TF and AMCL stay
   fresh (bag `chain_l2a_pdu_f`, F112 §3; `artifacts/runs/bag_plan_lag.py`). Cause inside planner_server not found.
 - VLM region choice takes ~60 s median; if the campaign time budget needs it, measure a non-reasoning setting.
