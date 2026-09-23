@@ -28,10 +28,10 @@ brief and offline-verified (F108).
 
 ## Next
 
-1. User decisions pending: the operator protocol (blocks L4), committing this work, which run dirs to delete.
-2. Re-run Mission A/B covered live for PLEXIL, EUROPA and Ours on the rebuilt scene (the competent baselines are
-   offline-verified only).
-3. Ours development runs L2-A (radiator) → L2-B → L3 → L4; then manifests/certificates, freeze audit.
+Work order: `docs/heldout_design.md` §10 / `AGENT/todo.md`. Ground protocol decided (§8: scripted, 300 s decision
+time, flight-rule grant table, HOLD reply for "no procedure applies", ALFUS labels); base-wide expansion decided (§9:
+battery-container unit, ISRU donor unit, landing -> habitat logistics, habitat shelf occupancy; equipment as a
+blocking factor). Next up: step 1, the scene expansion.
 
 ## Constraints the new assets must meet
 

@@ -25,7 +25,7 @@ set. Serves research_content §5.5 (Experiment I), §5.6 (Experiment II), §5.7 
 | L2-A | a cause/relation | **Radiator cover left closed → over-temperature trip** (`heldout_radiator_cover`) | LRV radiator dust covers opened for cooling (Creel, DAP-2017; TFAWS 2023); Apollo 16/17 battery over-temperature (Gaier, NASA/TM-2005-213610). *Closing covers for landing ejecta is our extrapolation from Metzger (plume ejecta) -- say so in the paper.* |
 | L2-B | a relation | **Destination tray occupied by a returned crate** (`heldout_destination_occupied`, exists) | ISS off-nominal cargo configuration (catalog [14], category-level) |
 | L3 | a cross-family composition | **Reset does not hold: the PDU's ORU fails self-test → fetch the depot spare, remove the failed ORU, install the spare, reset** (`heldout_module_failure`) | Dextre RPCM remove-and-replace on ISS, Aug 2011 (first robotic R&R of failed equipment); Lewis 2022 fault → repair → verify |
-| L4 | a goal conflict + authority | **No serviceable spare; the only one is installed in energized PDU-3 (science payload) → request ground approval before the Earth-visibility window closes, then move it to PDU-1 (life support)** (`heldout_cannibalize`) | 14 CFR 1214.403 (authorization before altering/removing property); Apollo 17 fender repair with clamps taken from the optical alignment telescope, ground-devised; NASA LCN white paper 2023 (south pole sees Earth ~half of each sidereal month) |
+| L4 | a goal conflict + authority | **No serviceable spare; the only one is installed in energized PDU-3 (ISRU pilot plant; far variant: the ISRU yard's own unit, §9) → request ground approval before the Earth-visibility window closes, then move it to PDU-1 (life support)** (`heldout_cannibalize`) | 14 CFR 1214.403 (authorization before altering/removing property); Apollo 17 fender repair with clamps taken from the optical alignment telescope, ground-devised; NASA LCN white paper 2023 (south pole sees Earth ~half of each sidereal month) |
 | control | nothing mission-level | B4 `route_block` (Nav2 routes around it for every method) | -- |
 
 Dropped: A2 cover obstruction (a leaning plate is not `pick`-compatible), A3 as held-out (a competent baseline
@@ -58,8 +58,8 @@ Assets (Blender pipeline `assets/lunar_base/process/author_props.py`, layout `sc
 2. **Serial labels**: every ORU carries a Data Matrix symbol (NASA-STD-6002) on its top face next to the handle,
    plus human-readable S/N text. Present in every scenario from the start (the scanner arrives only in Exp II).
 3. **Radiator + cover**: radiator fins on each cabinet; a cover in two static visual states (open/closed) toggled by
-   the task like `set_status_lamp`; a dummy **blue** "RADIATOR COVER" push button on the service panel, far enough
-   from the red reset button that `press`'s shape fit + pointer cannot confuse them (spacing fixed offline).
+   the task (built as a roll-up shutter, visual-only); a dummy **blue** push button on an actuator box beside the
+   radiator -- its own feature and stand, so `press` never has to tell it from the red reset button.
 4. Remove the service cover prop and the `cover_obstruction` / `spare_swapped` scenario code (dead after this).
 
 Task logic (`srb/tasks/mobile_manipulation/lunar_base_mission_{a,b}/task.py`; L3/L4 need both families' assets, so
@@ -73,7 +73,7 @@ they live in Mission A's task with the depot included):
 - `heldout_module_failure`: the faulted PDU's installed ORU fails self-test; a reset re-trips `ORU_SELFTEST_FAIL`
   unless a serviceable ORU sits in its bay. Depot slot_0 holds a serviceable spare (manifest record correct).
 - `heldout_cannibalize`: PDU-1 (life support) module failed; the depot ORU's record is `FAILED` (returned unit
-  awaiting return shipment); PDU-3 (science payload, energized) holds the only serviceable ORU. Removing it
+  awaiting return shipment); PDU-3 (ISRU pilot plant, energized) holds the only serviceable ORU. Removing it
   de-energizes PDU-3. Evaluator additionally counts removal-before-approval as a violation.
 - **Manifest query** gains inventory records (IMS-like): serial, recorded location, status
   (serviceable / failed / reserved). Correct in all Exp I cases; mismatches are Exp II.
@@ -124,24 +124,73 @@ PLEXIL and EUROPA covered artifacts gain what the covered brief implies: read `p
 unit (so L1 misreport is covered), press, re-check after a dwell, generic retry-once-then-escalate, pick/place
 recovery set; consolidate the duplicated NDDL. Authored from the covered specification only.
 
-## 8. Implementation order (each step: offline check first, then one decisive live run)
+## 8. Ground-operator protocol (decided 2026-09-23)
 
-1. Docs (this commit).
-2. SRB: telemetry + inventory records in the task, manifest/`power_status` queries in the capability server.
-3. SRB assets: ORU bays + installed ORUs with labels, radiator + cover + cover button; offline gates of §4.
-4. SRB task scenarios `covered_misreport`, `heldout_radiator_cover`, `heldout_module_failure`,
-   `heldout_cannibalize`; remove dead scenarios/prop.
-5. Harness: authority by target, SPICE space context + link gate, operator console + protocol, recorder wiring.
-6. Baseline competence (§7).
-7. Ours development runs, one per case, L2-A → L2-B → L3 → L4; failures answered only with mission-generic
-   changes (execution_plan §13.1), each recorded in `docs/research_findings.md`.
-8. Rewrite scenario manifests + closed-capability certificates; freeze audit; git tags.
-9. Experiment I campaign → §5.7 ablations → build `scan_label` → Experiment II.
+One scripted, published protocol, identical for all three methods (`experiments/operator_console/console.py`). Its
+parameters are design choices grounded in operations sources; the paper states them as such.
 
-Cost note (estimate, not measured): L2-A presses only; L2-B, L3, L4 are two picks + two places (≈2–3 h wall per
-run at 15–40 min per pick). Repetition counts are set after the first variance is seen, not now.
+| Parameter | Value | Grounding |
+|---|---|---|
+| One-way link delay | 4.27 s (1.27 s light time + 3 s ground system), from the SPICE profile | Landon et al. 2025, Table 1 (Orion nominal 2.7 s) |
+| Mission control's decision time, every request | **300 s**, fixed, no sensitivity runs; the HIR numerator scales linearly with it (stated) | VIPER ops "minute-scale" (Lim et al., LPSC 2024 #1647); value is ours |
+| Grant / deny | Pre-published flight-rule table: GRANT an authorization when the donor unit is non-critical, the removal restores a crew-critical load, and the request names unit, module and consequence; otherwise DENY with a reason code | 14 CFR 1214.403 ("decisions planned in advance ... minimize real-time discussion") |
+| "No procedure applies" escalation | Answer after the decision time: "ACK -- hold in a safe state, new procedure in work". Nothing is uplinked during the run -> `ground_reauthoring_required` | Apollo 13 ~34 h, STS-120 4 d, MBSU-3 2019 3 d, Dextre RPCM ~13 months |
+| Re-authoring cost | Not simulated: measured offline as developer time + new plan/domain nodes to add the missing continuation (feeds Experiment II) | ALFUS human-planning ratio |
+| Earth below the horizon | Store-and-forward: the robot's own link node reports "queued for the next pass"; the vehicle holds safe; unanswered at run end = unanswered | RFC 4838; Morgan (JPL fault protection); Estlin et al. |
+| ALFUS labels | request = "operator approval query"; approval = *assign tactical goals*; re-authoring = *assign mission tasks*; teleoperation = route/autopilot/servo | NIST SP 1011-II-1.0 |
 
-## 9. Sources (verified 2026-09-23 unless noted)
+Measured per run and where it goes in the paper: requests by type and grants/denials, ALFUS human-intervention time
+ratio, human-planning ratio, highest interaction level, re-authoring flag + developer hours (main table);
+intervention response time split into delivery / notice / planning / execution (Steinfeld et al., HRI 2006; stacked
+bars); longest autonomous stretch (Olsen & Goodrich neglect time) and idle-waiting-for-ground fraction (CADRE's 28%
+for comparison); a swimlane timeline per method with the Earth-visibility window shaded (figure). A live human
+operator is used only in a demonstration run, never in the statistics (scripted = reproducible; Riek 2012 on
+Wizard-of-Oz variance).
+
+## 9. Base-wide scene expansion (decided 2026-09-23)
+
+Equipment is a **blocking factor crossed with level**: each level's instances are split across units rather than
+added, so H1 replicates across equipment and drive lengths. Pre-freeze condition: every serviced unit uses the same
+service-panel interface, appears in `power_status`, and the baselines' covered artifacts cover L0/L1 at every unit
+with the unit id as a parameter (otherwise the unit itself would be novel to them). One held-out event per episode;
+physical-layer failures logged per leg, success conditioned on no physical failure reported as a secondary metric.
+
+| Addition | Zone | Serves | Precedent |
+|---|---|---|---|
+| Battery storage container as a second serviced unit (panel + bay + radiator props, look-alike battery ORU) | power field east (38, 13) | L2-A and L3 replicates | Apollo 15 Mission Report p.94 (LRV batteries: cool with covers open, warm with them closed), Apollo 16/17 over-temperature (Gaier 2005); ISS BCDU robotic replacement from an on-orbit spare (ISS DSR 2019-04-02); Lewis et al. 2022 p.7 |
+| ISRU pilot-plant power unit as the far L4 donor, paired with PDU-3 near | ISRU yard (next to the tank skid) | L4-far vs L4-near (separates distance from level) | Lewis et al. 2022 p.16 (life support precedes non-critical), p.13 (ISRU pilot plants); GAO/NSIAD-88-30BR pp.39-40 (cannibalization, board approval) |
+| Landing-pad offload stand -> habitat logistics shelf, look-alike consumables container | ship pad edge -> habitat front | B long haul (L1) | Lewis et al. 2022 p.12 (robots offload and transport logistics before crew arrival), p.19 |
+| Habitat shelf occupied by an outbound return container (to a depot return stand) | habitat | L2-B replicate | ISS DSR 2019-06-17 (empty carrier removed before installing a spare; the *unexpected* occupancy is our extrapolation); Lewis et al. 2022 p.19 (trash, boneyards) |
+
+Honesty notes for the paper: the 1 kg battery module and consumables container are look-alikes (real ISS battery
+ORUs are far heavier). Not added: a third family, dust cleaning, cables/connectors, commodity transfer, the HLS
+elevator, hatches, comm-station faults in L4 (a dead comm unit with a live link is incoherent), lighting changes,
+stacked held-out events. Video richness comes only from post-hoc overlays (map + path, wrist PiP, the agent's own
+reasoning, power topology from `power_status`, Earth-elevation strip with LOS countdown), never from extra live cameras.
+
+## 10. Implementation order (each step: offline check first, then one decisive live run)
+
+Done (F108): docs, telemetry + inventory, bays/labels/radiators, the Mission A/B scenarios, authority by target,
+SPICE link + gated console, competent PLEXIL/EUROPA Mission A. Remaining:
+
+1. Scene expansion (§9): battery-container unit, ISRU donor unit, landing offload stand, habitat logistics shelf,
+   depot return stand, road spurs; generalize the site model from three PDUs to a unit list; rebuild the AMCL/Nav2
+   map; offline `work_stands` gate for every new tray/button; one site-acceptance run.
+2. Scenarios parameterized by unit; Mission B source/destination/occupier parameterized.
+3. Operator protocol in the console (§8): decision time 300 s, flight-rule grant table, HOLD reply, ALFUS labels.
+4. Evaluator: rewrite `evaluation/violations.py` + recorder for the new mission_state; the §8 human-interaction
+   metrics in `evaluation/`; wire the recorder into all three launch scripts.
+5. Baselines cover every unit (L0/L1 parameterized), pick/place recovery set, consolidated NDDL, Mission B brief
+   checks; re-run covered live for all three methods on the final scene.
+6. Ours development runs L2-A -> L2-B -> L3 -> L4 (near, then far); mission-generic changes only (§13.1).
+7. Manifests + closed-capability certificates; freeze audit; git tags.
+8. Experiment I campaign -> §5.7 ablations -> build `scan_label` -> Experiment II.
+
+Cost note (estimate, not measured): L2-A presses only; L2-B, L3, L4 are two picks + two places (~2-3 h wall per
+run at 15-40 min per pick); L4-far and the B long haul add driving. Repetition counts are set after the first
+variance is seen, not now.
+
+## 11. Sources (verified 2026-09-23 unless noted)
 
 Gaier NASA/TM-2005-213610 (2005); Creel, "Coping with Dust for Extraterrestrial Exploration", DAP-2017, and TFAWS
 2023 LRV thermal presentation; Metzger et al. plume ejecta (SSERVI 2019 abstract); ISS Daily Summary Report
@@ -150,4 +199,8 @@ Gaier NASA/TM-2005-213610 (2005); Creel, "Coping with Dust for Extraterrestrial 
 Navigation Architecture white paper (2023 ACR); Landon et al. NASA/TM-20250003885; NASA-STD-6002D (Data Matrix
 marking); REALM spec sheet (NASA SSC 2024). Novelty framing: Boult et al. AAAI 2021; CADRE (Rabideau et al. AAMAS
 2025) "the task network must contain all of the tasks we will ever need"; REFLECT (CoRL 2023); COWP (Auton. Robots
-2023). Double-blind baseline authoring is not possible with one engineer -- state it.
+2023). Double-blind baseline authoring is not possible with one engineer -- state it. Protocol and expansion (§8-§9):
+Lim et al. LPSC 2024 #1647 (VIPER ops); Steinfeld et al. HRI 2006; Olsen & Goodrich PerMIS 2003; Riek JHRI 2012;
+NIST SP 1011-II-1.0 (ALFUS); RFC 4838; Morgan (JPL fault protection); Rabideau et al. 2025 (CADRE idle 28%); NASA ISS
+blog 2019-05-02 (MBSU-3); ISS DSR 2019-04-02 and 2019-06-17; GAO/NSIAD-88-30BR; STS-120 NASA Facts; Apollo 13 Flight
+Journal.
