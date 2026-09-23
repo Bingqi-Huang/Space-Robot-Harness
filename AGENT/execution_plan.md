@@ -648,6 +648,8 @@ Do not create arbitrary puzzle-like cases. Each held-out case must correspond to
 
 **Current scene status:** `panel_remount` v1 is only an infrastructure seed scene. v2 must add candidate discrimination, real approach/navigation, semantic inspection, and the hidden-condition switches above before Experiment I.
 
+**Decided held-out set (2026-09-23):** `docs/heldout_design.md` -- a novelty ladder defined by what the frozen baseline model lacks: L1 covered variants (other unit, misreport), L2-A radiator cover left closed, L2-B destination occupied, L3 module failure requiring a cross-family remove-and-replace, L4 cannibalization under ground approval before the Earth-visibility window closes. It replaces the candidate patterns above and the catalog §5 recommendation.
+
 ## 6.5 Mission B — logistics and servicing
 
 Mission B is the second composition pattern, used to show that the result is not unique to one maintenance graph.
@@ -1800,7 +1802,7 @@ Done: LunarBot capability set (Phase B); Mission A and Mission B on the lunar ba
 
 The remaining order follows §18 (Phase E before Phase F): the proposed method carries the largest scientific uncertainty, so whether and where it works is established before the baselines are completed.
 
-1. Ground Mission A/B and their covered/held-out situations in future lunar mission literature (§6.3): choose from `docs/lunar_task_catalog.md` and change the scenes where an existing situation is not supported.
+1. ~~Ground Mission A/B and their covered/held-out situations in future lunar mission literature~~ -- done 2026-09-23: `docs/heldout_design.md` (set, scene/task design, Experiment II `scan_label` case, implementation order). Its §8 order supersedes items 7-10 below where they differ.
 2. Finish the proposed thin `space_runtime`/LLM/VLM path for Mission A: tool palette rendered from the common capability contracts, authoritative facts/evidence, dynamic context, thin invariant/authority guard, playbook audit, and only the space-context variables exercised by final scenarios. Do not add mission-specific decision rules.
 3. Shared perception for all methods: VLM semantic observation as a registered capability; relative perception replacing the simulator-truth stand-ins (feature location, arm feature targets, movable objects in the planning scene).
 4. Run Ours on Mission A/B covered cases, then on held-out situations; answer failures with mission-generic changes only (§13.1).

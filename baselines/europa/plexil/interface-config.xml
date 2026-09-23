@@ -1,0 +1,8 @@
+<!-- universalExec -c interface-config.xml -p plans/ActivityDispatch.plx
+     LibPath: CapabilityAdapter from the colcon install (ros/install/lib), HostLink from plexil/build. -->
+<Interfaces>
+  <Adapter AdapterType="CapabilityAdapter" LibPath="libCapabilityAdapter.so"/>
+  <Adapter AdapterType="HostLink" LibPath="libHostLink.so" port="47810"/>
+  <Adapter AdapterType="Time"/>
+  <Adapter AdapterType="Utility"/>
+</Interfaces>

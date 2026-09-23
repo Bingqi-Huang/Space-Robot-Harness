@@ -1,0 +1,6 @@
+{
+  "near_m": 3.0,
+  "attempts": 3,
+  "jaw_holding_min_rad": 0.13,
+  "jaw_holding_max_rad": 0.6
+}

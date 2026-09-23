@@ -728,6 +728,8 @@ Held-out cases should be few but substantive. Candidate categories:
 
 The final paper does not need all three categories if two produce a sufficiently clear and repeatable test.
 
+**Selected set (2026-09-23).** The held-out cases are graded by what the frozen baseline model lacks -- L1 only variable values (reported as covered variants), L2 an unmodeled cause/relation, L3 an unmodeled composition across the two mission families, L4 a goal conflict resolved through ground authority under a real communication window -- so the main result is a success-versus-novelty-level curve rather than a covered/held-out dichotomy. Each case is grounded in a documented space-operations precedent; see `docs/heldout_design.md`.
+
 ### Human-assistance protocol
 
 The autonomous run begins with the standardized mission input and no operator assistance. Human interaction is event-triggered, not time-threshold-triggered. Assistance is recorded when the system explicitly requests operator input/escalation, reaches a state in which it reports no admissible continuation, or the mission terminates under a declared mission deadline/constraint.
@@ -765,6 +767,8 @@ If PLEXIL and EUROPA perform strongly on covered cases but degrade when the requ
 4. Engineers modify only method-specific mission artifacts until a predefined validation suite passes.
 5. Freeze again.
 6. Evaluate on held-out mission instances that require the extension but were not visible during authoring.
+
+The selected extension case (2026-09-23) is a new shared capability, `scan_label` (Data Matrix serials, NASA-STD-6002, read by the wrist camera), evaluated on hidden inventory-record mismatches (`docs/heldout_design.md` §6).
 
 Use a small number of high-quality extension cases. Suitable examples are:
 

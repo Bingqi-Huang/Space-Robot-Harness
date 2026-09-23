@@ -23,7 +23,9 @@ def empty_facts() -> dict:
         "anomalies": [],  # unresolved failures/denials: {"seq", "capability", "reason"}
         "unavailable": {},  # capability -> reason
         "fdir": {},  # fault name -> {"active", "detail"}
-        "approvals": [],  # capabilities approved by the operator
+        "approvals": [],  # operator approvals on record: {"capability", "target"} (target None = the whole capability)
+        "pending_approvals": [],  # calls the guard held for approval: {"seq", "capability", "target", "reason"}
+        "power": None,  # the units' own telemetry as last read by the harness for a guard check (power_status)
         "ledger": None,  # agent working plan (MissionState state dict) -- NOT mission truth
         "recent": [],  # last RECENT tool steps: proposal, guard outcome, result
         "reasoner": None,  # {"model", "endpoint"} currently attached
@@ -164,8 +166,14 @@ def apply(f: dict, ev: dict) -> None:
             f["unavailable"].pop(ev["capability"], None)
         else:
             f["unavailable"][ev["capability"]] = ev["reason"]
+    elif k == "equipment_telemetry":
+        f["power"] = ev["value"]
+    elif k == "approval_pending":
+        f["pending_approvals"] = [p for p in f["pending_approvals"] if (p["capability"], p["target"]) != (ev["capability"], ev["target"])]
+        f["pending_approvals"].append({key: ev[key] for key in ("seq", "capability", "target", "reason")})
     elif k == "approval_granted":
-        f["approvals"].append(ev["capability"])
+        f["approvals"].append({"capability": ev["capability"], "target": ev["target"]})
+        f["pending_approvals"] = [p for p in f["pending_approvals"] if (p["capability"], p["target"]) != (ev["capability"], ev["target"])]
     elif k in ("operator_report", "operator_request"):
         f["reports"].append({"seq": ev["seq"], "kind": k, "text": ev["text"]})
         f["terminal"] = {"kind": k, "seq": ev["seq"]}

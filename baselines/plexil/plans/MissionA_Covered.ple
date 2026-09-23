@@ -1,53 +1,89 @@
-// PLEXIL baseline -- Mission A, model-covered case (execution_plan §11.1, §21.5).
+// PLEXIL baseline -- Mission A, model-covered procedure (execution_plan §11.1; research repo docs/heldout_design.md §7).
 //
-// "PDU-2 reported a fault: restore it, verify, return the rover to the dock with the arm stowed." In the covered case
-// the reported unit is the faulted one and its reset button is free, so the pre-engineered procedure is:
-// drive to the unit, dock at its panel, press the reset button with closed jaws, back away, stow, return to the dock.
-// Predefined recovery: one retry of each base leg. Every Command is a capability of the common boundary
-// (openral_ext/capability_server/contracts.yaml), positional arguments in the contract's input order; the adapter
-// (ros/plexil_capability_adapter) adds no logic.
+// The covered brief: "<X> reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if
+// within your authority, verify the result, and return the rover to the dock with the arm stowed."
+// A competent procedure for that brief, authored from the covered specification only:
+//   identify  -- the tripped unit from the units' own telemetry (PowerUnit Lookup over the site's five units), not
+//                from the report, since the brief asks to identify it;
+//   restore   -- drive to its panel, dock, press the reset;
+//   verify    -- the breaker reads closed; a reset that did not take is pressed once more, then escalated;
+//   return    -- stow and drive back; verify again at the dock, escalate if the unit tripped again meanwhile.
+// Escalation is RequestOperator: this procedure has no further knowledge to apply, which is mission control's to
+// supply (recorded as ground re-authoring when it would need a new plan).
+//
+// Composed from the reusable library (lib/DriveAndDock, lib/StowAndReturn). `press`'s own contract needs no
+// arm_ready first. Units, the press feature naming and each panel's look are site knowledge (site_map).
 
-Boolean Command navigate_to_feature(String, Real);
-Boolean Command dock_at_feature(String, Real, Real);
-Boolean Command navigate_to_pose(Real, Real, Real);
-Boolean Command grasp();
-Boolean Command move_joints(Real[7], Real);
-Boolean Command stow(Real);
-Boolean Command plan_ee_to_feature(String, Real, String, Real);
-Boolean Command move_ee_to_feature(String, Real, Real, String, Real, Real, Real);
-String Lookup LastCapabilityResult();
+LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
+LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
+Boolean Command press(String, String);
+String Command RequestOperator(String);
+String Lookup PowerUnit(String, String);
 Command pprint(...);
 
 MissionA_Covered: Sequence
 {
-  String Button = "pdu_2_panel/press";
-  Real Ready[7] = #(0.0 -1.0 0.0 -1.4 0.0 1.2 0.0);
+  String Unit = "";
+  String ButtonTarget = "";
+  String Answer = "";
+  Boolean ok = true;
 
-  DriveToUnit: Try
+  Identify: Sequence
   {
-    DriveToUnit1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(Button, 1.5); }
-    DriveToUnit2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(Button, 1.5); }
+    Unit1: { SkipCondition Lookup(PowerUnit("pdu_1", "breaker")) != "tripped"; Unit = "pdu_1"; }
+    Unit2: { SkipCondition Unit != "" || Lookup(PowerUnit("pdu_2", "breaker")) != "tripped"; Unit = "pdu_2"; }
+    Unit3: { SkipCondition Unit != "" || Lookup(PowerUnit("pdu_3", "breaker")) != "tripped"; Unit = "pdu_3"; }
+    Unit4: { SkipCondition Unit != "" || Lookup(PowerUnit("bess", "breaker")) != "tripped"; Unit = "bess"; }
+    Unit5: { SkipCondition Unit != "" || Lookup(PowerUnit("isru", "breaker")) != "tripped"; Unit = "isru"; }
+    Button:
+    {
+      if (Unit == "bess") { ButtonTarget = "the round white push button on the graphite control panel with the teal border"; }
+      elseif (Unit == "isru") { ButtonTarget = "the round black push button on the white control panel with the orange border"; }
+      else { ButtonTarget = "the round red push button set into the yellow sub-panel"; }
+      endif
+    }
   }
-  DockAtPanel: Try
+  // decisions on live state are taken when the node runs (if/endif): a SkipCondition is watched the whole time a
+  // node waits in its Sequence, so a later branch would be skipped the moment an earlier step changed that state
+  NoTrippedUnit:
   {
-    DockAtPanel1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 0.0, 1.5); }
-    DockAtPanel2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 0.0, 1.5); }
+    if (Unit == "") { Answer = RequestOperator("Power telemetry shows no tripped unit; the reported fault cannot be located."); }
+    endif
   }
-  // pressing is done with closed jaws: "nothing grasped" is the expected result, so no post-condition
-  CloseJaws: { Boolean ok; EndCondition isKnown(ok); ok = grasp(); }
-  ArmReady: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_joints(Ready, 0.05); }
-  PlanPrePress: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = plan_ee_to_feature(Button, 0.12, "press", 0.01); }
-  ServoPrePress: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.12, 0.0, "press", 0.015, 0.15, 25.0); }
-  Approach: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.04, 0.0, "press", 0.01, 0.05, 25.0); }
-  Press: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, -0.01, 0.0, "press", 0.01, 0.03, 15.0); }
-  Retract: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_ee_to_feature(Button, 0.12, 0.0, "press", 0.02, 0.08, 25.0); }
-  ArmReadyAgain: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = move_joints(Ready, 0.1); }
-  StowArm: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = stow(0.1); }
-  BackAway: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(Button, 1.5, 0.8); }
-  ReturnToDock: Try
+  ToUnit: { PreCondition Unit != ""; LibraryCall DriveAndDock(feature = Unit + "_panel/press", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  Reset: Try
   {
-    ReturnToDock1: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(0.0, 0.0, 0.0); }
-    ReturnToDock2: { Boolean ok; EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_pose(0.0, 0.0, 0.0); }
+    PreCondition ok && Unit != "";
+    Reset1: Sequence
+    {
+      PostCondition ok;
+      Press1: { EndCondition isKnown(ok); ok = press(ButtonTarget, Unit + "_panel/press"); }
+      Check1: { PreCondition ok; ok = Lookup(PowerUnit(Unit, "breaker")) == "closed"; }
+    }
+    Reset2: Sequence
+    {
+      PostCondition ok;
+      Setup2: { ok = true; }
+      Press2: { EndCondition isKnown(ok); ok = press(ButtonTarget, Unit + "_panel/press"); }
+      Check2: { PreCondition ok; ok = Lookup(PowerUnit(Unit, "breaker")) == "closed"; }
+    }
   }
-  Done: { pprint("MissionA_Covered complete; last:", Lookup(LastCapabilityResult())); }
+  ResetFailed:
+  {
+    PreCondition Unit != "";
+    if (!ok) { Answer = RequestOperator("The reset of " + Unit + " did not restore it after two attempts; trip cause: "
+                                        + Lookup(PowerUnit(Unit, "trip_cause")) + ". No procedure applies; requesting instructions."); }
+    endif
+  }
+  Return: { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }
+  FinalCheck:
+  {
+    PreCondition ok;
+    if (Lookup(PowerUnit(Unit, "breaker")) != "closed") {
+      Answer = RequestOperator(Unit + " tripped again after the reset; trip cause: " + Lookup(PowerUnit(Unit, "trip_cause"))
+                               + ". No procedure applies; requesting instructions.");
+    }
+    endif
+  }
+  Done: { pprint("MissionA_Covered unit:", Unit, "ok:", ok, "operator:", Answer); }
 }

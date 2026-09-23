@@ -1,0 +1,78 @@
+// Skeleton domain for the generic EUROPA->PLEXIL machinery (execution_plan §11.2): the rover's base only, with three
+// capabilities of openral_ext/capability_server/contracts.yaml as activities. It exercises solve -> dispatch ->
+// result->fact update -> replan; the Mission B domain replaces it once the manipulation contracts settle.
+//
+// An activity's parameters are the capability's arguments (object parameters are passed by site name, see host.py);
+// its duration bound is the contract's default_deadline_s.
+
+class Location
+{
+  string name;
+  Location(string _name) { name = _name; }
+}
+
+// the named planar poses of the site map (the dock)
+class NamedPose extends Location
+{
+  NamedPose(string _name) { super(_name); }
+}
+
+// a surveyed site interaction point and the two base stances the contracts define for it
+class Feature
+{
+  string name;
+  Location approach;  // navigate_to_feature: standoff_m out along the normal
+  Location work;      // dock_at_feature, standoff 0: the arm reaches the feature
+  Feature(string _name, Location _approach, Location _work)
+  {
+    name = _name;
+    approach = _approach;
+    work = _work;
+  }
+}
+
+class Base extends Timeline
+{
+  predicate At { Location loc; }
+  predicate Moving { Location to; }
+}
+
+class LunarBot
+{
+  Base base;
+  LunarBot() { base = new Base(); }
+
+  action navigate_to_feature { Feature feature; float standoff_m; eq(standoff_m, 1.5); leq(duration, 400); }
+  action dock_at_feature { Feature feature; float standoff_m; eq(standoff_m, 0.0); leq(duration, 240); }
+  action navigate_to_pose { NamedPose pose; leq(duration, 400); }
+}
+
+// Nav2 drives from wherever the base is
+LunarBot::navigate_to_feature
+{
+  met_by(condition object.base.At from);
+  equals(effect object.base.Moving m);
+  eq(m.to, feature.approach);
+  meets(effect object.base.At to);
+  eq(to.loc, feature.approach);
+}
+
+// contract: closes the last metre onto the work pose, entered along the feature's axis -- from its approach point
+LunarBot::dock_at_feature
+{
+  met_by(condition object.base.At from);
+  eq(from.loc, feature.approach);
+  equals(effect object.base.Moving m);
+  eq(m.to, feature.work);
+  meets(effect object.base.At to);
+  eq(to.loc, feature.work);
+}
+
+LunarBot::navigate_to_pose
+{
+  met_by(condition object.base.At from);
+  equals(effect object.base.Moving m);
+  eq(m.to, pose);
+  meets(effect object.base.At to);
+  eq(to.loc, pose);
+}

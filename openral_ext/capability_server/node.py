@@ -40,6 +40,7 @@ import rclpy
 from moveit_msgs.srv import GetPositionIK, GetStateValidity
 from openral_msgs.action import ExecuteRskill
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # the research repo: space_context
 from workspace.footprint import DOCK_ERROR_M, clear_distance  # noqa: E402
 from workspace.reach import reach_map  # noqa: E402
 
@@ -78,6 +79,7 @@ from space_harness_msgs.srv import QueryCapability
 from tf2_ros import Buffer, TransformListener
 
 from contracts import CONTRACTS, IX, check_args, item_catalogue
+from space_context import link
 # The arm's ready posture (robot, not mission). The wrist roll is half a turn: that is the branch with the wrist camera
 # above the tool axis, the one every view and every grasp works from (research repo F57), and it is the posture the
 # manipulation skills start and end in. `openral_rskill._eye_in_hand.READY` is the same seven numbers.
@@ -134,10 +136,12 @@ CARRY_SWING_RAD = math.radians(10.0)  # the largest swing the jaw was never dist
 def carry_budget(gravity_m_s2: float) -> float:
     """The acceleration a load hanging from the jaws may be given, on the body the robot is standing on."""
     return gravity_m_s2 * math.tan(CARRY_SWING_RAD / 2)
-CARRY_MAX_SPEED = [0.25, 0.0, 1.0]
-FREE_MAX_VELOCITY = [0.5, 0.0, 2.0]
-FREE_MAX_ACCEL = [2.5, 0.0, 3.2]
-FREE_MAX_DECEL = [-2.5, 0.0, -3.2]
+CARRY_MAX_SPEED_M_S = 0.25  # planar speed with a load in the jaws, along and across
+#: The free limits are the velocity smoother's own, as the robot's launch set them from robot.yaml (the kernel's
+#: planar-speed and turn bounds, the lateral crab cap). They used to be a hand-copied [0.5, 0.0, 2.0] here: the
+#: lateral 0 took the crab away from Nav2 whenever this server had touched the smoother, so a goal whose last
+#: 0.39 m was sideways was never reached, and 2.0 rad/s was four times the kernel's turn bound (F110).
+SMOOTHER_LIMITS = ("max_velocity", "max_accel", "max_decel")
 BASE_MOVES = ("navigate_to_pose", "navigate_to_feature", "dock_to_pose", "dock_at_feature", "move_base_delta")
 
 HELD_PROMPT = ("This camera is mounted on a robot's own gripper and looks out past its fingers; the fingers are the "
@@ -229,16 +233,16 @@ def quat_to_mat(x, y, z, w):
                      [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
 
 
-#: the logistics record's item names (the equipment catalogue is keyed by them)
-ITEM_NAMES = {"spare_oru": "spare ORU (orbital replacement unit, gold MLI-covered box)", "spare_crate": "cargo crate (white case)"}
+#: the equipment catalogue: one entry per kind of item on site (every ORU is the same unit), keyed by the name mission
+#: control's inventory uses for it; any one instance's asset carries the catalogue data
+CATALOGUE = {o["item"]: item_catalogue(o) for o in IX["objects"].values()}
 
 
 def held_item(a: dict) -> dict:
     """The named catalogue item's envelope, for the skill to keep the carried item clear of the rover and supports."""
     if "item" not in a:
         return {}
-    key = next(k for k, n in ITEM_NAMES.items() if a["item"] in (k, n))
-    c = item_catalogue(IX["objects"][key])
+    c = CATALOGUE[a["item"]]
     return {"held_item": {"size_m": c["size_m"], "handle_above_base_m": c["handle_height_above_base_m"],
                           "neck_height_m": c["grasp_interface"]["dimensions_m"]["neck_height"],
                           "closing_width_m": c["grasp_interface"]["closing_width_m"],
@@ -338,6 +342,8 @@ class CapabilityServer(Node):
         self.jaw, self.arm_q, self.sim_t, self.calls = None, None, 0.0, 0
         self.infos, self.depths = {}, {}
         self._space_context: dict = {}
+        self._power: dict = {}
+        self._inventory: list = []
         #: what the last pick that succeeded took, and from where. The boundary dispatched that call and saw it
         #: succeed, so this is its own record, not an observation and not simulator truth.
         self._picked: dict | None = None
@@ -345,6 +351,12 @@ class CapabilityServer(Node):
             String, "/srb/env0/space_context", lambda m: self._space_context.update(json.loads(m.data)),
             QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL),
             callback_group=cb)
+        self.create_subscription(
+            String, "/srb/env0/inventory_record", lambda m: setattr(self, "_inventory", json.loads(m.data)),
+            QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            callback_group=cb)
+        self.create_subscription(String, "/srb/env0/power_telemetry", lambda m: setattr(self, "_power", json.loads(m.data)), 10,
+                                 callback_group=cb)
         self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
         self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
         self.images = {}
@@ -363,8 +375,12 @@ class CapabilityServer(Node):
 
         # reentrant like every other client here: this is called from inside an action's own execution, and a client
         # on the default group would wait on a future its own executor thread is blocked from completing
+        from rcl_interfaces.srv import GetParameters  # noqa: E402
+
         self._smoother_params = self.create_client(SetParameters, "/velocity_smoother/set_parameters", callback_group=cb)
+        self._smoother_get = self.create_client(GetParameters, "/velocity_smoother/get_parameters", callback_group=cb)
         self._drive_limits: dict | None = None  # what the smoother was last set to (see drive_limits)
+        self._free_limits: dict | None = None  # the smoother's launch limits, read before the first change
         from openai import OpenAI
         self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=120)
         self.vlm_pool = ThreadPoolExecutor(8)
@@ -403,17 +419,20 @@ class CapabilityServer(Node):
         return {"frame": "map", "x": round(float(p[0]), 4), "y": round(float(p[1]), 4), "yaw": round(math.atan2(R[1, 0], R[0, 0]), 4)}
 
     def manifest(self):
-        """The logistics record as mission control holds it: the depot slots as staged, the items' catalogue data."""
-        names = ITEM_NAMES
-        slots = {IX["objects"][k]["support"].split("/")[1]: names[k] for k in names}
-        items = {names[k]: item_catalogue(IX["objects"][k]) for k in names}
-        return {"depot_stand": slots, "items": items}
+        """Mission control's logistics record as the environment published it (serial, item, recorded location, status),
+        and the catalogue data of the kinds of item on site. A record, not an observation."""
+        return {"inventory": self._inventory, "equipment_catalogue": CATALOGUE}
+
+    def power_status(self):
+        """The serviced units' own telemetry, the latest the base network carried."""
+        return dict(self._power)
 
     def site_map(self):
         fixed = {k: v for k, v in IX["points"].items() if "object" not in v}
         return {"frame": "map", "point_types": POINT_TYPES,
-                "equipment_catalogue": self.manifest()["items"],
-                "points": {k: {"type": v["type"], "equipment": v["asset"], "xyz": v["xyz"], "normal": [round(c, 3) for c in v["normal"]]}
+                "equipment_catalogue": CATALOGUE,
+                "points": {k: {"type": v["type"], "equipment": v["asset"], **({"unit": v["unit"]} if "unit" in v else {}), "xyz": v["xyz"], "normal": [round(c, 3) for c in v["normal"]],
+                               **({"role": v["role"]} if "role" in v else {})}
                            for k, v in fixed.items()},
                 "view_poses": {k: {"x": v["xy"][0], "y": v["xy"][1], "yaw": round(math.radians(v["yaw_deg"]), 4), "looks_at": v["target"]}
                                for k, v in IX["view_poses"].items()},
@@ -460,8 +479,19 @@ class CapabilityServer(Node):
         Read from the jaw alone -- the robot's own state, not any method's record of what it is doing -- so every
         method's base moves are ramped the same way."""
         from rcl_interfaces.msg import Parameter as ParamMsg, ParameterType, ParameterValue
-        from rcl_interfaces.srv import SetParameters
+        from rcl_interfaces.srv import GetParameters, SetParameters
 
+        if self._free_limits is None:
+            if not self._smoother_get.wait_for_service(timeout_sec=2.0):
+                return {"carrying": carrying, "changed": False, "why": "the velocity smoother is not answering parameter reads"}
+            fut = self._smoother_get.call_async(GetParameters.Request(names=list(SMOOTHER_LIMITS)))
+            t0 = time.time()
+            while not fut.done() and time.time() - t0 < 3.0:
+                time.sleep(0.02)
+            if not fut.done():
+                return {"carrying": carrying, "changed": False, "why": "the velocity smoother did not answer"}
+            self._free_limits = {n: list(v.double_array_value) for n, v in zip(SMOOTHER_LIMITS, fut.result().values)}
+        free = self._free_limits
         if carrying:
             p = self.tcp_pose()["position"]
             lever = max(math.hypot(p[0], p[1]), 0.2)  # how far out the load is riding, measured
@@ -474,12 +504,15 @@ class CapabilityServer(Node):
             # and out of the *half* of it the turn gets, not the whole. What a turn does beyond leaning the load --
             # slipping it round the neck, which is what lost ga4 -- is now stopped by the handle's own collar
             # rather than by a speed limit read off one failure (F83, F84).
+            # the crab keeps the same share as the straight line: the load leans the same way to either
             wz = round(math.sqrt(linear / lever), 2)
-            want = {"max_velocity": [CARRY_MAX_SPEED[0], 0.0, wz], "max_accel": [linear, 0.0, az],
-                    "max_decel": [-linear, 0.0, -az], "lever_m": round(lever, 3),
+            v = [min(CARRY_MAX_SPEED_M_S, free["max_velocity"][0]), min(CARRY_MAX_SPEED_M_S, free["max_velocity"][1]),
+                 min(wz, free["max_velocity"][2])]
+            want = {"max_velocity": v, "max_accel": [linear, linear if v[1] > 0 else 0.0, az],
+                    "max_decel": [-linear, -linear if v[1] > 0 else 0.0, -az], "lever_m": round(lever, 3),
                     "gravity_m_s2": round(self.space_context()["gravity_m_s2"], 4)}
         else:
-            want = {"max_velocity": FREE_MAX_VELOCITY, "max_accel": FREE_MAX_ACCEL, "max_decel": FREE_MAX_DECEL}
+            want = dict(free)
         if want == self._drive_limits:
             return {"carrying": carrying, "changed": False}
         cli = self._smoother_params
@@ -631,7 +664,8 @@ class CapabilityServer(Node):
                     "note": "the environment published no space context, so the least gravity in the table is "
                             "assumed: what a hanging load takes scales with gravity, and not knowing where you "
                             "are must buy the gentlest driving, not the fastest"}
-        return dict(self._space_context)
+        # the Direct-with-Earth link at this mission time (SPICE visibility profile; mission time = the simulator clock)
+        return {**self._space_context, "earth_link": link.state(self.sim_t)}
 
     def work_stands(self, feature: str, grasp_height_m: float | None = None):
         """Where the rover can stand to work at a site point: the arm's own answer, not a table.
@@ -953,7 +987,7 @@ class CapabilityServer(Node):
                 raise ValueError(reason)
             value = {"observe": lambda: self.observe(args["camera"], args["question"]),
                      "locate_in_view": lambda: self.locate_in_view(args["camera"], args["target"]), "site_map": self.site_map,
-                     "manifest": self.manifest, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
+                     "manifest": self.manifest, "power_status": self.power_status, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
                      "held_item": self.held_item,
                      "space_context": self.space_context,
                      "work_stands": lambda: self.work_stands(args["feature"], args.get("grasp_height_m")),
@@ -1050,8 +1084,10 @@ class CapabilityServer(Node):
         res.success, res.failure_kind, res.failure_reason = bool(r.success), int(r.failure_kind), r.failure_reason
         res.evidence_json = json.dumps(evidence)
         # the call trace (§4.6): one line per effect, whoever called it
+        # mission (simulator) time the call started and ended: the evaluator's call windows (evaluation/)
         self.get_logger().info("CAPABILITY " + json.dumps(dict(capability=g.capability, args=args, success=res.success,
                                                                failure_kind=res.failure_kind, failure_reason=res.failure_reason,
+                                                               sim_t_start=round(sim0, 2), sim_t_end=round(self.sim_t, 2),
                                                                evidence=evidence)))
         return res
 

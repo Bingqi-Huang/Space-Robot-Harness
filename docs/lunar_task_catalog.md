@@ -95,6 +95,7 @@ READY/收纳、末端规划/移动、闭爪按压、抓取把手、导航中搬�
     机构内部报告（部分读取，第 1–14 页）｜ 含"nominal" 与"off-nominal cargo configuration"对比照片，
     真实记录了 ISS 存放位被超额占用/杂乱的情形。
 15. NASA OIG. *NASA's Management of Spare Parts for its Flight Projects*, IG-18-001, 2017-10-05。
+    **更正（2026-09-23）：此报告讲飞行项目备件管理，不是 ISS 存放位与记录不符，不可用于 B3/库存不符的依据。**
     https://oig.nasa.gov/docs/IG-18-001.pdf ｜ 类型：机构监察审计报告 ｜ 本人读取封面/目录/引言/
     Results in Brief。"Headquarters' Logistics Management Division's visibility into flight assets
     across the Agency and its ability to accurately account for flight inventory is limited and
@@ -422,6 +423,8 @@ network must contain all of the tasks we will ever need"——即当前最先进
 提供了独立于本文假设的一手证据，建议在论文相关工作或第 5 节引用。
 
 ## 5. 推荐组合
+
+> **已被取代（2026-09-23）**：最终 held-out 选择见 `docs/heldout_design.md`（L0–L4 新奇阶梯）。以下保留为调研记录。
 
 **Experiment I — Mission A：** covered = A1；held-out 三选二/三，覆盖不同类别——
 access/obstruction 用 **A2 (cover_obstruction)**；状态与报告不一致建议用**融合版 A3+A4**：将

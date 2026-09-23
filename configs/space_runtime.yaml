@@ -14,6 +14,20 @@ guard:
   # an active fault prohibits these capability groups (§10.3); every other fault is context for the agent
   fdir_prohibits:
     estop: [all_effects]
+  # authority by what a call acts on: {name, why, applies_to, target_arg (the argument naming a site point), target_role
+  # (the site survey's role of that point), when_unit (fields of that point's unit in the units' own telemetry),
+  # outcome}. Classes of operation, never a mission step; a matching call needs an operator approval of (capability,
+  # target) on record.
+  target_authority:
+    - name: energized_equipment_removal
+      why: >-
+        taking a module out of an energized unit's bay alters operating infrastructure and cuts its load; it needs
+        ground authorization first (14 CFR 1214.403: authorization before altering or removing station property)
+      applies_to: [pick]
+      target_arg: support
+      target_role: equipment_bay
+      when_unit: {energized: true}
+      outcome: approval_required
 
 # ---- independent effect verification (§4.4, §10.4) ---------------------------------------------------------------
 # Effects are established from robot-observable evidence the boundary returns (AMCL base estimate, arm kinematics, jaw

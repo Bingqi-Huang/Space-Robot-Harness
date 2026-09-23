@@ -16,6 +16,12 @@ name one tabletop object (`GroundedSubtask`), which rejects mission-level tasks 
 (research repo F53).
   report_to_operator       -> EmitPromptTool(target_topic=REPORT_TOPIC)
   request_operator         -> EmitPromptTool(target_topic=REQUEST_TOPIC)
+
+`Agent.dispatch()` (space_runtime/agent.py) publishes both as `PromptStamped` on their topic. Mission control sits
+behind the Earth link, so `request_operator` does not block: the answer arrives asynchronously (store-and-forward) and
+is recorded as an `operator_answered` event when it does; `wait_for_mission_control` (local/wait) holds the robot until
+it arrives or a time limit passes -- the operator PROTOCOL (when to escalate, what an answer means) stays outside this
+module.
 """
 import json
 
@@ -27,8 +33,12 @@ from openral_ext.capability_server.contracts import CONTRACTS
 
 REPORT_TOPIC = "/space/operator/report"
 REQUEST_TOPIC = "/space/operator/request"
+REPLY_TOPIC = "/space/operator/reply"  # console -> requester: the operator's answer, PromptStamped.metadata_json carries
+                                       # {"request_id": ...} echoed from the request plus the console-assigned
+                                       # {"authority_level", "interaction_id", "start_wall_t", "end_wall_t"}
 SET_TASK_STATUS = "local/set_task_status"
 DECOMPOSE = "local/decompose_mission"
+WAIT = "local/wait_for_mission_control"
 RATIONALE = {"type": "string", "description": "one sentence: why this call now"}
 
 
@@ -79,8 +89,14 @@ def local_tools() -> list[dict]:
             "done, which effects were verified, what remains unresolved. Use it when the mission is complete or "
             "cannot be completed."), {"text": {"type": "string"}}, ["text"]),
         _function("request_operator", (
-            "OPERATOR. Ask mission control for a decision, approval or information you cannot obtain yourself; the "
-            "autonomous run stops there until they answer."), {"text": {"type": "string"}}, ["text"]),
+            "OPERATOR. Send mission control a request for a decision, approval or information you cannot obtain "
+            "yourself. It crosses the Direct-with-Earth link (delay and visibility: space_context); the answer arrives "
+            "later and appears under OPERATOR EXCHANGES. Meanwhile you may carry on with other work."),
+            {"text": {"type": "string"}}, ["text"]),
+        _function("wait_for_mission_control", (
+            "OPERATOR. Hold the robot still until mission control's answer to an open request arrives, or until "
+            "max_wait_s of mission time has passed, whichever is first."),
+            {"max_wait_s": {"type": "number", "description": "the longest to wait, s of mission time"}}, ["max_wait_s"]),
     ]
 
 
@@ -99,6 +115,8 @@ def decode(name: str, args: dict):
             return ExecuteRskillTool(rskill_id=SET_TASK_STATUS, goal_params_json=json.dumps(args), rationale=rationale)
         if name == "decompose_mission":
             return ExecuteRskillTool(rskill_id=DECOMPOSE, goal_params_json=json.dumps(args), rationale=rationale)
+        if name == "wait_for_mission_control":
+            return ExecuteRskillTool(rskill_id=WAIT, goal_params_json=json.dumps(args), rationale=rationale)
         if name in ("report_to_operator", "request_operator"):
             return EmitPromptTool(target_topic=REPORT_TOPIC if name == "report_to_operator" else REQUEST_TOPIC,
                                   text=args["text"], rationale=rationale)

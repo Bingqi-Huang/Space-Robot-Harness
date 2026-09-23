@@ -237,7 +237,7 @@ effects:
       target: [string, true, "the item, described by what it is and how it looks (e.g. the spare ORU, a gold MLI-covered box)"]
       part: [string, true, "the contact region to hold, described in words (e.g. the narrow neck of the T-shaped handle)"]
       item: [string, false, "the item's name in the equipment catalogue; the skill then keeps its catalogued size clear of the rover while carrying"]
-      support: [string, false, "the place frame the item stands on (e.g. depot_stand/slot_0), from site_map"]
+      support: [string, true, "the place frame the item stands on (e.g. depot_stand/slot_0), from site_map"]
       grasp_height_m: [number, false, "how high the lifting interface sits above the site frame: the place frame's own z from site_map plus the item's handle_height_above_base_m from the equipment catalogue. This is where the camera is pointed"]
     default_deadline_s: 900
     authority_class: routine
@@ -319,11 +319,18 @@ queries:
     engineering: true
   manifest:
     description: >-
-      Mission control's logistics manifest: what each depot staging slot is recorded to hold, and the catalogue data of
-      the standard items (size, mass, carry handle, documented contact regions and interface dimensions with source).
-      Catalogue descriptions are prior equipment knowledge; current location and contact identity require observation.
-      It is the record, not an
+      Mission control's logistics record: every tracked item by serial number, what it is, where it is recorded to
+      be (a site place frame) and its recorded status; and the catalogue data of the kinds of item on site (size,
+      mass, carry handle, documented contact regions and interface dimensions with source). Catalogue descriptions
+      are prior equipment knowledge; current location and identity require observation. It is the record, not an
       observation: it can be out of date.
+    inputs: {}
+  power_status:
+    description: >-
+      The serviced units' own telemetry over the base network (the power-field PDUs, the battery storage unit, the ISRU
+      plant): for each unit the load it feeds and that load's criticality, breaker state (closed / tripped), whether it
+      is energized, the cause of its last trip, how many times it was reset since the mission started, and the serial
+      of the module installed in each of its equipment bays (keyed by the bay's place point).
     inputs: {}
   arm_state:
     description: Arm posture from the joint encoders (stowed / ready / other), joint angles and the jaw angle.
@@ -358,7 +365,9 @@ queries:
       light it gets. Gravity is not a constant of the software and it is not Earth's. A load hanging from the
       jaws leans atan(a/g) off vertical under a base acceleration a, and swings to about twice that after the
       step that starts it, so driving that would be gentle on Earth is six times the lean on the Moon; what a
-      given grasp holds through is a property of that grasp, which the equipment catalogue describes. These are
+      given grasp holds through is a property of that grasp, which the equipment catalogue describes. And the
+      Direct-with-Earth link to mission control: whether Earth is above the site's horizon now, how long until it
+      sets or rises again, and the one-way delay; a message sent while it is down waits for the next pass. These are
       facts, not limits: the boundary keeps its own hardware-protecting limits whatever you conclude from them.
     inputs: {}
 

@@ -8,8 +8,11 @@ harness palette and context. Each step:
     verification -> events appended to the record -> next step
 
 The agent owns mission strategy; nothing here decides what to do next. The run ends when the agent reports to mission
-control, asks it for help, or exhausts the mission step budget. `--resume` reopens an existing record (a restarted or
-switched reasoner continues from the facts, not from a conversation).
+control or exhausts the mission step budget; asking mission control for help (`request_operator`) instead pauses the
+loop -- the request is published for the operator console (experiments/operator_console), the step blocks on the
+console's reply, and the answer is recorded and rendered into the next step's context, mission-generic (no decision
+logic here about what the answer means). `--resume` reopens an existing record (a restarted or switched reasoner
+continues from the facts, not from a conversation).
 
 Run inside a sourced graph (ROS Humble + openral install + ros/install), repo root on PYTHONPATH:
     python3 -m space_runtime.agent --run-dir <dir> --mission "<objective>" [--resume] [--model <id>]
@@ -20,6 +23,7 @@ import os
 import queue
 import threading
 import time
+import uuid
 from pathlib import Path
 
 import rclpy
@@ -33,7 +37,7 @@ from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rosgraph_msgs.msg import Clock
-from openral_msgs.msg import SafetyStatus
+from openral_msgs.msg import PromptStamped, SafetyStatus
 from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
@@ -43,7 +47,7 @@ from space_runtime.context import HarnessRenderer
 from space_runtime.facts import FactStore
 from space_runtime.guard import Guard
 from space_runtime.report import write_report
-from space_runtime.tools import DECOMPOSE, REPORT_TOPIC, SET_TASK_STATUS, HarnessToolClient
+from space_runtime.tools import DECOMPOSE, REPLY_TOPIC, REPORT_TOPIC, REQUEST_TOPIC, SET_TASK_STATUS, WAIT, HarnessToolClient
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
@@ -75,6 +79,12 @@ class Agent:
         self.fdir_inbox = []
         self.node.create_subscription(SafetyStatus, "/openral/safety_status", self.fdir_inbox.append,
                                       QoSProfile(depth=1, durability=QoSDurabilityPolicy.TRANSIENT_LOCAL))
+        # operator channel (execution_plan §13.2): report/request publish PromptStamped; request_operator then blocks
+        # on the console's reply, matched by the request_id it minted -- the operator PROTOCOL stays outside this file
+        self.report_pub = self.node.create_publisher(PromptStamped, REPORT_TOPIC, 10)
+        self.request_pub = self.node.create_publisher(PromptStamped, REQUEST_TOPIC, 10)
+        self.operator_replies, self.open_requests = queue.SimpleQueue(), set()
+        self.node.create_subscription(PromptStamped, REPLY_TOPIC, self.operator_replies.put, 10)
         ex = SingleThreadedExecutor()
         ex.add_node(self.node)
         threading.Thread(target=ex.spin, daemon=True).start()
@@ -87,10 +97,10 @@ class Agent:
                                         timeout_s=rc["timeout_s"], thinking=rc["thinking"])
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())
-        self.renderer = HarnessRenderer(self.store, self.max_steps)
+        self.renderer = HarnessRenderer(self.store, self.max_steps, self.guard.target_authority)
         self.palette = ToolPalette(execute_rskill_ids=frozenset([*(k for k, c in CONTRACTS["effects"].items() if not c.get("engineering")),
                                                                  *(k for k, c in CONTRACTS["queries"].items() if not c.get("engineering")),
-                                                                 SET_TASK_STATUS, DECOMPOSE]))
+                                                                 SET_TASK_STATUS, DECOMPOSE, WAIT]))
 
     def event(self, kind: str, **data) -> dict:
         return self.store.append(kind, sim_t=round(self.sim_t, 2), **data)
@@ -150,12 +160,44 @@ class Agent:
         words rather than a paraphrase."""
         self.event("tool_proposed", **data, llm_s=getattr(self, "_llm_s", None), **self.client.last_reply)
 
+    def take_operator_replies(self) -> int:
+        """Record every answer mission control has delivered since the last look (the link delivers them
+        asynchronously): an `operator_answered` event each, and the approvals it grants. Returns how many."""
+        n = 0
+        while not self.operator_replies.empty():
+            msg = self.operator_replies.get()
+            meta = json.loads(msg.metadata_json or "{}")
+            if meta.get("request_id") not in self.open_requests:
+                continue
+            self.open_requests.discard(meta["request_id"])
+            self.event("operator_answered", request_id=meta["request_id"], text=msg.text,
+                       authority_level=meta.get("authority_level"), outcome=meta.get("outcome"),
+                       link_status=meta.get("link_status"), interaction_id=meta.get("interaction_id"))
+            for g in meta.get("grants", []):
+                self.event("approval_granted", capability=g["capability"], target=g["target"], request_id=meta["request_id"])
+            n += 1
+        return n
+
     def dispatch(self, call) -> None:
         if isinstance(call, EmitPromptTool):
             tool = "report_to_operator" if call.target_topic == REPORT_TOPIC else "request_operator"
             self.proposed(tool=tool, args={"text": call.text}, rationale=call.rationale)
-            self.event("operator_report" if tool == "report_to_operator" else "operator_request", text=call.text)
-            return
+            if tool == "report_to_operator":
+                self.report_pub.publish(PromptStamped(text=call.text))
+                self.event("operator_report", text=call.text)  # sets facts["terminal"]: the run ends here
+                return
+            request_id = uuid.uuid4().hex[:12]
+            # the calls the guard is holding for approval travel with the request as structured fields: mission control
+            # answers in words, and grants (or not) exactly those (capability, target) pairs
+            pending = [{"capability": p["capability"], "target": p["target"], "reason": p["reason"]}
+                       for p in self.store.facts["pending_approvals"]]
+            self.request_pub.publish(PromptStamped(text=call.text, metadata_json=json.dumps(
+                {"request_id": request_id, "pending_approvals": pending})))
+            self.event("operator_request_sent", request_id=request_id, text=call.text, pending_approvals=pending)
+            self.open_requests.add(request_id)
+            self.event("local_tool", success=True, detail="sent to mission control; its answer will appear under "
+                                                          "OPERATOR EXCHANGES when the link delivers it")
+            return  # the exchange itself is not terminal and does not block: the next step continues
         name, args = call.rskill_id, json.loads(call.goal_params_json or "{}")
         if name == DECOMPOSE:
             subtasks, target = [t for t in args["subtasks"] if t.strip()], args.get("target_task_id", "")
@@ -177,6 +219,14 @@ class Agent:
                 self.event("ledger_changed", ledger=ledger.to_state_dict())
             return
         self.proposed(tool=name, args=args, rationale=call.rationale)
+        if name == WAIT:
+            t0 = self.sim_t
+            while not self.operator_replies.qsize() and self.sim_t - t0 < float(args["max_wait_s"]):
+                time.sleep(0.2)
+            n = self.take_operator_replies()
+            self.event("local_tool", success=n > 0, detail=f"waited {self.sim_t - t0:.0f} s of mission time; "
+                                                           + (f"{n} answer(s) arrived" if n else "no answer arrived"))
+            return
         if name == SET_TASK_STATUS:
             ledger = self.ledger()
             ok = ledger is not None and ledger.active() is not None
@@ -189,8 +239,16 @@ class Agent:
         if name in CONTRACTS["queries"]:
             self.event("query_answered", query=name, args=args, **self.query(name, args))
             return
+        if self.guard.target_authority:
+            # a rule that classes a call by the state of the unit it acts on reads that state fresh, from the units'
+            # own telemetry, before deciding
+            t = self.query("power_status", {})
+            self.event("equipment_telemetry", value=t["value"] if t["success"] else None)
         outcome, reason = self.guard.check(name, args, self.store.facts)
         self.event("guard_decision", tool=name, outcome=outcome, reason=reason)
+        if outcome == "approval_required":
+            rule = self.guard.target_rule(name, args, self.store.facts)
+            self.event("approval_pending", capability=name, target=args[rule["target_arg"]] if rule else None, reason=reason)
         if outcome != "allow":
             return
         ledger = self.ledger()
@@ -228,6 +286,7 @@ class Agent:
                 m = self.fdir_inbox.pop(0)
                 if bool(m.latched) != bool(f["fdir"].get("estop", {}).get("active", False)):
                     self.event("fdir_changed", fault="estop", active=bool(m.latched), detail=m.detail)
+            self.take_operator_replies()
             step += 1
             self.renderer.step = step
             self.event("reasoner_step_started", step=step)  # the model is thinking from here until the next proposal

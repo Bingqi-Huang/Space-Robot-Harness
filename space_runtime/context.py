@@ -1,9 +1,9 @@
 """Dynamic context construction (execution_plan §4.5, §9.5): the snapshot the agent reads each step.
 
 Selects and formats facts from the authoritative record -- mission intent, site knowledge, robot state, verified
-effects, observations, unresolved anomalies, availability/FDIR/authority, the agent's own working plan and the recent
-tool steps. It never chooses or suggests the next action. Rebuilt from the record every step, so a restarted or
-switched reasoner sees exactly what the previous one would have.
+effects, observations, unresolved anomalies, availability/FDIR/authority, the agent's own working plan, the recent
+tool steps and any operator request/answer exchange. It never chooses or suggests the next action. Rebuilt from the
+record every step, so a restarted or switched reasoner sees exactly what the previous one would have.
 """
 import json
 
@@ -16,7 +16,7 @@ def _j(v) -> str:
     return json.dumps(v, separators=(",", ":"))
 
 
-def render(facts: dict, step: int, max_steps: int) -> str:
+def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = None, authority_rules: list[dict] | None = None) -> str:
     f = facts
     out = [f"## MISSION (from mission control)\n{f['mission']['text']}",
            f"## STEP\n{step} of the mission step budget {max_steps}"]
@@ -51,13 +51,25 @@ def render(facts: dict, step: int, max_steps: int) -> str:
     out.append("## MANIPULATION ATTEMPTS (operations on items, latest last)\n" + ("\n".join(tries) or "(none yet)"))
     anomalies = [f"- [{a['seq']}] {a['capability']}: {a['reason']}" for a in f["anomalies"]]
     out.append("## UNRESOLVED ANOMALIES\n" + ("\n".join(anomalies) or "(none)"))
+    # request_operator's requests and mission control's asynchronous answers, read straight off the record (no decision
+    # logic here about what an answer means); a request with no answer yet is still open
+    ops = [e for e in (events or []) if e["kind"] in ("operator_request_sent", "operator_answered")]
+    if ops:
+        lines = [f"- [{e['seq']}] you asked mission control: {e['text']}" if e["kind"] == "operator_request_sent"
+                 else f"- [{e['seq']}] mission control answered ({e.get('outcome') or e.get('link_status')}): {e['text']}"
+                 for e in ops[-8:]]
+        out.append("## OPERATOR EXCHANGES (your requests and mission control's answers, latest last)\n" + "\n".join(lines))
     if len(f["reasoner_history"]) > 1:
         out.append("## REASONER CONTINUITY\nthis record was continued by another reasoner session: "
                    + " -> ".join(f"{r['model']} (from record #{r['seq']})" for r in f["reasoner_history"]))
     status = [f"unavailable capabilities: {_j(f['unavailable']) if f['unavailable'] else 'none'}",
               f"active faults: {_j({k: v for k, v in f['fdir'].items() if v['active']}) or 'none'}",
               "authority: " + ", ".join(sorted({c['authority_class'] for c in CONTRACTS['effects'].values()})) + " operations are autonomous"
-              + (f"; operator approvals on record: {_j(f['approvals'])}" if f["approvals"] else "")]
+              + "".join(f"; except {r['name']}: {', '.join(r['applies_to'])} on a {r['target_role']} whose unit reports "
+                        f"{_j(r['when_unit'])} is {r['outcome']} ({r['why']})" for r in authority_rules or [])
+              + (f"; operator approvals on record: {_j(f['approvals'])}" if f["approvals"] else "")
+              + (f"; held for mission control's approval (send request_operator; the request carries these): "
+                 f"{_j([{k: p[k] for k in ('capability', 'target')} for p in f['pending_approvals']])}" if f["pending_approvals"] else "")]
     out.append("## OPERATING STATUS\n" + "\n".join(status))
     ledger = f["ledger"]
     if ledger:
@@ -80,9 +92,9 @@ def render(facts: dict, step: int, max_steps: int) -> str:
 class HarnessRenderer(ContextRenderer):
     """OpenRAL's renderer slot filled with the harness context (ReasonerCore calls `render` each tick)."""
 
-    def __init__(self, store, max_steps: int):
+    def __init__(self, store, max_steps: int, authority_rules: list[dict]):
         super().__init__()
-        self.store, self.max_steps, self.step = store, max_steps, 0
+        self.store, self.max_steps, self.step, self.authority_rules = store, max_steps, 0, authority_rules
 
     def render(self, *, world_state=None) -> str:
-        return render(self.store.facts, self.step, self.max_steps)
+        return render(self.store.facts, self.step, self.max_steps, self.store.events, self.authority_rules)

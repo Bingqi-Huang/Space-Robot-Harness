@@ -1,0 +1,33 @@
+// MissionA_Covered, a unit that re-trips after the reset (what the covered plan sees of held-out L2-A / L3): the
+// reset takes at first, the unit trips again while the rover drives back, the final check at the dock escalates.
+
+initial-state {
+  state PowerUnit ("pdu_1":string, "breaker":string) = "closed":string;
+  state PowerUnit ("pdu_2":string, "breaker":string) = "tripped":string;
+  state PowerUnit ("pdu_3":string, "breaker":string) = "closed":string;
+  state PowerUnit ("bess":string, "breaker":string) = "closed":string;
+  state PowerUnit ("isru":string, "breaker":string) = "closed":string;
+}
+
+script {
+  command navigate_to_feature ("pdu_2_panel/press":string, 1.5:real) = true:bool;
+  command-success navigate_to_feature ("pdu_2_panel/press":string, 1.5:real);
+
+  command dock_at_feature ("pdu_2_panel/press":string, 0.0:real, 1.5:real) = true:bool;
+  command-success dock_at_feature ("pdu_2_panel/press":string, 0.0:real, 1.5:real);
+
+  state PowerUnit ("pdu_2":string, "breaker":string) = "closed":string;
+  command press ("the round red push button set into the yellow sub-panel":string, "pdu_2_panel/press":string) = true:bool;
+  command-success press ("the round red push button set into the yellow sub-panel":string, "pdu_2_panel/press":string);
+
+  command stow (0.08:real) = true:bool;
+  command-success stow (0.08:real);
+
+  command navigate_to_pose (0.0:real, 0.0:real, 0.0:real) = true:bool;
+  state PowerUnit ("pdu_2":string, "breaker":string) = "tripped":string;
+  state PowerUnit ("pdu_2":string, "trip_cause":string) = "OVERTEMP":string;
+  command-success navigate_to_pose (0.0:real, 0.0:real, 0.0:real);
+
+  command RequestOperator ("pdu_2 tripped again after the reset; trip cause: OVERTEMP. No procedure applies; requesting instructions.":string) = "noted":string;
+  command-success RequestOperator ("pdu_2 tripped again after the reset; trip cause: OVERTEMP. No procedure applies; requesting instructions.":string);
+}

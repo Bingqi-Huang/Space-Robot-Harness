@@ -32,6 +32,7 @@ from openral_msgs.action import ExecuteRskill
 from rclpy.action import ActionClient
 from rclpy.node import Node
 from rclpy.parameter import Parameter
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
 from rosgraph_msgs.msg import Clock
 from std_msgs.msg import String
@@ -89,6 +90,17 @@ n.create_subscription(Clock, "/clock", lambda m: sim.update(t=m.clock.sec + m.cl
 
 def log(kind, **kw):
     print(kind, json.dumps(dict(t=round(time.time() - T0, 1), **kw), default=lambda o: round(float(o), 4) if isinstance(o, (np.floating, float)) else str(o)), flush=True)
+
+
+def latched_string(topic: str) -> str:
+    """The value of a latched std_msgs/String topic (published once, transient-local), e.g. the mission brief."""
+    got = []
+    sub = n.create_subscription(String, topic, lambda m: got.append(m.data),
+                                QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+    while not got:
+        rclpy.spin_once(n, timeout_sec=0.1)
+    n.destroy_subscription(sub)
+    return got[0]
 
 
 def spin(seconds):

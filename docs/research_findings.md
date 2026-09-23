@@ -4658,3 +4658,498 @@ everywhere else in this harness -- retrying a bad read is the reasoner's job, no
 chain has no reasoner, so it just tried again.
 
 Not yet run: the same chain end to end inside the real Mission B loop, with a model and with video.
+
+## F101 — PLEXIL 6.1.3 LibraryCall does not carry its callee's failure (2026-09-20, Session P, offline; renumbered from F79 at the `p/integration` merge, 2026-09-22)
+
+Mission B covered for PLEXIL is composed from reusable library nodes (`baselines/plexil/plans/lib/`: DriveAndDock,
+PickItem, PlaceItem, StowAndReturn). With `plexiltest` and `Node:outcome` tracing, an injected `command-failed` on
+`dock_at_feature` made the library root FAILURE while the calling `LibraryCall` node still ended SUCCESS, so the next
+legs ran; the documented `PostCondition <call>.outcome == SUCCESS` idiom did not hold one nesting level deeper. The
+library now returns an explicit `InOut Boolean ok` and every leg has `PreCondition ok` (PLEXIL's own regression-suite
+pattern); re-verified: a failed dock skips everything after it and the plan ends FAILURE. Any generated PLEXIL (the
+EUROPA→PLEXIL bridge) must use the same pattern. The adapter gained typed `LastFailureKind` / `LastFailureStage`
+Lookups (mechanical reads of the last result) so recovery branches need no JSON parsing. The predefined recovery set
+waits for pick/place failure kinds to settle; Mission A stays on stage-level tools until `press` is fixed (user).
+
+## F102 — EUROPA builds natively; the EUROPA→PLEXIL machinery replans offline (2026-09-20, Session P, offline; renumbered from F80)
+
+nasa/europa@ac5c332 builds with CMake on Ubuntu 22.04 / gcc 11 without Docker or root; swig 4.0, libantlr3c 3.4 and
+cppunit 1.15 are unpacked from jammy .debs (`baselines/europa/build_europa.sh`, `docs/baselines/europa.md`). Upstream
+examples solve (Light: 4 steps; Rover: from the single goal TakeSample(rock4) the solver derives
+Go→Unstow→Place→TakeSample→PhoneHome). Machinery: `planner/europa_plan` solves an NDDL problem in a fresh Plan
+Database; `host.py` runs solve → dispatch → result→facts (`facts_from_result`, a baseline artifact) → replan; a generic
+PLEXIL `ActivityDispatch` plan with a length-framed TCP `HostLinkAdapter` (UDP datagrams are too small for 56 KB pick
+evidence) calls the unmodified capability adapter. Offline against a stand-in boundary on a base-only skeleton domain:
+nominal run completes; a dock failure that leaves the base far away yields a new plan with an extra navigation; three
+identical failures stop the run as needing the operator. User decisions: replanning from the current state in a fresh
+Plan Database is accepted as the baseline's own method (no strengthening of the baseline); the host reads site map and
+initial pose directly from the boundary queries. The retry cap and "near" distance move to configuration with the
+Mission B domain, which waits for the manipulation contracts.
+
+## F103 — Experiment infrastructure in place; two structural gaps for the ALFUS metrics (2026-09-20, Session P, offline; renumbered from F81)
+
+Scenario manifests (`experiments/scenarios/`, A/B covered + five held-out with closed-capability certificates, all
+OPEN), §19 run-manifest backfill and a dry-run freeze tool (`openral_ext/run_manifest/`), per-run row extraction and
+tables with Wilson/bootstrap intervals (`evaluation/`), an operator console, a PLEXIL log normalizer and Experiment II
+worklog/delta tools. Exercised on 5 development runs only; development numbers are not results. Gaps found: (1) Ours'
+`request_operator` ended the run and only wrote a local event, so interaction time and ALFUS level could not be
+measured — user decision: the run pauses for the answer, which is fed back; the researcher is the campaign operator,
+a script only in development; the protocol rules come from a literature survey (`docs/operator_protocol.md`, pending).
+(2) PLEXIL runs never persisted universalExec's node transitions, so baseline traces stopped at the capability
+boundary (§14.6). Both are being implemented on `p/operator-mechanism`. `preplanned_transition_fraction` uses three
+categories (user): human-preauthored sequence (PLEXIL), planner-generated from a human-authored domain (EUROPA),
+agent-generated online (Ours), reported raw.
+
+## F104 — PLEXIL raced through the whole Mission B plan in under a second: the adapter's early `COMMAND_SENT_TO_SYSTEM` ack, not the plan (2026-09-22, live)
+
+First live run of `MissionB_Covered.plx` after the `p/integration` merge and an adapter rebuild (`RequestOperator`,
+`LastFailureKind/Stage` symbols confirmed present). Two failures before a clean run, each root-caused rather than
+retried blind. `g_pb1`/`g_pb1_r2`/`g_pb1_v2`/`g_pb1_v3`'s run directories were debugging evidence, not campaign
+results, and are deleted once this account was written and the successful run reproduced the fixes; `g_pb1_v4`'s
+is kept, renamed (below).
+
+**g_pb1 (was `artifacts/runs/plexil_mission_b_live_20260922`).** `universalExec` exited immediately: "Library node
+DriveAndDock not found while expanding LibraryNodeCall node ToDepot". `d0_plexil_mission_a_check.py`'s
+`universalExec` invocation (copied verbatim for Mission B) never passed `-L <library dir>`; Mission A's flat plan
+never called a library, so the gap was invisible until Mission B's first live run. Fixed
+(`experiments/launch/lunar_base_d0/d0_plexil_mission_b_check.py`: `-L plans/lib`); reproduced and confirmed fixed
+offline first (`plexiltest -L plans/lib -p MissionB_Covered.plx -s MissionB_Covered_nominal.psx` -> `ok: true`)
+before touching the live graph again.
+
+**g_pb1_r2.** Reattached to the same held graph (no reboot). `ToDepot` (nav + dock) genuinely completed --
+`runtime_node`'s own logs confirmed the robot actually drove and docked -- but PLEXIL never moved past it: the arm
+never reached READY, `universalExec` sat at 0% CPU waiting on a Command result that never arrived, and nothing in
+any log changed for 20+ minutes. `sudo py-spy dump --pid <capability_server>` (needed to inspect the process; this
+session had no non-interactive sudo, so the user ran it) showed **all 8 of `capability_server`'s executor threads
+simultaneously inside `dispatch()`**, one per capability of the entire plan (both nav/dock legs, `arm_ready`,
+`pick`, `place`, the second `arm_ready`/stow posture) -- the whole mission's worth of calls had been issued within
+the same instant, deadlocking the fixed 8-thread pool on their own nested `send_goal_async`/`get_result_async`
+callbacks. `py-spy --locals` on the check script's own process caught `universalExec`'s buffered node-transition
+trace mid-flight: `Return` (the plan's *last* node) reached FINISHING at essentially the same wall-clock instant
+`ToDepot`'s nav started -- the entire 9-step plan had already "finished" in PLEXIL's own bookkeeping before the
+robot had done anything.
+
+**Root cause, confirmed against PLEXIL 6.1.3's own executive source** (`src/exec/CommandNode.cc`,
+`src/intfc/CommandImpl.cc`), not guessed at: a Command node's `actionComplete` condition -- which gates the
+FINISHING -> ITERATION_ENDED transition, i.e. whether the node is genuinely *done* -- is `CommandHandleKnown`:
+`result = (NO_COMMAND_HANDLE != arg->getCommandHandle())`. Any handle value counts, terminal or not.
+`ros/plexil_capability_adapter/src/CapabilityAdapter.cc`'s `send()` acked `COMMAND_SENT_TO_SYSTEM` in
+`goal_response_callback` -- fired the instant the ROS action goal is merely *accepted* (a handshake, milliseconds),
+long before the robot does anything -- which is enough on its own to satisfy `actionComplete`. The real terminal ack
+(`COMMAND_SUCCESS`/`FAILED`, in `result_callback`) was correct, but the early one made it moot: every command
+`send()` touched was already "complete" from PLEXIL's perspective the moment it was accepted. `requestOperator()`
+had the identical bug (acked `COMMAND_SENT_TO_SYSTEM` right after publishing, contradicting this file's own header
+comment -- "the Command stays EXECUTING (no Command Ack yet)" -- which describes the *intended* design that the code
+never implemented); its own smoke test apparently didn't catch this because a scripted console answer arrives
+fast enough to mask it. Fix: `goal_response_callback` now acks only on genuine rejection (`COMMAND_DENIED`);
+`requestOperator()` sends no ack at all until the real reply. `EndCondition isKnown(ok)` in the library nodes
+(`baselines/plexil/plans/lib/*.ple`) is not itself broken -- verified empirically, once the adapter fix was in,
+`navigate_to_feature`/`dock_at_feature`/`arm_ready` each took their real, distinct sim-time durations, not zero.
+
+**g_pb1_v2** (fresh graph, fixed adapter): `ToDepot` genuinely took 51.7 s + 13.2 s of sim time, `arm_ready` 3.7 s --
+real, sequential, no deadlock. `pick` then failed for an unrelated, legitimate reason: "this pick did not say what
+the item stands on, so there is nothing to look at: name the place frame (`support`) the item" -- `PickItem.ple`
+only ever passed `target`/`part`/`item` (contracts.yaml's `pick.support` is optional but `find` needs it in
+practice). Fixed: `PickItem.ple`/`MissionB_Covered.ple` now pass `support = "depot_stand/slot_0"` as `pick`'s 4th
+positional argument; recompiled (`plexilc`), offline-verified (`plexiltest`, nominal script updated with the extra
+argument), `ok: true`.
+
+**g_pb1_v3**: `pick` failed again, differently -- "nothing beyond the gripper in the view to fit the declared
+interface to", a single-view VLM miss at `find` (the same class of stochastic perception failure the harness sees
+elsewhere; `pick`'s `find` deliberately has no internal retry, by design -- recovery is the caller's job). The
+plan is nominal-path-only (no recovery branches yet, docs/baselines/plexil.md), so it correctly reported failure
+and stopped rather than doing something not in the graph.
+
+**g_pb1_v4 (renamed `artifacts/runs/plexil_mission_b_success_20260922`) -- first clean, full, video-recorded pass.** Same
+plan, re-run once (a legitimate retry of a known-stochastic single-view failure, not a code change). All 9 steps
+succeeded with real, distinct sim-time durations (51.7/12.7/3.8/pick/80.9/13.7/65.0/2.8/45.3 s); evaluator
+`RESULT`: `{"oru_on": "pdu_1_shelf/shelf", "delivered": true, "success": true}`. 358 s sim time, ~19.4 min wall
+(1280x720 video, no LLM latency in this baseline). This is the first time PLEXIL Mission B covered has run
+end-to-end on the corrected-arm stack through the shared capability boundary and evaluator.
+
+**Method note.** The premature-completion bug was invisible in every prior PLEXIL Mission A run (F52) because
+Mission A's flat plan has no library-node chaining to expose racing-through-the-whole-plan behaviour the same
+way, and was invisible in `plexiltest`'s own offline verification (F101) because `plexiltest`'s stub simulator
+doesn't reproduce real ROS-action goal-acceptance timing at all -- this bug is specific to the live adapter and
+could only be caught live. `py-spy --locals` on both the stuck process and the check script's own buffered stdout
+was the decisive diagnostic (a single dump, not repeated live re-runs): it named the exact stuck line and the
+exact command each of the 8 threads was blocked on, and separately caught the node-transition trace proving the
+whole plan had already "finished" before the robot moved. Two library file bugs (missing `-L`, missing `support`)
+were each caught by one offline `plexiltest`/`plexilc` pass before spending live-sim time confirming the fix,
+per the standing rule (compute/verify offline before a live run, not after).
+
+## F105 — EUROPA Mission B domain: one real modelling bug and two solver bugs, all found and fixed offline (2026-09-22)
+
+`domain/mission-b-model.nddl` (arm posture, jaws, a movable item's location, alongside the existing base timeline)
+extends `execution_plan` §11.2's skeleton domain (F102) to Mission B. Given only the mission's own outcomes as
+goals -- the item delivered, the arm stowed, the base back at dock -- the solver derives the full 9-step plan
+itself (arm_ready, navigate/dock to the depot, pick, navigate/dock to the shelf, place, stow, navigate home),
+matching PLEXIL's hand-sequenced Mission B plan (F104) without anyone having sequenced it. Verified offline
+end to end (`run_offline_mission_b.sh`, `sim_boundary.py` standing in for the capability server, extended to
+simulate arm_ready/stow/pick/place) before any live-sim time, including with an injected `pick` failure
+(replans, retries pick, completes). Two of three bugs found this way were in `host.py`/EUROPA itself, not the
+domain text -- worth recording precisely, not just "it works now":
+
+**1. `met_by` vs `contained_by` for a precondition the action does not itself change.** The first version of
+`pick`/`place`/`stow` used `met_by(condition object.base.At ...)` (and similar for `posture`/`jaws`) for every
+precondition, copying the pattern the existing `navigate_to_feature`/`dock_at_feature` rules use for the timeline
+those actions actually *transition*. For a condition on a timeline the action does *not* itself change (pick
+doesn't move the base or change posture), that is the wrong relation: `met_by` requires a token that ends exactly
+when the action starts, and the solver satisfied it with a token that was never connected back to any real fact --
+producing a "solved" plan consisting of a single `place`, no preceding `pick`, dispatched straight from the
+initial state (`sim_boundary.py` happily "succeeded" it since it does not itself validate physical preconditions).
+Confirmed against nasa/europa's own Rover example (`examples/Rover/Rover-model.nddl`), which is known to derive a
+correct multi-step plan from one goal: `Instrument::TakeSample`/`Place` use `contained_by(condition
+object.navigator.At at)` for the identical situation (checking the rover's position without moving it), and
+`Rover::Go` uses `contained_by(condition object.instrument.location.Stowed)` the same way in reverse. Fixed by
+switching every cross-timeline precondition to `contained_by`, keeping `met_by` only for the timeline an action's
+own effect transitions (matching Rover::Go's own `met_by(condition object.navigator.At _from)` for the timeline
+it does move). Diagnosis method: a hand-written minimal reproduction problem run directly against `europa_plan`,
+not repeated changes to the full offline chain.
+
+**2. `europa_plan` segfaults inside its own `TemporalNetwork::cleanupTEQ`, via a backtracking retraction
+(`gdb -batch -ex run -ex bt`), once two `precedes`-chained goals are given to one solve.** Reduced to a minimal
+repro: the same problem with one goal solves cleanly (steps: 71, the full derived plan); the same problem with
+any two of the three goals `precedes`-chained together segfaults before producing any output. A single goal
+alone never crashed, including each of the same two individually. This is a genuine bug in nasa/europa's own
+2019-era `TemporalNetwork` component, not a domain-modelling error -- not something to fix by editing NDDL.
+Worked around in `host.py`, not patched around in the domain: each `solve()` call now receives only the single
+next unmet goal (`goals[:1]`), never the remaining chain. The sequencing semantics do not change -- each solve
+still finds its own minimal path to the next goal from wherever the previous one left off, which is what the
+`precedes` chain meant in the first place -- only *where* the chain lives moved, from one NDDL problem's
+constraints to the host's own replanning loop, which was already built to do exactly this.
+
+**3. `PSToken::getOwner()` returns empty for a `met_by` condition slave, not the timeline it is actually a fact
+of.** `host.py`'s `post_state()` (the activity's post-state, per §11.2 step 6 -- reads the latest-starting slave
+per timeline) was keying its output dict by `slave["timeline"]` unconditionally; a met_by condition slave's empty
+owner produced a `""` key, which `problem()`'s next NDDL emission rendered as `fact(.Stowed s4);` -- a missing
+timeline name, invalid syntax, so the *next* `solve()` call failed to parse (steps: 0) rather than genuinely
+having no plan, and the host correctly but uselessly escalated to the operator over a bug, not a real deadlock.
+Fixed: `post_state()` skips a slave with no owner name (its effect slave on the same timeline still carries the
+real post-state; the condition slave was never the post-state to report in the first place).
+
+**Method note.** All three were caught by one clean, complete offline pass (`run_offline_mission_b.sh` plus a
+handful of standalone `europa_plan` reproductions for the two solver-level bugs) before any live-sim time was
+spent -- consistent with F104's own method note that live time is for confirming a fix already verified offline,
+not for finding the bug in the first place. `run_offline.sh` (the skeleton regression) also needed an environment
+fix unrelated to Mission B: it never sourced `openral/install/setup.bash`, so `host.py`'s newer
+`openral_msgs.msg.PromptStamped` import (added for the operator-console mechanism after F102 was written) failed;
+caught by simply re-running the existing skeleton regression before trusting any new result, per the standing
+rule that a changed shared file gets its existing regression re-run, not assumed unaffected.
+
+**Live, first attempt, full success (2026-09-22).** `experiments/launch/lunar_base_d0/d0_europa_mission_b_check.py`
+(modelled on the PLEXIL live check script: starts `host.py` against the *real* boundary instead of
+`sim_boundary.py`, alongside `universalExec` running the same generic `ActivityDispatch.plx`) ran the identical
+9-step derivation live on the corrected-arm graph -- `arm_ready, navigate_to_feature, dock_at_feature, pick,
+navigate_to_feature, dock_at_feature, place, stow, navigate_to_pose` -- with no live-specific issues at all: every
+offline fix held on the first try. Evaluator `RESULT`: `{"oru_on": "pdu_1_shelf/shelf", "delivered": true,
+"success": true}`, 368 s sim time (PLEXIL's own live Mission B, F104, was 358 s), video recorded
+(`artifacts/runs/europa_mission_b_success_20260922`). This is the first time all three methods -- Ours (F92-F100),
+PLEXIL (F104), EUROPA→PLEXIL -- have completed Mission B covered on the current stack.
+
+A dedicated overlay panel (`experiments/video/europa_mission_video.py`, `europa_timeline_from_logs.py`,
+`sim_clock.py` factored out of `plexil_timeline_from_logs.py` for both to share) reads `host.py`'s own
+`events.jsonl` directly -- it already carries exactly the structure a viewer needs (each goal, each freshly
+*derived* plan, each dispatch/result) -- and renders two cards PLEXIL's panel has no equivalent of: **GOALS** (the
+mission's fixed outcomes) and **PLAN** (the solver's current derived activity list, replaced whole on every
+replan -- watching it go from a 7-step plan to a 1-step plan to a different 1-step plan is watching the planning
+happen). Caught one bug offline before rendering live footage: `plan` events serialize `activities` as JSON arrays
+(`[type, params]`), not objects -- `act["type"]` raised `TypeError`; fixed to `act[0]`, verified against a logic-only
+replay of the offline run's own `events.jsonl` before spending render time on the live video.
+
+## F106 — PLEXIL Mission A, both baselines: a dropped recovery, and one shared Nav2 flake both hit identically (2026-09-22)
+
+Both `domain/mission-a-model.nddl` (EUROPA) and the rewritten `MissionA_Covered.ple` (PLEXIL) were built and
+verified offline (F102-class domain derivation for EUROPA; `plexiltest` nominal-path regression for PLEXIL) before
+any live time, per the standing method note (F104, F105). Launched live in parallel, one graph per GPU
+(PLEXIL: domain 77/GPU0; EUROPA: domain 78/GPU1), both hit the identical failure on the identical leg:
+`navigate_to_pose(0,0,0)` (return to dock, the mission's last step, after PDU-2's fault was already genuinely
+cleared on both) returned Nav2 `STATUS_ABORTED` with no error code or message -- "typically an unreachable goal, an
+unpopulated/too-small costmap, or the controller failing to make progress". Two independently-implemented systems,
+sharing nothing but the capability boundary and the same graph class, failing on the same call is strong evidence
+this is a generic Nav2/environment flake, not a bug in either baseline's own logic -- consistent with the standing
+rule that a check reporting "uncertain"/"failed" is evidence for the model to reason about, not a defect to patch
+around on sight (`todo.md`: "a check that cannot certify is evidence, not a veto").
+
+**EUROPA needed no code change.** `host.py`'s existing replan-on-failure loop (`ATTEMPTS=3`, already built for
+exactly this, F102) reissued the identical goal; the second attempt solved and completed. This is the same
+recovery mechanism Mission B already exercised under an injected `pick` failure (F105) -- Mission A is not a new
+capability, just the first time a *live*, unforced failure happened to land on it.
+
+**PLEXIL did need a fix, but not a new one -- a restored one.** Rewriting `MissionA_Covered.ple` onto the shared
+`press` capability (this session, earlier) composed it from Mission B's reusable library (`DriveAndDock`,
+`StowAndReturn`) instead of duplicating logic. That library is explicitly documented "nominal path only -- no
+retry/back-off yet", because nobody had hit a live failure on that class of leg before. But the *old*, pre-rewrite
+Mission A plan had its own `DriveToUnit`/`DockAtPanel`/`ReturnToDock`, each wrapped in a `Try` (one retry) -- a
+predefined recovery its own header comment called out ("Predefined recovery: one retry of each base leg"). The
+rewrite, by switching to the shared library, silently dropped it. With no retry left, this run's PLEXIL plan
+finished `success: false`, the rover 15 m / 178 deg off the dock. execution_plan §5.2 requires "competent nominal
+logic and reasonable predefined recovery branches" in every PLEXIL plan; this was a real regression against that
+requirement, not a hypothetical one -- a live run demonstrated it.
+
+Fixed at the library level, not the plan: `plans/lib/DriveAndDock.ple`'s `Nav`/`Dock` and `plans/lib/
+StowAndReturn.ple`'s `Return` are now each `Try { PreCondition ok; Attempt1; Attempt2; }`, the identical shape the
+old plan used, gating on the same `InOut ok` idiom these libraries already thread through every call site (F101).
+Deliberately not touched: `Stow` (no evidence yet it needs retry) and PickItem/PlaceItem's legs (out of scope,
+`todo.md`'s separately-deferred "predefined recovery set" item). Benefits Mission B too, since the library is
+shared. Verified offline before spending more live time: the existing nominal-path regression passes unchanged for
+both missions (`plexiltest` -- the second attempt is structurally never reached when the first succeeds); a
+fail-injection script (`command-failed` on the first `navigate_to_pose`, success on the second) confirms `Return2`
+actually executes and the plan still finishes `ok: true`.
+
+**Both, re-run live, genuine success.** EUROPA's original run simply finished (no relaunch needed): `success: true`,
+dock error 0.23 m / -10.3 deg, video recorded (`artifacts/runs/europa_mission_a_success_20260922`). PLEXIL was
+relaunched fresh with the fix (the failed attempt's rover position is not a valid mission start state to resume
+from): `success: true`, dock error 0.18 m / -9.9 deg, 193 s sim time -- `navigate_to_pose` succeeded on the first
+attempt this time, consistent with a flake rather than a reliable repro (`artifacts/runs/
+plexil_mission_a_success_20260922`).
+
+**Panels.** EUROPA's (`europa_mission_video.py`) needed only its mini-map label table (`PLACES`) extended with
+`pdu_2_panel/press` -- cosmetic, generic to any future PDU mission. PLEXIL's (`plexil_mission_video.py`,
+`plexil_timeline_from_logs.py`) had its top-level plan-node list (`TOP`) hardcoded to Mission B's five names
+(`ToDepot, Pick, ToShelf, Place, Return`); with Mission A's own three (`ToUnit, Press, Return`) it recognized none
+of them and drew an empty graph. Parameterized as `--top` in both scripts (defaults to Mission B's list, so
+Mission B's own panel is unchanged) rather than hand-specialized for Mission A -- the same generic-improvement bar
+as the library retry fix above.
+
+**Method note.** The PLEXIL fix restores a recovery mechanism the *original author of Mission A* had already
+judged necessary, at the shared-library level rather than as a Mission-A-specific patch -- structurally the same
+class of fix as F104's adapter bug (a shared-infrastructure defect affecting the method generically, found and
+fixed from a real live failure, not tuned preemptively). It is not "hand-strengthening the baseline to make it
+pass this scenario": the retry is not conditioned on Mission A, PDU-2, or this failure's specifics, and it did
+not touch EUROPA at all, whose own equivalent mechanism (replanning) already existed and needed nothing.
+
+## F107 — Evaluation infra exercised against six real corrected-arm runs: five real bugs, all pre-existing (2026-09-22)
+
+F103 built the evaluation/manifest infrastructure and exercised it against 5 development runs only, flagging
+that as a real limitation ("development numbers are not results" -- the mechanism was proven, not the numbers).
+This pass ran the actual pipeline (`evaluation/rows.py`, `evaluation/baselines/`,
+`openral_ext/run_manifest/backfill.py`, `evaluation/tables.py`, `evaluation/scenario_schema.py`) against the six
+genuine covered-instance successes this session produced (Ours/PLEXIL/EUROPA->PLEXIL x Mission A/B, F92-F100,
+F104-F106) -- the first time any of it has touched a real campaign-shaped run, not a fixture or a dev smoke test.
+No new live-sim time: every fix here was found and verified reading already-recorded run directories.
+
+**1. `rows.py`'s `scenario_id` was synthesized, not matched.** `_match_scenario_id` built strings like
+`f"{family}/{coverage}/{scenario}"` from the MISSION verdict's raw `scenario` field (e.g. `"mission_a/covered/
+covered"`) -- never a real manifest id (`"mission_a/covered/a1_pdu_reset"`). Every one of the six rows had a
+`scenario_id` that matched nothing under `experiments/scenarios/`. Fixed: resolve against the real manifests
+(`evaluation.scenario_schema.iter_manifests`), matched on `mission_family` plus the run's actual
+`env.scenario`/`env.scenery` values (the latter read from `scene_run.yaml`, needed because `b4_route_block`'s
+manifest reuses `env.scenario: covered` -- distinguished from `b1_deliver_oru` only by a scenery override, a
+real ambiguity this exposed, not yet a real conflict since `b4` has never been run). Zero or multiple matches
+still return `None`, honestly, rather than guessing.
+
+**2. `rows.py`'s `trace_complete` didn't know about read-only queries.** `_NON_CAPABILITY_TOOLS` excluded
+`decompose_mission`/`set_task_status`/`report_to_operator`/`request_operator` by name but not `CONTRACTS
+["queries"]` (`site_map`, `arm_state`, `observe`, ...) -- which `agent.py`'s own `dispatch()` also returns from
+before ever reaching `guard.check()`. A query call reads as an incomplete trace whenever it happens to be the
+last `tool_proposed` event of its kind with no later, unrelated `guard_decision` to accidentally satisfy the
+check -- exactly what happened on the real Mission A run (`arm_state`, the mission's own last verification step).
+Fixed: excluded set now includes `CONTRACTS["queries"]` directly, matching `dispatch()`'s own branch condition
+instead of a hand-maintained partial list.
+
+**3. `plexil_normalize.py` was never run against a real PLEXIL run before** (its own prior docstring said so).
+Two bugs only a real run's *combination* of files could surface:
+  - `check.log`'s `STEP` lines all carry the identical `t`: `d0_plexil_mission_a_check.py` writes every one in
+    a single post-hoc loop over `capability_server.log`, *after* `universalExec` has already exited -- not each
+    capability's own completion time. `normalize_plexil_check_log` no longer reads them.
+  - `normalize_capability_server_log` discarded the log line's own real epoch prefix and stamped `t=float(seq)`
+    -- a placeholder nobody had reason to suspect until compared against real node-trace timestamps sitting
+    right next to it. Fixed to parse the real `[INFO] [<epoch>] ...` prefix (`evaluation/violations.py`'s own
+    regex, reused). With both fixed, `capability_server.log` (now real epoch) and `plexil_node_trace.log`
+    (already real epoch) sort together correctly; `PLAN`/`EXEC` keep `check.log`'s own wall-since-script-start
+    clock, needing no cross-timebase alignment since they structurally bracket the mission (nothing precedes
+    `PLAN`, nothing follows `EXEC`).
+
+**4. The EUROPA trace-normalizer schema slot, filled.** `common_schema.py`'s `token_id` field and
+`method="europa_plexil"` existed but nothing populated them ("no EUROPA baseline exists yet" -- one does now).
+`evaluation/baselines/europa_normalize.py` (new) reads `host.py`'s own `events.jsonl` directly -- already
+real-epoch-stamped, no reconstruction needed, unlike PLEXIL's logs. `token_id` is `"LunarBot.<action>"`, the
+NDDL action name a `plan` event's own `activities` list carries (the closest EUROPA analogue to PLEXIL's
+`plan_node_id`, itself a name and not a unique instance id either). Exercised against both real EUROPA runs;
+correctly reproduces Mission A's diagnosed retry sequence (F106) as `execution_finished(success=False)` ->
+`plan_started` (replan) -> `execution_started` -> `execution_finished(success=True)`, in order.
+
+**5. `backfill.py`'s `_detect_method` never recognized EUROPA runs at all** -- it checked for `"ours"` (a
+`run_dir/ours` directory) or `"plexil"` (a `check.log` substring) and fell back to `"generic_openral"` for
+everything else, including every real EUROPA run. Fixed: added the equivalent `check.log` substring check
+(`'"host": "EUROPA'`, the same convention `d0_europa_mission_a_check.py`'s own `PLAN` line already uses as
+PLEXIL's does). Also: `europa_revision` and `trace_locations.europa_events` were hardcoded `None`/absent
+("EUROPA baseline not built yet") -- both now resolve for real (`EUROPA_HOME`'s own git commit;
+`events.jsonl` at the run root, not under `ours/`).
+
+**Also found, not a code bug: two scenario manifests were stale.** `b1_deliver_oru.yaml`'s (covered, run three
+times this session, all methods) `required_capabilities` listed `grasp`/`place`/`release` -- the *primitives*
+`pick`/`place` were later consolidated from, the same historical pattern as Mission A's old `press`
+(F106-adjacent). Every real trace (Ours, PLEXIL's `PickItem.ple`, EUROPA's `dispatch`) uses `pick`, never a bare
+`grasp`. Fixed `b1`, and propagated the identical fix to `b2`/`b3`/`b4` (held-out, all three explicitly declared
+themselves "same set as B1" in their own comments -- not a speculative held-out change, a confirmed generic
+naming fix these three had already opted into by citing B1). `a2_cover_obstruction`'s own `grasp`/`release` for
+a *different* object (a cover, not an ORU) was left alone -- no real run exists to confirm or deny it, and a
+cover plausibly does need the raw primitives rather than `pick`/`place`'s "catalogued lifting interface"
+contract; not touched without evidence.
+
+**Confirmed working, not just assumed:** all 7 scenario manifests and 5 certificates still parse cleanly
+(`evaluation.scenario_schema`) against the current, post-scene-rebuild stack; every manifest's
+`required_capabilities` (after the fix above) names real `contracts.yaml` capabilities; every `scene_config`
+path and `task_variant` name resolves to a real file / real SRB task registration; `evaluation/tables.py`'s
+`success_rate_table`/`violation_table` run end to end against the six real rows with no crash, correctly
+stratify by (method, coverage), and correctly report `evaluator-covered: 0` for every group (the recorder was
+never attached to any of these six runs -- a known, already-tracked gap, not a new one; `None`-per-class flows
+through to a `0` total honestly labelled as "not comparable to n", never a fabricated "no violations").
+
+**Not exercisable tonight, confirmed why.** `experiments/operator_console/console.py` and
+`experiments/evaluator_recorder/recorder.py` are both live-only rclpy nodes (subscribe real ROS topics) --
+neither has any post-hoc mode, and none of the six runs had either attached (no `operator/`/`evaluator/`
+directory in any of them). Confirmed both still write to exactly the paths `rows.py`/`violations.py` expect
+(`<run_dir>/operator/events.jsonl`, `<run_dir>/evaluator/events.jsonl`) and both import cleanly. Wiring either
+into a method's launch script needs a live run and is tracked separately (`todo.md`, "Now -- small
+follow-ups") -- out of tonight's scope (validating existing infra against existing runs, not spending new live
+time).
+
+**Method note.** Every fix here was found by literally running the tool against real data and checking the
+output made sense (a scenario_id that matches no file, a trace flagged incomplete with no incomplete step, a
+timestamp field with epoch-scale numbers next to wall-since-start ones) -- not by reading the code and guessing
+where it might be wrong. Consistent with F104/F105/F106's own method note: real data finds real bugs that a
+synthetic fixture, however careful, does not think to construct.
+
+## F108 -- The held-out ladder's site: one physics, four scenarios, and a shutter the VLM read as fins (2026-09-23)
+
+Implements `docs/heldout_design.md` steps 2-5 (branch `feat/heldout-ladder`, research repo + SRB).
+
+**1. One site model, scenarios as initial conditions only.** `srb/tasks/mobile_manipulation/lunar_base/site.py` holds
+the power field's physics for every Mission A/B scenario: a breaker trips with a cause and a press on its panel resets
+it; a running unit whose radiator shutter is drawn trips OVERTEMP after `retrip_delay_s` (opening it in time cancels
+that); one running on an unserviceable ORU trips ORU_SELFTEST_FAIL after its 3 s self-test; one whose bay is empty trips
+ORU_MISSING at once. A scenario only says which breaker starts tripped and why, which shutters are drawn, which ORUs
+are unserviceable, where objects stand and what the inventory record says. So `heldout_radiator_cover`,
+`heldout_module_failure`, `heldout_cannibalize` and the covered cases differ in state, never in rules -- a reset "not
+holding" is the model, not a scripted outcome. The units' own telemetry (`env0/power_telemetry`) and mission
+control's inventory record (latched `env0/inventory_record`) reach every method through the boundary
+(`power_status`, `manifest.inventory`); `mission_state` stays evaluator-only.
+
+**2. Assets built for the verified action forms.** ORU bays are the spares shelf's tray (same authored geometry,
+same 1.25 stretch, same place point), so an installed ORU is picked and placed the way a spare on a shelf already is;
+the robot's own IK gives every bay a legal stand (1.10-1.115 m) and every radiator cover button one (1.06-1.075 m),
+against the shelf's 1.08-1.11 m (`site_check_2`, `work_stands`). The drawn shutter is a visual-only prop part (no
+collider) the task shows or hides; the cover actuator is a dummy mushroom button of the panel's own catalogued shape.
+Every ORU carries a Data Matrix + S/N label (NASA-STD-6002) from the start, for Experiment II's scanner.
+
+**3. Look first: the closed shutter was misread.** From the radiator view pose the VLM called the drawn shutter
+"exposed ... horizontal white fins" (`site_check_2`): a light-grey shutter with slat seams, lit by a 12 deg sun,
+looks like a fin panel. The picture, not the answer, showed it. Recoloured charcoal, seams removed: `site_check_3`
+reads the drawn shutter as drawn ("solid, flat grey surface, no white fins") and the open one as open ("vertical
+white fins ... shutter housing at the top").
+
+**4. Authority by what a call acts on.** Ours' guard gains one generic rule class, `target_authority`: removing an item
+from a site point whose survey role is `equipment_bay` while that unit reports `energized` needs an operator approval
+of (capability, target) -- 14 CFR 1214.403's authorization-before-removal, not a mission step. The harness reads the
+units' telemetry fresh before deciding, records `approval_pending`, carries the held calls on `request_operator`, and
+records `approval_granted` from the console's structured reply.
+
+**5. The Earth link from SPICE.** `space_context/earth_visibility.py` computes Earth's elevation at the scene's own
+site (LOLA Site01, 89.455 S 213.64 E; DE440, MOON_ME) and places the mission epoch 45 min before an Earth-set
+(2028-10-11T00:49Z; next rise 13.5 days later; one-way delay 4.27 s = 1.27 s light time + 3 s ground latency) -- the
+same for every scenario, so the window closes in every run and matters only to a method that needs mission control
+after it. The console sits behind it (store-and-forward: a request while Earth is down gets a link "queued" status,
+not an answer). Assumptions stated in the file: Direct-with-Earth only, flat 0 deg horizon.
+
+**6. Baselines made competent on the covered brief.** PLEXIL Mission A now identifies the tripped unit from telemetry
+(new typed adapter Lookup `PowerUnit(unit, field)`), presses, verifies, presses once more, and verifies again at the dock,
+escalating with `RequestOperator` otherwise; a SkipCondition on live state was the wrong construct (it is watched while
+a node waits, so the final check was skipped the moment the reset first took) -- replaced by `if/endif` evaluated when
+the node runs; offline-verified nominal and re-trip (`scripts/MissionA_Covered_{nominal,retrip}.pst`). EUROPA
+(`--power-field`) takes faulted units and restore goals from telemetry, verifies every restore by reading the unit,
+holds restore goals to the horizon and counts a restore that relapses as a failure, so a reset that does not hold
+ends in the operator after 3 relapses instead of pressing forever (offline: nominal pdu_3, no-hold pdu_2, Mission B
+regression). Both now pass the catalogue's item name to pick/place, as the contract says.
+
+## F109 -- The base-wide scene, the protocol and the evaluator, built and run once each (2026-09-23)
+
+`docs/heldout_design.md` §10 steps 1-4 (branches `feat/heldout-ladder` in the research repo, SRB and openral).
+
+**1. Scene.** Two more serviced units with the PDUs' own service interface -- the battery storage unit `bess` (power
+field east, its bay module in the ISS BCDU role) and the ISRU yard's `isru_pdu` -- a landing-pad offload stand, a habitat
+logistics stand and a depot return stand (one-slot `receiving_stand`), ORU-0272/0285, a consumables container and a
+return container (the crate's texture tinted blue / orange, own Data Matrix labels), road spurs; the AMCL map
+re-surveyed with the rover's own lidar (504 poses). The site model generalises from three PDUs to a unit list; every
+unit reports load and criticality (Lewis et al. 2022 load shedding). Live (`site_check_4/5`): every bay, cover button
+and panel of all five units and every stand slot has a legal stand from the robot's own IK (bays 1.10-1.115 m,
+buttons/panels 1.06-1.075 m, stand slots 1.05-1.11 m); the VLM reads the BESS shutter drawn, the ISRU shutter open,
+the BESS lamp red and the ISRU lamp green.
+
+**2. Three defects the first attached runs showed, none of them new.** (a) Nav2's global costmap was a 60 m rolling
+window: from the ISRU yard the battery unit (~60 m) was "off the global costmap. Planning will always fail to this
+goal" -- now 200 m at 0.1 m (LunarBot's robot.yaml / nav2_lunar_bot.yaml; the last metre is docked by the base servo,
+not planned). (b) The evaluator's class 1 read SRB's undesired-contact penalty over the whole fused articulation,
+wheels included: on from the third second of a run in which the rover had not moved (the recorder had never been
+attached before) -- wheels now excluded. (c) Mission A resolved the reported unit in `__post_init__`, before command-line
+overrides: a BESS fault was briefed as "PDU-2" -- now resolved when asked.
+
+**3. Protocol and interaction.** The console (§8) runs with every `run_d0.sh` graph: 300 s decision time, flight-rule
+grants (offline: PDU-3 granted, PDU-2 denied DENY-CRITICAL-DONOR), HOLD for other requests, SPICE link gate. Ours'
+`request_operator` is asynchronous now (`wait_for_mission_control` to hold); a blocking request would have made the
+waiting time unusable and the idle-waiting measure meaningless. `evaluation/interaction.py` computes the §8 measures
+from the console log and the boundary's call windows (now logged in mission time); class 5 (removal from an energized
+unit without approval) added to `evaluation/violations.py`; checked on a synthetic L4 run (removal at 300 s before a
+grant at 454 s -> 1) and on `site_check_4`.
+
+**4. Open.** Nav2 did not converge on the BESS radiator view pose after the 60 m leg from the ISRU yard: it stopped
+0.39 m short (goal tolerance 0.25 m), "Failed to make progress", recoveries "Pose Goes Off Grid", 300 s deadline. The
+same clearance (2.3 m to the nearest mapped structure) at the BESS panel view converged at once. One occurrence; fix
+when a mission run meets it (the observation from where it stopped was still correct).
+
+## F110 -- Each serviced unit gets its own equipment; Nav2's global costmap goes back to the surveyed map (2026-09-23)
+
+Review of F109 (user): the BESS and ISRU units reused the PDU's panel, shelf, bay and radiator props -- the base still
+looked like five PDUs, which defeats the point of the expansion; and widening Nav2's rolling global costmap to 200 m by
+coarsening it to 0.1 m lowered navigation precision for no reason, since the rover localizes with AMCL on a prebuilt
+surveyed map (not SLAM) -- the whole site is already a static map.
+
+**Equipment.** Collected assets first, Blender only for the interactive parts. BESS: the battery storage container,
+a BMS enclosure (`power_box_01`) with an authored graphite control plate (teal border, green reset button, LED bar,
+status lamp), an HV battery-module cradle holding BAT-0101 (`scifi_power_battery` with a top handle; spare BAT-0102 on
+the depot spares stand) and a free-standing HVAC condenser (fans, roll-up shutter, blue actuator button) whose drawn
+shutter is L2-A at this unit. ISRU plant: the tank skid turned so its service side faces the sun, a plant controller
+(`utility_box_02`) with an authored white control plate (orange border, red button, gauge), a filter-cartridge cradle
+(FLT-0201; spare FLT-0202 on its receiving stand) and a power-ORU cradle (ORU-0285, the far L4 donor), an O2 bottle
+rack. The action forms are unchanged (press a button; pick/place a top-handled module on a horizontal tray). The
+units, their panels, shutters and bays are data (layout.yaml `units` -> interaction.json, every site point tagged with
+its `unit`): `site.py` has no unit list; the self-test reports the module's own code (`ORU_SELFTEST_FAIL`,
+`BATTERY_MODULE_FAULT`, `FILTER_CLOGGED`; empty bay `MODULE_MISSING`); telemetry lists the installed serial per bay;
+guard, console and evaluator class 5 key on the unit and the bay granted. L3 at the ISRU plant has a real precedent in
+an oxygen generator: the ISS OGS recirculation-loop filters clogged and were replaced on orbit (NTRS 20110023212).
+
+**Nav2.** The global costmap is the static surveyed map (static layer, `rolling_window: false`) at the map's own
+0.05 m; the local costmap stays rolling. The map was re-surveyed for the new equipment.
+
+**What the acceptance runs found.** (a) `site_check_6`: the BESS battery cradle had no legal stand -- the collected
+battery module is 0.262 m tall, its handle 0.862 m above ground, below what the arm reaches from the nearest stand
+the cradle's hull clearance allows (1.10 m). Stretched 1.40 in height (0.367 m, the ORU's), its handle is at the
+ORU's 0.967 m and `site_check_7` lists the stand at 1.10 m. `site_check_6` itself died on a carb mutex assertion in
+Isaac ("unlock() called by non-owning thread") mid-drive -- the same abort is in four old runs (g9n, g9p, ga5, ga7):
+intermittent, not this change. (b) `site_check_7`: the ISRU lamp (green) was read "red": the new plant panel's reset
+cap was red under the green lamp. Reset caps are now white (BMS) / black (ISRU plant) -- IEC 60204-1 §10.2.1 gives
+reset white, grey, black or blue -- and the BMS state-of-charge LEDs white, so red and green appear only on lamps.
+(c) The F109 "0.39 m short" is not localization: the goal's last 0.39 m was sideways and the capability server's
+drive limits (219d07e) set the velocity smoother to a hand-copied [0.5, **0.0**, 2.0] m/s with 2.5 m/s^2 -- no crab
+at all, a turn rate four times the kernel's 0.47 rad/s, and ten times the robot's traction-limited 0.25 m/s^2
+braking -- the moment any base move started. MPPI planned the crab, the smoother zeroed it, the progress checker
+aborted. The free limits are now the smoother's own launch values (robot.yaml), read once before the first change;
+carrying keeps the crab at the carry speed with the same acceleration share as the straight line.
+(d) `site_check_8` (crab restored): every view reached, no "Failed to make progress" (14 in `site_check_7`); the BESS
+view in 86 s sim instead of an abort at 279 s. The ISRU lamp (green) was now read "white": from 3.5 m the panel is
+~30 px and a round white pressure dial sat just under the lamp. The dial is now a dark rectangular readout and the
+ISRU view aims nearer the panel (skid-local -1.2 m instead of -0.5). (e) Review (user): the BESS container stood on
+the source model's plinth, an open two-walled shell that read as the unit floating. Cropped away (source z >= 19;
+the container body has its own closed floor), the unit stands on the graded pad at 1.99 m high, same footprint -- the
+AMCL map is unchanged. (f) The global costmap was never static on the lunar base: the rolling window is the shared
+OpenRAL SLAM-from-scratch setup (panda_mobile), only widened to 60 m in F50; live lidar obstacles stay in both
+costmaps (global `obstacle_layer`, local 3 m rolling `voxel_layer`).
+(g) `site_check_9`: BESS lamp red, HVAC shutter drawn, all views reached; the ISRU answer was "cannot be seen
+clearly" -- right to say so: the front camera (focal 5 mm over a 12 mm aperture, fx 267 px at 640) puts the 0.068 m
+lamp at ~5 px from 3.5 m, enough for a red lamp on a graphite plate, not for a green one on a white plate. The ISRU
+view is now at the panel from 2.0 m (~9 px).
+(h) `site_check_10` (final acceptance): 24/24 work-stand queries answered (every panel, shutter button, bay and
+stand slot of the five units); BESS lamp red, BESS HVAC shutter drawn, ISRU lamp green "at the top centre of the
+control panel" -- all right; every view reached first time, no "Failed to make progress", no crash.
