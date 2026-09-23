@@ -56,15 +56,15 @@ JAW_HOLD = (HOST_CONFIG["jaw_holding_min_rad"], HOST_CONFIG["jaw_holding_max_rad
 # outside the NDDL domain on purpose (domain/mission-b-model.nddl's own comment on pick/place).
 ITEM_DESCRIPTIONS = {
     "spare_oru": {
+        "catalogue_item": "orbital replacement unit (ORU)",  # what the capability contracts call it (equipment catalogue)
         "target": "the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand",
         "part": "the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)",
         "release_constraint": "below_overhang",
     },
 }
 # Mission A's serviced unit: same status as ITEM_DESCRIPTIONS, mission-instance authoring, not domain reasoning.
-UNIT_DESCRIPTIONS = {
-    "pdu_2": {"target": "the round red push button set into the yellow sub-panel"},
-}
+# every PDU's service panel carries the same reset button (site survey), so the description is the same for each unit
+UNIT_DESCRIPTIONS = {u: {"target": "the round red push button set into the yellow sub-panel"} for u in ("pdu_1", "pdu_2", "pdu_3")}
 
 
 def ident(name):
@@ -192,7 +192,7 @@ def facts_from_result(state, cap, args, res, site):
     return state, False
 
 
-def initial_state(pose, arm, site, items_at, units):
+def initial_state(pose, arm, site, items_at, units, faulted):
     at_dock = math.dist((pose["x"], pose["y"]), (site["dock"]["x"], site["dock"]["y"])) < 0.6
     state = {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}]}
     if arm is not None:
@@ -201,8 +201,15 @@ def initial_state(pose, arm, site, items_at, units):
     for item, support in items_at.items():
         state[f"{ident(item)}.loc"] = ["On", {"support": ident(support)}]
     for unit in units:
-        state[f"{ident(unit)}.panel"] = ["Faulted", {}]  # the mission's own report: this unit is the faulted one
+        state[f"{ident(unit)}.panel"] = ["Faulted" if unit in faulted else "Restored", {}]
     return state
+
+
+def panels_from_telemetry(state, units, telemetry):
+    """The serviced units' panel facts as their own telemetry reports them (breaker tripped -> Faulted): the host
+    verifies a restore by reading the unit, not by trusting the plan's post-state."""
+    return {**state, **{f"{ident(u)}.panel": ["Faulted" if telemetry["units"][u]["breaker"] == "tripped" else "Restored", {}]
+                        for u in units}}
 
 
 def parse_goal(token, item_names, unit_names, loc):
@@ -238,7 +245,8 @@ class Link:
     def dispatch(self, cap, args):
         assert self.recv() == "NEXT"
         self.send(cap)
-        self.send(json.dumps(args))
+        # the domain names an item by its object id; the capability contract by its equipment-catalogue name
+        self.send(json.dumps({**args, "item": ITEM_DESCRIPTIONS[args["item"]]["catalogue_item"]} if "item" in args else args))
         assert self.recv() == "RESULT"
         raw = self.recv()
         self.send("OK")
@@ -280,6 +288,10 @@ def main():
     ap.add_argument("--model", default=str(HERE / "domain/skeleton-model.nddl"))
     ap.add_argument("--item", action="append", default=[], help="NAME:SUPPORT_FEATURE, the item's starting place")
     ap.add_argument("--unit", action="append", default=[], help="NAME:BUTTON_FEATURE, a serviced unit that starts faulted")
+    ap.add_argument("--power-field", action="store_true",
+                    help="the serviced units are the site's power distribution units: which one is faulted comes from their "
+                         "own telemetry (power_status), every tripped one is to be restored first, and every restore is "
+                         "verified by reading the unit again")
     ap.add_argument("--goal", action="append", default=[], help="a location/item-destination/unit-restored/posture to reach, in order")
     ap.add_argument("--final", help="the goal (of the same kinds as --goal) the run ends at")
     ap.add_argument("--port", type=int, default=47810)
@@ -310,20 +322,47 @@ def main():
         return answer.strip().lower() == "continue"
 
     site = query(node, client, "site_map")
+    faulted = set(units)
+    if a.power_field:
+        telemetry = query(node, client, "power_status")
+        units = {u: f"{u}_panel/press" for u in telemetry["units"]}
+        faulted = {u for u, t in telemetry["units"].items() if t["breaker"] == "tripped"}
+        a.goal = [f"{u}@restored" for u in sorted(faulted)] + a.goal
     site_lines, names = instance(site, items_at, units)
     loc = {v: k for k, v in names.items()}
     item_names, unit_names = set(items_at), set(units)
-    goals = [parse_goal(g, item_names, unit_names, loc) + (False,) for g in a.goal]
+    # a restored unit must still be restored at the end: under --power-field those goals are held to the horizon
+    goals = [parse_goal(g, item_names, unit_names, loc) + (a.power_field and g.endswith("@restored"),) for g in a.goal]
     if a.final:
         goals.append(parse_goal(a.final, item_names, unit_names, loc) + (True,))
     # the skeleton domain's LunarBot has no posture/jaws timeline at all -- only query and carry that state when
     # there is an item/unit to track, which is also exactly when a fuller domain (arm, jaws, ...) is in use
     arm = query(node, client, "arm_state") if (items_at or units) else None
-    state = initial_state(query(node, client, "base_pose"), arm, site, items_at, units)
+    state = initial_state(query(node, client, "base_pose"), arm, site, items_at, units, faulted)
     log("mission", goals=goals, state=state)
     link = Link(a.port)
-    failures, n_plan = {}, 0
+    failures, n_plan, reached = {}, 0, set()
     while True:
+        if a.power_field:
+            state = panels_from_telemetry(state, units, query(node, client, "power_status"))
+        # a unit restore that was reached and no longer holds (read from the unit's telemetry) is a failure of the
+        # activities that reached it; the rover leaving the dock or unfolding the arm on the way is not
+        for g in goals:
+            if not g[0].endswith(".panel"):
+                continue
+            key = json.dumps(g[:3])
+            if state.get(g[0]) == [g[1], g[2]]:
+                reached.add(key)
+            elif key in reached:
+                reached.discard(key)
+                failures[key] = failures.get(key, 0) + 1
+        if any(v >= ATTEMPTS for v in failures.values()):
+            log("no_plan", reason="attempts exhausted", failures=failures)
+            if needs_operator(f"Repeated failures, no plan around them: {failures}. "
+                              "Reply 'continue' to retry, anything else to abort."):
+                failures = {}
+                continue
+            break
         if all(state.get(g[0]) == [g[1], g[2]] for g in goals):
             log("done", state=state)
             break
@@ -334,7 +373,7 @@ def main():
         # while any single goal alone -- including each one of the same two -- solves cleanly. The goal *sequence*
         # semantics do not change: each solve still finds its own minimal path to the next unmet goal from
         # wherever the previous one left off, which is what the chain meant in the first place.
-        plan = solve(model, problem(model, site_lines, state, goals[:1]), run_dir, n_plan)
+        plan = solve(model, problem(model, site_lines, state, [next(g for g in goals if state.get(g[0]) != [g[1], g[2]])]), run_dir, n_plan)
         log("plan", n=n_plan, solved=plan["solved"], steps=plan["steps"],
             activities=[(x["type"], x["params"]) for x in plan["activities"]])
         if not plan["solved"]:
@@ -351,6 +390,11 @@ def main():
                 state, as_planned = {**state, **post_state(act)}, True
             else:
                 state, as_planned = facts_from_result(state, cap, args, res, site)
+            if a.power_field:
+                read = panels_from_telemetry(state, units, query(node, client, "power_status"))
+                as_planned = as_planned and read == state
+                state = read
+            reached |= {json.dumps(g[:3]) for g in goals if state.get(g[0]) == [g[1], g[2]]}
             # an intermediate goal, once reached, leaves the goal set; the final one must hold at the horizon
             while goals and not goals[0][3] and state.get(goals[0][0]) == [goals[0][1], goals[0][2]]:
                 goals.pop(0)
@@ -360,12 +404,6 @@ def main():
                 key = json.dumps([cap, args], sort_keys=True)
                 failures[key] = failures.get(key, 0) + 1
                 break
-        if any(v >= ATTEMPTS for v in failures.values()):
-            log("no_plan", reason="attempts exhausted", failures=failures)
-            if needs_operator(f"Repeated failures, no plan around them: {failures}. "
-                              "Reply 'continue' to retry, anything else to abort."):
-                continue
-            break
     link.finish()
 
 

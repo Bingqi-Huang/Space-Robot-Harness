@@ -16,7 +16,7 @@ def _j(v) -> str:
     return json.dumps(v, separators=(",", ":"))
 
 
-def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = None) -> str:
+def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = None, authority_rules: list[dict] | None = None) -> str:
     f = facts
     out = [f"## MISSION (from mission control)\n{f['mission']['text']}",
            f"## STEP\n{step} of the mission step budget {max_steps}"]
@@ -65,7 +65,11 @@ def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = N
     status = [f"unavailable capabilities: {_j(f['unavailable']) if f['unavailable'] else 'none'}",
               f"active faults: {_j({k: v for k, v in f['fdir'].items() if v['active']}) or 'none'}",
               "authority: " + ", ".join(sorted({c['authority_class'] for c in CONTRACTS['effects'].values()})) + " operations are autonomous"
-              + (f"; operator approvals on record: {_j(f['approvals'])}" if f["approvals"] else "")]
+              + "".join(f"; except {r['name']}: {', '.join(r['applies_to'])} on a {r['target_role']} whose unit reports "
+                        f"{_j(r['when_unit'])} is {r['outcome']} ({r['why']})" for r in authority_rules or [])
+              + (f"; operator approvals on record: {_j(f['approvals'])}" if f["approvals"] else "")
+              + (f"; held for mission control's approval (send request_operator; the request carries these): "
+                 f"{_j([{k: p[k] for k in ('capability', 'target')} for p in f['pending_approvals']])}" if f["pending_approvals"] else "")]
     out.append("## OPERATING STATUS\n" + "\n".join(status))
     ledger = f["ledger"]
     if ledger:
@@ -88,9 +92,9 @@ def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = N
 class HarnessRenderer(ContextRenderer):
     """OpenRAL's renderer slot filled with the harness context (ReasonerCore calls `render` each tick)."""
 
-    def __init__(self, store, max_steps: int):
+    def __init__(self, store, max_steps: int, authority_rules: list[dict]):
         super().__init__()
-        self.store, self.max_steps, self.step = store, max_steps, 0
+        self.store, self.max_steps, self.step, self.authority_rules = store, max_steps, 0, authority_rules
 
     def render(self, *, world_state=None) -> str:
-        return render(self.store.facts, self.step, self.max_steps, self.store.events)
+        return render(self.store.facts, self.step, self.max_steps, self.store.events, self.authority_rules)

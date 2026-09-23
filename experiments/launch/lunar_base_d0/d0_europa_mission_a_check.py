@@ -23,13 +23,12 @@ env = dict(os.environ, PLEXIL_HOME=str(PLEXIL_HOME),
 assert (EUROPA_DIR / "plexil/plans/ActivityDispatch.plx").exists(), "compile ActivityDispatch.ple first (plexilc)"
 
 log("PLAN", host="EUROPA host.py", model="mission-a-model.nddl",
-    goals=["pdu_2@restored", "stowed", "final:dock"])
+    goals=["<tripped units from telemetry>@restored", "stowed", "final:dock"])
 t0, sim0 = time.time(), sim["t"]
 D0_LOG = Path(os.environ["D0_LOG"])
 host_proc = subprocess.Popen([sys.executable, str(EUROPA_DIR / "host.py"), "--run-dir", str(D0_LOG),
                               "--model", str(EUROPA_DIR / "domain/mission-a-model.nddl"),
-                              "--unit", "pdu_2:pdu_2_panel/press",
-                              "--goal", "pdu_2@restored", "--goal", "stowed", "--final", "dock"],
+                              "--power-field", "--goal", "stowed", "--final", "dock"],
                              cwd=EUROPA_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 host_out = []
 threading.Thread(target=lambda: host_out.extend(l.rstrip() for l in host_proc.stdout), daemon=True).start()

@@ -168,3 +168,12 @@ panel. Full account: F106, `docs/research_findings.md`.
 - Predefined recovery beyond replan-on-failure, same status as PLEXIL's (above).
 - `mission-a-model.nddl` and `mission-b-model.nddl` duplicate their shared timelines/rules; consolidate before the
   artifact freeze.
+
+## Competent covered procedure (2026-09-23; F108, heldout_design §7)
+
+`host.py --power-field` (Mission A): the serviced units are the site's three PDUs; which are faulted comes from their
+own telemetry, each tripped one gets a restore goal held to the horizon, and every panel fact is re-read from
+telemetry after each activity and before each goal check -- a press that "succeeded" on a unit still reading tripped
+is off-plan and replanned; a restore that relapses counts as a failure, and 3 of them hand the run to the operator
+(`sim_boundary.py --tripped UNIT [--no-hold]` for offline checks). The capability call gets the catalogue item name;
+the domain keeps its object ids. Offline: nominal (pdu_3), no-hold (pdu_2 -> operator after 3), Mission B regression.

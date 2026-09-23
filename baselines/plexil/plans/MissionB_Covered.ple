@@ -27,7 +27,7 @@ Command pprint(...);
 
 MissionB_Covered: Sequence
 {
-  String Item = "spare_oru";
+  String Item = "orbital replacement unit (ORU)";  // the equipment-catalogue name the capability contracts use
   String OruTarget = "the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand";
   String OruPart = "the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)";
   Boolean ok = true;

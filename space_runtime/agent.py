@@ -97,7 +97,7 @@ class Agent:
                                         timeout_s=rc["timeout_s"], thinking=rc["thinking"])
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())
-        self.renderer = HarnessRenderer(self.store, self.max_steps)
+        self.renderer = HarnessRenderer(self.store, self.max_steps, self.guard.target_authority)
         self.palette = ToolPalette(execute_rskill_ids=frozenset([*(k for k, c in CONTRACTS["effects"].items() if not c.get("engineering")),
                                                                  *(k for k, c in CONTRACTS["queries"].items() if not c.get("engineering")),
                                                                  SET_TASK_STATUS, DECOMPOSE]))
@@ -167,7 +167,7 @@ class Agent:
             meta = json.loads(msg.metadata_json or "{}")
             if meta.get("request_id") == request_id:
                 return {"text": msg.text, "authority_level": meta.get("authority_level"),
-                        "interaction_id": meta.get("interaction_id"),
+                        "interaction_id": meta.get("interaction_id"), "grants": meta.get("grants", []),
                         "start_wall_t": meta.get("start_wall_t"), "end_wall_t": meta.get("end_wall_t")}
 
     def dispatch(self, call) -> None:
@@ -179,10 +179,18 @@ class Agent:
                 self.event("operator_report", text=call.text)  # sets facts["terminal"]: the run ends here
                 return
             request_id = uuid.uuid4().hex[:12]
-            self.request_pub.publish(PromptStamped(text=call.text, metadata_json=json.dumps({"request_id": request_id})))
-            self.event("operator_request_sent", request_id=request_id, text=call.text)
-            self.event("operator_answered", request_id=request_id, **self.wait_for_operator_reply(request_id))
-            return  # neither event kind is in facts.py's reducer: the run is not terminal, the next step continues
+            # the calls the guard is holding for approval travel with the request as structured fields: mission control
+            # answers in words, and grants (or not) exactly those (capability, target) pairs
+            pending = [{"capability": p["capability"], "target": p["target"], "reason": p["reason"]}
+                       for p in self.store.facts["pending_approvals"]]
+            self.request_pub.publish(PromptStamped(text=call.text, metadata_json=json.dumps(
+                {"request_id": request_id, "pending_approvals": pending})))
+            self.event("operator_request_sent", request_id=request_id, text=call.text, pending_approvals=pending)
+            reply = self.wait_for_operator_reply(request_id)
+            self.event("operator_answered", request_id=request_id, **reply)
+            for g in reply["grants"]:
+                self.event("approval_granted", capability=g["capability"], target=g["target"], request_id=request_id)
+            return  # the exchange itself is not terminal: the next step continues
         name, args = call.rskill_id, json.loads(call.goal_params_json or "{}")
         if name == DECOMPOSE:
             subtasks, target = [t for t in args["subtasks"] if t.strip()], args.get("target_task_id", "")
@@ -216,8 +224,16 @@ class Agent:
         if name in CONTRACTS["queries"]:
             self.event("query_answered", query=name, args=args, **self.query(name, args))
             return
+        if self.guard.target_authority:
+            # a rule that classes a call by the state of the unit it acts on reads that state fresh, from the units'
+            # own telemetry, before deciding
+            t = self.query("power_status", {})
+            self.event("equipment_telemetry", value=t["value"] if t["success"] else None)
         outcome, reason = self.guard.check(name, args, self.store.facts)
         self.event("guard_decision", tool=name, outcome=outcome, reason=reason)
+        if outcome == "approval_required":
+            rule = self.guard.target_rule(name, args, self.store.facts)
+            self.event("approval_pending", capability=name, target=args[rule["target_arg"]] if rule else None, reason=reason)
         if outcome != "allow":
             return
         ledger = self.ledger()

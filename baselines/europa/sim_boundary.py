@@ -2,6 +2,9 @@
 EUROPA->PLEXIL machinery without the simulation: the same ROS interfaces (/space/capability/execute action,
 /space/capability/query service), a symbolic base/arm/jaws that land where the contract says, and scripted failures.
 
+  --tripped UNIT       the unit's breaker starts tripped (power_status); a successful press on its panel closes it
+  --no-hold            a reset does not hold: the unit reads tripped again at the next power_status query after
+                       the press (what a held-out L2-A/L3 unit looks like to a covered plan)
   --fail CAP:N[:far]   the N-th call of CAP fails (failure_kind 3, "no progress"); `far` (base moves only) leaves the
                        base 5 m off the target instead of where it started; ignored for arm_ready/stow/pick/place/
                        press, which simply do not change posture/jaws/held item on a failed call
@@ -34,9 +37,11 @@ def feature_pose(name, standoff):
 
 
 class SimBoundary(Node):
-    def __init__(self, fail):
+    def __init__(self, fail, tripped, hold):
         super().__init__("europa_sim_boundary")
-        self.fail = fail
+        self.fail, self.hold = fail, hold
+        self.breaker = {u: "tripped" if u in tripped else "closed" for u in ("pdu_1", "pdu_2", "pdu_3")}
+        self.pending_trip = set()
         self.calls = Counter()
         self.base = dict(frame="map", x=0.0, y=0.0, yaw=0.0)
         self.posture = "stowed"
@@ -69,6 +74,10 @@ class SimBoundary(Node):
             self.posture = "ready"
         elif cap == "press" and ok:
             self.posture = "ready"  # press reaches into the panel and does not fold back afterward on its own
+            unit = args["feature"].split("_panel")[0]
+            self.breaker[unit] = "closed"
+            if not self.hold:
+                self.pending_trip.add(unit)
         r = ExecuteCapability.Result()
         r.success = ok
         r.failure_kind = 0 if ok else 3
@@ -85,6 +94,12 @@ class SimBoundary(Node):
                                  for k, v in IX["points"].items() if "object" not in v})
         elif req.query == "arm_state":
             value = self.arm_evidence()
+        elif req.query == "power_status":
+            value = dict(units={u: dict(breaker=b, trip_cause="OVERTEMP" if b == "tripped" else None)
+                                for u, b in self.breaker.items()})
+            for u in self.pending_trip:  # the reset read closed once; the unit trips again after that
+                self.breaker[u] = "tripped"
+            self.pending_trip = set()
         else:
             value = dict(self.base)
         res.success, res.value_json = True, json.dumps(value)
@@ -94,6 +109,8 @@ class SimBoundary(Node):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--fail", action="append", default=[])
+    ap.add_argument("--tripped", action="append", default=[])
+    ap.add_argument("--no-hold", action="store_true")
     a = ap.parse_args()
     fail = {}
     for f in a.fail:
@@ -101,5 +118,5 @@ if __name__ == "__main__":
         fail[(cap, int(n))] = how[0] if how else "stay"
     rclpy.init()
     ex = MultiThreadedExecutor()
-    ex.add_node(SimBoundary(fail))
+    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold))
     ex.spin()

@@ -43,7 +43,7 @@ if [ -n "$D0_VIDEO$D0_GPU$D0_SCENERY$D0_SCENARIO$D0_PROFILE$D0_GPU_PHYSICS" ]; t
   #                        sagged 15 cm until `servo over shelf` stalled -- the render broke the run, not the skill.
   #   D0_GPU=1             SRB on the second GPU (a parallel graph; pair with D0_DOMAIN=78).
   #   D0_SCENERY=<name>    another SRB scenery for the same task (e.g. lunar_base_route_block).
-  #   D0_SCENARIO=<name>   the task's env.scenario (e.g. heldout_cover_obstruction).
+  #   D0_SCENARIO=<name>   the task's env.scenario (e.g. heldout_module_failure).
   #   D0_GPU_PHYSICS=1     GPU PhysX (SRB_SIM_DEVICE=cuda, CCD off) instead of CPU PhysX.
   #   D0_PROFILE=1         SRB's per-tick bucket timing (SRB_ROS_PROFILE, printed every 100 ticks, research repo F28).
   .venv/bin/python - "$SCENE" "$LOG/scene_run.yaml" "$D0_VIDEO" "$D0_GPU" "$D0_SCENERY" "$D0_SCENARIO" "$D0_PROFILE" "$D0_GPU_PHYSICS" <<'PY'

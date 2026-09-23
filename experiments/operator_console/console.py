@@ -28,9 +28,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
+import threading
 import time
 import uuid
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # the research repo: space_context
+from space_context import link  # noqa: E402
 
 ALFUS_AUTHORITY_LEVELS = ("mission", "strategic_goal", "tactical_goal", "mission_task", "route", "autopilot", "servo")
 
@@ -82,7 +87,7 @@ class Interaction:
         self.end_wall_t = end_ev["wall_t"]
 
 
-def run_cli(run_dir: Path, *, default_authority: str, answers: list[str] | None = None) -> None:
+def run_cli(run_dir: Path, *, default_authority: str, answers: list[str] | None = None, decision_time_s: float = 0.0) -> None:
     """Blocking loop: subscribes the two request topics, gets a reply for every message received
     (operator stdin, or the next line of `answers` in scripted-answer mode for development), logs
     the full exchange and publishes the reply on `REPLY_TOPIC`. Ctrl+C to stop. Assumes
@@ -91,26 +96,56 @@ def run_cli(run_dir: Path, *, default_authority: str, answers: list[str] | None 
     import rclpy
     from openral_msgs.msg import PromptStamped
     from rclpy.node import Node
+    from rosgraph_msgs.msg import Clock
 
     log = OperatorEventLog(run_dir)
     node = Node("space_operator_console")
     reply_pub = node.create_publisher(PromptStamped, REPLY_TOPIC, 10)
+    # the ground segment sits behind the Direct-with-Earth link (space_context/link.py): mission time is the simulator
+    # clock; a message crosses in the one-way delay while Earth is up, and waits for the next pass while it is down
+    clock = {"t": 0.0}
+    node.create_subscription(Clock, "/clock", lambda m: clock.update(t=m.clock.sec + m.clock.nanosec * 1e-9), 10)
+
+    def wait_until(t: float) -> None:
+        while clock["t"] < t:
+            time.sleep(0.05)
+
+    def queued(request_id, text: str) -> None:
+        """The robot's own communication node reports the message is held for the next pass -- a link status, not an
+        answer from mission control, and not an operator interaction."""
+        st = link.state(clock["t"])
+        reply_pub.publish(PromptStamped(text=f"[link] not delivered: {text}; queued for the next Earth pass in "
+                                             f"{st['reopens_in_s']:.0f} s", metadata_json=json.dumps(
+            {"request_id": request_id, "link_status": "queued", "grants": [], **st})))
+
+    def exchange(topic: str, kind: str, msg) -> None:
+        meta = json.loads(msg.metadata_json or "{}")
+        request_id, pending = meta.get("request_id"), meta.get("pending_approvals", [])
+        if not link.state(clock["t"])["earth_visible"]:
+            return queued(request_id, "Earth is below the horizon")
+        wait_until(link.delivery_time(clock["t"]))
+        interaction = Interaction(log, kind=kind, authority_level=default_authority, source_topic=topic,
+                                  text=msg.text, request_id=request_id)
+        held = "".join(f"\n  held for approval: {p['capability']} on {p['target']} ({p['reason']})" for p in pending)
+        print(f"\n[{kind} at mission t={clock['t']:.0f} s] {msg.text}{held}\n> ", end="", flush=True)
+        reply = answers.pop(0) if answers is not None else input()
+        print(reply) if answers is not None else None  # scripted mode: echo what was "typed"
+        wait_until(clock["t"] + decision_time_s)
+        # an answer starting "GRANT:" authorizes exactly the calls this request carried as held for approval
+        grants = [{"capability": p["capability"], "target": p["target"]} for p in pending] if reply.startswith("GRANT:") else []
+        reply = reply.removeprefix("GRANT:").strip()
+        interaction.operator_reply(reply)
+        interaction.end()
+        if not link.state(clock["t"])["earth_visible"]:
+            return queued(request_id, "Earth set before mission control's answer was sent")
+        wait_until(link.delivery_time(clock["t"]))
+        reply_pub.publish(PromptStamped(text=reply, metadata_json=json.dumps({
+            "request_id": request_id, "interaction_id": interaction.interaction_id,
+            "authority_level": interaction.authority_level, "grants": grants,
+            "start_wall_t": interaction.start_wall_t, "end_wall_t": interaction.end_wall_t})))
 
     def on_message(topic: str, kind: str):
-        def cb(msg: PromptStamped) -> None:
-            request_id = json.loads(msg.metadata_json or "{}").get("request_id")
-            interaction = Interaction(log, kind=kind, authority_level=default_authority, source_topic=topic,
-                                      text=msg.text, request_id=request_id)
-            print(f"\n[{kind}] {msg.text}\n> ", end="", flush=True)
-            reply = answers.pop(0) if answers is not None else input()
-            print(reply) if answers is not None else None  # scripted mode: echo what was "typed"
-            interaction.operator_reply(reply)
-            interaction.end()
-            reply_pub.publish(PromptStamped(text=reply, metadata_json=json.dumps({
-                "request_id": request_id, "interaction_id": interaction.interaction_id,
-                "authority_level": interaction.authority_level,
-                "start_wall_t": interaction.start_wall_t, "end_wall_t": interaction.end_wall_t})))
-        return cb
+        return lambda msg: threading.Thread(target=exchange, args=(topic, kind, msg), daemon=True).start()
 
     node.create_subscription(PromptStamped, REQUEST_TOPIC, on_message(REQUEST_TOPIC, "request_operator"), 10)
     node.create_subscription(PromptStamped, REPORT_TOPIC, on_message(REPORT_TOPIC, "report_to_operator"), 10)
@@ -175,6 +210,8 @@ def main() -> None:
     ap.add_argument("--authority-level", choices=ALFUS_AUTHORITY_LEVELS)
     ap.add_argument("--text")
     ap.add_argument("--selftest", action="store_true", help="Prove the mechanism with a synthetic publisher, no simulation.")
+    ap.add_argument("--decision-time-s", type=float, default=0.0,
+                    help="mission control's time to answer once a request has arrived (operator protocol)")
     ap.add_argument("--answers-file", type=Path,
                      help="Development mode: one canned answer per line, consumed in order instead of prompting stdin.")
     args = ap.parse_args()
@@ -199,7 +236,8 @@ def main() -> None:
         if args.selftest:
             _selftest(args.run_dir, answers=answers)
         else:
-            run_cli(args.run_dir, default_authority=args.default_authority_level, answers=answers)
+            run_cli(args.run_dir, default_authority=args.default_authority_level, answers=answers,
+                    decision_time_s=args.decision_time_s)
     finally:
         rclpy.shutdown()
 

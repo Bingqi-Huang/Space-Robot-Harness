@@ -1,4 +1,21 @@
 <PLEXILScript>
+  <InitialState>
+    <State name="PowerUnit" type="string">
+      <Param type="string">pdu_1</Param>
+      <Param type="string">breaker</Param>
+      <Value>closed</Value>
+    </State>
+    <State name="PowerUnit" type="string">
+      <Param type="string">pdu_2</Param>
+      <Param type="string">breaker</Param>
+      <Value>tripped</Value>
+    </State>
+    <State name="PowerUnit" type="string">
+      <Param type="string">pdu_3</Param>
+      <Param type="string">breaker</Param>
+      <Value>closed</Value>
+    </State>
+  </InitialState>
   <Script>
     <Command name="navigate_to_feature" type="bool">
       <Param type="string">pdu_2_panel/press</Param>
@@ -22,6 +39,11 @@
       <Param type="real">1.5</Param>
       <Result>COMMAND_SUCCESS</Result>
     </CommandAck>
+    <State name="PowerUnit" type="string">
+      <Param type="string">pdu_2</Param>
+      <Param type="string">breaker</Param>
+      <Value>closed</Value>
+    </State>
     <Command name="press" type="bool">
       <Param type="string">the round red push button set into the yellow sub-panel</Param>
       <Param type="string">pdu_2_panel/press</Param>

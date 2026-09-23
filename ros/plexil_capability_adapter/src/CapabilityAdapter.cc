@@ -20,6 +20,11 @@
 //                                                                       (pick, place, stow, arm_ready, press, ...)
 //                                                                       reported reaching, extracted from its evidence;
 //                                                                       "" when the result carried none
+//   Lookup  PowerUnit(String unit, String field)                      -> String, one field of that unit in the power
+//                                                                       distribution units' telemetry (power_status),
+//                                                                       e.g. PowerUnit("pdu_2", "breaker") = "tripped";
+//                                                                       UNKNOWN when the field is null -- a typed read
+//                                                                       so a plan can branch without parsing JSON
 //   Command String RequestOperator(String question)                  -> the operator's answer
 //     -> publishes openral_msgs/PromptStamped {text: question, metadata_json: {"request_id"}} on
 //        /space/operator/request (the same topic space_runtime/agent.py and baselines/europa/host.py use), the
@@ -52,6 +57,7 @@
 #include <openral_msgs/msg/prompt_stamped.hpp>
 #include <space_harness_msgs/action/execute_capability.hpp>
 #include <space_harness_msgs/srv/query_capability.hpp>
+#include <nlohmann/json.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -195,6 +201,16 @@ public:
         auto pos = value.find(':');
         if (pos == std::string::npos || value.find("null") != std::string::npos) { rcvr->setUnknown(); return; }
         rcvr->update(static_cast<PLEXIL::Real>(std::stod(value.substr(pos + 1))));
+      });
+    config->registerLookupHandlerFunction(
+      "PowerUnit",
+      [this](PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr) {
+        std::string unit, field, value;
+        if (state.parameters().size() != 2 || !state.parameter(0).getValue(unit) || !state.parameter(1).getValue(field) ||
+            !query("power_status", "{}", value)) { rcvr->setUnknown(); return; }
+        auto const v = nlohmann::json::parse(value)["units"][unit][field];
+        if (v.is_null()) rcvr->setUnknown();
+        else rcvr->update(v.is_string() ? v.get<std::string>() : v.dump());
       });
     config->registerLookupHandlerFunction(
       "QueryCapability",

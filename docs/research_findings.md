@@ -5012,3 +5012,54 @@ output made sense (a scenario_id that matches no file, a trace flagged incomplet
 timestamp field with epoch-scale numbers next to wall-since-start ones) -- not by reading the code and guessing
 where it might be wrong. Consistent with F104/F105/F106's own method note: real data finds real bugs that a
 synthetic fixture, however careful, does not think to construct.
+
+## F108 -- The held-out ladder's site: one physics, four scenarios, and a shutter the VLM read as fins (2026-09-23)
+
+Implements `docs/heldout_design.md` steps 2-5 (branch `feat/heldout-ladder`, research repo + SRB).
+
+**1. One site model, scenarios as initial conditions only.** `srb/tasks/mobile_manipulation/lunar_base/site.py` holds
+the power field's physics for every Mission A/B scenario: a breaker trips with a cause and a press on its panel resets
+it; a running unit whose radiator shutter is drawn trips OVERTEMP after `retrip_delay_s` (opening it in time cancels
+that); one running on an unserviceable ORU trips ORU_SELFTEST_FAIL after its 3 s self-test; one whose bay is empty trips
+ORU_MISSING at once. A scenario only says which breaker starts tripped and why, which shutters are drawn, which ORUs
+are unserviceable, where objects stand and what the inventory record says. So `heldout_radiator_cover`,
+`heldout_module_failure`, `heldout_cannibalize` and the covered cases differ in state, never in rules -- a reset "not
+holding" is the model, not a scripted outcome. The units' own telemetry (`env0/power_telemetry`) and mission
+control's inventory record (latched `env0/inventory_record`) reach every method through the boundary
+(`power_status`, `manifest.inventory`); `mission_state` stays evaluator-only.
+
+**2. Assets built for the verified action forms.** ORU bays are the spares shelf's tray (same authored geometry,
+same 1.25 stretch, same place point), so an installed ORU is picked and placed the way a spare on a shelf already is;
+the robot's own IK gives every bay a legal stand (1.10-1.115 m) and every radiator cover button one (1.06-1.075 m),
+against the shelf's 1.08-1.11 m (`site_check_2`, `work_stands`). The drawn shutter is a visual-only prop part (no
+collider) the task shows or hides; the cover actuator is a dummy mushroom button of the panel's own catalogued shape.
+Every ORU carries a Data Matrix + S/N label (NASA-STD-6002) from the start, for Experiment II's scanner.
+
+**3. Look first: the closed shutter was misread.** From the radiator view pose the VLM called the drawn shutter
+"exposed ... horizontal white fins" (`site_check_2`): a light-grey shutter with slat seams, lit by a 12 deg sun,
+looks like a fin panel. The picture, not the answer, showed it. Recoloured charcoal, seams removed: `site_check_3`
+reads the drawn shutter as drawn ("solid, flat grey surface, no white fins") and the open one as open ("vertical
+white fins ... shutter housing at the top").
+
+**4. Authority by what a call acts on.** Ours' guard gains one generic rule class, `target_authority`: removing an item
+from a site point whose survey role is `equipment_bay` while that unit reports `energized` needs an operator approval
+of (capability, target) -- 14 CFR 1214.403's authorization-before-removal, not a mission step. The harness reads the
+units' telemetry fresh before deciding, records `approval_pending`, carries the held calls on `request_operator`, and
+records `approval_granted` from the console's structured reply.
+
+**5. The Earth link from SPICE.** `space_context/earth_visibility.py` computes Earth's elevation at the scene's own
+site (LOLA Site01, 89.455 S 213.64 E; DE440, MOON_ME) and places the mission epoch 45 min before an Earth-set
+(2028-10-11T00:49Z; next rise 13.5 days later; one-way delay 4.27 s = 1.27 s light time + 3 s ground latency) -- the
+same for every scenario, so the window closes in every run and matters only to a method that needs mission control
+after it. The console sits behind it (store-and-forward: a request while Earth is down gets a link "queued" status,
+not an answer). Assumptions stated in the file: Direct-with-Earth only, flat 0 deg horizon.
+
+**6. Baselines made competent on the covered brief.** PLEXIL Mission A now identifies the tripped unit from telemetry
+(new typed adapter Lookup `PowerUnit(unit, field)`), presses, verifies, presses once more, and verifies again at the dock,
+escalating with `RequestOperator` otherwise; a SkipCondition on live state was the wrong construct (it is watched while
+a node waits, so the final check was skipped the moment the reset first took) -- replaced by `if/endif` evaluated when
+the node runs; offline-verified nominal and re-trip (`scripts/MissionA_Covered_{nominal,retrip}.pst`). EUROPA
+(`--power-field`) takes faulted units and restore goals from telemetry, verifies every restore by reading the unit,
+holds restore goals to the horizon and counts a restore that relapses as a failure, so a reset that does not hold
+ends in the operator after 3 relapses instead of pressing forever (offline: nominal pdu_3, no-hold pdu_2, Mission B
+regression). Both now pass the catalogue's item name to pick/place, as the contract says.

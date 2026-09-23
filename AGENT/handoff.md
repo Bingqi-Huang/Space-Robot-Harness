@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-23 (held-out set decided; no code yet). Read `AGENT/research_content.md` and
+Updated 2026-09-23 (held-out ladder: scene, scenarios, authority and link built; site check live). Read `AGENT/research_content.md` and
 `AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan), then `AGENT/todo.md`.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
@@ -8,38 +8,30 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 ## Heads
 
 - Research repo and `space_robotics_bench`: branch `feat/heldout-ladder`, cut from `feat/experiment-campaign`
-  (`fb47fd8`, F107). `openral` stays on `feat/experiment-campaign` (branch it when it needs a change).
-- Nothing pushed; `feat/experiment-campaign` not merged to `main` (user decides when).
-- `artifacts/runs/_debug_archive/` (117 GB) still present -- ask before deleting.
+  (`fb47fd8`, F107); docs committed (`ca492cf`), steps 2-5 work uncommitted at this writing. `openral` unchanged.
+- Nothing pushed; nothing merged to `main`. `artifacts/runs/_debug_archive/` never existed (old handoff error).
 
-## Where it stands
+## Where it stands (2026-09-23)
 
-All three methods (Ours, PLEXIL, EUROPA→PLEXIL) complete Mission A and Mission B **covered** live on the
-corrected-arm stack, each with video and overlay panel (runs `*_mission_{a,b}_success_20260922`); evaluation /
-manifest infra exercised on those six runs (F107). No held-out case has run on the current stack; nothing frozen.
+All three methods complete Mission A/B **covered** on the old scene (runs `*_mission_{a,b}_success_20260922`).
+The scene has since changed (bays, installed ORUs, radiators; service cover gone), so covered must be re-run for
+every method before the freeze -- that is a campaign prerequisite, not a base-rate rerun.
 
-## Decision of 2026-09-23 (with the user): the held-out ladder
+Built today (todo steps 2-5, details there): the shared site model `srb/.../lunar_base/site.py` (one physics for all
+scenarios: breaker trips, radiator overheating under a closed shutter, ORU self-test, ORU missing), telemetry +
+inventory record through the boundary, the new props/labels, the four new scenarios, authority by target in Ours'
+guard with the approval handshake through the console, SPICE Earth-link profile + DTN link gate. Live-verified in
+`artifacts/runs/site_check_2` (`d0_site_check.py`): telemetry/inventory reach the boundary, every bay and cover button
+has a legal stand, the open radiator reads as open. The closed shutter was misread (light grey, slat seams looked
+like fins) -> recoloured charcoal; `site_check_3` reads both states right. Baselines made competent on the covered
+brief and offline-verified (F108).
 
-Full design, sources and implementation order: `docs/heldout_design.md`. In short, levels by what the frozen
-baseline model lacks:
+## Next
 
-- L1 covered variants: other faulted unit; fault report names the wrong unit (ISS 2015 erroneous MDM indication).
-- L2-A radiator cover left closed → over-temperature re-trip; fix = press a dummy cover button, then reset
-  (LRV radiator covers, Creel; Apollo 16/17 battery over-temp, Gaier).
-- L2-B destination tray occupied by a returned crate (exists in SRB).
-- L3 reset does not hold (ORU self-test fail) → remove-and-replace with the depot spare: the composition of the
-  two covered missions that neither baseline has (Dextre RPCM R&R 2011; Lewis 2022).
-- L4 no serviceable spare → take PDU-3's (energized, science) ORU for PDU-1 (life support); needs ground approval
-  before the SPICE-derived Earth-visibility window closes (14 CFR 1214.403; Apollo 17 fender repair). This is also
-  the H3 / space-native evidence (resolves the old "which hard boundary" question).
-- Control: route_block. Experiment II: new shared capability `scan_label` (wrist-camera Data Matrix, NASA-STD-6002)
-  on hidden inventory-record mismatches.
-
-How we got there (so it is not re-litigated): the user rejected (1) tags / placards / cloth -- no precedent for
-the *situation*, only for the category; (2) A2 cover obstruction -- a leaning plate is not `pick`-compatible;
-(3) B3 spare swapped -- `depot_stand/slot_1` has no legal stand, and it is a known unknown; (4) re-running covered
-missions to get a base success rate -- it changes no decision. The user chose a visible barcode over RFID for
-the demo (a real decode on the rendered frame, visible in the overlay).
+1. User decisions pending: the operator protocol (blocks L4), committing this work, which run dirs to delete.
+2. Re-run Mission A/B covered live for PLEXIL, EUROPA and Ours on the rebuilt scene (the competent baselines are
+   offline-verified only).
+3. Ours development runs L2-A (radiator) → L2-B → L3 → L4; then manifests/certificates, freeze audit.
 
 ## Constraints the new assets must meet
 

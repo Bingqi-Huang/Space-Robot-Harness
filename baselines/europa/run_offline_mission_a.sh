@@ -20,7 +20,7 @@ export LD_LIBRARY_PATH=$REPO/ros/install/lib:$HERE/plexil/build:$PLEXIL_HOME/lib
 python3 $HERE/sim_boundary.py "$@" > $RUN/boundary.log 2>&1 &
 BOUNDARY=$!
 python3 $HERE/host.py --run-dir $RUN --model $HERE/domain/mission-a-model.nddl \
-  --unit pdu_2:pdu_2_panel/press --goal pdu_2@restored --goal stowed --final dock \
+  --power-field --goal stowed --final dock \
   > $RUN/host.log 2>&1 &
 HOST=$!
 sleep 2

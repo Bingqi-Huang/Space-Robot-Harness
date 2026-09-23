@@ -168,3 +168,18 @@ fix: its top-level node list (`TOP`) was hardcoded to Mission B's five names (`T
 Return`), so it drew none of Mission A's own three (`ToUnit, Press, Return`) as active. Parameterized as `--top`
 (both this script and `plexil_timeline_from_logs.py`, which had the identical hardcoding for the same reason) --
 defaults to Mission B's list, so nothing else changes.
+
+### Competent covered procedure (2026-09-23; F108, heldout_design §7)
+
+Authored from the covered brief only ("identify the failed unit ... verify the result"): `MissionA_Covered.ple`
+identifies the tripped unit from the units' telemetry (adapter Lookup `PowerUnit(unit, field)`, a typed field read of
+`power_status`), docks, presses, verifies the breaker closed, presses once more if not, verifies again at the dock and
+escalates with `RequestOperator` when a check fails. Decisions on live state use `if/endif` (evaluated when the node
+runs), never a SkipCondition (watched while the node waits). Offline: `scripts/MissionA_Covered_nominal.pst`,
+`scripts/MissionA_Covered_retrip.pst`. Mission B passes the catalogue item name `orbital replacement unit (ORU)`.
+
+| Plan element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| `Identify` over pdu_1..3 | which unit is tripped | brief ("identify the failed unit"); site_map units; `power_status` | (a) |
+| `Check1/2`, `FinalCheck` | breaker reads `closed` after a reset, and still at the dock | brief ("verify the result") | (a) |
+| `ResetFailed`, `FinalCheck` escalation | no further procedure applies | generic recovery: retry once, then escalate | (b) |

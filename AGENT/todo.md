@@ -8,29 +8,39 @@ Goal: the Acta Astronautica paper. Held-out set decided 2026-09-23 -- **`docs/he
 
 1. [x] Docs: `docs/heldout_design.md`; pointers in research_content §5.5/§5.6, execution_plan §6.4/§21, catalog §5
        (superseded) + OIG IG-18-001 misattribution corrected.
-2. [ ] SRB telemetry + inventory: per-PDU breaker state / trip cause / energized / installed ORU serial in the
-       mission tasks; `power_status` query and inventory records in `manifest` (capability server contracts).
-3. [ ] SRB assets (`assets/lunar_base/process/author_props.py`, `scene/layout.yaml`):
-   - [ ] ORU bay on each PDU, tray form like the spares shelf, installed ORU with T-handle up; `work_stands` must
-         list a legal stand for every bay (compute offline before anything else).
-   - [ ] Data Matrix + S/N label on every ORU top face (NASA-STD-6002); wrist-view still render decoded by zxing-cpp.
-   - [ ] Radiator fins + cover (open/closed visual variants, no joint) + blue dummy cover button on the panel;
-         spacing vs. the red reset button fixed offline so `press` cannot confuse them.
-   - [ ] Remove the service cover prop.
-4. [ ] SRB scenarios: `covered_misreport`, `heldout_radiator_cover`, `heldout_module_failure`,
-       `heldout_cannibalize` (+ existing `heldout_destination_occupied`); evaluator conditions per heldout_design §4;
-       delete `heldout_cover_obstruction` / `heldout_status_mismatch` / `heldout_spare_swapped` code.
+2. [x] SRB telemetry + inventory (2026-09-23): shared site model `srb/tasks/mobile_manipulation/lunar_base/site.py`
+       (breaker/thermal/ORU physics, same in every scenario; scenarios set initial conditions only); SRB publishes
+       `env0/power_telemetry` + latched `env0/inventory_record`; boundary queries `power_status`, `manifest.inventory`
+       (items by serial, catalogue keyed by item name). Verified live (site_check_2).
+3. [x] SRB assets: ORU bay per PDU (shelf tray form, role `equipment_bay`), installed ORUs ORU-0211/0233/0258 + spare
+       ORU-0417 + crate CRT-0112 with Data Matrix labels, radiator + roll-up shutter (visual-only, `set_radiator_cover`)
+       + blue cover button; service cover and its scenarios removed. `work_stands` live: bays 1.10-1.115 m, cover
+       buttons 1.06-1.075 m (shelf reference 1.08-1.11). VLM read the open shutter right but took the light closed
+       shutter's slat seams for fins -> shutter made charcoal, seams removed; site_check_3 reads both states right.
+   - [ ] Label decode from a real wrist view (moved to the `scan_label` build, Exp II).
+4. [x] SRB scenarios `covered`, `covered_misreport`, `heldout_radiator_cover`, `heldout_module_failure`,
+       `heldout_cannibalize` (A), `covered`, `heldout_destination_occupied` (B). Only radiator_cover booted so far.
 5. [ ] Harness:
-   - [ ] Authority by target: support classes in the site survey; one generic guard rule (removal from the bay of an
-         energized unit → `approval_required`); approvals keyed (capability, target); `operator_answered` reducer.
-   - [ ] `space_context/`: SPICE Earth elevation at a south-polar site, epoch so LOS falls inside the L4 run,
-         precomputed profile with provenance; link gate (operator channel down during LOS, store-and-forward);
-         one-way delay per Landon et al. 2025.
-   - [ ] Operator console live + written scripted operator protocol (same for all methods), ALFUS events.
-   - [ ] Evaluator-violations recorder in all three launch scripts; call-start timestamp in capability-server log.
-6. [ ] Baseline competence (heldout_design §7): PLEXIL + EUROPA covered artifacts read `power_status`, press,
-       re-check after a dwell, retry once then escalate; pick/place recovery set; consolidate the duplicated NDDL
-       (`mission-a-model.nddl`/`mission-b-model.nddl`). Author from the covered spec only.
+   - [x] Authority by target: `guard.target_authority` rule `energized_equipment_removal` (pick from an
+         `equipment_bay` of an energized unit -> approval_required), telemetry read fresh before the check,
+         approvals keyed (capability, target), pending approvals carried on `request_operator`, console `GRANT:`.
+         `pick.support` now required; `item` is the catalogue name for every method (PLEXIL Mission B plan
+         recompiled, EUROPA host maps its object ids at the boundary). Not yet exercised live.
+   - [x] `space_context/earth_visibility.py` (SPICE, DE440, Site01 89.455S 213.64E) -> `profiles/earth_link.json`:
+         epoch 2028-10-11T00:49Z, Earth sets 2700 s into every run, back 13.5 d later, one-way delay 4.27 s;
+         `space_context/link.py`; boundary `space_context.earth_link`; console gated by it (store-and-forward, a
+         request while Earth is down gets a link "queued" status, not an answer). Kernels in `space_context/kernels/`.
+   - [ ] **Operator protocol (user decision)**: what mission control grants, its decision time (`--decision-time-s`),
+         ALFUS authority level of an approval. Needed before L4 runs.
+   - [ ] Rewrite `evaluation/violations.py` + `experiments/evaluator_recorder/` for the new mission_state
+         (`units`, `objects` for all five items; approved cannibalization is not collateral, unapproved is) and wire
+         the recorder into all three launch scripts; capability-server call-start timestamp.
+6. [~] Baseline competence (heldout_design §7; F108): PLEXIL Mission A (telemetry identify, verify, retry once,
+       final check, escalate; adapter `PowerUnit` Lookup) and EUROPA `--power-field` (telemetry-grounded panels,
+       restore goals held, relapse -> operator after 3) done + offline-verified. Still open: pick/place recovery set
+       (both), consolidate the duplicated NDDL, Mission B "verify the destination before placing" if the brief
+       implies it (decide when re-running B covered).
+   - [ ] Re-run Mission A/B covered live for all three methods on the rebuilt scene (campaign prerequisite).
 7. [ ] Ours development runs, one per case: L2-A → L2-B → L3 → L4. Mission-generic changes only (§13.1); record
        each in `docs/research_findings.md`.
 8. [ ] Rewrite `experiments/scenarios/` manifests + certificates for the new set; freeze audit; git tags.
@@ -45,7 +55,8 @@ Goal: the Acta Astronautica paper. Held-out set decided 2026-09-23 -- **`docs/he
 
 ## Open decisions (user)
 
-- `_debug_archive/` under `artifacts/runs/` (117 GB): delete?
+- `artifacts/runs/_debug_archive/` never existed (the old handoff was wrong). `artifacts/runs/` holds ~100 development
+  run dirs, 330 GB (`ma5` alone 93 GB); some are cited as evidence in `docs/research_findings.md` -- which to delete?
 - Merge `feat/experiment-campaign` (+ this branch) to `main`: when?
 
 ## Design items not yet built (pick up when a run needs them)

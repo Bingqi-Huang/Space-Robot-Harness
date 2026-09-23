@@ -1,6 +1,11 @@
-// MissionA_Covered nominal-path simulation (execution_plan section 11.1): every capability call the covered plan makes
-// returns success, in the order MissionA_Covered.plx + the library nodes issue them (ToUnit: nav, dock; Press;
-// Return: stow, navigate_to_pose).
+// MissionA_Covered nominal-path simulation (execution_plan section 11.1, heldout_design section 7): telemetry shows pdu_2
+// tripped; the reset takes; every capability call succeeds, in the order the plan and its library nodes issue them.
+
+initial-state {
+  state PowerUnit ("pdu_1":string, "breaker":string) = "closed":string;
+  state PowerUnit ("pdu_2":string, "breaker":string) = "tripped":string;
+  state PowerUnit ("pdu_3":string, "breaker":string) = "closed":string;
+}
 
 script {
   command navigate_to_feature ("pdu_2_panel/press":string, 1.5:real) = true:bool;
@@ -9,6 +14,7 @@ script {
   command dock_at_feature ("pdu_2_panel/press":string, 0.0:real, 1.5:real) = true:bool;
   command-success dock_at_feature ("pdu_2_panel/press":string, 0.0:real, 1.5:real);
 
+  state PowerUnit ("pdu_2":string, "breaker":string) = "closed":string;
   command press ("the round red push button set into the yellow sub-panel":string, "pdu_2_panel/press":string) = true:bool;
   command-success press ("the round red push button set into the yellow sub-panel":string, "pdu_2_panel/press":string);
 

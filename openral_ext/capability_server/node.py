@@ -40,6 +40,7 @@ import rclpy
 from moveit_msgs.srv import GetPositionIK, GetStateValidity
 from openral_msgs.action import ExecuteRskill
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # the research repo: space_context
 from workspace.footprint import DOCK_ERROR_M, clear_distance  # noqa: E402
 from workspace.reach import reach_map  # noqa: E402
 
@@ -78,6 +79,7 @@ from space_harness_msgs.srv import QueryCapability
 from tf2_ros import Buffer, TransformListener
 
 from contracts import CONTRACTS, IX, check_args, item_catalogue
+from space_context import link
 # The arm's ready posture (robot, not mission). The wrist roll is half a turn: that is the branch with the wrist camera
 # above the tool axis, the one every view and every grasp works from (research repo F57), and it is the posture the
 # manipulation skills start and end in. `openral_rskill._eye_in_hand.READY` is the same seven numbers.
@@ -229,16 +231,16 @@ def quat_to_mat(x, y, z, w):
                      [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)]])
 
 
-#: the logistics record's item names (the equipment catalogue is keyed by them)
-ITEM_NAMES = {"spare_oru": "spare ORU (orbital replacement unit, gold MLI-covered box)", "spare_crate": "cargo crate (white case)"}
+#: the equipment catalogue: one entry per kind of item on site (every ORU is the same unit), keyed by the name mission
+#: control's inventory uses for it; any one instance's asset carries the catalogue data
+CATALOGUE = {o["item"]: item_catalogue(o) for o in IX["objects"].values()}
 
 
 def held_item(a: dict) -> dict:
     """The named catalogue item's envelope, for the skill to keep the carried item clear of the rover and supports."""
     if "item" not in a:
         return {}
-    key = next(k for k, n in ITEM_NAMES.items() if a["item"] in (k, n))
-    c = item_catalogue(IX["objects"][key])
+    c = CATALOGUE[a["item"]]
     return {"held_item": {"size_m": c["size_m"], "handle_above_base_m": c["handle_height_above_base_m"],
                           "neck_height_m": c["grasp_interface"]["dimensions_m"]["neck_height"],
                           "closing_width_m": c["grasp_interface"]["closing_width_m"],
@@ -338,6 +340,8 @@ class CapabilityServer(Node):
         self.jaw, self.arm_q, self.sim_t, self.calls = None, None, 0.0, 0
         self.infos, self.depths = {}, {}
         self._space_context: dict = {}
+        self._power: dict = {}
+        self._inventory: list = []
         #: what the last pick that succeeded took, and from where. The boundary dispatched that call and saw it
         #: succeed, so this is its own record, not an observation and not simulator truth.
         self._picked: dict | None = None
@@ -345,6 +349,12 @@ class CapabilityServer(Node):
             String, "/srb/env0/space_context", lambda m: self._space_context.update(json.loads(m.data)),
             QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL),
             callback_group=cb)
+        self.create_subscription(
+            String, "/srb/env0/inventory_record", lambda m: setattr(self, "_inventory", json.loads(m.data)),
+            QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL),
+            callback_group=cb)
+        self.create_subscription(String, "/srb/env0/power_telemetry", lambda m: setattr(self, "_power", json.loads(m.data)), 10,
+                                 callback_group=cb)
         self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
         self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
         self.images = {}
@@ -403,17 +413,20 @@ class CapabilityServer(Node):
         return {"frame": "map", "x": round(float(p[0]), 4), "y": round(float(p[1]), 4), "yaw": round(math.atan2(R[1, 0], R[0, 0]), 4)}
 
     def manifest(self):
-        """The logistics record as mission control holds it: the depot slots as staged, the items' catalogue data."""
-        names = ITEM_NAMES
-        slots = {IX["objects"][k]["support"].split("/")[1]: names[k] for k in names}
-        items = {names[k]: item_catalogue(IX["objects"][k]) for k in names}
-        return {"depot_stand": slots, "items": items}
+        """Mission control's logistics record as the environment published it (serial, item, recorded location, status),
+        and the catalogue data of the kinds of item on site. A record, not an observation."""
+        return {"inventory": self._inventory, "equipment_catalogue": CATALOGUE}
+
+    def power_status(self):
+        """The power distribution units' own telemetry, the latest the base network carried."""
+        return dict(self._power)
 
     def site_map(self):
         fixed = {k: v for k, v in IX["points"].items() if "object" not in v}
         return {"frame": "map", "point_types": POINT_TYPES,
-                "equipment_catalogue": self.manifest()["items"],
-                "points": {k: {"type": v["type"], "equipment": v["asset"], "xyz": v["xyz"], "normal": [round(c, 3) for c in v["normal"]]}
+                "equipment_catalogue": CATALOGUE,
+                "points": {k: {"type": v["type"], "equipment": v["asset"], "xyz": v["xyz"], "normal": [round(c, 3) for c in v["normal"]],
+                               **({"role": v["role"]} if "role" in v else {})}
                            for k, v in fixed.items()},
                 "view_poses": {k: {"x": v["xy"][0], "y": v["xy"][1], "yaw": round(math.radians(v["yaw_deg"]), 4), "looks_at": v["target"]}
                                for k, v in IX["view_poses"].items()},
@@ -631,7 +644,8 @@ class CapabilityServer(Node):
                     "note": "the environment published no space context, so the least gravity in the table is "
                             "assumed: what a hanging load takes scales with gravity, and not knowing where you "
                             "are must buy the gentlest driving, not the fastest"}
-        return dict(self._space_context)
+        # the Direct-with-Earth link at this mission time (SPICE visibility profile; mission time = the simulator clock)
+        return {**self._space_context, "earth_link": link.state(self.sim_t)}
 
     def work_stands(self, feature: str, grasp_height_m: float | None = None):
         """Where the rover can stand to work at a site point: the arm's own answer, not a table.
@@ -953,7 +967,7 @@ class CapabilityServer(Node):
                 raise ValueError(reason)
             value = {"observe": lambda: self.observe(args["camera"], args["question"]),
                      "locate_in_view": lambda: self.locate_in_view(args["camera"], args["target"]), "site_map": self.site_map,
-                     "manifest": self.manifest, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
+                     "manifest": self.manifest, "power_status": self.power_status, "arm_state": self.arm_state, "base_pose": self.base_pose, "tcp_pose": self.tcp_pose, "jaw": lambda: {"rad": self.jaw},
                      "held_item": self.held_item,
                      "space_context": self.space_context,
                      "work_stands": lambda: self.work_stands(args["feature"], args.get("grasp_height_m")),

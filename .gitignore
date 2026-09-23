@@ -38,3 +38,5 @@ experiments/manifests/
 
 # git worktrees (AGENT.md §1)
 .worktree/
+# NAIF generic kernels (space_context/fetch in earth_visibility.py docstring), large and public
+space_context/kernels/
