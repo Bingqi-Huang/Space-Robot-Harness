@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Offline end-to-end check of the EUROPA->PLEXIL machinery: sim_boundary.py stands in for the capability server, the
 # real chain runs above it -- host.py (EUROPA) -> HostLink -> PLEXIL universalExec (ActivityDispatch.plx) ->
-# ros/plexil_capability_adapter -> /space/capability/execute. Isolated graph, never the simulation's.
+# ros/plexil_capability_adapter -> /space/capability/execute. Isolated graph, never the simulation's. Base moves only:
+# reach depot_stand/slot_0's work stance, end at the dock.
 #   run_offline.sh <run_dir> [--fail CAP:N[:far] ...]
 set -eo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
