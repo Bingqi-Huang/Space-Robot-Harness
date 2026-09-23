@@ -1,0 +1,13 @@
+diff --git a/src/PLASMA/TemporalNetwork/base/TemporalNetwork.cc b/src/PLASMA/TemporalNetwork/base/TemporalNetwork.cc
+index 4c19bf86..008ec0fd 100644
+--- a/src/PLASMA/TemporalNetwork/base/TemporalNetwork.cc
++++ b/src/PLASMA/TemporalNetwork/base/TemporalNetwork.cc
+@@ -969,7 +969,7 @@ Void TemporalNetwork::maintainTEQ (Time lb, Time ub, Timepoint& src, Timepoint&
+       targ.ringLeader = src.ringLeader;
+       src.ringLeader->ringFollowers.push_back(&targ);
+     }
+-    if (src.ringLeader) {
++    if (src.ringLeader == NULL) {
+       // In this case targ->ringLeader must be non-null
+       src.ringLeader = targ.ringLeader;
+       targ.ringLeader->ringFollowers.push_back(&src);

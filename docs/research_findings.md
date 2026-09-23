@@ -4818,6 +4818,10 @@ next unmet goal (`goals[:1]`), never the remaining chain. The sequencing semanti
 still finds its own minimal path to the next goal from wherever the previous one left off, which is what the
 `precedes` chain meant in the first place -- only *where* the chain lives moved, from one NDDL problem's
 constraints to the host's own replanning loop, which was already built to do exactly this.
+*Root cause (2026-09-24, docs/baselines/europa.md "Solver crash"):* an inverted test in upstream
+`TemporalNetwork::maintainTEQ` (`if (src.ringLeader)` for `if (src.ringLeader == NULL)`) corrupts the timepoint
+equivalence-class lists, so `cleanupTEQ` later reads and writes freed `Tnode`s (valgrind). Fixed by
+`baselines/europa/patches/teq-leaderless-src.patch`; chained goals then solve. The one-goal-per-solve loop is kept.
 
 **3. `PSToken::getOwner()` returns empty for a `met_by` condition slave, not the timeline it is actually a fact
 of.** `host.py`'s `post_state()` (the activity's post-state, per §11.2 step 6 -- reads the latest-starting slave

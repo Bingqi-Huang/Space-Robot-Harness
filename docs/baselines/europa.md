@@ -15,7 +15,8 @@ A research integration of two NASA open-source components (EUROPA planner, PLEXI
 - Everything is in `baselines/europa/build_europa.sh`:
   `cmake .. -DOPTIMIZE=ON -DCMAKE_PREFIX_PATH=$DEPS -DSWIG_EXECUTABLE=$DEPS/bin/swig4.0 && make && make install`
   (with `SWIG_LIB=$DEPS/share/swig4.0`) → `~/Programs/europa/dist/europa` (`EUROPA_HOME`): `lib*_o.so`, headers,
-  `PSEngine.jar`, `Europa2.cmake`.
+  `PSEngine.jar`, `Europa2.cmake`. Upstream defects found here are fixed by `baselines/europa/patches/*.patch`,
+  applied on the pinned checkout (2026-09-24: `teq-leaderless-src.patch`, the solver segfault below).
 - Upstream examples (interpreted NDDL, `<Ex>-planner_o_rt <Ex>-initial-state.nddl PlannerConfig.xml`, run from the
   example directory):
   - Light: `Solver finished after 4 steps` -- `LightSwitch.turnOff` inserted to reach the `Off` goal.
@@ -195,9 +196,10 @@ Supersedes the earlier domain sections and traceability tables in this file (`sk
   (a reached restore lost again counts as a failure) and `facts_from_result` are unchanged; the same call failing, or
   a restore relapsing, `attempts` = 3 times asks mission control, and any answer but "continue" ends the run with the
   rover where it is.
-- **Stated limitations (kept)**: one goal per solve and a fresh plan database per replan (the solver segfaults on
-  `precedes`-chained goals, F105); a dropped item is unrepresentable; conditions can be met by a new token with no
-  activity behind it (e.g. a re-press planned from `Ready` without a stow: harmless, `press` works from any posture).
+- **Stated limitations (kept)**: one goal per solve and a fresh plan database per replan (introduced for F105's
+  chained-goal segfault, since fixed -- see "Solver crash" below; the behaviour is kept); a dropped item is
+  unrepresentable; conditions can be met by a new token with no activity behind it (e.g. a re-press planned from
+  `Ready` without a stow: harmless, `press` works from any posture).
 - `item_descriptions.json` (shared with PLEXIL) replaces `host.py`'s own ORU entry; `sim_boundary.py` now serves all
   five units, the manifest, positional (PLEXIL) arguments checked against the contracts, and answers operator requests
   with the protocol's HOLD reply.
@@ -209,26 +211,38 @@ press failing 2x: the 3rd press completes the mission; 3x: mission control, hold
 mission control, hold. Return failing 2x: completes. Base-only regression (`run_offline.sh --fail
 dock_at_feature:1:far`): replans, completes.
 
-**Blocker -- Mission B does not solve.** With the locked instance (12 inventoried items, 5 units) the `europa_plan`
-process segfaults (exit 139, inside EUROPA's search on backtracking -- the same retraction path as F105's chained-goal
-crash) on most Mission B problems. Removing either the extra items or the units made a sample problem solve; even the
-old one-item, no-unit instance crashes on 3 of 15 combinations (e.g. spare ORU -> PDU-2 shelf), so the pre-existing
-domain was only ever verified on ORU -> PDU-1. A `TotallyContained` horizon filter "solves" by filtering the flaws away
-(a one-activity `place` plan) -- not a fix, not used.
+**Solver crash (Mission B), root cause and fix (2026-09-24).** With the locked instance `europa_plan` segfaulted
+(exit 139) on 8 of the 15 item x destination problems, deterministically for identical input but flipping with the
+memory layout (the config file by its absolute path solved, by a relative path crashed). valgrind memcheck on
+`spare ORU -> PDU-1` (production build) named it: use-after-free in `TemporalNetwork::cleanupTEQ` (called from
+`deleteTimepoint`, when `TemporalPropagator::processVariableDeletions` retracts a token's timepoints), reading and
+then `erase`-writing the `ringFollowers` vector of a `Tnode` already freed by an earlier `DistanceGraph::deleteNode`.
+The defect is upstream's `TemporalNetwork::maintainTEQ`
+(`src/PLASMA/TemporalNetwork/base/TemporalNetwork.cc:972`), which keeps equivalence classes ("TEQs") of timepoints
+joined by a [0,0] constraint: its comment says "place any leaderless tp under the other's leader ... do nothing
+where both ringLeaders are non-null", but the second test reads `if (src.ringLeader)` instead of
+`if (src.ringLeader == NULL)`. So whenever `src` already had a leader it was re-pointed at `targ`'s leader while
+staying in its old leader's follower list (and a `src` that was itself a leader stopped being one, leaving its own
+followers pointing at it). `cleanupTEQ` relies on the invariant "a follower's leader lists it, a leader is its own
+leader"; with it broken, deleting such a node leaves dangling `ringLeader` pointers, and the next deletion writes
+into freed memory -- a heap corruption whose crash depends on what reuses that memory, hence the layout dependence.
+Fix: `baselines/europa/patches/teq-leaderless-src.patch` (the one-token condition), applied by `build_europa.sh`
+after the pinned checkout. TEQs are dispatchability bookkeeping only (`getRingLeader`/`getRingFollowers`/
+`getRingPredecessors`, which the planner never calls): the fix does not change propagation or search -- the
+fixed solver's plan for the crashing problem is identical (118 steps) to the unfixed solver's under valgrind, where
+freed memory is quarantined and it did not crash. The `solves_per_plan` re-run workaround is removed.
 
-Infrastructure workaround (main-session decision 2026-09-24, lock change control: a solver defect, not baseline
-knowledge): `host.py` `solve()` re-runs the identical solve in a fresh process when `europa_plan` dies on a signal, at
-most `solves_per_plan` = 5 per planning call, then counts it as no plan (the existing escalation). **It does not help**:
-all 15 item x destination combinations x 3 runs offline (45 runs, 87 planning calls): 63 calls solved on the 1st solve,
-24 crashed all 5 times; per combination the outcome is the same in all 3 runs. Solved (21 runs, 7 combinations: battery
-module -> PDU-1/2/3 and habitat, consumables container -> BESS and PDU-3, ORU -> PDU-3): every plan is the full correct
-one (arm_ready, navigate/dock at the source, pick the item there, navigate/dock at the destination, place it there,
-stow, return), 3 solves per run, done. Crashed 5/5 in every run (8 combinations: ORU -> PDU-1, PDU-2, BESS, habitat;
-battery module -> BESS; consumables container -> PDU-1, PDU-2, habitat): no plan -> mission control -> hold. The
-crash is deterministic for identical input, ASLR on: the same problem solves or crashes depending only on the byte
-string of the solver's arguments (the config file given by its absolute path solves 3/3, the same file by a relative
-path crashes 3/3) -- a memory-layout-dependent defect, so an identical re-solve cannot change the outcome. Mission A
-(5 units, no-hold, press x3): unchanged, all 21 planning calls solved on the 1st solve.
+Verification (offline, run-farm image, 2026-09-24): valgrind on the formerly crashing problem 10 errors (8 contexts, all
+in `cleanupTEQ`) before, 0 after. All 15 combinations x 3 runs (`run_offline_mission_b.sh`): 45/45 done, each 3 plans
+(delivered, stowed, dock), dispatched exactly arm_ready, navigate/dock at the source, pick the item there,
+navigate/dock at the destination, place it there, stow, return. Every one of those 135 problems, and the 15 chained
+problems below, solved directly with the config by absolute and by relative path: exit 0, byte-identical output.
+Mission A: the 5 covered units, no-hold (bess) and press failing 3x (isru) give event sequences (plans and
+dispatches) identical to before the fix; press failing 2x (isru) completes on the 3rd press.
+
+**F105's chained-goal crash was the same defect**: the 15 problems with all three goals `precedes`-chained in one solve
+now solve (132 steps, the full 9-activity plan each; valgrind clean on ORU -> PDU-2). `host.py` still gives one goal per solve
+(unchanged baseline behaviour; switching would be a lock change).
 
 ### Traceability: `lunar-base-model.nddl` and `host.py`
 

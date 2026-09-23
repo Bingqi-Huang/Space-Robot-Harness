@@ -10,7 +10,8 @@ D=$DEPS/root/usr
 export SWIG_LIB=$D/share/swig4.0
 
 [ -d $SRC ] || git clone https://github.com/nasa/europa.git $SRC
-git -C $SRC checkout -q $EUROPA_COMMIT
+git -C $SRC checkout -q -f $EUROPA_COMMIT
+git -C $SRC apply $HERE/patches/*.patch   # upstream defects fixed here, one file each (docs/baselines/europa.md)
 
 # the three build dependencies apt would install, extracted into a prefix (no root needed)
 if [ ! -x $D/bin/swig4.0 ]; then
@@ -28,7 +29,7 @@ export EUROPA_HOME=$SRC/dist/europa
 for ex in Light Rover; do
   mkdir -p $HOME/Programs/europa-examples-build/$ex && cd $HOME/Programs/europa-examples-build/$ex
   cmake $SRC/examples/$ex -DOPTIMIZE=ON -DSWIG_EXECUTABLE=$D/bin/swig4.0 -DCMAKE_PREFIX_PATH=$D
-  make -j8 $ex-planner_o_rt
+  make -j"$(nproc)" $ex-planner_o_rt
 done
 
 # this baseline: the EUROPA planner the host calls, and the PLEXIL adapter that links the host to the exec
