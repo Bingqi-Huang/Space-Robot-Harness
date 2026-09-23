@@ -1,7 +1,8 @@
 """The PLEXIL baseline runs Mission B `covered` on the live graph (execution_plan §11.1, §21.5).
 
 Mirrors d0_plexil_mission_a_check.py exactly, pointed at baselines/plexil/plans/MissionB_Covered.plx: deliver the
-spare ORU staged on the depot stand to PDU-1's spares shelf, then stow and return to the dock, through the reusable
+brief's item from its source to its destination (MISSION_GOAL, `mission_b_goal()` from D0_ENV's env.cargo /
+env.destination), then stow and return to the dock, through the reusable
 library (DriveAndDock/PickItem/PlaceItem/StowAndReturn -- docs/baselines/plexil.md). Every Command reaches the robot
 only through ros/plexil_capability_adapter -> the common capability boundary -> ExecuteRskill (runner, kernel, HAL,
 SRB), the same path Ours' boundary-driven checks use and the same evaluator (`mission` dict, `d0_common.py`).
@@ -19,8 +20,9 @@ PLEXIL_HOME = Path.home() / "Programs/plexil"
 assert ActionClient(n, ExecuteCapability, "/space/capability/execute").wait_for_server(timeout_sec=120), "boundary not up"
 
 env = dict(os.environ, PLEXIL_HOME=str(PLEXIL_HOME),
-           LD_LIBRARY_PATH=f"{(REPO / 'ros/install/lib').resolve()}:{PLEXIL_HOME / 'lib'}:{os.environ.get('LD_LIBRARY_PATH', '')}")
-log("PLAN", executive="PLEXIL universalExec 6.1.3", plan="MissionB_Covered.plx")
+           LD_LIBRARY_PATH=f"{(REPO / 'ros/install/lib').resolve()}:{PLEXIL_HOME / 'lib'}:{os.environ.get('LD_LIBRARY_PATH', '')}",
+           MISSION_GOAL=mission_b_goal())
+log("PLAN", executive="PLEXIL universalExec 6.1.3", plan="MissionB_Covered.plx", goal=json.loads(env["MISSION_GOAL"]))
 t0, sim0 = time.time(), sim["t"]
 exec_proc = subprocess.Popen([str(PLEXIL_HOME / "bin/universalExec"), "-c", str(PLAN_DIR / "interface-config.xml"),
                               "-L", str(PLAN_DIR / "plans/lib"),  # MissionB_Covered.plx calls the reusable library nodes

@@ -36,7 +36,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mission_video import (AMBER, DIM, FAINT, FONT, FONT_B, FONT_M, GREEN, INK, MAP_W, OUT_W, PAD, PANEL_W, RED,
                             LEDGER, Map, elide, moving, plain, wrap)
 
-TOP = ["ToDepot", "Pick", "ToShelf", "Place", "Return"]
+TOP = ["ToSource", "Pick", "ToDestination", "Place", "Return"]
 DEFAULT_MISSION = ("Deliver the spare ORU staged on the depot stand to the spares shelf of PDU-1, then return the "
                     "rover to the dock with the arm stowed.")
 
