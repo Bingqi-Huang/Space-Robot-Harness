@@ -366,19 +366,18 @@ while time.time() - t < 1500:
 else:
     log("RESULT", error="graph never ready"); sys.exit(2)
 log("READY", after_s=round(time.time() - t), bt_navigator="active")
-# Localization is up when AMCL has matched a scan, not when `map` first exists: AMCL publishes the initial pose's
-# `map -> odom` once at activation and its first scan match only ~10 s of sim later. A goal sent in between is judged
-# against that stale transform, and Nav2's controller, failing to transform the goal, compares the robot at the map
-# origin (the dock) with a zero pose and reports "Reached the goal!" at once (site_check_11: three navigations
-# "succeeded" in 0.1 s without moving).
-from geometry_msgs.msg import PoseWithCovarianceStamped  # noqa: E402
-
-_amcl = []
-n.create_subscription(PoseWithCovarianceStamped, "/amcl_pose", _amcl.append,
-                      QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL))
-while not _amcl:
+# Localization is up when AMCL is matching scans, not when `map` first exists: AMCL publishes the initial pose (and
+# /amcl_pose, stamped ~0 s) at activation, and `map -> odom` keeps coming only once it processes scans, re-sent with
+# every scan. A goal sent before that is judged against a stale transform, and Nav2's controller, failing to
+# transform the goal, compares the robot at the map origin (the dock) with a zero pose and reports "Reached the
+# goal!" at once (site_check_11: three navigations "succeeded" in 0.1 s without moving, map -> odom 5 s old).
+while True:
     spin(0.5)
-log("LOCALIZED", sim_t=round(sim["t"], 1))
+    if buf.can_transform("map", "odom", Time()):
+        st = buf.lookup_transform("map", "odom", Time()).header.stamp
+        if st.sec + st.nanosec * 1e-9 > sim["t"] - 0.5:
+            break
+log("LOCALIZED", sim_t=round(sim["t"], 1), map_odom_stamp=round(st.sec + st.nanosec * 1e-9, 2))
 tf("map", "chassis_base_link", timeout=600)
 tf("odom", "tcp_frame", timeout=60)
 while "p" not in truth:
