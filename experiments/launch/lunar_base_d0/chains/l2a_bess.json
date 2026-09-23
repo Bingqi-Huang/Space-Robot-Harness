@@ -1,0 +1,8 @@
+[["navigate_to_feature", {"feature": "bess_hvac/cover_button", "standoff_m": 1.5}],
+ ["dock_at_feature", {"feature": "bess_hvac/cover_button", "standoff_m": 0.0}],
+ ["press", {"target": "the round blue push button on the yellow actuator box", "feature": "bess_hvac/cover_button"}],
+ ["navigate_to_feature", {"feature": "bess_panel/press", "standoff_m": 1.5}],
+ ["dock_at_feature", {"feature": "bess_panel/press", "standoff_m": 0.0}],
+ ["press", {"target": "the round white push button on the graphite control panel with the teal border", "feature": "bess_panel/press"}],
+ ["stow", {}],
+ ["navigate_to_pose", {"x": 0.0, "y": 0.0, "yaw": 0.0}]]

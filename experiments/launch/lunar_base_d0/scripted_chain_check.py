@@ -7,6 +7,8 @@ calls never see it).
 """
 import json
 
+import yaml
+
 from d0_common import *  # noqa: F401,F403
 from rclpy.action import ActionClient
 from space_harness_msgs.action import ExecuteCapability
@@ -16,9 +18,13 @@ while not cap.wait_for_server(timeout_sec=1.0):
     spin(0.5)
 
 
-# the simulator can be put back to a saved state first (RESUME_SNAPSHOT=<log>/snapshots/before_step_<n>.pt: jaws open
-# only, F60); `d0_common.put_scene_back` does the restore, shared with ours_mission_check.py.
-def call(name, args, hard_sim_s=900.0):
+# the capability's own deadline is the contract's default; this one only catches a call that never answers
+DEADLINE_S = {k: float(v["default_deadline_s"]) for k, v in yaml.safe_load(
+    (Path(__file__).resolve().parents[3] / "openral_ext/capability_server/contracts.yaml").read_text())["effects"].items()}
+
+
+def call(name, args):
+    hard_sim_s = DEADLINE_S[name] + 120.0
     f = cap.send_goal_async(ExecuteCapability.Goal(capability=name, args_json=json.dumps(args)))
     rclpy.spin_until_future_complete(n, f, timeout_sec=90)
     gh = f.result()
@@ -44,6 +50,8 @@ def worst(evidence):
 
 
 chain = json.loads(Path(os.environ["CHAIN_JSON"]).read_text())
+# the simulator can be put back to a saved state first (RESUME_SNAPSHOT=<log>/snapshots/before_step_<n>.pt: jaws open
+# only, F60); `d0_common.put_scene_back` does the restore, shared with ours_mission_check.py.
 if os.environ.get("RESUME_SNAPSHOT"):
     put_scene_back(Path(os.environ["RESUME_SNAPSHOT"]))
 for name, args in chain:

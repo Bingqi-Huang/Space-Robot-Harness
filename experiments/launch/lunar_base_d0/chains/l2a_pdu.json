@@ -1,0 +1,8 @@
+[["navigate_to_feature", {"feature": "pdu_1_radiator/cover_button", "standoff_m": 1.5}],
+ ["dock_at_feature", {"feature": "pdu_1_radiator/cover_button", "standoff_m": 0.0}],
+ ["press", {"target": "the round blue push button on the yellow actuator box", "feature": "pdu_1_radiator/cover_button"}],
+ ["navigate_to_feature", {"feature": "pdu_1_panel/press", "standoff_m": 1.5}],
+ ["dock_at_feature", {"feature": "pdu_1_panel/press", "standoff_m": 0.0}],
+ ["press", {"target": "the round red push button set into the yellow sub-panel", "feature": "pdu_1_panel/press"}],
+ ["stow", {}],
+ ["navigate_to_pose", {"x": 0.0, "y": 0.0, "yaw": 0.0}]]
