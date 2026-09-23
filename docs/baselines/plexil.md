@@ -221,7 +221,7 @@ Supersedes every earlier traceability table in this file.
 | every call's `Try` (Nav, Dock, Ready, Pick, Place, Stow, Return) | at most 3 identical attempts, on the result's `success` only | authoring_spec tier 1 (budget = Ours' `reasoner.retry_cap_per_call: 3`) | (c) |
 | `DriveAndDock`: `standoff_m`, `approach_m` | 1.5, 1.5; dock at standoff 0 | `contracts.yaml` navigate_to_feature / dock_at_feature defaults | (b) |
 | `PickItem`/`StowAndReturn`: `tolerance_rad` | 0.08 | `contracts.yaml` arm_ready / stow default | (b) |
-| `PickItem`: `arm_ready` before `pick` | ordering | not required by `pick`'s contract ("the arm needs no preparation"); the procedure's own covered order, run live (F104) | (b) |
+| `PickItem`: `arm_ready` before `pick` | ordering | not required by `pick`'s contract ("the arm needs no preparation"); the procedure's own covered order, run live (F104). Weak trace: kept as pre-existing and harmless (main-session decision 2026-09-24) | (b) |
 | `PickItem`: `support` | the place frame the item stands on | `contracts.yaml` pick `support` | (b) |
 | `PickItem`/`PlaceItem`: `item` | equipment-catalogue name | `contracts.yaml` pick/place `item` | (b) |
 

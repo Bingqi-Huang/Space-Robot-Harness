@@ -209,14 +209,26 @@ press failing 2x: the 3rd press completes the mission; 3x: mission control, hold
 mission control, hold. Return failing 2x: completes. Base-only regression (`run_offline.sh --fail
 dock_at_feature:1:far`): replans, completes.
 
-**Blocker -- Mission B does not solve reliably.** With the locked instance (12 inventoried items, 5 units) the
-`europa_plan` process segfaults (exit 139, inside EUROPA's search on backtracking -- the same retraction path as F105's
-chained-goal crash) on most Mission B problems: 8 of 15 item x destination problems in one pass, 10 of 15 in another, the outcome
-varying between runs of the same problem. Removing either the extra items or the units made a sample problem solve;
-even the old one-item, no-unit instance crashes on 3 of 15 combinations (e.g. spare ORU -> PDU-2 shelf), so the
-pre-existing domain was only ever verified on ORU -> PDU-1. A `TotallyContained` horizon filter "solves" by filtering
-the flaws away (a one-activity `place` plan) -- not a fix. Not resolved here: it needs a decision (see the report of
-2026-09-24).
+**Blocker -- Mission B does not solve.** With the locked instance (12 inventoried items, 5 units) the `europa_plan`
+process segfaults (exit 139, inside EUROPA's search on backtracking -- the same retraction path as F105's chained-goal
+crash) on most Mission B problems. Removing either the extra items or the units made a sample problem solve; even the
+old one-item, no-unit instance crashes on 3 of 15 combinations (e.g. spare ORU -> PDU-2 shelf), so the pre-existing
+domain was only ever verified on ORU -> PDU-1. A `TotallyContained` horizon filter "solves" by filtering the flaws away
+(a one-activity `place` plan) -- not a fix, not used.
+
+Infrastructure workaround (main-session decision 2026-09-24, lock change control: a solver defect, not baseline
+knowledge): `host.py` `solve()` re-runs the identical solve in a fresh process when `europa_plan` dies on a signal, at
+most `solves_per_plan` = 5 per planning call, then counts it as no plan (the existing escalation). **It does not help**:
+all 15 item x destination combinations x 3 runs offline (45 runs, 87 planning calls): 63 calls solved on the 1st solve,
+24 crashed all 5 times; per combination the outcome is the same in all 3 runs. Solved (21 runs, 7 combinations: battery
+module -> PDU-1/2/3 and habitat, consumables container -> BESS and PDU-3, ORU -> PDU-3): every plan is the full correct
+one (arm_ready, navigate/dock at the source, pick the item there, navigate/dock at the destination, place it there,
+stow, return), 3 solves per run, done. Crashed 5/5 in every run (8 combinations: ORU -> PDU-1, PDU-2, BESS, habitat;
+battery module -> BESS; consumables container -> PDU-1, PDU-2, habitat): no plan -> mission control -> hold. The
+crash is deterministic for identical input, ASLR on: the same problem solves or crashes depending only on the byte
+string of the solver's arguments (the config file given by its absolute path solves 3/3, the same file by a relative
+path crashes 3/3) -- a memory-layout-dependent defect, so an identical re-solve cannot change the outcome. Mission A
+(5 units, no-hold, press x3): unchanged, all 21 planning calls solved on the 1st solve.
 
 ### Traceability: `lunar-base-model.nddl` and `host.py`
 
@@ -230,7 +242,7 @@ the flaws away (a one-activity `place` plan) -- not a fix. Not resolved here: it
 | goal `delivered` | the inventory entry of X at S `On` D | launcher `MISSION_GOAL`; `manifest.inventory` | (a) |
 | navigate_to_feature from anywhere; dock_at_feature only from the approach stance | base moves | contracts.yaml (Nav2 to an approach point; dock "entered along the axis") | (b) |
 | pick/place `contained_by` base at the support's work stance | dock first | contracts.yaml pick/place ("dock at the item's work pose first") | (b) |
-| pick/place `contained_by` posture `Ready` | arm readied first | not required by pick's contract; the covered procedure's own verified order (F104, F105) | (b) |
+| pick/place `contained_by` posture `Ready` | arm readied first | not required by pick's contract; the covered procedure's own verified order (F104, F105). Weak trace: kept as pre-existing and harmless | (b) |
 | stow `contained_by` jaws `Empty` | no folding with a load | contracts.yaml stow ("the jaws must be empty"); node.py refusal | (b) |
 | press: `feature = unit.button`, base at its work stance, `Stowed -> Ready`, `Faulted -> Restored` | the unit's own reset; press leaves the arm out | contracts.yaml press ("dock at the feature's work pose first", "withdraws") | (b) |
 | durations | 400 / 240 / 400 / 120 / 120 / 900 / 600 / 420 s | contracts.yaml `default_deadline_s` | (b) |

@@ -55,6 +55,7 @@ NEAR_M = HOST_CONFIG["near_m"]      # dock_at_feature closes "the last metre" af
                                      # this close to the feature can dock
 ATTEMPTS = HOST_CONFIG["attempts"]  # the same call failing this often ends the run -- the domain has no other way there
 JAW_HOLD = (HOST_CONFIG["jaw_holding_min_rad"], HOST_CONFIG["jaw_holding_max_rad"])  # d0_common.py's own bands
+SOLVES = HOST_CONFIG["solves_per_plan"]
 
 # An item's natural-language description (pick's target/part) and catalogue release constraint (place's) are text
 # the solver has no reason to search over -- there is exactly one way to describe an item. The table is shared with the
@@ -110,11 +111,18 @@ def problem(model, site_lines, state, goals):
 
 
 def solve(model, text, run_dir, n):
+    """One planning call. nasa/europa's solver can die on a signal while backtracking (the retraction path of F105's
+    chained-goal segfault; on the full site instance it hits most Mission B problems, docs/baselines/europa.md). That
+    is a solver defect, not a planning result: the identical solve is re-run in a fresh process (fresh plan database),
+    at most SOLVES times, and only then counted as no plan. A "no plan" the solver itself returns is never re-run."""
     path = run_dir / f"problem_{n}.nddl"
     path.write_text(text)
-    out = subprocess.run([str(PLANNER), str(path), str(CONFIG), str(HORIZON), "5000", "LunarBot."], cwd=model.parent,
-                         capture_output=True, text=True)
-    return json.loads(out.stdout)
+    for k in range(1, SOLVES + 1):
+        out = subprocess.run([str(PLANNER), str(path), str(CONFIG), str(HORIZON), "5000", "LunarBot."], cwd=model.parent,
+                             capture_output=True, text=True)
+        if out.returncode >= 0:
+            return {**json.loads(out.stdout), "solves": k}
+    return dict(solved=False, steps=0, activities=[], solves=SOLVES, crashed=True)
 
 
 # ---- activity -> capability call ---------------------------------------------------------------------------------
@@ -362,7 +370,7 @@ def main():
         # semantics do not change: each solve still finds its own minimal path to the next unmet goal from
         # wherever the previous one left off, which is what the chain meant in the first place.
         plan = solve(model, problem(model, site_lines, state, [next(g for g in goals if state.get(g[0]) != [g[1], g[2]])]), run_dir, n_plan)
-        log("plan", n=n_plan, solved=plan["solved"], steps=plan["steps"],
+        log("plan", n=n_plan, solved=plan["solved"], steps=plan["steps"], solves=plan["solves"],
             activities=[(x["type"], x["params"]) for x in plan["activities"]])
         if not plan["solved"]:
             log("no_plan", state=state, goals=goals)
