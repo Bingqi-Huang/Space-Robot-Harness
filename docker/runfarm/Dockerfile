@@ -44,8 +44,9 @@ ENV NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=all
 RUN groupadd -g ${GID} bingqi && useradd -m -u ${UID} -g ${GID} -s /bin/bash bingqi \
  && echo "bingqi ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/bingqi \
  && mkdir -p /mnt/SharedData && chown bingqi:bingqi /mnt/SharedData
+# login shells (runfarm.sh runs `bash -lc`) read /etc/profile.d; Ubuntu's ~/.bashrc returns early when not interactive
+RUN printf '%s\n' 'source /opt/ros/humble/setup.bash' \
+      'export ISAAC_SIM_PYTHON=/home/bingqi/Programs/isaac-sim/python.sh' \
+      'export PATH="/home/bingqi/.local/bin:$PATH"' > /etc/profile.d/runfarm.sh
 USER bingqi
 WORKDIR /home/bingqi
-RUN printf '%s\n' 'source /opt/ros/humble/setup.bash' \
-      "export ISAAC_SIM_PYTHON=/home/bingqi/Programs/isaac-sim/python.sh" \
-      'export PATH="/home/bingqi/.local/bin:$PATH"' >> /home/bingqi/.bashrc
