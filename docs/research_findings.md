@@ -5153,3 +5153,43 @@ view is now at the panel from 2.0 m (~9 px).
 (h) `site_check_10` (final acceptance): 24/24 work-stand queries answered (every panel, shutter button, bay and
 stand slot of the five units); BESS lamp red, BESS HVAC shutter drawn, ISRU lamp green "at the top centre of the
 control panel" -- all right; every view reached first time, no "Failed to make progress", no crash.
+
+## F111 -- Baselines locked before any further run; the run farm reproduces a covered run; the models move to a free gateway (2026-09-23)
+
+**1. Baseline lock** (`docs/baselines/authoring_spec.md`, decided with the user before any more baseline runs, so that
+a failed run cannot pull a baseline stronger or weaker after the fact). A baseline is the native PLEXIL / EUROPA
+mechanism plus the covered specification's knowledge. Failure handling in three tiers: (1) a failed call is repeated,
+3 attempts -- the same cap Ours' loop has on an identical call -- then hold in place and ask mission control; (2) the
+goal checks the covered brief asks for; (3) no branch keyed on a cause, situation or failure stage (that knowledge is
+what Experiment II prices). Grounded in ECSS-E-ST-70-11C §5.7.5 (retry count a parameter, not a standard; what a level
+cannot handle goes up to ground), RAX, MEXEC (Wang et al. 2022), the PLEXIL TM-2006-213483 rover plan, Morris et al.
+2013, COWP. Audit of the current artifacts and a change-control table are in the spec; the post-freeze offline
+retry-budget sensitivity (N = 1, 2, 3, 5) and the per-case re-authoring cost answer "an engineer could have written it".
+
+**2. Held-out action forms were never executed.** Only reachability (`work_stands`) and VLM readings were checked
+(`site_check_2-10`); no held-out press, pick or place ran. A physical failure inside a campaign run would be scored
+against the coordination method, and unequally (Ours attempts the two picks + two places, a baseline escalates first).
+Physical validation (heldout_design §12) now precedes every further live method run.
+
+**3. Run farm** (`pro6000`, heldout_design §11, `docker/runfarm/`). The development machine runs one simulation at a
+time (two unpinned Isaac processes ran at 0.05x each, F54 §4); pro6000 (6 x RTX PRO 6000, 128 threads) runs one
+container per GPU, pinned to 10 cores + hyperthreads on the GPU's socket, own network namespace. The image is the dev
+machine's system layer (Ubuntu 22.04, its 445 `ros-humble-*` packages); home installs, caches and the repo are
+mounted at the same paths. Three defects the first container runs showed: ROS environment not loaded (Ubuntu's
+~/.bashrc returns early in non-interactive shells -> /etc/profile.d), `srb` not on PATH (the dev machine had it via
+~/.local/bin -> /usr/local/bin/srb link), and no route to the API (the host's proxy listens on its own 127.0.0.1 with
+fake-IP DNS -> public DNS in the container; the API is reachable directly).
+Equivalence (`artifacts/runs/rf_equiv_1` on pro6000): PLEXIL Mission A covered on the final scene, five calls all
+successful, PDU-2 cleared, `success: true`, dock error 0.22 m / -9 deg (dev machine: 0.18 m / -10 deg); sim/wall 0.185
+(dev machine 0.28: the Xeon's single thread is slower; six at once is ~4x the dev machine's throughput). Per tick
+(SRB_ROS_PROFILE, 102 ms): physics 30, TF publishing 24, `_get_dones` 17, lidar 12, other sensors 10, render 4 -- physics
+is under a third, so GPU PhysX (crashes in SRB, F54 §5) stays off (user decision); TF and `_get_dones` are the larger
+levers if speed is ever needed.
+
+**4. Models.** DeepSeek's own API became unaffordable; the reasoner, the shared scene VLM and the pick/press VLM now run
+`DeepSeek-V4.1-Flash` on the paratera gateway (user decision). Measured from a container: reasoner step 2.1-3.2 s
+(DeepSeek official 1.5 s) with reasoning returned; a camera-sized image 2.4-3.5 s; 30 concurrent image requests all
+answered (median 3.7 s, max 6.7 s); multi-MB requests slow (11-56 s) but never stalled -- F58's stall on this gateway
+was the request size, and the pipeline sends one 640x480 view per request. A model change is a method change: all
+development runs before it are not comparable, and the VLM readings accepted in `site_check_10` (lamps, shutters) are
+re-checked with the new model during physical validation.
