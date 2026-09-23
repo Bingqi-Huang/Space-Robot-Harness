@@ -5263,3 +5263,21 @@ shutter drawn, ISRU lamp green, all right; 25/25 work stands. Pick's region choi
 runs at once: answered in 10-115 s (median 61 s, p90 103 s; the model reasons before answering), and 10 of 41
 requests were cut by the skills' 120 s timeout, each costing a whole tier-1 attempt. Pick and press now allow 300 s.
 The indicator questions (`observe`) answer in seconds.
+
+**6. Final batch (frozen shared layer; `artifacts/runs/chain_<name>_f*`; attempts per call in `check.log`).**
+
+| Chain (held-out sequence) | Physical sequence | Evaluator | Notes |
+|---|---|---|---|
+| L3 PDU (`l3_pdu_f`) | ORU out of PDU-2 bay -> shelf; depot spare -> bay; reset | success | 1 VLM timeout (retried) |
+| L3 BESS (`l3_bess_f`) | battery module out -> BESS stand; depot spare -> cradle; reset | success | |
+| L3 ISRU (`l3_isru_f`) | filter out -> ISRU set-down stand; spare -> cradle; reset | success | 2 VLM timeouts |
+| L4-far (`l4_far_f`) | PDU-1 ORU -> shelf; ISRU power-cradle ORU carried 40 m -> PDU-1 bay; reset | success | |
+| L2-B PDU (`l2b_pdu_f`) | returned crate off PDU-1 shelf -> depot slot 1; spare ORU -> shelf | success | 1 VLM timeout |
+| L2-A BESS (`l2a_bess_f`) | HVAC shutter button; BMS panel reset; holds past 30 s | success | panel press: fold -2 then pressed again (before the fold fix) |
+| L2-A PDU (`l2a_pdu_f3`) | radiator shutter button; panel reset; holds past 30 s | success | every call first attempt; `_f`: planner-start freeze on leg 1; `_f2`: fold -2 made the retry toggle the shutter shut (fixed: a pressed press stands) |
+| Mission B battery (`b_bess_f`) | depot spares stand -> BESS stand | delivered | return leg: planner-start freeze ("0 poses") |
+| L2-B habitat (`l2b_habitat_f`) | return container off habitat stand -> return stand; consumables container | pick at the landing stand failed | AMCL 0.26-0.33 m off near the landing pad (<= 0.1 m elsewhere; `bag_loc_error.py`): the handle was not in the view |
+
+Every held-out action form has now been executed and verified by the evaluator at least once. Two navigation /
+localization defects remain before step 9, both in shared infrastructure: the planner-start freeze (§3) and AMCL's
+bias on the landing pad's ramp (the pad sits at its own level; error rises from y ~ 33 m on the access road).
