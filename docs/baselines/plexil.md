@@ -40,7 +40,7 @@ predefined recovery set and the live check script (`d0_plexil_mission_b_check.py
 reported failure kinds and stages are still moving in a parallel session, and writing recovery against them now would
 be redone.
 
-### Adapter: two typed failure Lookups
+### Adapter: two typed failure Lookups (deleted 2026-09-24 by the lock, see "Built to the lock")
 
 `ros/plexil_capability_adapter/src/CapabilityAdapter.cc` gained, beside the existing `LastCapabilityResult`:
 
@@ -83,7 +83,7 @@ the rover to the dock with the arm stowed." `ToDepot` (DriveAndDock on `depot_st
 target/part/item) -> `ToShelf` (DriveAndDock on `pdu_1_shelf/shelf`) -> `Place` (PlaceItem, `below_overhang`) ->
 `Return` (StowAndReturn to the map origin).
 
-### Traceability (nominal path; format: docs/baselines/authoring_spec.md)
+### Traceability (nominal path; superseded by "Built to the lock" below)
 
 | Plan element | Fact encoded | Source | Rule |
 |---|---|---|---|
@@ -132,7 +132,7 @@ contradicting it, so it is not in the rewritten plan. Offline-verified (`plexilt
 the `plexilscript` compiler's lexer the first time; `MissionB_Covered_nominal.pst`'s own comments had already
 worked around this by spelling "section" out, not noted anywhere until this rewrite hit it too.
 
-### Traceability (nominal path; format: docs/baselines/authoring_spec.md)
+### Traceability (nominal path; superseded by "Built to the lock" below)
 
 | Plan element | Fact encoded | Source | Rule |
 |---|---|---|---|
@@ -183,3 +183,74 @@ runs), never a SkipCondition (watched while the node waits). Offline: `scripts/M
 | `Identify` over pdu_1..3 | which unit is tripped | brief ("identify the failed unit"); site_map units; `power_status` | (a) |
 | `Check1/2`, `FinalCheck` | breaker reads `closed` after a reset, and still at the dock | brief ("verify the result") | (a) |
 | `ResetFailed`, `FinalCheck` escalation | no further procedure applies | generic recovery: retry once, then escalate | (b) |
+
+## Built to the lock (2026-09-24; docs/baselines/authoring_spec.md "Changes to the current artifacts")
+
+Supersedes every earlier traceability table in this file.
+
+- **Tier 1, one budget.** Every capability call of the library (`DriveAndDock` nav/dock, `PickItem` arm_ready/pick,
+  `PlaceItem` place, `StowAndReturn` stow/return) and Mission A's `Reset` (press + check) is a `Try` of 3 identical
+  attempts. Nothing reads a failure kind or stage.
+- **Adapter** (`ros/plexil_capability_adapter`): Lookups `LastFailureKind`, `LastFailureStage`, `jaw` deleted. Two
+  Lookups added that carry data, not logic: `MissionGoal(field)` (the launcher's goal, env `MISSION_GOAL`, the same
+  variable EUROPA's host reads) and `ItemDescription(item, field)` (the baselines' shared item table
+  `baselines/item_descriptions.json`, file named in `interface-config.xml`). PLEXIL has no plan arguments, so a Lookup
+  is the only native way for a launcher's goal to reach a plan.
+- **Hold after escalation.** Both mission roots are `UncheckedSequence`s: a checked `Sequence` fails as soon as one
+  child fails and skips everything after it, so the old Mission A's `ResetFailed` escalation could never run (a Try
+  whose attempts all fail is a failed child). Every leg is gated on `ok`; after the one `RequestOperator` nothing more
+  is commanded -- the rover holds where it is.
+- **Mission A** keeps its procedure (identify by telemetry over the five units, press, verify, re-press, verify at the
+  dock); the reset now has 3 attempts, and a leg out of attempts (drive, return) escalates too.
+- **Mission B** is parameterized by (item X, source S, destination D) from `MissionGoal`; the item's `target`/`part`
+  and release constraint come from the shared item table; top-level nodes renamed `ToSource`/`ToDestination`
+  (`experiments/video/plexil_*` updated). The old ORU text (copied from Ours' runs, and describing a T-bail the
+  catalogue no longer has -- the handle is a captive collar) is replaced by the catalogue's.
+- **Offline** (`python3 baselines/plexil/scripts/offline_check.py`, plexiltest; replaces the three hand-written
+  scripts): 51 cases pass -- Mission A covered at every unit (covered_misreport is the same run: the plan never reads
+  the report), a reset that does not hold (3 presses -> escalate -> hold), a re-trip at the dock, no tripped unit;
+  Mission B covered for all 3 items x 5 destinations; at each of the 14 call sites, fail x2 -> the 3rd attempt runs
+  and the mission completes, fail x3 -> `RequestOperator` and nothing after it. Also run through the real adapter
+  against `baselines/europa/sim_boundary.py` (universalExec): Mission B battery module -> BESS stand and Mission A
+  ISRU complete; `--no-hold` on PDU-3 escalates at the dock; pick failing 3x escalates and holds.
+
+### Traceability: library (`plans/lib/`, both missions)
+
+| Plan element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| every call's `Try` (Nav, Dock, Ready, Pick, Place, Stow, Return) | at most 3 identical attempts, on the result's `success` only | authoring_spec tier 1 (budget = Ours' `reasoner.retry_cap_per_call: 3`) | (c) |
+| `DriveAndDock`: `standoff_m`, `approach_m` | 1.5, 1.5; dock at standoff 0 | `contracts.yaml` navigate_to_feature / dock_at_feature defaults | (b) |
+| `PickItem`/`StowAndReturn`: `tolerance_rad` | 0.08 | `contracts.yaml` arm_ready / stow default | (b) |
+| `PickItem`: `arm_ready` before `pick` | ordering | not required by `pick`'s contract ("the arm needs no preparation"); the procedure's own covered order, run live (F104) | (b) |
+| `PickItem`: `support` | the place frame the item stands on | `contracts.yaml` pick `support` | (b) |
+| `PickItem`/`PlaceItem`: `item` | equipment-catalogue name | `contracts.yaml` pick/place `item` | (b) |
+
+### Traceability: `MissionA_Covered.ple`
+
+| Plan element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| `Identify` over pdu_1, pdu_2, pdu_3, bess, isru | the serviced units; the unit id is the parameter of every later leg | `interaction.json` `units` (site survey); `power_status` contract | (a) |
+| `Identify`: breaker `tripped` | which unit failed; the report is not read | brief ("identify the failed unit"); `power_status` "breaker state (closed / tripped)" | (a)/(b) |
+| `ToUnit`, `Press`: feature | `<unit>_panel/press` | `interaction.json` `units[u].panel` and its `press` point (`unit: u`) | (a) |
+| `Button` | PDUs: round red push button in the yellow sub-panel; BESS: round white button, graphite panel, teal border; ISRU: round black button, white panel, orange border | panel looks: `assets/lunar_base/previews/{pdu_service_panel,bms_panel,plant_panel}_*.png`; `press` contract asks for colour and shape | (a)/(b) |
+| No `arm_ready` before `press` | not required | `contracts.yaml` press ("neither required nor useful") | (b) |
+| `Check1-3` | breaker reads `closed` after a press; 3 press+check attempts | brief ("verify the result"); authoring_spec tier 2 under tier 1's budget | (a) |
+| `FinalCheck` | still `closed` at the dock | brief ("verify the result"); authoring_spec tier 2 | (a) |
+| `NoTrippedUnit`, `NotReached`, `ResetFailed`, `NotReturned`, `FinalCheck` | `RequestOperator`, then nothing is commanded (hold) | authoring_spec tier 1-2 ("then hold in place and ask mission control") | (c) |
+| `Return`: dock pose | (0, 0, 0) | `site_map` `dock` | (a) |
+
+### Traceability: `MissionB_Covered.ple` and the shared item table
+
+| Plan element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| `Goal`: item, source, destination | X, S, D of the brief | launcher's `MISSION_GOAL` (`d0_common.mission_b_goal`: the brief's cargo by its catalogue name and manifest place, the destination's place frame) | (a) |
+| `ToSource`, `ToDestination`: feature; `Pick`/`Place`: support | S, D (site place frames) | `site_map` points of type place | (a) |
+| `Pick`: `target` (ORU) | box wrapped in crinkled gold MLI foil, black lifting post on top | `previews/oru_0417_*.png`; catalogue `carry_handle` | (a) |
+| `Pick`: `target` (battery module) | black drum-shaped module on a black base, amber windows on its round face, black lifting post | `previews/bat_0102_*.png`; catalogue `carry_handle` | (a) |
+| `Pick`: `target` (consumables container) | long silver-white rugged case, grey front panel, black lifting post | `previews/consumables_container_*.png`; catalogue `carry_handle` | (a) |
+| `Pick`: `part` (all three) | the slot on the neck between the transverse head and the collar, fingers on opposite sides | catalogue `grasp_interface.contact_region` / `engagement` (`contracts.py` `item_catalogue`, handle with collar in each asset's `.json`) | (a) |
+| `Place`: `release_constraint` | `below_overhang` | catalogue `grasp_interface.release_constraint`; `contracts.yaml` place | (a)/(b) |
+| `Escalate` | `RequestOperator`, then hold | authoring_spec tier 1 | (c) |
+| `Return`: dock pose | (0, 0, 0) | `site_map` `dock` | (a) |
+
+No row cites a held-out run or scenario name.
