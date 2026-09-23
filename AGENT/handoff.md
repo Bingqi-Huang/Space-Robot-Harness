@@ -1,43 +1,50 @@
 # Handoff
 
-Updated 2026-09-23 (held-out ladder steps 1-4 reviewed and merged; next: step 5, baseline competence). Read `AGENT/research_content.md` and
-`AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan), then `AGENT/todo.md`.
+Updated 2026-09-23 (baseline lock, run farm and physical validation decided; docs on `feat/baseline-lock`). Read
+`AGENT/research_content.md` and `AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan),
+**`docs/baselines/authoring_spec.md`** (the locked baseline specification), then `AGENT/todo.md`.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
-- `feat/heldout-ladder` (with `feat/experiment-campaign` beneath it) merged: research repo `main`, SRB `main`,
-  openral `master`; the research repo's submodule pointers are the merged tips. All pushed 2026-09-23; ask before any later push.
-- Start each new task on a fresh `feat/<name>` branch in every repo it touches.
+- research `main` = steps 1-4 merged and pushed 2026-09-23; SRB `main`, openral `master` likewise.
+- `feat/baseline-lock` (research repo, worktree `.worktree/baseline-lock`): docs only -- authoring_spec lock,
+  heldout_design §7/§10/§11/§12, pointers in execution_plan §11.1 and research_content §5.2, todo/handoff.
+  Not committed yet; ask before commit/merge/push.
 
-## Where it stands (2026-09-23)
+## Decisions of 2026-09-23 (with the user)
 
-Steps 1-4 of `docs/heldout_design.md` §10 are built (F109) and redone after the user's review (F110):
-- Five serviced units as scene data (layout.yaml `units` -> interaction.json; site points tagged `unit`): PDU-1..3
-  (panel, shelf, ORU bay, radiator), BESS (container on the pad, wall BMS enclosure + graphite panel, battery cradle,
-  HVAC condenser with shutter), ISRU plant (plant panel, filter + power-ORU cradles). `site.py` has no unit list;
-  module fault codes per module kind; telemetry lists installed serials per bay.
-- Mission A `env.faulted_unit` in {pdu_1..3, bess, isru}; Mission B `env.cargo` / `env.destination`.
-- Console protocol (§8), async operator requests, evaluator class 5 keyed on unit + granted bay, interaction measures.
-- Nav2: global costmap = the AMCL surveyed map (static + live obstacle + inflation, 0.05 m); the capability server's
-  drive limits no longer zero the crab (they were a hand-copied [0.5, 0.0, 2.0] -- F110 c).
-- Baselines: PLEXIL Identify and EUROPA button descriptions span all five units (plexiltest offline ok).
-Live acceptance: `artifacts/runs/site_check_10` (`d0_site_check.py`; 7-9 are the fixes' intermediate runs).
+- **Baseline lock** (authoring_spec): native PLEXIL/EUROPA + covered knowledge. Tier 1: a failed call repeated, 3
+  attempts (= Ours' identical-call cap), then hold in place and ask mission control. Tier 2: the goal checks the brief
+  asks for. Tier 3 forbidden: any branch keyed on a cause/situation/failure stage. Mission A goal = every unit restored;
+  Mission B parameterized (item, source, destination) from one shared launcher goal; one NDDL domain; all inventoried
+  items in EUROPA's instance; delete adapter stage/kind/jaw Lookups and EUROPA `--power-field`. Change control: only
+  infrastructure and conformance fixes after the lock. Grounded in ECSS-E-ST-70-11C §5.7.5, RAX, MEXEC (Wang 2022),
+  PLEXIL TM-2006-213483, Morris 2013, COWP.
+- **Physical validation** (heldout_design §12): no held-out press/pick/place was ever executed (only IK reach and VLM
+  views). Offline geometry, then seven scripted chains, one run each, before any further live method run.
+- **Run farm** (§11): `pro6000` via ssh (`~/.ssh/config`), 6 x RTX PRO 6000 96 GB, 128 threads, 503 GB, Ubuntu 24.04,
+  Docker 29.3, no ROS, no nvidia-container-toolkit yet, user has sudo, network prepared by the user; SSD `/nvme01`
+  (not `/nvme02`, 97% full); shared with another user. Plan: 22.04 image built here, rsync (gigabit), same paths.
+- Rejected: a dev/test split of units for Ours' held-out development (user: over-cautious; §13.1 rules + freeze audit).
+
+## Measured run costs (dev machine, 2x RTX 5090, 24 cores)
+
+Sim runs at 0.17-0.31 x real time. PLEXIL A 11 min / B 19 min wall; EUROPA A 24 / B 20 min; Ours covered A 46 min
+(`artifacts/runs/*_success_20260922`). Remaining live work ~310 GPU-h (±50%), campaign ~170.
+
+## Where it stands
+
+Steps 1-4 of `docs/heldout_design.md` §10 are built (F109) and redone after review (F110): five serviced units as scene
+data (PDU-1..3, BESS, ISRU), Mission A `env.faulted_unit`, Mission B `env.cargo`/`env.destination`, console protocol,
+evaluator class 5, Nav2 global costmap = AMCL surveyed map, crab restored. Live acceptance `artifacts/runs/site_check_10`.
+Ours has never run a held-out case; baselines only offline on re-trip/no-hold.
 
 ## Next
 
-Step 5 (`AGENT/todo.md`): make PLEXIL and EUROPA cover every unit and both missions' parameters, then re-run
-covered live for PLEXIL, EUROPA and Ours on the final scene -- covered runs from before the scene change do not
-count for the freeze. Then step 6 (Ours L2-A -> L2-B -> L3 -> L4 near/far), 7 (freeze), 8 (campaign).
-
-## Constraints the new assets must meet
-
-- Every new item/support must be `pick`/`place`-compatible: horizontal surveyed tray, ~10 cm clearance around a
-  0.45 × 0.39 m ORU, T-handle up, a legal stand from `work_stands` -- computed offline before any live run.
-- Rigid only; mechanism states are visual variants toggled by the task (like `set_status_lamp`), actuators are
-  dummy push buttons.
-- Labels must decode from the wrist view at 640×480 (≈0.6 mm/px at 0.3 m): check with one still render first.
+After approval: commit the docs; then in parallel 6 (run farm), 7 (baselines to the lock, offline), 8 (physical
+validation, offline geometry first). Then 9 (covered live re-runs), 10 (Ours on the ladder), 11 (freeze), 12.
 
 ## Method rules earned the hard way
 
@@ -49,8 +56,10 @@ count for the freeze. Then step 6 (Ours L2-A -> L2-B -> L3 -> L4 near/far), 7 (f
 - `check.log`'s bare `t` is wall seconds since script start; `sim_t`/`sim_s` are sim time.
 - Killing a check script mid-`navigate`/`dock` does not cancel Nav2's goal -- cancel it first.
 - Never open a run's bag while its recorder is alive.
-- Isaac can abort mid-run on a carb mutex assertion ("unlock() called by non-owning thread", 5 runs so far):
-  intermittent, not ours -- tear down and relaunch. A Monitor pipe must not end in `cut` (it buffers; use `grep -o`).
+- Isaac can abort mid-run on a carb mutex assertion ("unlock() called by non-owning thread"): intermittent, not ours
+  -- tear down and relaunch. A Monitor pipe must not end in `cut` (it buffers; use `grep --line-buffered -o`).
+- PLEXIL: decisions on live state with `if/endif`, never SkipCondition; reusing a library can silently drop a retry
+  (F106) -- check every leg's `Try`. `git merge -F -` does not read stdin: write the message to a file.
 
 ## Running it
 
@@ -60,10 +69,12 @@ experiments/launch/lunar_base_d0/run_d0.sh <run dir>`; rebuild the adapter after
 conda, `PLEXIL_HOME`, ROS Humble + `openral/install/setup.bash`, `colcon build --merge-install --packages-select
 plexil_capability_adapter` from `ros/`). EUROPA offline: `baselines/europa/run_offline_mission_{a,b}.sh <run_dir>
 [--fail CAP:N[:far]]`; live: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_{a,b}_check.py D0_HOLD=1
-D0_VIDEO=<mp4> D0_SCENE=scenes/deploy/srb_lunar_base_mission_{a,b}.yaml run_d0.sh <run dir>`. Overlay panels:
-`track_from_bag.py` + `{plexil,europa}_timeline_from_logs.py` then `{plexil,europa}_mission_video.py`
-(`--top ToUnit,Press,Return` for PLEXIL Mission A). Scene assets: Blender `process/author_props.py` → layout →
-generated `interaction.json` (see `space_robotics_bench/assets/lunar_base/`).
+D0_VIDEO=<mp4> D0_SCENE=scenes/deploy/srb_lunar_base_mission_{a,b}.yaml run_d0.sh <run dir>`. Site acceptance:
+`D0_CONTINUE_ON_FAIL=1 D0_CAPABILITY_SERVER=1 D0_CHECK=d0_site_check.py D0_SCENARIO=heldout_radiator_cover
+D0_ENV="env.faulted_unit=bess" D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml run_d0.sh <abs run dir>`.
+Scene: `python3 scene/build_scene.py` (+ `--variant route_block`); assets `blender -b --factory-startup -P
+process/author_props.py -- authored` -> `python3 process/process.py --only <name>`; renders with the sim on GPU 0:
+`CUDA_VISIBLE_DEVICES=1 ~/Programs/isaac-sim/python.sh scene/render_review.py <out> "name=ex,ey,ez,tx,ty,tz"`.
 
 ## Rules
 

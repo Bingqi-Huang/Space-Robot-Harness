@@ -652,7 +652,7 @@ The main paper should contain **three methods only**.
 
 Use the official PLEXIL Release 6 executive and language, not a reimplementation. A LunarBot PLEXIL interface adapter exposes the same capabilities used by all methods as PLEXIL `Command`s and exposes relevant state/verifier signals as `Lookup`s.
 
-For model-covered scenarios, the PLEXIL plan must include competent nominal logic and reasonable predefined recovery branches. It may use PLEXIL conditions, sequences, concurrency, loops, library calls, and resource arbitration as appropriate. Engineering effort and plan artifacts are retained for Experiment II analysis.
+For model-covered scenarios, the PLEXIL plan must include competent nominal logic and reasonable predefined recovery branches (locked in `docs/baselines/authoring_spec.md`: a bounded retry of a failed call and the goal checks the covered brief asks for, then hold and ask mission control -- ECSS-E-ST-70-11C §5.7.5; no branch keyed on a cause or situation, which is the knowledge Experiment II prices). It may use PLEXIL conditions, sequences, concurrency, loops, library calls, and resource arbitration as appropriate. Engineering effort and plan artifacts are retained for Experiment II analysis.
 
 ### Baseline 2 — EUROPA → PLEXIL
 
