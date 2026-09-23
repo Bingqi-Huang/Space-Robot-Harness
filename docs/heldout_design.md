@@ -118,11 +118,20 @@ decoded by the actual decoder (§6).
 - Expected work: Ours -- one contract entry. PLEXIL -- Command/Lookup + verify/search branches. EUROPA -- identity/
   location state variables, a sensing activity, rules, bridge mapping.
 
-## 7. Baseline competence (before freeze)
+## 7. Baseline competence (before freeze) -- locked 2026-09-23
 
-PLEXIL and EUROPA covered artifacts gain what the covered brief implies: read `power_status` to find the tripped
-unit (so L1 misreport is covered), press, re-check after a dwell, generic retry-once-then-escalate, pick/place
-recovery set; consolidate the duplicated NDDL. Authored from the covered specification only.
+The baselines are built to the **locked specification** in `docs/baselines/authoring_spec.md`, decided before any
+further baseline run so that a failed run cannot pull them stronger (or weaker) after the fact. In short: native
+PLEXIL / EUROPA plus the covered specification's knowledge; three tiers of failure handling -- (1) a failed call is
+repeated, at most 3 attempts per call (the same cap Ours has on an identical call), then hold and ask mission control;
+(2) the goal checks the covered brief asks for (reset holds, still holds at the dock); (3) **no branch keyed on a
+cause or situation** (trip cause, inventory status, occupancy, observation, failure stage) -- that knowledge is what
+H2 prices. Mission A's formal goal is every unit restored (the solver/plan finds the tripped one from telemetry);
+Mission B is parameterized by item, source and destination from one shared launcher goal; one consolidated NDDL
+domain; the EUROPA instance holds every inventoried item; after escalation a baseline holds in place. Changes after
+the lock follow its change-control table (infrastructure and conformance fixes only). After the freeze: an offline
+retry-budget sensitivity check (N = 1, 2, 3, 5 on every held-out state) and the §8 re-authoring cost per held-out
+case.
 
 ## 8. Ground-operator protocol (decided 2026-09-23)
 
@@ -195,7 +204,8 @@ reasoning, power topology from `power_status`, Earth-elevation strip with LOS co
 ## 10. Implementation order (each step: offline check first, then one decisive live run)
 
 Done (F108): docs, telemetry + inventory, bays/labels/radiators, the Mission A/B scenarios, authority by target,
-SPICE link + gated console, competent PLEXIL/EUROPA Mission A. Remaining:
+SPICE link + gated console, competent PLEXIL/EUROPA Mission A. Steps 1-4 done (F109-F110, merged 2026-09-23);
+step 5 done as docs (2026-09-23). Steps 6-8 run in parallel; 9 onward in order:
 
 1. Scene expansion (§9): battery-container unit, ISRU donor unit, landing offload stand, habitat logistics shelf,
    depot return stand, road spurs; generalize the site model from three PDUs to a unit list; rebuild the AMCL/Nav2
@@ -204,17 +214,85 @@ SPICE link + gated console, competent PLEXIL/EUROPA Mission A. Remaining:
 3. Operator protocol in the console (§8): decision time 300 s, flight-rule grant table, HOLD reply, ALFUS labels.
 4. Evaluator: rewrite `evaluation/violations.py` + recorder for the new mission_state; the §8 human-interaction
    metrics in `evaluation/`; wire the recorder into all three launch scripts.
-5. Baselines cover every unit (L0/L1 parameterized), pick/place recovery set, consolidated NDDL, Mission B brief
-   checks; re-run covered live for all three methods on the final scene.
-6. Ours development runs L2-A -> L2-B -> L3 -> L4 (near, then far); mission-generic changes only (§13.1).
-7. Manifests + closed-capability certificates; freeze audit; git tags.
-8. Experiment I campaign -> §5.7 ablations -> build `scan_label` -> Experiment II.
+5. **Baseline lock** (done 2026-09-23, docs only): `docs/baselines/authoring_spec.md` "Locked specification".
+6. **Run farm** (§11): the whole stack as one Ubuntu 22.04 image on `pro6000` (6 x RTX PRO 6000); one equivalence
+   run, then a 6-way concurrency measurement. Parallel with 7-8 (it needs no GPU of this machine's).
+7. **Baselines built to the lock**, offline only (plexiltest, `sim_boundary.py` for every unit x Mission A and every
+   covered cargo x destination). Parallel with 6 and 8.
+8. **Physical validation of the held-out action forms** (§12): offline geometry first, then scripted chains, one
+   run each. Prerequisite for every live run below -- BESS/ISRU L0/L1 already use unexecuted buttons.
+9. Covered live re-runs on the final scene: PLEXIL, EUROPA, Ours x Mission A (one PDU, BESS, ISRU) and Mission B (ORU
+   to a PDU shelf, container to habitat). One run each; a failure is classified by the lock's change-control table.
+10. Ours development runs L2-A -> L2-B -> L3 -> L4 (near, then far); mission-generic changes only (§13.1).
+11. Manifests + closed-capability certificates; freeze audit; git tags; the frozen image is the campaign environment.
+    Then the offline retry-budget sensitivity check (§7).
+12. Experiment I campaign (entirely on the run farm; the three methods of a paired instance on the same hardware)
+    -> §5.7 ablations -> build `scan_label` -> Experiment II -> §8 re-authoring cost per held-out case.
 
-Cost note (estimate, not measured): L2-A presses only; L2-B, L3, L4 are two picks + two places (~2-3 h wall per
-run at 15-40 min per pick); L4-far and the B long haul add driving. Repetition counts are set after the first
-variance is seen, not now.
+Cost note (measured 2026-09-23 on the development machine, sim runs at 0.17-0.31 x real time): covered baseline runs
+11-24 min wall, Ours covered Mission A 46 min; held-out Ours runs estimated 1-3 h (two picks + two places, 300 s of
+ground decision time ~ 20-25 min wall). Remaining live work estimated ~310 GPU-hours (±50%), ~170 of them the
+campaign; a campaign rerun after a post-freeze infrastructure fix (execution_plan §13.1) adds ~170. Repetition
+counts are set after the first variance is seen, not now.
 
-## 11. Sources (verified 2026-09-23 unless noted)
+## 11. Run farm (decided 2026-09-23)
+
+Why: throughput, not single-run speed. Two concurrent simulations on the development machine (24 cores) is ~3 weeks
+of wall for the remaining work; with `pro6000` (6 x RTX PRO 6000 96 GB, 2 x Xeon Gold 6530 / 128 threads, 503 GB,
+Ubuntu 24.04, no ROS) eight run at once, ~1 week, and a campaign rerun drops from ~1 week to ~2 days. Now, before the
+freeze, is the cheapest moment: the freeze pins the environment.
+
+- **Image**: Ubuntu 22.04 (the Humble / py3.10 constraint holds inside it); the development machine's `ros-humble-*`
+  package set; `~/Programs/{isaac-sim,plexil,europa,europa-deps}` and `~/isaaclab` copied as they are (no reinstall:
+  the four SRB install pins stay as installed); the same user and home path. Built here, moved with rsync.
+- **Code** is not baked in: the repo is synced to `pro6000` and mounted at the same absolute path
+  (`/mnt/SharedData/Research/Space_Robot_Harness`, a nofail bind mount of `/nvme02/bingqi/SharedData`), so every launcher
+  path is unchanged. Run directories under it (`artifacts/runs`), rsynced back for review; old development runs stay
+  on the development machine.
+- **One run = one container** on one GPU with its own network namespace: ROS domains and ports (EUROPA HostLink 47810)
+  cannot collide. Each container is pinned to 10 physical cores + hyperthreads on its GPU's socket
+  (`docker/runfarm/runfarm.sh`): two unpinned Isaac processes on one host ran at 0.05x each (F54 §4), so the
+  development machine itself runs one simulation at a time.
+- **Acceptance**: one covered run reproduced on `pro6000` (same outcome; sim/wall ratio recorded), then the same run 6
+  ways concurrently. If the per-run sim/wall ratio under 6-way load falls far below half the development machine's
+  (the Xeon's single-thread speed is lower than the desktop's), run fewer at once and re-cost from the measurement.
+- The development machine stays the place for Blender, visual acceptance and debugging. The machine is shared
+  (another user): take GPUs by explicit device, kill only our own PIDs.
+
+## 12. Physical validation of the held-out action forms (decided 2026-09-23)
+
+Why: until now only reachability (`work_stands`, the robot's own IK) and VLM readings were checked (`site_check_2-10`);
+no held-out press, pick or place was ever executed. A physical failure inside a campaign run would be scored against
+the coordination method, and unequally: Ours attempts the two picks + two places of L2-B/L3/L4, a baseline escalates
+before reaching them. This step serves execution_plan §13.1 item 2 (validate success conditions independently of all
+methods).
+
+Never executed live so far:
+
+| Action form | Needed by |
+|---|---|
+| press: BESS BMS panel (white cap), ISRU plant panel (black cap) | L0/L1 at BESS/ISRU (covered!) |
+| press: PDU radiator shutter button, BESS HVAC shutter button; shutter opens, pending OVERTEMP re-trip cancelled | L2-A |
+| pick/place ORU out of / into a PDU bay; self-test passes on a serviceable module, `MODULE_MISSING` on an empty bay | L3, L4 |
+| battery module (BESS cradle <-> depot spares stand); filter cartridge (ISRU cradle <-> ISRU stand) | L3 at BESS / ISRU |
+| ORU out of the ISRU power cradle, carried to PDU-1's bay | L4-far |
+| returned crate off a PDU shelf, return container off the habitat stand, each to a free stand | L2-B |
+| consumables container landing stand -> habitat stand; battery module -> BESS receiving stand | Mission B L1 |
+
+1. **Offline first** (geometry is computed from the assets, not tried in simulation): each new item's handle is
+   graspable (only the ORU's bail was ever gripped); item-on-support clearance for every item x support pair used;
+   in L3/L4, a free legal support exists for the removed module; `retrip_delay_s` set from a stated thermal
+   assumption (never tuned to a method).
+2. **Scripted chains, not a method**: fixed call sequences through the shared capabilities (Nav2 on AMCL, as in the
+   old `d0_*` oracle checks), the evaluator's truth used only to check the physical result and the site model's state
+   transitions. Seven chains, each mirroring one held-out case's physical sequence: L2-A (PDU and BESS, with the BESS
+   panel), L3 PDU, L3 BESS, L3 ISRU (with the ISRU panel), L4-far carry, L2-B (both occupiers), Mission B (both new
+   cargos). Estimated 5-7 GPU-hours, one batch on the run farm.
+3. **Criterion**: each chain completes once -- feasibility. Reliability is measured in the campaign from the per-leg
+   physical-failure log (§9), never by extra reruns here. A failing action is fixed in the shared layer (asset,
+   support, skill), for all methods, never worked around inside one method.
+
+## 13. Sources (verified 2026-09-23 unless noted)
 
 Gaier NASA/TM-2005-213610 (2005); Creel, "Coping with Dust for Extraterrestrial Exploration", DAP-2017, and TFAWS
 2023 LRV thermal presentation; Metzger et al. plume ejecta (SSERVI 2019 abstract); ISS Daily Summary Report

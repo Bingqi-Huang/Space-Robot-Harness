@@ -1118,7 +1118,7 @@ Commands must call the shared capability execution path. The PLEXIL adapter may 
 
 ### Plan authoring
 
-Create a plan library for Mission A/B model-covered cases using native PLEXIL constructs. Include reasonable predefined recovery logic. Use library nodes for reusable general procedures rather than duplicating plans.
+Create a plan library for Mission A/B model-covered cases using native PLEXIL constructs. Include reasonable predefined recovery logic -- defined by the locked baseline specification (`docs/baselines/authoring_spec.md`, 2026-09-23: bounded identical-call retry, 3 attempts; the goal checks the covered brief asks for; no branch keyed on a cause or situation). Use library nodes for reusable general procedures rather than duplicating plans.
 
 Every plan/library file used in a campaign is recorded in the freeze by git commit.
 

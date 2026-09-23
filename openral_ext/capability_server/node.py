@@ -97,13 +97,14 @@ POINT_TYPES = {
     "indicator": "status lamp on a service panel: red = unit faulted, green = nominal",
     "place": "surface point where an object can be set down",
 }
-# the shared scene VLM (same for every method): deepseek-flash on DeepSeek's own endpoint. The models were compared on
+# the shared scene VLM (same for every method): DeepSeek-V4.1-Flash on the paratera gateway (user decision 2026-09-23: DeepSeek's own
+# API is unaffordable; latency measured the same for camera-sized frames, no stalls under 30 concurrent). The models were compared on
 # real wrist frames through a shared gateway (GLM-5.3-Flash and Kimi-K3 15/15, Qwen3.8-Flash 14/15; research repo F54),
 # but that gateway stalled image requests coming from the runner process for the full deadline while the same request
 # from a shell answered in seconds (F58). deepseek-flash reads these frames: on the recorded marked views it names the
 # handle's mark, a different one per view, and answers null on a blank image.
-VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "deepseek-flash")
-VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://api.deepseek.com")
+VLM_MODEL = os.environ.get("SPACE_VLM_MODEL", "DeepSeek-V4.1-Flash")
+VLM_ENDPOINT = os.environ.get("SPACE_VLM_ENDPOINT", "https://llmapi.paratera.com/v1")
 LOCATE_PROMPT = ('Locate {target} in this {w}x{h} camera image. Reply with JSON only: {{"found": true or false, "center": [x, y], '
                  '"box": [x1, y1, x2, y2]}} in pixel coordinates, origin at the top-left. found=false if it is not clearly visible.')
 #: How gently the rover drives while the jaws hold something. Nav2's smoother otherwise ramps at 2.5 m/s^2, which is
