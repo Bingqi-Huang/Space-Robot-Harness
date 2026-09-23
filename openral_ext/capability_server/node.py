@@ -381,6 +381,7 @@ class CapabilityServer(Node):
         self._smoother_params = self.create_client(SetParameters, "/velocity_smoother/set_parameters", callback_group=cb)
         self._smoother_get = self.create_client(GetParameters, "/velocity_smoother/get_parameters", callback_group=cb)
         self._drive_limits: dict | None = None  # what the smoother was last set to (see drive_limits)
+        self._docked_at: str | None = None  # the feature the rover last docked at, until the base moves again
         self._free_limits: dict | None = None  # the smoother's launch limits, read before the first change
         from openai import OpenAI
         self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=120)
@@ -1047,8 +1048,20 @@ class CapabilityServer(Node):
             # param an rSkill does not declare is an error, not a spare field (a nav2 action goal has no such field)
             if contract.get("records_evidence"):
                 params["evidence_dir"] = str(self.evidence_dir)
-            r = self.dispatch(handle, contract["lowers_to"], params, deadline)
+            undock = None
+            if g.capability in ("navigate_to_pose", "navigate_to_feature") and self._docked_at:
+                # A docked rover leaves the way it came in: straight back out along the feature's axis to the approach
+                # point, then the planner. Docked, the rover stands inside the inscribed band of the structure it works
+                # at -- and of what it just set down there -- and Nav2's planner cannot start from there
+                # (chain_l3_bess_r5: the battery module on the BESS stand, "failed to create plan" 3/3 from the dock).
+                f = self._docked_at
+                x, y, yaw = stand_at(*self.feature_geometry(f), self.stand_distance(f), 1.5)
+                undock = self.dispatch(handle, "OpenRAL/rskill-procedural-mobile_base-move_base_to_pose",
+                                       lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, approach_m=0.0)), 120.0)
+            r = undock if undock is not None and not undock.success else self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
+            if undock is not None:
+                evidence["undocked_from"] = {"feature": self._docked_at, "success": bool(undock.success)}
             if self._stand_advice:
                 evidence["stand_advice"] = self._stand_advice
             if r.evidence_json and r.evidence_json != "{}":
@@ -1067,6 +1080,8 @@ class CapabilityServer(Node):
                             "picked_at_sim_s": round(self.sim_t, 2)}
         elif r.success and g.capability in ("place", "release"):
             self._picked = None
+        if g.capability in BASE_MOVES:
+            self._docked_at = args["feature"] if g.capability == "dock_at_feature" and r.success else None
         evidence["sim_s"] = round(self.sim_t - sim0, 2)
         for key, fn in (("base_pose", self.base_pose), ("tcp_pose", self.tcp_pose)):
             try:
