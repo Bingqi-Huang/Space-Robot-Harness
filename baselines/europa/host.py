@@ -7,24 +7,30 @@
   5 dispatch the next activity through PLEXIL (plexil/plans/ActivityDispatch.plx over the HostLink adapter)
   6 turn the raw capability result into plan-database facts (facts_from_result: this baseline's artifact)
   7 an activity that ended as planned advances the plan; one that did not makes the host replan from the updated facts
-The domain stays frozen: a situation it cannot plan for needs an operator. It asks through the same console channel
-`space_runtime`/the PLEXIL adapter use (`/space/operator/{request,reply}`, matched by request_id) and waits; the
-answer is logged, and only an explicit "continue" resumes the loop (anything else stops the run) -- what a "no plan"
-means and whether the operator can actually fix it is baseline logic, not this mechanism's.
+The domain (domain/lunar-base-model.nddl, one for both missions) stays frozen: a situation it cannot plan for needs an
+operator. It asks through the same console channel `space_runtime`/the PLEXIL adapter use
+(`/space/operator/{request,reply}`, matched by request_id) and waits; the answer is logged, and only an explicit
+"continue" resumes the loop (anything else stops the run, the rover holding where it is) -- what a "no plan" means and
+whether the operator can actually fix it is baseline logic, not this mechanism's.
 
-  python host.py --run-dir <dir> --goal depot_stand/slot_0@work --goal dock --final dock                    # skeleton
-  python host.py --run-dir <dir> --model domain/mission-b-model.nddl --item spare_oru:depot_stand/slot_0 \\
-      --goal spare_oru@pdu_1_shelf/shelf --goal stowed --final dock                                          # Mission B
+  python host.py --run-dir <dir> --goal restored --goal stowed --final dock                                # Mission A
+  MISSION_GOAL='{"item": "orbital replacement unit (ORU)", "source": "depot_stand/slot_0", "destination": "pdu_1_shelf/shelf"}' \\
+  python host.py --run-dir <dir> --goal delivered --goal stowed --final dock                              # Mission B
 
-Mission B's goals are deliberately only the mission's own outcomes (item delivered, arm stowed, base back at dock):
-navigate_to_feature/dock_at_feature/arm_ready are not goals at all, because they do not need to be -- pick/place's
-own domain preconditions (domain/mission-b-model.nddl) force the solver to derive them, the same way the point of
-using EUROPA over a hand-sequenced plan is that a single high-level goal expands into the steps that satisfy it
-(nasa/europa's own Rover example: TakeSample(rock4) alone yields Go->Unstow->Place->TakeSample->PhoneHome).
+The mission instance is the site as the boundary reports it: every surveyed feature (site_map), every item of the
+inventory record on its recorded support (manifest), every serviced unit with its breaker as its own telemetry reads
+(power_status). The goals are only the mission's own outcomes (docs/baselines/authoring_spec.md, "Mission goals"):
+Mission A every unit restored, Mission B the launcher's item X from source S on destination D (MISSION_GOAL, the same
+variable the PLEXIL baseline's plan reads); then arm stowed and base at the dock. navigate_to_feature/dock_at_feature/
+arm_ready and which unit to press are not goals at all -- pick/place/press's own domain preconditions force the solver
+to derive them, the same way the point of using EUROPA over a hand-sequenced plan is that a single high-level goal
+expands into the steps that satisfy it (nasa/europa's own Rover example: TakeSample(rock4) alone yields
+Go->Unstow->Place->TakeSample->PhoneHome).
 """
 import argparse
 import json
 import math
+import os
 import queue
 import re
 import socket
@@ -51,19 +57,12 @@ ATTEMPTS = HOST_CONFIG["attempts"]  # the same call failing this often ends the 
 JAW_HOLD = (HOST_CONFIG["jaw_holding_min_rad"], HOST_CONFIG["jaw_holding_max_rad"])  # d0_common.py's own bands
 
 # An item's natural-language description (pick's target/part) and catalogue release constraint (place's) are text
-# the solver has no reason to search over -- there is exactly one way to describe an item. This is mission-instance
-# authoring, the same status as PLEXIL's plan-level OruTarget/OruPart constants (docs/baselines/plexil.md), kept
-# outside the NDDL domain on purpose (domain/mission-b-model.nddl's own comment on pick/place).
-ITEM_DESCRIPTIONS = {
-    "spare_oru": {
-        "catalogue_item": "orbital replacement unit (ORU)",  # what the capability contracts call it (equipment catalogue)
-        "target": "the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand",
-        "part": "the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)",
-        "release_constraint": "below_overhang",
-    },
-}
-# Mission A's serviced unit: same status as ITEM_DESCRIPTIONS, mission-instance authoring, not domain reasoning.
-# every PDU's service panel carries the same reset button (site survey), so the description is the same for each unit
+# the solver has no reason to search over -- there is exactly one way to describe an item. The table is shared with the
+# PLEXIL baseline (docs/baselines/authoring_spec.md), keyed by the item's equipment-catalogue name, and kept outside the
+# NDDL domain on purpose (domain/lunar-base-model.nddl's own comment on pick/place).
+ITEM_DESCRIPTIONS = json.loads((HERE.parent / "item_descriptions.json").read_text())
+# The serviced units' reset buttons: same status as ITEM_DESCRIPTIONS, text, not domain reasoning; the same table as
+# the PLEXIL baseline's MissionA_Covered `Button`. Every PDU's service panel carries the same reset button (site survey).
 UNIT_DESCRIPTIONS = {**{u: {"target": "the round red push button set into the yellow sub-panel"} for u in ("pdu_1", "pdu_2", "pdu_3")},
                      "bess": {"target": "the round white push button on the graphite control panel with the teal border"},
                      "isru": {"target": "the round black push button on the white control panel with the orange border"}}
@@ -74,12 +73,11 @@ def ident(name):
 
 
 # ---- mission instance and state as NDDL --------------------------------------------------------------------------
-def instance(site, items, units=None):
-    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, the
-    mission's movable items (`Item`, mission-b-model.nddl -- `items`: name -> nothing, where it starts is a fact)
-    and serviced units (`Unit`, mission-a-model.nddl -- `units`: name -> its button's feature name, a structural
-    property of the `Unit` constructor itself, not a fact). The same `instance()` serves either domain; the
-    unused class simply never gets an object."""
+def instance(site, items, units):
+    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, every item of
+    the inventory record (`items`: serial -> its support; where it stands is a fact, not part of the object) and every
+    serviced unit (`units`: name -> its button's feature name, a structural property of the `Unit` constructor itself,
+    not a fact)."""
     lines = ['NamedPose dock = new NamedPose("dock");', 'Location elsewhere = new Location("elsewhere");']
     names = {"dock": "dock", "elsewhere": "elsewhere"}
     for f in site["points"]:
@@ -91,7 +89,7 @@ def instance(site, items, units=None):
         i = ident(item)
         lines.append(f'Item {i} = new Item("{item}");')
         names[i] = item
-    for unit, button in (units or {}).items():
+    for unit, button in units.items():
         i = ident(unit)
         lines.append(f'Unit {i} = new Unit("{unit}", {ident(button)});')
         names[i] = unit
@@ -120,10 +118,11 @@ def solve(model, text, run_dir, n):
 
 
 # ---- activity -> capability call ---------------------------------------------------------------------------------
-def capability_call(act, names, site):
-    """An activity's parameters are the capability's arguments: a feature/item goes by its site/catalogue name, a
-    named pose as its coordinates; an item's fixed description text is filled in from ITEM_DESCRIPTIONS (its own
-    comment says why that is not a domain parameter)."""
+def capability_call(act, names, site, kinds):
+    """An activity's parameters are the capability's arguments: a feature goes by its site name, an item by its
+    serial (the dispatch sends its catalogue name), a named pose as its coordinates; an item's fixed description text
+    is filled in from ITEM_DESCRIPTIONS by its catalogue name `kinds[serial]` (its own comment says why that is not a
+    domain parameter)."""
     cap = act["type"].split(".", 1)[1]
     args = {}
     for p, v in act["params"].items():
@@ -134,10 +133,10 @@ def capability_call(act, names, site):
         else:
             args[p] = v
     if cap == "pick":
-        item = args["item"]
-        args.update(target=ITEM_DESCRIPTIONS[item]["target"], part=ITEM_DESCRIPTIONS[item]["part"])
+        item = ITEM_DESCRIPTIONS[kinds[args["item"]]]
+        args.update(target=item["target"], part=item["part"])
     elif cap == "place":
-        args["release_constraint"] = ITEM_DESCRIPTIONS[args["item"]]["release_constraint"]
+        args["release_constraint"] = ITEM_DESCRIPTIONS[kinds[args["item"]]]["release_constraint"]
     elif cap == "press":
         unit = args.pop("unit")  # a domain-only concept (which unit's button); press's own contract has no such arg
         args["target"] = UNIT_DESCRIPTIONS[unit]["target"]
@@ -194,16 +193,13 @@ def facts_from_result(state, cap, args, res, site):
     return state, False
 
 
-def initial_state(pose, arm, site, items_at, units, faulted):
+def initial_state(pose, arm, site, items_at):
     at_dock = math.dist((pose["x"], pose["y"]), (site["dock"]["x"], site["dock"]["y"])) < 0.6
-    state = {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}]}
-    if arm is not None:
-        state["rover.posture"] = ["Ready" if arm.get("posture") == "ready" else "Stowed", {}]
-        state["rover.jaws"] = ["Empty", {}]  # every covered instance starts with empty jaws; nothing here detects otherwise
+    state = {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}],
+             "rover.posture": ["Ready" if arm.get("posture") == "ready" else "Stowed", {}],
+             "rover.jaws": ["Empty", {}]}  # every covered instance starts with empty jaws; nothing here detects otherwise
     for item, support in items_at.items():
         state[f"{ident(item)}.loc"] = ["On", {"support": ident(support)}]
-    for unit in units:
-        state[f"{ident(unit)}.panel"] = ["Faulted" if unit in faulted else "Restored", {}]
     return state
 
 
@@ -214,19 +210,18 @@ def panels_from_telemetry(state, units, telemetry):
                         for u in units}}
 
 
-def parse_goal(token, item_names, unit_names, loc):
-    """A `--goal`/`--final` token names a base location (existing: a feature/pose name, `dock`, or `elsewhere`), an
-    item's destination (`item@support`), a unit's restored status (`unit@restored`), or an arm posture
-    (`stowed`/`ready`)."""
+def parse_goal(token, loc, units, delivery):
+    """A `--goal`/`--final` token: `restored` (Mission A: every serviced unit's panel Restored, held to the horizon --
+    a restore that relapses is a failure), `delivered` (Mission B: `delivery` = (item serial, destination), the
+    launcher's goal), an arm posture (`stowed`/`ready`) or a base location (a feature stance name, `dock`). Returns
+    [(timeline, predicate, params, final)]."""
+    if token == "restored":
+        return [(f"{ident(u)}.panel", "Restored", {}, True) for u in units]
+    if token == "delivered":
+        return [(f"{ident(delivery[0])}.loc", "On", {"support": loc[delivery[1]]}, False)]
     if token in ("stowed", "ready"):
-        return "rover.posture", token.capitalize(), {}
-    if "@" in token:
-        name, rest = token.split("@", 1)
-        if name in item_names:
-            return f"{ident(name)}.loc", "On", {"support": loc[rest]}
-        if name in unit_names and rest == "restored":
-            return f"{ident(name)}.panel", "Restored", {}
-    return "rover.base", "At", {"loc": loc[token]}
+        return [("rover.posture", token.capitalize(), {}, False)]
+    return [("rover.base", "At", {"loc": loc[token]}, False)]
 
 
 # ---- the PLEXIL link (HostLink adapter) --------------------------------------------------------------------------
@@ -247,8 +242,7 @@ class Link:
     def dispatch(self, cap, args):
         assert self.recv() == "NEXT"
         self.send(cap)
-        # the domain names an item by its object id; the capability contract by its equipment-catalogue name
-        self.send(json.dumps({**args, "item": ITEM_DESCRIPTIONS[args["item"]]["catalogue_item"]} if "item" in args else args))
+        self.send(json.dumps(args))
         assert self.recv() == "RESULT"
         raw = self.recv()
         self.send("OK")
@@ -287,14 +281,8 @@ def ask_operator(node, pub, inbox, question):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
-    ap.add_argument("--model", default=str(HERE / "domain/skeleton-model.nddl"))
-    ap.add_argument("--item", action="append", default=[], help="NAME:SUPPORT_FEATURE, the item's starting place")
-    ap.add_argument("--unit", action="append", default=[], help="NAME:BUTTON_FEATURE, a serviced unit that starts faulted")
-    ap.add_argument("--power-field", action="store_true",
-                    help="the serviced units are the site's power distribution units: which one is faulted comes from their "
-                         "own telemetry (power_status), every tripped one is to be restored first, and every restore is "
-                         "verified by reading the unit again")
-    ap.add_argument("--goal", action="append", default=[], help="a location/item-destination/unit-restored/posture to reach, in order")
+    ap.add_argument("--model", default=str(HERE / "domain/lunar-base-model.nddl"))
+    ap.add_argument("--goal", action="append", default=[], help="restored/delivered/a posture/a location to reach, in order")
     ap.add_argument("--final", help="the goal (of the same kinds as --goal) the run ends at")
     ap.add_argument("--port", type=int, default=47810)
     a = ap.parse_args()
@@ -307,7 +295,6 @@ def main():
         events.flush()
         print(kind, json.dumps(kw)[:300], flush=True)
 
-    items_at, units = dict(i.split(":", 1) for i in a.item), dict(u.split(":", 1) for u in a.unit)
     rclpy.init()
     node = rclpy.create_node("europa_host")
     client = node.create_client(QueryCapability, "/space/capability/query")
@@ -324,29 +311,28 @@ def main():
         return answer.strip().lower() == "continue"
 
     site = query(node, client, "site_map")
-    faulted = set(units)
-    if a.power_field:
-        telemetry = query(node, client, "power_status")
-        units = {u: f"{u}_panel/press" for u in telemetry["units"]}
-        faulted = {u for u, t in telemetry["units"].items() if t["breaker"] == "tripped"}
-        a.goal = [f"{u}@restored" for u in sorted(faulted)] + a.goal
+    inventory = query(node, client, "manifest")["inventory"]
+    items_at = {r["serial"]: r["recorded_location"] for r in inventory}
+    kinds = {r["serial"]: r["item"] for r in inventory}
+    # the serviced units are the ones reporting on the base network; each unit's panel reset is its `<unit>_panel/press`
+    units = {u: f"{u}_panel/press" for u in query(node, client, "power_status")["units"]}
     site_lines, names = instance(site, items_at, units)
     loc = {v: k for k, v in names.items()}
-    item_names, unit_names = set(items_at), set(units)
-    # a restored unit must still be restored at the end: under --power-field those goals are held to the horizon
-    goals = [parse_goal(g, item_names, unit_names, loc) + (a.power_field and g.endswith("@restored"),) for g in a.goal]
+    delivery = None
+    if "MISSION_GOAL" in os.environ:
+        g = json.loads(os.environ["MISSION_GOAL"])
+        serial = next(r["serial"] for r in inventory if r["item"] == g["item"] and r["recorded_location"] == g["source"])
+        delivery = (serial, g["destination"])
+    goals = [x for t in a.goal for x in parse_goal(t, loc, units, delivery)]
     if a.final:
-        goals.append(parse_goal(a.final, item_names, unit_names, loc) + (True,))
-    # the skeleton domain's LunarBot has no posture/jaws timeline at all -- only query and carry that state when
-    # there is an item/unit to track, which is also exactly when a fuller domain (arm, jaws, ...) is in use
-    arm = query(node, client, "arm_state") if (items_at or units) else None
-    state = initial_state(query(node, client, "base_pose"), arm, site, items_at, units, faulted)
+        goals += [x[:3] + (True,) for x in parse_goal(a.final, loc, units, delivery)]
+    state = initial_state(query(node, client, "base_pose"), query(node, client, "arm_state"), site, items_at)
+    state = panels_from_telemetry(state, units, query(node, client, "power_status"))
     log("mission", goals=goals, state=state)
     link = Link(a.port)
     failures, n_plan, reached = {}, 0, set()
     while True:
-        if a.power_field:
-            state = panels_from_telemetry(state, units, query(node, client, "power_status"))
+        state = panels_from_telemetry(state, units, query(node, client, "power_status"))
         # a unit restore that was reached and no longer holds (read from the unit's telemetry) is a failure of the
         # activities that reached it; the rover leaving the dock or unfolding the arm on the way is not
         for g in goals:
@@ -369,10 +355,9 @@ def main():
             log("done", state=state)
             break
         n_plan += 1
-        # one goal per solve, not the whole remaining chain: nasa/europa's solver segfaults deep in its own
-        # TemporalNetwork (EUROPA::TemporalNetwork::cleanupTEQ, via a backtracking retraction) on this domain once
-        # two `precedes`-chained goals are given together, confirmed down to a minimal 2-goal reproduction offline,
-        # while any single goal alone -- including each one of the same two -- solves cleanly. The goal *sequence*
+        # one goal per solve, not the whole remaining chain: introduced when nasa/europa's solver segfaulted on
+        # `precedes`-chained goals (F105; the TemporalNetwork TEQ defect fixed by patches/teq-leaderless-src.patch,
+        # after which chained goals solve too) and kept as the baseline's locked behaviour. The goal *sequence*
         # semantics do not change: each solve still finds its own minimal path to the next unmet goal from
         # wherever the previous one left off, which is what the chain meant in the first place.
         plan = solve(model, problem(model, site_lines, state, [next(g for g in goals if state.get(g[0]) != [g[1], g[2]])]), run_dir, n_plan)
@@ -385,17 +370,20 @@ def main():
                 continue
             break
         for act in plan["activities"]:
-            cap, args = capability_call(act, names, site)
-            log("dispatch", capability=cap, args=args)
-            res = link.dispatch(cap, args)
+            cap, args = capability_call(act, names, site, kinds)
+            # the domain names an item by its serial; the capability contract by its equipment-catalogue name
+            sent = {**args, "item": kinds[args["item"]]} if "item" in args else args
+            log("dispatch", capability=cap, args=sent)
+            res = link.dispatch(cap, sent)
             if res["success"]:
                 state, as_planned = {**state, **post_state(act)}, True
             else:
                 state, as_planned = facts_from_result(state, cap, args, res, site)
-            if a.power_field:
-                read = panels_from_telemetry(state, units, query(node, client, "power_status"))
-                as_planned = as_planned and read == state
-                state = read
+            # every panel fact is re-read from the unit's own telemetry: a press that "succeeded" on a unit still
+            # reading tripped did not end as planned
+            read = panels_from_telemetry(state, units, query(node, client, "power_status"))
+            as_planned = as_planned and read == state
+            state = read
             reached |= {json.dumps(g[:3]) for g in goals if state.get(g[0]) == [g[1], g[2]]}
             # an intermediate goal, once reached, leaves the goal set; the final one must hold at the horizon
             while goals and not goals[0][3] and state.get(goals[0][0]) == [goals[0][1], goals[0][2]]:

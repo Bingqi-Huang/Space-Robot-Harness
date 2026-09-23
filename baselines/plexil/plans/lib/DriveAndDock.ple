@@ -8,10 +8,9 @@
 // step on `ok` (PreCondition), the idiom PLEXIL's own regression tests use for a typed result
 // (compilers/plexil/test/input/library-call1.ple).
 //
-// 2026-09-22: one retry per leg (Try, matching the old MissionA_Covered.ple's own DriveToUnit/DockAtPanel
-// pattern before Mission A was rewritten onto this library -- F106, a live Mission A run hit a generic Nav2
-// STATUS_ABORTED on the very same class of leg with no baseline-specific cause). Still no back-off; still no
-// retry on the actual failure kind/stage (that recovery set stays TBD, docs/baselines/plexil.md).
+// Failure handling (docs/baselines/authoring_spec.md, locked 2026-09-23, tier 1): every capability call is repeated
+// identically, at most 3 attempts (Try); nothing is keyed on the failure's kind or stage. `ok` false on exit means
+// the budget is spent -- the caller escalates.
 
 Boolean Command navigate_to_feature(String, Real);
 Boolean Command dock_at_feature(String, Real, Real);
@@ -28,11 +27,13 @@ DriveAndDock:
     PreCondition ok;
     Nav1: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(feature, standoff_m); }
     Nav2: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(feature, standoff_m); }
+    Nav3: { EndCondition isKnown(ok); PostCondition ok; ok = navigate_to_feature(feature, standoff_m); }
   }
   Dock: Try
   {
     PreCondition ok;
     Dock1: { EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(feature, 0.0, approach_m); }
     Dock2: { EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(feature, 0.0, approach_m); }
+    Dock3: { EndCondition isKnown(ok); PostCondition ok; ok = dock_at_feature(feature, 0.0, approach_m); }
   }
 }

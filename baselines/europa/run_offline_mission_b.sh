@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Offline end-to-end check of the EUROPA->PLEXIL machinery on the Mission B domain (execution_plan §21.6): same
-# chain as run_offline.sh (sim_boundary.py standing in for the capability server), the fuller domain
-# (domain/mission-b-model.nddl) and its goals -- deliver the spare ORU to PDU-1's shelf, arm stowed, base at dock.
-# Only the mission's own outcomes are given as goals; the domain's own pick/place preconditions make the solver
-# derive navigate_to_feature/dock_at_feature/arm_ready itself (host.py's own module docstring).
-#   run_offline_mission_b.sh <run_dir> [--fail CAP:N[:far] ...]
+# Offline end-to-end check of the EUROPA->PLEXIL machinery on Mission B (execution_plan §21.6): same chain as
+# run_offline.sh (sim_boundary.py standing in for the capability server), the one domain
+# (domain/lunar-base-model.nddl) and Mission B's goals -- the launcher's item delivered (MISSION_GOAL, the same goal the
+# PLEXIL plan reads), arm stowed, base at dock. Only the mission's own outcomes are given as goals; the domain's own
+# pick/place preconditions make the solver derive navigate_to_feature/dock_at_feature/arm_ready itself.
+#   MISSION_GOAL='{"item": ..., "source": ..., "destination": ...}' run_offline_mission_b.sh <run_dir> [--fail CAP:N[:far] ...]
 set -eo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=${REPO:-$(cd $HERE/../.. && pwd)}
@@ -20,8 +20,7 @@ export LD_LIBRARY_PATH=$REPO/ros/install/lib:$HERE/plexil/build:$PLEXIL_HOME/lib
 
 python3 $HERE/sim_boundary.py "$@" > $RUN/boundary.log 2>&1 &
 BOUNDARY=$!
-python3 $HERE/host.py --run-dir $RUN --model $HERE/domain/mission-b-model.nddl \
-  --item spare_oru:depot_stand/slot_0 --goal spare_oru@pdu_1_shelf/shelf --goal stowed --final dock \
+python3 $HERE/host.py --run-dir $RUN --goal delivered --goal stowed --final dock \
   > $RUN/host.log 2>&1 &
 HOST=$!
 sleep 2

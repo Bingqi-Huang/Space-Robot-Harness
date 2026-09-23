@@ -1,41 +1,63 @@
-// PLEXIL baseline -- Mission B, model-covered case (execution_plan §11.1, §21.5).
+// PLEXIL baseline -- Mission B, model-covered procedure (execution_plan §11.1, §21.5; docs/baselines/authoring_spec.md,
+// locked 2026-09-23).
 //
-// "Deliver the spare ORU staged at the depot stand (slot 0 per the manifest) to the spares shelf of PDU-1, then
-// return the rover to the dock with the arm stowed." Site features (depot_stand/slot_0, pdu_1_shelf/shelf, the
-// dock at the map origin) are site_knowledge (R/artifacts/runs/g4a/ours/events.jsonl); the covered scenario puts
-// the spare ORU on slot_0 (space_robotics_bench/srb/tasks/mobile_manipulation/lunar_base_mission_b/task.py). Target
-// / part text and the "spare_oru" catalogue item match what Ours actually called on this instance
-// (R/artifacts/runs/g8d, g8e, g8s, g8t, read-only). Composed from the reusable library
-// (baselines/plexil/plans/lib/): DriveAndDock, PickItem, PlaceItem, StowAndReturn -- every Command is a capability
-// of the common boundary (openral_ext/capability_server/contracts.yaml), positional arguments in the contract's
-// input order; the adapter (ros/plexil_capability_adapter) adds no logic.
+// The covered brief: "Deliver the <item> staged at the <source> (slot 0 per the manifest) to <the destination>, then
+// return the rover to the dock with the arm stowed." Its formal goal -- item X (equipment-catalogue name), source S and
+// destination D (site place frames) -- is the launcher's (Lookup MissionGoal, the same goal EUROPA's host reads); X is
+// one of the spare ORU, the spare battery module, the consumables container, D a PDU's spares shelf, the BESS
+// receiving stand or the habitat logistics stand. The item's description for `pick` and its release constraint for
+// `place` come from the baselines' shared item table (Lookup ItemDescription, baselines/item_descriptions.json). The
+// dock at the map origin is site knowledge (site_map). Composed from the reusable library (plans/lib/): DriveAndDock,
+// PickItem, PlaceItem, StowAndReturn -- every Command is a capability of the common boundary
+// (openral_ext/capability_server/contracts.yaml), positional arguments in the contract's input order; the adapter
+// (ros/plexil_capability_adapter) adds no logic.
 //
-// `ok` carries the running result explicitly (InOut) rather than through node outcome -- see
-// lib/DriveAndDock.ple's header -- and every leg's PreCondition on `ok` is this plan's safe state: once a leg
-// fails, no further capability call is issued and the plan ends reporting the failure.
-//
-// Nominal path only. The predefined recovery set (execution_plan §11.1, research_content §5.3 item 4) is not yet
-// written into the library: pick/place's reported failure kinds and stages are still moving in a parallel session,
-// and writing recovery against them now would be redone. See docs/baselines/plexil.md.
+// `ok` carries the running result explicitly (InOut) rather than through node outcome -- see lib/DriveAndDock.ple's
+// header. Every capability call has at most 3 identical attempts (the library nodes' Try, tier 1); once a leg is out
+// of attempts no further capability call is issued, the plan asks mission control and the rover holds where it is.
+// The root is an UncheckedSequence so a failed leg does not abort the plan before that escalation.
 
 LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
 LibraryAction PickItem(In String target, In String part, In String item, In String support, InOut Boolean ok);
 LibraryAction PlaceItem(In String support, In String release_constraint, In String item, InOut Boolean ok);
 LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
-String Lookup LastCapabilityResult();
+String Lookup MissionGoal(String);
+String Lookup ItemDescription(String, String);
+String Command RequestOperator(String);
 Command pprint(...);
 
-MissionB_Covered: Sequence
+MissionB_Covered: UncheckedSequence
 {
-  String Item = "orbital replacement unit (ORU)";  // the equipment-catalogue name the capability contracts use
-  String OruTarget = "the spare ORU (gold MLI-covered box with a T-shaped bail/lifting eye on top) staged on the depot stand";
-  String OruPart = "the narrow neck of the bail handle, just below the transverse head and above the wider mounting pedestal (fingers close on opposite sides of the neck)";
+  String Item = "";         // the equipment-catalogue name the capability contracts use
+  String Source = "";
+  String Destination = "";
+  String Target = "";
+  String Part = "";
+  String Release = "";
+  String Answer = "";
   Boolean ok = true;
 
-  ToDepot: { PreCondition ok; LibraryCall DriveAndDock(feature = "depot_stand/slot_0", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
-  Pick:    { PreCondition ok; LibraryCall PickItem(target = OruTarget, part = OruPart, item = Item, support = "depot_stand/slot_0", ok = ok); }
-  ToShelf: { PreCondition ok; LibraryCall DriveAndDock(feature = "pdu_1_shelf/shelf", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
-  Place:   { PreCondition ok; LibraryCall PlaceItem(support = "pdu_1_shelf/shelf", release_constraint = "below_overhang", item = Item, ok = ok); }
-  Return:  { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }
-  Done: { pprint("MissionB_Covered ok:", ok, "last:", Lookup(LastCapabilityResult())); }
+  Goal: Sequence
+  {
+    GetItem: { Item = Lookup(MissionGoal("item")); }
+    GetSource: { Source = Lookup(MissionGoal("source")); }
+    GetDestination: { Destination = Lookup(MissionGoal("destination")); }
+    GetTarget: { Target = Lookup(ItemDescription(Item, "target")); }
+    GetPart: { Part = Lookup(ItemDescription(Item, "part")); }
+    GetRelease: { Release = Lookup(ItemDescription(Item, "release_constraint")); }
+  }
+  ToSource:      { PreCondition ok; LibraryCall DriveAndDock(feature = Source, standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  Pick:          { PreCondition ok; LibraryCall PickItem(target = Target, part = Part, item = Item, support = Source, ok = ok); }
+  ToDestination: { PreCondition ok; LibraryCall DriveAndDock(feature = Destination, standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  Place:         { PreCondition ok; LibraryCall PlaceItem(support = Destination, release_constraint = Release, item = Item, ok = ok); }
+  Return:        { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }
+  Escalate:
+  {
+    if (!ok) {
+      Answer = RequestOperator("Delivering the " + Item + " from " + Source + " to " + Destination
+                               + ": a call failed 3 times. No procedure applies; holding, requesting instructions.");
+    }
+    endif
+  }
+  Done: { pprint("MissionB_Covered item:", Item, "from:", Source, "to:", Destination, "ok:", ok, "operator:", Answer); }
 }

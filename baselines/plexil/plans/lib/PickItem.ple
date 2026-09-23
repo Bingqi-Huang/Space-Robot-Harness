@@ -1,15 +1,15 @@
 // Reusable library node (execution_plan §11.1): ready the arm, then pick a named item. `arm_ready` before `pick` is
 // not required by pick's own contract (it plans its own way from wherever the arm is), but is what Ours actually
 // does on this covered instance (R/artifacts/runs/g8d, g8e) -- a good posture before the skill's own views. `item`
-// is the optional catalogue name (openral_ext/capability_server/node.py ITEM_NAMES), added F78. `support` (the place
+// is the optional catalogue name (openral_ext/capability_server/node.py CATALOGUE), added F78. `support` (the place
 // frame the item stands on, e.g. depot_stand/slot_0) is what `find` looks at -- without it pick fails at `find`
 // before taking a view at all ("this pick did not say what the item stands on"); a live Mission B run caught this
 // (research repo, PLEXIL Mission B live run, 2026-09-22).
 //
 // Result comes back through `ok` (InOut); see lib/DriveAndDock.ple for why not node outcome.
 //
-// Nominal path only -- no retry/re-observe yet. pick's reported failure kinds and stages (find, select, approach,
-// grasp, hold) are still moving in a parallel session; see docs/baselines/plexil.md for the recovery set, TBD.
+// Failure handling: each call at most 3 identical attempts (Try; docs/baselines/authoring_spec.md tier 1). Every
+// `pick` re-perceives from scratch, so a repeat already is "re-observe and retry"; no branch on pick's stage.
 
 Boolean Command arm_ready(Real);
 Boolean Command pick(String, String, String, String);
@@ -22,6 +22,18 @@ PickItem:
   In String support;
   InOut Boolean ok;
 
-  Ready: { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = arm_ready(0.08); }
-  Pick:  { PreCondition ok; EndCondition isKnown(ok); PostCondition ok; ok = pick(target, part, item, support); }
+  Ready: Try
+  {
+    PreCondition ok;
+    Ready1: { EndCondition isKnown(ok); PostCondition ok; ok = arm_ready(0.08); }
+    Ready2: { EndCondition isKnown(ok); PostCondition ok; ok = arm_ready(0.08); }
+    Ready3: { EndCondition isKnown(ok); PostCondition ok; ok = arm_ready(0.08); }
+  }
+  Pick: Try
+  {
+    PreCondition ok;
+    Pick1: { EndCondition isKnown(ok); PostCondition ok; ok = pick(target, part, item, support); }
+    Pick2: { EndCondition isKnown(ok); PostCondition ok; ok = pick(target, part, item, support); }
+    Pick3: { EndCondition isKnown(ok); PostCondition ok; ok = pick(target, part, item, support); }
+  }
 }

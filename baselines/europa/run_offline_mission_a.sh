@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Offline end-to-end check of the EUROPA->PLEXIL machinery on the Mission A domain (execution_plan §21.6): same
-# chain as run_offline_mission_b.sh, the Mission A domain (domain/mission-a-model.nddl) and its goals -- restore
-# PDU-2 (reported faulted), arm stowed, base at dock. Only the mission's own outcomes are given as goals; press's
-# own precondition (docked at the panel) makes the solver derive navigate_to_feature/dock_at_feature itself.
-#   run_offline_mission_a.sh <run_dir> [--fail CAP:N[:far] ...]
+# Offline end-to-end check of the EUROPA->PLEXIL machinery on Mission A (execution_plan §21.6): same chain as
+# run_offline.sh, the one domain (domain/lunar-base-model.nddl) and Mission A's goals -- every serviced unit restored,
+# arm stowed, base at dock. Which unit is tripped comes from telemetry only (sim_boundary.py --tripped UNIT); press's
+# own preconditions make the solver derive navigate_to_feature/dock_at_feature/press on that unit itself.
+#   run_offline_mission_a.sh <run_dir> --tripped UNIT [--no-hold] [--fail CAP:N[:far] ...]
 set -eo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=${REPO:-$(cd $HERE/../.. && pwd)}
@@ -19,8 +19,7 @@ export LD_LIBRARY_PATH=$REPO/ros/install/lib:$HERE/plexil/build:$PLEXIL_HOME/lib
 
 python3 $HERE/sim_boundary.py "$@" > $RUN/boundary.log 2>&1 &
 BOUNDARY=$!
-python3 $HERE/host.py --run-dir $RUN --model $HERE/domain/mission-a-model.nddl \
-  --power-field --goal stowed --final dock \
+python3 $HERE/host.py --run-dir $RUN --goal restored --goal stowed --final dock \
   > $RUN/host.log 2>&1 &
 HOST=$!
 sleep 2

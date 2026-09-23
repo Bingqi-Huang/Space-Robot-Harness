@@ -15,7 +15,8 @@ A research integration of two NASA open-source components (EUROPA planner, PLEXI
 - Everything is in `baselines/europa/build_europa.sh`:
   `cmake .. -DOPTIMIZE=ON -DCMAKE_PREFIX_PATH=$DEPS -DSWIG_EXECUTABLE=$DEPS/bin/swig4.0 && make && make install`
   (with `SWIG_LIB=$DEPS/share/swig4.0`) → `~/Programs/europa/dist/europa` (`EUROPA_HOME`): `lib*_o.so`, headers,
-  `PSEngine.jar`, `Europa2.cmake`.
+  `PSEngine.jar`, `Europa2.cmake`. Upstream defects found here are fixed by `baselines/europa/patches/*.patch`,
+  applied on the pinned checkout (2026-09-24: `teq-leaderless-src.patch`, the solver segfault below).
 - Upstream examples (interpreted NDDL, `<Ex>-planner_o_rt <Ex>-initial-state.nddl PlannerConfig.xml`, run from the
   example directory):
   - Light: `Solver finished after 4 steps` -- `LightSwitch.turnOff` inserted to reach the `Off` goal.
@@ -58,7 +59,7 @@ host.py  (EUROPA host)                    plexil/plans/ActivityDispatch.plx  (PL
 - The host reads the mission instance (`site_map`) and initial `base_pose` from `/space/capability/query` directly
   (rclpy); PLEXIL's `QueryCapability` Lookup stalls (docs/baselines/plexil.md).
 
-## Domain: skeleton only (2026-09-19)
+## Domain: skeleton only (2026-09-19; superseded by "Built to the lock")
 
 `domain/skeleton-model.nddl`: `Base` timeline (`At{loc}`, `Moving{to}`), activities `navigate_to_feature`,
 `dock_at_feature`, `navigate_to_pose` with durations bounded by the contracts' `default_deadline_s`. The Mission B
@@ -107,7 +108,7 @@ way to describe an item), so they are filled in by `host.py`'s `capability_call`
 (`docs/baselines/plexil.md`). `NEAR_M`/`ATTEMPTS`/the jaw-holding band moved from hard-coded constants into
 `config/host_config.json` (execution_plan §0 rule 11).
 
-### Traceability (nominal path; format: docs/baselines/authoring_spec.md)
+### Traceability (nominal path; superseded by "Built to the lock" below)
 
 | Domain element | Fact encoded | Source | Rule |
 |---|---|---|---|
@@ -165,9 +166,7 @@ panel. Full account: F106, `docs/research_findings.md`.
 ## Open
 
 - The plan is ordered by earliest start; concurrency between activities is not exploited (one capability at a time).
-- Predefined recovery beyond replan-on-failure, same status as PLEXIL's (above).
-- `mission-a-model.nddl` and `mission-b-model.nddl` duplicate their shared timelines/rules; consolidate before the
-  artifact freeze.
+- (2026-09-24) The two mission domains are consolidated; see "Built to the lock".
 
 ## Competent covered procedure (2026-09-23; F108, heldout_design §7)
 
@@ -177,3 +176,93 @@ telemetry after each activity and before each goal check -- a press that "succee
 is off-plan and replanned; a restore that relapses counts as a failure, and 3 of them hand the run to the operator
 (`sim_boundary.py --tripped UNIT [--no-hold]` for offline checks). The capability call gets the catalogue item name;
 the domain keeps its object ids. Offline: nominal (pdu_3), no-hold (pdu_2 -> operator after 3), Mission B regression.
+
+## Built to the lock (2026-09-24; docs/baselines/authoring_spec.md "Changes to the current artifacts")
+
+Supersedes the earlier domain sections and traceability tables in this file (`skeleton-model.nddl`,
+`mission-a-model.nddl`, `mission-b-model.nddl` and `--power-field` are gone).
+
+- **One domain**, `domain/lunar-base-model.nddl`: Base, Posture, Jaws (`Holding{item}`), every `Item`'s `ItemLoc`, every
+  `Unit`'s `Panel`; activities navigate_to_feature, dock_at_feature, navigate_to_pose, arm_ready, stow, pick, place,
+  press -- the union of the two mission domains, rules unchanged. Both missions have pick/place and press.
+- **Instance = the site as the boundary reports it** (`host.py`): every `site_map` feature; every item of the
+  inventory record (`manifest`) as an `Item` named by serial, on its recorded support; every unit reporting in
+  `power_status` as a `Unit` with its `<unit>_panel/press` button, its panel fact read from its breaker. `--item`,
+  `--unit`, `--power-field` deleted.
+- **Goals**: `--goal restored` = every unit's panel `Restored`, held to the horizon (Mission A: the solver presses
+  whichever unit's telemetry reads tripped); `--goal delivered` = the launcher's `MISSION_GOAL` (item X, source S,
+  destination D; the same variable the PLEXIL plan reads): the inventory entry of X recorded at S `On` D (Mission B);
+  then `stowed`, final `dock`. Every panel fact is re-read from telemetry after each activity; the relapse monitor
+  (a reached restore lost again counts as a failure) and `facts_from_result` are unchanged; the same call failing, or
+  a restore relapsing, `attempts` = 3 times asks mission control, and any answer but "continue" ends the run with the
+  rover where it is.
+- **Stated limitations (kept)**: one goal per solve and a fresh plan database per replan (introduced for F105's
+  chained-goal segfault, since fixed -- see "Solver crash" below; the behaviour is kept); a dropped item is
+  unrepresentable; conditions can be met by a new token with no activity behind it (e.g. a re-press planned from
+  `Ready` without a stow: harmless, `press` works from any posture).
+- `item_descriptions.json` (shared with PLEXIL) replaces `host.py`'s own ORU entry; `sim_boundary.py` now serves all
+  five units, the manifest, positional (PLEXIL) arguments checked against the contracts, and answers operator requests
+  with the protocol's HOLD reply.
+
+**Offline (run_offline_mission_{a,b}.sh, run_offline.sh):** Mission A covered at every unit (pdu_1..3, bess, isru):
+`navigate_to_feature -> dock_at_feature -> press(<unit>) -> stow -> navigate_to_pose`, done (covered_misreport is the
+same run: the report is not an input). Reset does not hold (bess, `--no-hold`): 3 presses, then mission control, hold.
+press failing 2x: the 3rd press completes the mission; 3x: mission control, hold. navigate_to_feature failing 3x (far):
+mission control, hold. Return failing 2x: completes. Base-only regression (`run_offline.sh --fail
+dock_at_feature:1:far`): replans, completes.
+
+**Solver crash (Mission B), root cause and fix (2026-09-24).** With the locked instance `europa_plan` segfaulted
+(exit 139) on 8 of the 15 item x destination problems, deterministically for identical input but flipping with the
+memory layout (the config file by its absolute path solved, by a relative path crashed). valgrind memcheck on
+`spare ORU -> PDU-1` (production build) named it: use-after-free in `TemporalNetwork::cleanupTEQ` (called from
+`deleteTimepoint`, when `TemporalPropagator::processVariableDeletions` retracts a token's timepoints), reading and
+then `erase`-writing the `ringFollowers` vector of a `Tnode` already freed by an earlier `DistanceGraph::deleteNode`.
+The defect is upstream's `TemporalNetwork::maintainTEQ`
+(`src/PLASMA/TemporalNetwork/base/TemporalNetwork.cc:972`), which keeps equivalence classes ("TEQs") of timepoints
+joined by a [0,0] constraint: its comment says "place any leaderless tp under the other's leader ... do nothing
+where both ringLeaders are non-null", but the second test reads `if (src.ringLeader)` instead of
+`if (src.ringLeader == NULL)`. So whenever `src` already had a leader it was re-pointed at `targ`'s leader while
+staying in its old leader's follower list (and a `src` that was itself a leader stopped being one, leaving its own
+followers pointing at it). `cleanupTEQ` relies on the invariant "a follower's leader lists it, a leader is its own
+leader"; with it broken, deleting such a node leaves dangling `ringLeader` pointers, and the next deletion writes
+into freed memory -- a heap corruption whose crash depends on what reuses that memory, hence the layout dependence.
+Fix: `baselines/europa/patches/teq-leaderless-src.patch` (the one-token condition), applied by `build_europa.sh`
+after the pinned checkout. TEQs are dispatchability bookkeeping only (`getRingLeader`/`getRingFollowers`/
+`getRingPredecessors`, which the planner never calls): the fix does not change propagation or search -- the
+fixed solver's plan for the crashing problem is identical (118 steps) to the unfixed solver's under valgrind, where
+freed memory is quarantined and it did not crash. The `solves_per_plan` re-run workaround is removed.
+
+Verification (offline, run-farm image, 2026-09-24): valgrind on the formerly crashing problem 10 errors (8 contexts, all
+in `cleanupTEQ`) before, 0 after. All 15 combinations x 3 runs (`run_offline_mission_b.sh`): 45/45 done, each 3 plans
+(delivered, stowed, dock), dispatched exactly arm_ready, navigate/dock at the source, pick the item there,
+navigate/dock at the destination, place it there, stow, return. Every one of those 135 problems, and the 15 chained
+problems below, solved directly with the config by absolute and by relative path: exit 0, byte-identical output.
+Mission A: the 5 covered units, no-hold (bess) and press failing 3x (isru) give event sequences (plans and
+dispatches) identical to before the fix; press failing 2x (isru) completes on the 3rd press.
+
+**F105's chained-goal crash was the same defect**: the 15 problems with all three goals `precedes`-chained in one solve
+now solve (132 steps, the full 9-activity plan each; valgrind clean on ORU -> PDU-2). `host.py` still gives one goal per solve
+(unchanged baseline behaviour; switching would be a lock change).
+
+### Traceability: `lunar-base-model.nddl` and `host.py`
+
+| Domain element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| `Feature` objects, `approach`/`work` stances, `dock` | surveyed points and the two base stances | `site_map`; navigate_to_feature / dock_at_feature contracts | (a)/(b) |
+| `Item` objects on their supports | every inventory entry (serial) at its recorded location | `manifest.inventory` | (a) |
+| `Unit` objects, `button` | units reporting in `power_status`; `<unit>_panel/press` | `power_status`; `interaction.json` `units[u].panel` | (a) |
+| `Panel` facts `Faulted`/`Restored`, re-read after every activity | breaker tripped / closed | `power_status` contract | (a)/(b) |
+| goal `restored` | every unit `Restored`, held to the horizon | brief (identify, restore, verify); authoring_spec "Mission goals" | (a) |
+| goal `delivered` | the inventory entry of X at S `On` D | launcher `MISSION_GOAL`; `manifest.inventory` | (a) |
+| navigate_to_feature from anywhere; dock_at_feature only from the approach stance | base moves | contracts.yaml (Nav2 to an approach point; dock "entered along the axis") | (b) |
+| pick/place `contained_by` base at the support's work stance | dock first | contracts.yaml pick/place ("dock at the item's work pose first") | (b) |
+| pick/place `contained_by` posture `Ready` | arm readied first | not required by pick's contract; the covered procedure's own verified order (F104, F105). Weak trace: kept as pre-existing and harmless | (b) |
+| stow `contained_by` jaws `Empty` | no folding with a load | contracts.yaml stow ("the jaws must be empty"); node.py refusal | (b) |
+| press: `feature = unit.button`, base at its work stance, `Stowed -> Ready`, `Faulted -> Restored` | the unit's own reset; press leaves the arm out | contracts.yaml press ("dock at the feature's work pose first", "withdraws") | (b) |
+| durations | 400 / 240 / 400 / 120 / 120 / 900 / 600 / 420 s | contracts.yaml `default_deadline_s` | (b) |
+| `capability_call`: pick `target`/`part`, place `release_constraint` | per catalogue item | `baselines/item_descriptions.json` (rows in docs/baselines/plexil.md) | (a) |
+| `capability_call`: press `target` | per unit's panel look | as PLEXIL's `Button` (`previews/{pdu_service_panel,bms_panel,plant_panel}_*.png`) | (a)/(b) |
+| `facts_from_result` | failed base move: `approach` if `base_pose` within 3 m, else `elsewhere`; arm/jaws/`Held` from `arm` evidence | the result's evidence (`base_pose`, `arm.posture`, `arm.jaw_rad`) | (c) |
+| replan on a result off the plan; same call or relapse 3 times -> mission control, then hold | attempts = 3 | authoring_spec tier 1-2 | (c) |
+
+No row cites a held-out run or scenario name.

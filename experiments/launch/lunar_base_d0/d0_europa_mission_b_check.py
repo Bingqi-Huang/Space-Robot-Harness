@@ -1,4 +1,5 @@
-"""The EUROPA->PLEXIL baseline runs Mission B `covered` on the live graph (execution_plan §11.2, §21.6).
+"""The EUROPA->PLEXIL baseline runs Mission B `covered` on the live graph (execution_plan §11.2, §21.6): the brief's
+item from its source to its destination (MISSION_GOAL, `mission_b_goal()` from D0_ENV, the goal PLEXIL's plan reads).
 
 Mirrors d0_plexil_mission_b_check.py's shape, but three processes instead of one: `host.py` (EUROPA -- solves,
 dispatches, replans, exactly its offline `run_offline_mission_b.sh` invocation except talking to the *real* boundary
@@ -21,20 +22,19 @@ PLEXIL_HOME = Path.home() / "Programs/plexil"
 assert ActionClient(n, ExecuteCapability, "/space/capability/execute").wait_for_server(timeout_sec=120), "boundary not up"
 
 env = dict(os.environ, PLEXIL_HOME=str(PLEXIL_HOME),
-           LD_LIBRARY_PATH=f"{(REPO / 'ros/install/lib').resolve()}:{EUROPA_DIR / 'plexil/build'}:{PLEXIL_HOME / 'lib'}:{os.environ.get('LD_LIBRARY_PATH', '')}")
+           LD_LIBRARY_PATH=f"{(REPO / 'ros/install/lib').resolve()}:{EUROPA_DIR / 'plexil/build'}:{PLEXIL_HOME / 'lib'}:{os.environ.get('LD_LIBRARY_PATH', '')}",
+           MISSION_GOAL=mission_b_goal())
 # ActivityDispatch.plx is pre-compiled offline (baselines/europa/run_offline_mission_b.sh does this every run;
 # recompile the same way -- `plexilc` -- if ActivityDispatch.ple ever changes) -- not recompiled here to avoid
 # needing a conda-free PATH inside this already-running graph process.
 assert (EUROPA_DIR / "plexil/plans/ActivityDispatch.plx").exists(), "compile ActivityDispatch.ple first (plexilc)"
 
-log("PLAN", host="EUROPA host.py", model="mission-b-model.nddl",
-    goals=["spare_oru@pdu_1_shelf/shelf", "stowed", "final:dock"])
+log("PLAN", host="EUROPA host.py", model="lunar-base-model.nddl",
+    goals=[json.loads(env["MISSION_GOAL"]), "stowed", "final:dock"])
 t0, sim0 = time.time(), sim["t"]
 D0_LOG = Path(os.environ["D0_LOG"])
 host_proc = subprocess.Popen([sys.executable, str(EUROPA_DIR / "host.py"), "--run-dir", str(D0_LOG),
-                              "--model", str(EUROPA_DIR / "domain/mission-b-model.nddl"),
-                              "--item", "spare_oru:depot_stand/slot_0",
-                              "--goal", "spare_oru@pdu_1_shelf/shelf", "--goal", "stowed", "--final", "dock"],
+                              "--goal", "delivered", "--goal", "stowed", "--final", "dock"],
                              cwd=EUROPA_DIR, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 host_out = []
 threading.Thread(target=lambda: host_out.extend(l.rstrip() for l in host_proc.stdout), daemon=True).start()

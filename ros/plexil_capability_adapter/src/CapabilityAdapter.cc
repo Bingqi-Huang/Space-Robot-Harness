@@ -9,17 +9,8 @@
 //        safety kernel, HAL; the contract is checked by the server)
 //   Lookup  QueryCapability(String query, String args_json)          -> String value_json (UNKNOWN on failure)
 //     -> space_harness_msgs/QueryCapability on /space/capability/query
-//   Lookup  jaw()                                                     -> Real jaw angle, rad
 //   Lookup  LastCapabilityResult()                                   -> String {capability, success, failure_kind,
 //                                                                       failure_reason, evidence}
-//   Lookup  LastFailureKind()                                        -> Integer, the last result's failure_kind
-//                                                                       (openral_msgs/ExecuteRskill; 0 = success/none,
-//                                                                       20 = boundary rejection); typed so a plan can
-//                                                                       branch without parsing LastCapabilityResult's JSON
-//   Lookup  LastFailureStage()                                       -> String, the last "stage" a staged skill
-//                                                                       (pick, place, stow, arm_ready, press, ...)
-//                                                                       reported reaching, extracted from its evidence;
-//                                                                       "" when the result carried none
 //   Lookup  PowerUnit(String unit, String field)                      -> String, one field of that unit in the power
 //                                                                       distribution units' telemetry (power_status),
 //                                                                       e.g. PowerUnit("pdu_2", "breaker") = "tripped";
@@ -32,9 +23,18 @@
 //        /space/operator/reply, published by experiments/operator_console/console.py; a plan escalates with this
 //        and reads the answer as a plain String -- no mission logic here about when to call it or what the answer
 //        means, that is the plan library's.
-// Both LastFailureKind/LastFailureStage are a mechanical read of the last ExecuteCapability result already held for
-// LastCapabilityResult -- no per-capability interpretation, no recovery choice: what recovery a kind/stage means
-// belongs in the PLEXIL plan library, never here.
+//   Lookup  MissionGoal(String field)                                -> String, one field of the launcher-supplied
+//                                                                       mission goal (env MISSION_GOAL, a JSON object,
+//                                                                       e.g. Mission B's {"item", "source", "destination"};
+//                                                                       baselines/europa/host.py reads the same variable)
+//   Lookup  ItemDescription(String item, String field)               -> String, one field of the baselines' shared item
+//                                                                       table (the file named by this adapter's
+//                                                                       ItemDescriptions attribute in interface-config.xml,
+//                                                                       baselines/item_descriptions.json), keyed by the
+//                                                                       item's equipment-catalogue name
+// Neither interprets what it carries: the goal is the launcher's, the table the baselines' own authored artifact.
+// No failure kind or stage is exposed as a typed Lookup (docs/baselines/authoring_spec.md, locked 2026-09-23: a plan
+// branch on them is tier 3, forbidden); LastCapabilityResult still carries the whole raw result.
 // No mission logic: no orderings, retries or recoveries -- those belong in the PLEXIL plan library (the baseline's
 // pre-engineered knowledge), never in the adapter.
 //
@@ -51,6 +51,8 @@
 #include "Array.hh"
 
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
@@ -118,21 +120,8 @@ std::string json_escape(std::string const &s)
   return out;
 }
 
-// The last `"stage": "<value>"` field in an evidence JSON blob (a staged skill's evidence carries its stages as an
-// ordered array; the last one is where it stopped). A text scan, not a JSON parse: evidence_json's shape is the
-// skill's own, and this reads only the one field every staged skill happens to share.
-std::string last_stage(std::string const &evidence_json)
-{
-  static std::string const key = "\"stage\": \"";
-  auto pos = evidence_json.rfind(key);
-  if (pos == std::string::npos) return "";
-  pos += key.size();
-  auto end = evidence_json.find('"', pos);
-  return end == std::string::npos ? "" : evidence_json.substr(pos, end - pos);
-}
-
 // The `"<key>": "<value>"` string field in a small flat JSON object (PromptStamped's own metadata_json here) --
-// a plain text scan like last_stage(), not a JSON parse. "" when the key is absent.
+// a plain text scan, not a JSON parse. "" when the key is absent.
 std::string json_string_field(std::string const &json, std::string const &key)
 {
   std::string const needle = "\"" + key + "\"";
@@ -194,15 +183,6 @@ public:
         send(cmd, intf, cmd->getName(), args_json + "]");
       });
     config->registerLookupHandlerFunction(
-      "jaw",
-      [this](PLEXIL::State const &, PLEXIL::LookupReceiver *rcvr) {
-        std::string value;
-        if (!query("jaw", "{}", value)) { rcvr->setUnknown(); return; }
-        auto pos = value.find(':');
-        if (pos == std::string::npos || value.find("null") != std::string::npos) { rcvr->setUnknown(); return; }
-        rcvr->update(static_cast<PLEXIL::Real>(std::stod(value.substr(pos + 1))));
-      });
-    config->registerLookupHandlerFunction(
       "PowerUnit",
       [this](PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr) {
         std::string unit, field, value;
@@ -222,16 +202,20 @@ public:
         rcvr->update(last_result_);
       });
     config->registerLookupHandlerFunction(
-      "LastFailureKind",
-      [this](PLEXIL::State const &, PLEXIL::LookupReceiver *rcvr) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        rcvr->update(last_failure_kind_);
+      "MissionGoal",
+      [](PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr) {
+        std::string field;
+        state.parameter(0).getValue(field);
+        rcvr->update(nlohmann::json::parse(std::getenv("MISSION_GOAL"))[field].get<std::string>());
       });
     config->registerLookupHandlerFunction(
-      "LastFailureStage",
-      [this](PLEXIL::State const &, PLEXIL::LookupReceiver *rcvr) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        rcvr->update(last_failure_stage_);
+      "ItemDescription",
+      [this](PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr) {
+        std::string item, field;
+        state.parameter(0).getValue(item);
+        state.parameter(1).getValue(field);
+        std::ifstream table(getXml().attribute("ItemDescriptions").value());
+        rcvr->update(nlohmann::json::parse(table)[item][field].get<std::string>());
       });
     return true;
   }
@@ -282,8 +266,6 @@ private:
                        (r.success ? "true" : "false") + ", \"failure_kind\": " + std::to_string(r.failure_kind) +
                        ", \"failure_reason\": \"" + json_escape(r.failure_reason) + "\", \"evidence\": " +
                        (r.evidence_json.empty() ? "{}" : r.evidence_json) + "}";
-        last_failure_kind_ = static_cast<PLEXIL::Integer>(r.failure_kind);
-        last_failure_stage_ = last_stage(r.evidence_json);
       }
       intf->handleCommandReturn(cmd, PLEXIL::Value(static_cast<bool>(r.success)));
       intf->handleCommandAck(cmd, r.success ? PLEXIL::COMMAND_SUCCESS : PLEXIL::COMMAND_FAILED);
@@ -369,8 +351,6 @@ private:
   std::thread spinner_;
   std::mutex mutex_;
   std::string last_result_ = "{}";
-  PLEXIL::Integer last_failure_kind_ = 0;
-  std::string last_failure_stage_;
   std::atomic<int> request_seq_{0};
   std::map<std::string, std::pair<PLEXIL::Command *, PLEXIL::AdapterExecInterface *>> pending_operator_;  // request_id -> the Command awaiting its answer
 };

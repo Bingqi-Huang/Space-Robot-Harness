@@ -12,7 +12,7 @@ whose `events.jsonl` already carries `sim_t`. This script is the one place that 
 lookup table built from the run's own closed bag's `/clock` topic (the same bag `track_from_bag.py` reads for
 the mini-map), the same way a video's `.times` file resolves frame index to sim time.
 
-Node-level granularity kept: the plan's five top-level Sequence children (ToDepot, Pick, ToShelf, Place, Return --
+Node-level granularity kept: the plan's five top-level Sequence children (ToSource, Pick, ToDestination, Place, Return --
 `baselines/plexil/plans/MissionB_Covered.ple`) and the four reusable library calls they invoke (DriveAndDock,
 PickItem, PlaceItem, StowAndReturn -- `baselines/plexil/plans/lib/`). Finer leaf nodes (Nav, Dock, Ready, and the
 library-internal nodes that share a name with their own top-level caller, e.g. PickItem's own `Pick`) are not
@@ -31,7 +31,7 @@ from sim_clock import wall_to_sim
 
 # Mission B's five top-level Sequence children; a mission with a different plan shape (e.g. Mission A's
 # ToUnit/Press/Return) passes its own list as main()'s third argument -- same names its own .ple declares.
-TOP = ["ToDepot", "Pick", "ToShelf", "Place", "Return"]
+TOP = ["ToSource", "Pick", "ToDestination", "Place", "Return"]
 LIB = ["DriveAndDock", "PickItem", "PlaceItem", "StowAndReturn"]
 _TRANSITION_RE = re.compile(r"Transitioning (\S+) (\S+) from (\S+) to (\S+) at ([\d.]+)")
 _CAP_LOG_RE = re.compile(r"^\[INFO\] \[([\d.]+)\] \[space_capability_server\]: CAPABILITY (\{.*\})\s*$")
