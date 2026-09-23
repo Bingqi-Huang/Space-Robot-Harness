@@ -63,9 +63,9 @@ verification:
 
 # ---- reasoner -----------------------------------------------------------------------------------------------------
 reasoner:
-  model: deepseek-flash
-  endpoint: https://api.deepseek.com
-  api_key_env: SPACE_REASONER_API_KEY  # DeepSeek's own endpoint (AGENT/VLM_provider.md); the scene VLM runs there too
+  model: DeepSeek-V4.1-Flash
+  endpoint: https://llmapi.paratera.com/v1
+  api_key_env: SPACE_REASONER_API_KEY  # the paratera gateway (AGENT/VLM_provider.md, first key); the scene VLM runs there too
   timeout_s: 180
   # DeepSeek's thinking mode stays on (user decision): offline A/B over run oa1's 42 decision points, off = 3.9 s median
   # per step vs 13.3 s on, but the reasoning capability matters more than the latency (research repo F53)
