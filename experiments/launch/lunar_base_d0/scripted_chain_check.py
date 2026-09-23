@@ -54,14 +54,20 @@ chain = json.loads(Path(os.environ["CHAIN_JSON"]).read_text())
 # only, F60); `d0_common.put_scene_back` does the restore, shared with ours_mission_check.py.
 if os.environ.get("RESUME_SNAPSHOT"):
     put_scene_back(Path(os.environ["RESUME_SNAPSHOT"]))
+# every call gets the per-call budget every method has (tier 1: the identical call, at most 3 attempts), so a chain
+# fails only on what no method could get past; the attempts are logged as the per-leg reliability record
+ATTEMPTS = 3
 for name, args in chain:
-    t0 = sim["t"]
-    log("CALL", capability=name, args=args, sim_t=round(t0, 1), jaw=round(float(jaw.get("q", -1.0)), 3))
-    r = call(name, args)
-    log("RESULT", capability=name, success=r["success"], reason=(r.get("failure_reason") or "")[:400], sim_s=round(sim["t"] - t0, 1),
-        servo=worst(r.get("evidence") or {}), jaw=round(float(jaw.get("q", -1.0)), 3), arm={k: round(float(v), 3) for k, v in arm.items()},
-        mission=dict(mission))
-    if not r["success"]:
+    for attempt in range(1, ATTEMPTS + 1):
+        t0 = sim["t"]
+        log("CALL", capability=name, attempt=attempt, args=args, sim_t=round(t0, 1), jaw=round(float(jaw.get("q", -1.0)), 3))
+        r = call(name, args)
+        log("RESULT", capability=name, attempt=attempt, success=r["success"], reason=(r.get("failure_reason") or "")[:400],
+            sim_s=round(sim["t"] - t0, 1), servo=worst(r.get("evidence") or {}), jaw=round(float(jaw.get("q", -1.0)), 3),
+            arm={k: round(float(v), 3) for k, v in arm.items()}, mission=dict(mission))
+        if r["success"]:
+            break
+    else:
         log("STOPPED", at=name)
         break
 spin(3.0)
