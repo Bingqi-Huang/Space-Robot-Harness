@@ -50,9 +50,8 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
   PLEXIL TM-2006-213483, Morris 2013, COWP.
 - **Physical validation** (heldout_design §12): no held-out press/pick/place was ever executed (only IK reach and VLM
   views). Offline geometry, then seven scripted chains, one run each, before any further live method run.
-- **Run farm** (§11): `pro6000` via ssh (`~/.ssh/config`), 6 x RTX PRO 6000 96 GB, 128 threads, 503 GB, Ubuntu 24.04,
-  Docker 29.3, no ROS, no nvidia-container-toolkit yet, user has sudo, network prepared by the user; SSD `/nvme01`
-  (not `/nvme02`, 97% full); shared with another user. Plan: 22.04 image built here, rsync (gigabit), same paths.
+- **Run farm** (§11): `pro6000`, 6 x RTX PRO 6000 96 GB, 128 threads, 503 GB, Ubuntu 24.04 -- built, see "Run farm"
+  above. Physics stays CPU PhysX (GPU PhysX crashes in SRB, F54 §5; would need all grasp checks redone).
 - Rejected: a dev/test split of units for Ours' held-out development (user: over-cautious; §13.1 rules + freeze audit).
 
 ## Measured run costs (dev machine, 2x RTX 5090, 24 cores)
