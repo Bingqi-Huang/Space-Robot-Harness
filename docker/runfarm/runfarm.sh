@@ -11,6 +11,9 @@
 # the one GPU is device 0: leave D0_GPU unset. A held graph (D0_HOLD=1) ends with the container;
 # append `; sleep infinity` to keep it, and `docker stop <name>` takes it down.
 #
+# Network: the host reaches the internet through a proxy on its own 127.0.0.1 with fake-IP DNS, neither usable from a
+# container; the run needs only the DeepSeek API (LLM + VLM), reachable directly, so the container uses public DNS.
+#
 # CPU: an Isaac process starts a thread per visible core, and two unpinned graphs on one host ran at 0.05x each
 # (F54 §4). Each container therefore gets its own 10 physical cores + their hyperthreads on its GPU's socket
 # (pro6000: GPUs 0-2 on socket 0 = cores 0-31, GPUs 3-5 on socket 1 = cores 32-63, siblings at +64); cores 30-31 and
@@ -22,7 +25,7 @@ BASE=$((32 * (GPU / 3) + 10 * (GPU % 3)))
 CPUS=${RUNFARM_CPUS:-$BASE-$((BASE + 9)),$((BASE + 64))-$((BASE + 73))}
 H=/home/bingqi
 docker run -d --rm --name "$NAME" --device "nvidia.com/gpu=$GPU" --cpuset-cpus "$CPUS" --shm-size 32g \
-  --ulimit nofile=65536:65536 \
+  --ulimit nofile=65536:65536 --dns 223.5.5.5 --dns 119.29.29.29 \
   -v "$H/Programs:$H/Programs" -v "$H/isaaclab:$H/isaaclab" -v "$H/.cache:$H/.cache" \
   -v "$H/.local/share/ov:$H/.local/share/ov" -v "$H/.nvidia-omniverse:$H/.nvidia-omniverse" \
   -v /mnt/SharedData:/mnt/SharedData \
