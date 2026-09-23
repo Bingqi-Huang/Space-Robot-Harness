@@ -15,8 +15,8 @@ apt-get update
 apt-get install -y nvidia-container-toolkit
 # the GPUs as CDI devices (runfarm.sh: --device nvidia.com/gpu=N); regenerate after a driver upgrade
 nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
-# 3. the repo at the development machine's absolute path, backed by the SSD
+# 3. the repo at the development machine's absolute path, backed by the SSD /nvme02 (nofail: a missing source must not stop boot)
 mkdir -p /mnt/SharedData
-grep -q " /mnt/SharedData " /etc/fstab || echo "/nvme01/$USER_NAME/SharedData /mnt/SharedData none bind 0 0" >> /etc/fstab
+grep -q " /mnt/SharedData " /etc/fstab || echo "/nvme02/$USER_NAME/SharedData /mnt/SharedData none bind,nofail 0 0" >> /etc/fstab
 mountpoint -q /mnt/SharedData || mount /mnt/SharedData
-echo "done: docker group (re-login), nvidia-container-toolkit $(nvidia-ctk --version | head -1), /mnt/SharedData -> /nvme01/$USER_NAME/SharedData"
+echo "done: docker group (re-login), nvidia-container-toolkit $(nvidia-ctk --version | head -1), /mnt/SharedData -> /nvme02/$USER_NAME/SharedData"
