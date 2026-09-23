@@ -5197,3 +5197,69 @@ answered (median 3.7 s, max 6.7 s); multi-MB requests slow (11-56 s) but never s
 was the request size, and the pipeline sends one 640x480 view per request. A model change is a method change: all
 development runs before it are not comparable, and the VLM readings accepted in `site_check_10` (lamps, shutters) are
 re-checked with the new model during physical validation.
+
+## F112 -- Baselines built to the lock; the held-out action forms executed for the first time, and what that exposed (2026-09-24)
+
+`docs/heldout_design.md` §10 steps 7 and 8. Everything in the shared layer; no method changed.
+
+**1. Baselines to the lock (step 7, offline).** PLEXIL: one 3-attempt `Try` on all 14 call sites (each audited with a
+fail-twice / fail-three-times script), Mission B parameterized by (item, source, destination) from one launcher goal
+both baselines read, the adapter's failure-kind/stage/jaw Lookups deleted. A defect in the covered plan surfaced: the
+root was a checked `Sequence`, which aborted the plan when a leg failed, so the escalation node never ran -- now
+`UncheckedSequence`, and after `RequestOperator` nothing more is commanded (hold). EUROPA: one domain, the instance
+from site map + manifest + telemetry, goals `restored` / `delivered`, `--power-field` gone. Mission B crashed the
+planner on 8 of 15 cargo x destination instances, deterministically per input and flipping with the memory layout;
+valgrind put it in EUROPA's own `TemporalNetwork::maintainTEQ`, an inverted leader test (`if (src.ringLeader)` for
+`== NULL`) leaving a time point on a freed leader's follower list: a use-after-free during retraction. One-line patch
+(`baselines/europa/patches/`, applied by `build_europa.sh`): 10 memcheck errors -> 0, Mission B 45/45 solved with the
+full plan checked, and F105's chained-goal crash is the same defect (host still solves one goal at a time). Offline:
+PLEXIL 51 cases, EUROPA Mission A x 5 units + failure paths. Retry = shared tier-1 budget; nothing strengthened.
+
+**2. Run farm (infrastructure).** (a) All containers shared ROS domain 77 across the docker bridge -- Humble ignores
+`ROS_AUTOMATIC_DISCOVERY_RANGE` -- and one run's check commanded another's robot: domain 77 + GPU per container.
+(b) `site_check_11` "reached" three goals in 0.1 s without moving: sent before AMCL's first scan match, the
+controller failed to transform the goal and compared the robot at the map origin (the dock) with a zero pose. The
+launcher now waits for `map -> odom` as fresh as the sim clock. (c) An unpinned build container starved the six
+pinned simulations: three navigations failed at that minute. Throwaway containers go on the host's cores
+(30,31,62,63), niced. (d) Editing a skill module under live runs mixed old and new code in their runners (lazy
+imports): `cannot import name 'STOW'`. Never edit the shared skills while runs are live.
+
+**3. Navigation: the surveyed map's stray cells (the main defect).** Since F110 the global costmap plans on the
+surveyed map. `MIN_POSES` left ~2,200 single cells where ground arcs from several survey poses crossed; each, inflated
+to the rover's inscribed radius, became an ~85-cell no-go disc, 317 k inscribed cells for 20 k lethal ones. The
+depot stand's approach pose sat inside such a field: "failed to create plan" 6/6, from any start. The survey keeps
+only lumps of >= 5 cells (every surveyed structure keeps its cells up to 12); the map was regenerated from the
+survey's saved pose counts (20,319 -> 16,571 cells). The same band traps a *docked* rover: at a stand it sits inside
+the inscribed band of the stand and of what it just set down (the battery module on the BESS stand), and NavFn cannot
+start there ("failed to create plan" 3/3). A navigation after a dock now first drives straight back out along the
+dock's axis to the feature's approach point (the dock's own base skill), then plans. A rarer failure stays open: MPPI
+"Resulting plan has 0 poses", then recoveries, 3 attempts lost. The final batch recorded one with a bag
+(`chain_l2a_pdu_f`, first leg out of the dock): every global plan from sim 24 s on starts at the same point (6.65, 1.30)
+while the rover (AMCL and simulator truth alike) drives on to x ~10; every /tf edge stays fresh; the plan's start
+falls behind MPPI's search window and the pruned path is empty. The planner's start pose freezes inside
+planner_server; not yet explained. ~1 in 15 legs in the final batch; revisit if a step-9 run meets it
+(`artifacts/runs/bag_plan_lag.py` shows it from any bag).
+
+**4. The action forms (step 8).** (a) *pick in an equipment bay / on a cabinet shelf* failed 8/8: with the cabinet
+wall within the 1.2 m seed range, item and wall were one depth lump and the fit's seed landed on the top of the wall;
+and the model, asked for the item's body, could point only at the corner the gripper leaves uncovered. Lumps now end
+at depth jumps (5 cm) and the fit is seeded at the declared work point (support + interface height), which the view is
+aimed at; the model still decides whether the item is in view. After: PDU bay, BESS cradle, ISRU filter cradle,
+ISRU power cradle, PDU shelf, depot stands all picked. The fit itself was undamped Gauss-Newton with a 1e-6 ridge;
+along the head bar the depth hardly changes and one pick's seed on the neck slid 0.9 m sideways. Now Levenberg-
+Marquardt damped, <= 2 cm a step; replayed offline from the recorded frames (`replay_pick_find.py`: K, camera pose,
+declared work point), the failed view fits at the neck (0.79) and all 12 successful picks are unchanged (+-0.01). (b) *place on a stand in the open* failed 'still moving' when the
+settling frame was sky; the item stood still. Unjudged is not a veto (F-checks rule): reported, not failed. (c) *press
+after press*: the arm was left out at the first button and the next button's views were unplannable (planner -2,
+3/3); left at the ready posture, the same (3/3); press now folds the arm to the travel posture (every press that found
+its view had started folded). (d) Item geometry: every
+handle's neck at one height above its base (by the column, not the body), columns seated on the body by ray cast, the
+battery module and consumables container turned long side across the approach (user review), trays built at their true
+depth (0.75 m, the place skill's wall prediction was 15 cm short). An empty receiving stand at the ISRU yard (L3-ISRU
+had no free support within 41 m). `retrip_delay_s` 30 s from a stated thermal assumption.
+
+**5. Model provider.** Readings re-checked on paratera DeepSeek-V4.1-Flash (`site_check_13`): BESS lamp red, HVAC
+shutter drawn, ISRU lamp green, all right; 25/25 work stands. Pick's region choice is slow on this gateway with six
+runs at once: answered in 10-115 s (median 61 s, p90 103 s; the model reasons before answering), and 10 of 41
+requests were cut by the skills' 120 s timeout, each costing a whole tier-1 attempt. Pick and press now allow 300 s.
+The indicator questions (`observe`) answer in seconds.

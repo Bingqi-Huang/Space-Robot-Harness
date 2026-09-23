@@ -267,7 +267,7 @@ effects:
       Press a push button the site survey declares at a feature: the button is found in the wrist camera by the shape
       the catalogue gives it, the tool stands off in front of it facing its plate, the jaws close, the tool goes in
       past the button's tip by the declared travel, then withdraws, the jaws open and the arm folds back to its
-      travel (stowed) posture. `target` only says which
+      travel (stowed) posture (the result says so when it could not fold; the press itself stands). `target` only says which
       feature in the view is meant, for the vision model to point at; where the button is comes from its declared
       shape, not from the pointer. The target must be within the arm's reach behind the rover (dock at the feature's
       work pose first). The arm does not need to be in any particular posture: this plans its own way from wherever

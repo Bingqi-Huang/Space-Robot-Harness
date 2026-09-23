@@ -178,11 +178,12 @@ the site model -- no unit list in code. `pdu_1` (habitat life support, crew-crit
 mission-critical), `pdu_3` (science instruments, non-critical): yellow service panel, spares shelf, ORU bay, radiator
 with shutter. `bess` (battery storage, mission-critical; the container stands on the pad, the source model's plinth cropped
 away): wall-mounted BMS enclosure with a graphite control panel (white reset cap), battery-module cradle (BAT-0101,
-0.29 x 0.42 x 0.367 m so its handle sits at the ORU's height; spare BAT-0102 on the depot spares stand), HVAC condenser
+0.29 x 0.42 x 0.367 m; spare BAT-0102 on the depot spares stand), HVAC condenser
 with shutter and blue actuator button. `isru` (ISRU oxygen plant, non-critical, no shutter): plant control panel
 (black reset cap, dark readout; inspected from 2.0 m), filter-cartridge cradle (FLT-0201; spare
-FLT-0202 on the ISRU receiving stand) and power-ORU cradle (ORU-0285). Reset caps are never red or green (IEC
-60204-1 §10.2.1): red and green appear only on status lamps. A closed breaker trips after the self-test with
+FLT-0202 on the ISRU receiving stand, an empty ISRU set-down stand beside it for the removed cartridge) and power-ORU cradle (ORU-0285). Reset caps are never red or green (IEC
+60204-1 §10.2.1): red and green appear only on status lamps. Every carried item's handle neck sits 0.4669 m above its base (the column,
+not the body, sets it) and its long side lies across the approach (F112). A closed breaker trips after the self-test with
 the module's own code (`ORU_SELFTEST_FAIL` / `BATTERY_MODULE_FAULT` / `FILTER_CLOGGED`), at once on an empty bay
 (`MODULE_MISSING`); telemetry lists the installed module serial per bay. Mission A takes `env.faulted_unit`
 (L2-A: PDUs and BESS; L3: every unit with its own spare). L4-near (`heldout_cannibalize`, PDU-1): the depot spare ORU
@@ -205,7 +206,7 @@ reasoning, power topology from `power_status`, Earth-elevation strip with LOS co
 
 Done (F108): docs, telemetry + inventory, bays/labels/radiators, the Mission A/B scenarios, authority by target,
 SPICE link + gated console, competent PLEXIL/EUROPA Mission A. Steps 1-4 done (F109-F110, merged 2026-09-23);
-step 5 done as docs (2026-09-23). Steps 6-8 run in parallel; 9 onward in order:
+step 5 done as docs (2026-09-23); steps 6-8 done (F111-F112, 2026-09-24). 9 onward in order:
 
 1. Scene expansion (§9): battery-container unit, ISRU donor unit, landing offload stand, habitat logistics shelf,
    depot return stand, road spurs; generalize the site model from three PDUs to a unit list; rebuild the AMCL/Nav2
