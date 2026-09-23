@@ -13,6 +13,8 @@ curl -fsSL https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-contai
   > /etc/apt/sources.list.d/nvidia-container-toolkit.list
 apt-get update
 apt-get install -y nvidia-container-toolkit
+# the GPUs as CDI devices (runfarm.sh: --device nvidia.com/gpu=N); regenerate after a driver upgrade
+nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 # 3. the repo at the development machine's absolute path, backed by the SSD
 mkdir -p /mnt/SharedData
 grep -q " /mnt/SharedData " /etc/fstab || echo "/nvme01/$USER_NAME/SharedData /mnt/SharedData none bind 0 0" >> /etc/fstab

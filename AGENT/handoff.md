@@ -20,6 +20,8 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 - Repo at `/mnt/SharedData/Research/Space_Robot_Harness` (nofail bind of `/nvme02/bingqi/SharedData`; not `/nvme01`).
   `artifacts/` is not synced (old dev runs stay on the dev machine); new runs go to `artifacts/runs/` there.
 - `~/Programs`, `~/isaaclab`, `~/.cache/{ov,openral,simforge,robot_descriptions}` rsynced from the dev machine.
+- GPUs reach containers as CDI devices: once, as root, `nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml`
+  (again after a driver upgrade).
 - Image `runfarm:22.04` built there (`docker build --network host --build-arg UID=$(id -u) --build-arg GID=$(id -g)
   -t runfarm:22.04 docker/runfarm`). One run = one container: `docker/runfarm/runfarm.sh <gpu> <name> <cmd>` (own
   network namespace; pinned cores; inside, the one GPU is device 0 -- leave `D0_GPU` unset).
