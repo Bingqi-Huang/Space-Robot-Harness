@@ -19,7 +19,9 @@ HERE=$D0_HERE
 cd "$HERE/../../../openral"
 source /opt/ros/humble/setup.bash
 source install/setup.bash
-export ROS_DOMAIN_ID=${D0_DOMAIN:-77} ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST  # D0_DOMAIN=78 for a second graph on GPU 1
+# D0_DOMAIN: one per graph on a host (runfarm.sh sets 77 + GPU). Humble does not read ROS_AUTOMATIC_DISCOVERY_RANGE
+# (Iron and later); the domain is what keeps two graphs apart
+export ROS_DOMAIN_ID=${D0_DOMAIN:-77}
 # camera images need large shared-memory segments, or most frames are lost in transport (fastdds_large_shm.xml)
 export FASTRTPS_DEFAULT_PROFILES_FILE="$HERE/fastdds_large_shm.xml"
 # Two graphs share this host (GPU 0 / GPU 1): the deploy CLI's argv-signature reaps at start and exit, and its
@@ -85,6 +87,11 @@ sleep 30
 # session kill on $DEPLOY reaches (stale launch trees survived runs 3-7 that way)
 LAUNCH=$(pgrep -P "$DEPLOY" | head -1)
 echo "LAUNCH_PID $LAUNCH sid $(ps -o sid= -p "$LAUNCH")" >> "$LOG/deploy.pid"
+if [ -n "$D0_BAG" ]; then
+  # D0_BAG="<topic> <topic> ...": a bag of just those topics in $LOG/bag, tagged, so the teardown's SIGINT closes it
+  D0_RUN_TAG="$LOG" setsid ros2 bag record -o "$LOG/bag" --use-sim-time --qos-profile-overrides-path "$HERE/record_qos.yaml" \
+    $D0_BAG > "$LOG/bag.log" 2>&1 &
+fi
 if [ -n "$D0_CAPABILITY_SERVER" ]; then
   # the common capability boundary (§21.4) for boundary-driven checks; tagged so the teardown takes it down too
   source ../ros/install/setup.bash
@@ -119,7 +126,7 @@ if [ "${D0_PLANNING_SCENE:-1}" != 0 ]; then
 fi
 # The check is an actuator client too. A failed boot must not leave it waiting
 # to command a later graph in the same ROS domain after teardown.
-D0_RUN_TAG="$LOG" timeout 14400 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
+D0_RUN_TAG="$LOG" timeout 43200 .venv/bin/python "$HERE/${D0_CHECK:-d0_mission_b_check.py}" > "$LOG/check.log" 2>&1
 echo "CHECK_EXIT $?" >> "$LOG/check.log"
 if [ -n "$D0_HOLD" ]; then
   # step-wise development: the graph stays up after the check for attach_d0.sh (continue from the failed step);

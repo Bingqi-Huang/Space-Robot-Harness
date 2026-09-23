@@ -366,6 +366,19 @@ while time.time() - t < 1500:
 else:
     log("RESULT", error="graph never ready"); sys.exit(2)
 log("READY", after_s=round(time.time() - t), bt_navigator="active")
+# Localization is up when AMCL has matched a scan, not when `map` first exists: AMCL publishes the initial pose's
+# `map -> odom` once at activation and its first scan match only ~10 s of sim later. A goal sent in between is judged
+# against that stale transform, and Nav2's controller, failing to transform the goal, compares the robot at the map
+# origin (the dock) with a zero pose and reports "Reached the goal!" at once (site_check_11: three navigations
+# "succeeded" in 0.1 s without moving).
+from geometry_msgs.msg import PoseWithCovarianceStamped  # noqa: E402
+
+_amcl = []
+n.create_subscription(PoseWithCovarianceStamped, "/amcl_pose", _amcl.append,
+                      QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+while not _amcl:
+    spin(0.5)
+log("LOCALIZED", sim_t=round(sim["t"], 1))
 tf("map", "chassis_base_link", timeout=600)
 tf("odom", "tcp_frame", timeout=60)
 while "p" not in truth:
@@ -411,8 +424,6 @@ def run(name, fn, *args, **kw):
 # Step-wise development (research runs never use these): the simulator's full state is saved before every agent step
 # (<log>/snapshots/before_step_<n>.pt, with the rover's own localization estimate beside it). `put_scene_back` puts a
 # held graph back to one of these (or any other saved snapshot -- a scripted chain check's own pre-pick state, say).
-from geometry_msgs.msg import PoseWithCovarianceStamped  # noqa: E402
-
 snap_dir = Path(os.environ["D0_LOG"]) / "snapshots"
 snap_dir.mkdir(exist_ok=True)
 snap_pub = n.create_publisher(String, "/srb/envs/snapshot", 10)
