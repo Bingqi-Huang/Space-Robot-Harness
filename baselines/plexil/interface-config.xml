@@ -1,7 +1,8 @@
-<!-- universalExec -c interface-config.xml -p plan.plx
-     LibPath: the colcon install's lib directory (ros/install/lib/libCapabilityAdapter.so). -->
+<!-- universalExec -c interface-config.xml -p plan.plx, run from baselines/plexil
+     LibPath: the colcon install's lib directory (ros/install/lib/libCapabilityAdapter.so).
+     ItemDescriptions: the baselines' shared item table, relative to this directory (Lookup ItemDescription). -->
 <Interfaces>
-  <Adapter AdapterType="CapabilityAdapter" LibPath="libCapabilityAdapter.so"/>
+  <Adapter AdapterType="CapabilityAdapter" LibPath="libCapabilityAdapter.so" ItemDescriptions="../item_descriptions.json"/>
   <Adapter AdapterType="Time"/>
   <Adapter AdapterType="Utility"/>
 </Interfaces>
