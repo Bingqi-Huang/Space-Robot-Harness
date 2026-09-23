@@ -246,10 +246,13 @@ freeze, is the cheapest moment: the freeze pins the environment.
   package set; `~/Programs/{isaac-sim,plexil,europa,europa-deps}` and `~/isaaclab` copied as they are (no reinstall:
   the four SRB install pins stay as installed); the same user and home path. Built here, moved with rsync.
 - **Code** is not baked in: the repo is synced to `pro6000` and mounted at the same absolute path
-  (`/mnt/SharedData/Research/Space_Robot_Harness`), so every launcher path is unchanged. Run directories on the SSD
-  (`/nvme01`), rsynced back for review.
+  (`/mnt/SharedData/Research/Space_Robot_Harness`, a nofail bind mount of `/nvme02/bingqi/SharedData`), so every launcher
+  path is unchanged. Run directories under it (`artifacts/runs`), rsynced back for review; old development runs stay
+  on the development machine.
 - **One run = one container** on one GPU with its own network namespace: ROS domains and ports (EUROPA HostLink 47810)
-  cannot collide.
+  cannot collide. Each container is pinned to 10 physical cores + hyperthreads on its GPU's socket
+  (`docker/runfarm/runfarm.sh`): two unpinned Isaac processes on one host ran at 0.05x each (F54 §4), so the
+  development machine itself runs one simulation at a time.
 - **Acceptance**: one covered run reproduced on `pro6000` (same outcome; sim/wall ratio recorded), then the same run 6
   ways concurrently. If the per-run sim/wall ratio under 6-way load falls far below half the development machine's
   (the Xeon's single-thread speed is lower than the desktop's), run fewer at once and re-cost from the measurement.
