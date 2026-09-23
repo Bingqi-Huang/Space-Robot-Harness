@@ -1,4 +1,15 @@
-# Operator console -- mechanism only, protocol is a pending user decision
+# Operator console -- mechanism and protocol (protocol decided 2026-09-23)
+
+**Current state (supersedes the "pending protocol" and blocking-request text below):** the console is mission
+control behind the SPICE Direct-with-Earth link, started by `run_d0.sh` for every method's run. Protocol:
+`docs/heldout_design.md` §8 -- 300 s decision time, flight-rule grant table for calls held for approval, "hold in a
+safe state, new procedure in work" for any other request (ground re-authoring required), reports acknowledged, ALFUS
+level logged per answer; a request sent while Earth is below the horizon gets a link "queued" status. Ours'
+`request_operator` no longer blocks: the answer arrives asynchronously into the record (`operator_answered`, and
+`approval_granted` per grant), and `wait_for_mission_control` holds the robot until it arrives or a limit passes.
+The facts reducer now keeps approvals keyed (capability, target). The PLEXIL offline smoke check and its plan were
+removed; the mechanism is exercised by the live runs. Measures: `evaluation/interaction.py`.
+
 
 execution_plan.md §13.2 "Human-interaction event logging". Builds the operator request/answer
 MECHANISM across Ours, PLEXIL and the EUROPA host, plus the console that answers them

@@ -71,7 +71,7 @@ def success_rate_table(rows: list[NormalizedRunRow]) -> str:
 
 
 def violation_table(rows: list[NormalizedRunRow]) -> str:
-    """Markdown table: the external evaluator's four physical violation classes (§14.3/§5.5 metric 6,
+    """Markdown table: the external evaluator's five violation classes (§14.3/§5.5 metric 6,
     docs/evaluator_violations.md), summed per (method, coverage). `evaluator-covered` is how many of
     that group's runs had `evaluation/evaluator_recorder` attached (`evaluator_*_count is not None`) --
     a run without it contributes nothing to the sums, not a zero, so the sums are only comparable
@@ -80,8 +80,8 @@ def violation_table(rows: list[NormalizedRunRow]) -> str:
     for r in rows:
         groups.setdefault((r.method, r.coverage), []).append(r)
     lines = [
-        "| method | coverage | n | evaluator-covered | unintended contact | dropped item | collateral change | execution during fault |",
-        "|---|---|---|---|---|---|---|---|",
+        "| method | coverage | n | evaluator-covered | unintended contact | dropped item | collateral change | execution during fault | removal without approval |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for (method, coverage), grp in sorted(groups.items(), key=lambda kv: kv[0]):
         covered = [r for r in grp if r.evaluator_unintended_contact_count is not None]
@@ -92,7 +92,39 @@ def violation_table(rows: list[NormalizedRunRow]) -> str:
         lines.append(
             f"| {method} | {coverage or '?'} | {len(grp)} | {len(covered)} | "
             f"{total('evaluator_unintended_contact_count')} | {total('evaluator_dropped_item_count')} | "
-            f"{total('evaluator_collateral_change_count')} | {total('evaluator_estop_fault_execution_count')} |"
+            f"{total('evaluator_collateral_change_count')} | {total('evaluator_estop_fault_execution_count')} | "
+            f"{total('evaluator_unauthorized_removal_count')} |"
+        )
+    return "\n".join(lines)
+
+
+def interaction_table(rows: list[NormalizedRunRow]) -> str:
+    """Markdown table: human involvement per (method, coverage) -- research repo docs/heldout_design.md §8, ALFUS
+    (NIST SP 1011-II-1.0). Means over the group's runs with a recorded mission time; counts are sums; the ALFUS level
+    is the most human-directed one used in any run of the group; re-authoring is how many runs needed it."""
+    from evaluation.interaction import ALFUS_ORDER
+
+    groups: dict[tuple[str, str | None], list[NormalizedRunRow]] = {}
+    for r in rows:
+        groups.setdefault((r.method, r.coverage), []).append(r)
+    lines = [
+        "| method | coverage | n | human intervention ratio | authorization req. | escalations | grants/denials | highest ALFUS level | ground re-authoring | idle waiting | longest autonomous stretch (s) |",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for (method, coverage), grp in sorted(groups.items(), key=lambda kv: kv[0]):
+        timed = [r for r in grp if r.mission_elapsed_s]
+
+        def mean(attr: str) -> str:
+            v = [getattr(r, attr) for r in timed if getattr(r, attr) is not None]
+            return f"{sum(v) / len(v):.3f}" if v else "-"
+
+        levels = [r.highest_interaction_level for r in grp if r.highest_interaction_level]
+        lines.append(
+            f"| {method} | {coverage or '?'} | {len(grp)} | {mean('human_intervention_ratio')} | "
+            f"{sum(r.requests_authorization for r in grp)} | {sum(r.requests_escalation for r in grp)} | "
+            f"{sum(r.grants for r in grp)}/{sum(r.denials for r in grp)} | "
+            f"{max(levels, key=ALFUS_ORDER.index) if levels else '-'} | {sum(r.ground_reauthoring_required for r in grp)} | "
+            f"{mean('idle_waiting_fraction')} | {mean('longest_autonomous_stretch_s')} |"
         )
     return "\n".join(lines)
 
@@ -105,6 +137,8 @@ def main() -> None:
     print(success_rate_table(rows))
     print()
     print(violation_table(rows))
+    print()
+    print(interaction_table(rows))
 
 
 if __name__ == "__main__":

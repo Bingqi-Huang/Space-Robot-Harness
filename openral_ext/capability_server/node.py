@@ -136,10 +136,12 @@ CARRY_SWING_RAD = math.radians(10.0)  # the largest swing the jaw was never dist
 def carry_budget(gravity_m_s2: float) -> float:
     """The acceleration a load hanging from the jaws may be given, on the body the robot is standing on."""
     return gravity_m_s2 * math.tan(CARRY_SWING_RAD / 2)
-CARRY_MAX_SPEED = [0.25, 0.0, 1.0]
-FREE_MAX_VELOCITY = [0.5, 0.0, 2.0]
-FREE_MAX_ACCEL = [2.5, 0.0, 3.2]
-FREE_MAX_DECEL = [-2.5, 0.0, -3.2]
+CARRY_MAX_SPEED_M_S = 0.25  # planar speed with a load in the jaws, along and across
+#: The free limits are the velocity smoother's own, as the robot's launch set them from robot.yaml (the kernel's
+#: planar-speed and turn bounds, the lateral crab cap). They used to be a hand-copied [0.5, 0.0, 2.0] here: the
+#: lateral 0 took the crab away from Nav2 whenever this server had touched the smoother, so a goal whose last
+#: 0.39 m was sideways was never reached, and 2.0 rad/s was four times the kernel's turn bound (F110).
+SMOOTHER_LIMITS = ("max_velocity", "max_accel", "max_decel")
 BASE_MOVES = ("navigate_to_pose", "navigate_to_feature", "dock_to_pose", "dock_at_feature", "move_base_delta")
 
 HELD_PROMPT = ("This camera is mounted on a robot's own gripper and looks out past its fingers; the fingers are the "
@@ -373,8 +375,12 @@ class CapabilityServer(Node):
 
         # reentrant like every other client here: this is called from inside an action's own execution, and a client
         # on the default group would wait on a future its own executor thread is blocked from completing
+        from rcl_interfaces.srv import GetParameters  # noqa: E402
+
         self._smoother_params = self.create_client(SetParameters, "/velocity_smoother/set_parameters", callback_group=cb)
+        self._smoother_get = self.create_client(GetParameters, "/velocity_smoother/get_parameters", callback_group=cb)
         self._drive_limits: dict | None = None  # what the smoother was last set to (see drive_limits)
+        self._free_limits: dict | None = None  # the smoother's launch limits, read before the first change
         from openai import OpenAI
         self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=120)
         self.vlm_pool = ThreadPoolExecutor(8)
@@ -418,14 +424,14 @@ class CapabilityServer(Node):
         return {"inventory": self._inventory, "equipment_catalogue": CATALOGUE}
 
     def power_status(self):
-        """The power distribution units' own telemetry, the latest the base network carried."""
+        """The serviced units' own telemetry, the latest the base network carried."""
         return dict(self._power)
 
     def site_map(self):
         fixed = {k: v for k, v in IX["points"].items() if "object" not in v}
         return {"frame": "map", "point_types": POINT_TYPES,
                 "equipment_catalogue": CATALOGUE,
-                "points": {k: {"type": v["type"], "equipment": v["asset"], "xyz": v["xyz"], "normal": [round(c, 3) for c in v["normal"]],
+                "points": {k: {"type": v["type"], "equipment": v["asset"], **({"unit": v["unit"]} if "unit" in v else {}), "xyz": v["xyz"], "normal": [round(c, 3) for c in v["normal"]],
                                **({"role": v["role"]} if "role" in v else {})}
                            for k, v in fixed.items()},
                 "view_poses": {k: {"x": v["xy"][0], "y": v["xy"][1], "yaw": round(math.radians(v["yaw_deg"]), 4), "looks_at": v["target"]}
@@ -473,8 +479,19 @@ class CapabilityServer(Node):
         Read from the jaw alone -- the robot's own state, not any method's record of what it is doing -- so every
         method's base moves are ramped the same way."""
         from rcl_interfaces.msg import Parameter as ParamMsg, ParameterType, ParameterValue
-        from rcl_interfaces.srv import SetParameters
+        from rcl_interfaces.srv import GetParameters, SetParameters
 
+        if self._free_limits is None:
+            if not self._smoother_get.wait_for_service(timeout_sec=2.0):
+                return {"carrying": carrying, "changed": False, "why": "the velocity smoother is not answering parameter reads"}
+            fut = self._smoother_get.call_async(GetParameters.Request(names=list(SMOOTHER_LIMITS)))
+            t0 = time.time()
+            while not fut.done() and time.time() - t0 < 3.0:
+                time.sleep(0.02)
+            if not fut.done():
+                return {"carrying": carrying, "changed": False, "why": "the velocity smoother did not answer"}
+            self._free_limits = {n: list(v.double_array_value) for n, v in zip(SMOOTHER_LIMITS, fut.result().values)}
+        free = self._free_limits
         if carrying:
             p = self.tcp_pose()["position"]
             lever = max(math.hypot(p[0], p[1]), 0.2)  # how far out the load is riding, measured
@@ -487,12 +504,15 @@ class CapabilityServer(Node):
             # and out of the *half* of it the turn gets, not the whole. What a turn does beyond leaning the load --
             # slipping it round the neck, which is what lost ga4 -- is now stopped by the handle's own collar
             # rather than by a speed limit read off one failure (F83, F84).
+            # the crab keeps the same share as the straight line: the load leans the same way to either
             wz = round(math.sqrt(linear / lever), 2)
-            want = {"max_velocity": [CARRY_MAX_SPEED[0], 0.0, wz], "max_accel": [linear, 0.0, az],
-                    "max_decel": [-linear, 0.0, -az], "lever_m": round(lever, 3),
+            v = [min(CARRY_MAX_SPEED_M_S, free["max_velocity"][0]), min(CARRY_MAX_SPEED_M_S, free["max_velocity"][1]),
+                 min(wz, free["max_velocity"][2])]
+            want = {"max_velocity": v, "max_accel": [linear, linear if v[1] > 0 else 0.0, az],
+                    "max_decel": [-linear, -linear if v[1] > 0 else 0.0, -az], "lever_m": round(lever, 3),
                     "gravity_m_s2": round(self.space_context()["gravity_m_s2"], 4)}
         else:
-            want = {"max_velocity": FREE_MAX_VELOCITY, "max_accel": FREE_MAX_ACCEL, "max_decel": FREE_MAX_DECEL}
+            want = dict(free)
         if want == self._drive_limits:
             return {"carrying": carrying, "changed": False}
         cli = self._smoother_params
@@ -1064,8 +1084,10 @@ class CapabilityServer(Node):
         res.success, res.failure_kind, res.failure_reason = bool(r.success), int(r.failure_kind), r.failure_reason
         res.evidence_json = json.dumps(evidence)
         # the call trace (§4.6): one line per effect, whoever called it
+        # mission (simulator) time the call started and ended: the evaluator's call windows (evaluation/)
         self.get_logger().info("CAPABILITY " + json.dumps(dict(capability=g.capability, args=args, success=res.success,
                                                                failure_kind=res.failure_kind, failure_reason=res.failure_reason,
+                                                               sim_t_start=round(sim0, 2), sim_t_end=round(self.sim_t, 2),
                                                                evidence=evidence)))
         return res
 

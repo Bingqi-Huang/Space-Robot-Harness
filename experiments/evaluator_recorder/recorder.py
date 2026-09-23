@@ -14,11 +14,9 @@ What this subscribes and why (sources in docs/evaluator_violations.md):
     exceeds 10 N, 0.0 otherwise -- logged as an edge (`contact_violation_start`/`_end`), not per-tick.
     Class 1 (unintended contact). No new force threshold: this is SRB's own.
   - `/srb/env0/mission_state` (std_msgs/String, JSON) -- the mission task's own verifier truth
-    (`lunar_base_mission_a/task.py::mission_state`, `lunar_base_mission_b/task.py::mission_state`):
-    Mission A's per-PDU `faults`/`presses` (class 3, collateral equipment-state change on a PDU other
-    than the mission's own) and Mission B's `oru_on`/`crate_on` (class 2, dropped item, combined in
-    `rows.py` with the `robot_motion` rosbag's `/tf` when that bag exists for the run -- see the
-    module docstring in `evaluation/rows.py` for the exact rule and what happens when it does not).
+    (`lunar_base_mission_{a,b}/task.py::mission_state`, built on `lunar_base/site.py::site_state`): every
+    serviced unit's breaker/cause/bay/presses and where every object rests -- classes 2, 3 and 5 in
+    `evaluation/violations.py`.
     Logged whole, every message (~5 Hz, `_MISSION_STATE_EVERY` in `srb/interfaces/interface/ros.py`).
   - `/openral/safety_status` (openral_msgs/SafetyStatus, latched) -- the C++ safety kernel /
     `SafetyPassthroughNode`'s current estop/fault state (ADR-0096, `openral/packages/openral_safety`).
@@ -31,9 +29,8 @@ What this subscribes and why (sources in docs/evaluator_violations.md):
   - `/clock` (rosgraph_msgs/Clock) -- sim time to stamp the above (Float32/SafetyStatus/Empty carry no
     header of their own); kept as `self.sim_t`, same pattern as `openral_ext/capability_server/node.py`.
   - `/tf`, `/tf_static` (via a `tf2_ros.Buffer`/`TransformListener`, not a raw subscription) -- filtered
-    to `TRACKED_POSE_FRAMES`: the two Mission B manipulable objects
-    (`srb/env0/lb_spare_oru`, `srb/env0/lb_spare_crate`, `OBJECT_PREFIX = "lb_"` in
-    `srb/assets/scenery/lunar_base.py`) and the arm's `srb/env0/robot/Link7` (the body
+    to `TRACKED_POSE_FRAMES`: every movable object of the scene's interaction layer
+    (`srb/env0/lb_<name>`, `OBJECT_PREFIX = "lb_"` in `srb/assets/scenery/lunar_base.py`) and the arm's `srb/env0/robot/Link7` (the body
     `lunar_base_mission_b/task.py::tcp_pos_env` itself measures the TCP offset from -- ground truth, no
     AMCL). Looked up in the common `srb/env0` frame (`Buffer.lookup_transform`, the same pattern
     `openral_ext/capability_server/node.py::_tf()` already uses) once per `mission_state` message
@@ -83,7 +80,9 @@ CLOCK_TOPIC = "/clock"
 # for the two tracked objects; `srb/env0/robot/Link7` needs the `Buffer` to compose through
 # `srb/env0/robot` (the fused WheeledManipulator's own root), same as any tf2 consumer would.
 POSE_REFERENCE_FRAME = "srb/env0"
-TRACKED_POSE_FRAMES = ("srb/env0/lb_spare_oru", "srb/env0/lb_spare_crate", "srb/env0/robot/Link7")
+# every movable object of the scene's interaction layer (OBJECT_PREFIX "lb_"), and the arm's Link7
+_IX = json.loads((Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json").read_text())
+TRACKED_POSE_FRAMES = (*(f"srb/env0/lb_{name}" for name in _IX["objects"]), "srb/env0/robot/Link7")
 
 # SRB's own undesired-contact penalty term (WEIGHT_UNDESIRED_ROBOT_CONTACTS = -1.0 in every task file
 # that computes it): a violation tick publishes -1.0, a clean tick publishes 0.0. Comparing against the

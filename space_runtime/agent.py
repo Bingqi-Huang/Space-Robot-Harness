@@ -47,7 +47,7 @@ from space_runtime.context import HarnessRenderer
 from space_runtime.facts import FactStore
 from space_runtime.guard import Guard
 from space_runtime.report import write_report
-from space_runtime.tools import DECOMPOSE, REPLY_TOPIC, REPORT_TOPIC, REQUEST_TOPIC, SET_TASK_STATUS, HarnessToolClient
+from space_runtime.tools import DECOMPOSE, REPLY_TOPIC, REPORT_TOPIC, REQUEST_TOPIC, SET_TASK_STATUS, WAIT, HarnessToolClient
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
@@ -83,7 +83,7 @@ class Agent:
         # on the console's reply, matched by the request_id it minted -- the operator PROTOCOL stays outside this file
         self.report_pub = self.node.create_publisher(PromptStamped, REPORT_TOPIC, 10)
         self.request_pub = self.node.create_publisher(PromptStamped, REQUEST_TOPIC, 10)
-        self.operator_replies = queue.SimpleQueue()
+        self.operator_replies, self.open_requests = queue.SimpleQueue(), set()
         self.node.create_subscription(PromptStamped, REPLY_TOPIC, self.operator_replies.put, 10)
         ex = SingleThreadedExecutor()
         ex.add_node(self.node)
@@ -100,7 +100,7 @@ class Agent:
         self.renderer = HarnessRenderer(self.store, self.max_steps, self.guard.target_authority)
         self.palette = ToolPalette(execute_rskill_ids=frozenset([*(k for k, c in CONTRACTS["effects"].items() if not c.get("engineering")),
                                                                  *(k for k, c in CONTRACTS["queries"].items() if not c.get("engineering")),
-                                                                 SET_TASK_STATUS, DECOMPOSE]))
+                                                                 SET_TASK_STATUS, DECOMPOSE, WAIT]))
 
     def event(self, kind: str, **data) -> dict:
         return self.store.append(kind, sim_t=round(self.sim_t, 2), **data)
@@ -160,15 +160,23 @@ class Agent:
         words rather than a paraphrase."""
         self.event("tool_proposed", **data, llm_s=getattr(self, "_llm_s", None), **self.client.last_reply)
 
-    def wait_for_operator_reply(self, request_id: str) -> dict:
-        # blocks the reasoning loop, not any ROS thread: the background executor keeps spinning and fills the queue
-        while True:
+    def take_operator_replies(self) -> int:
+        """Record every answer mission control has delivered since the last look (the link delivers them
+        asynchronously): an `operator_answered` event each, and the approvals it grants. Returns how many."""
+        n = 0
+        while not self.operator_replies.empty():
             msg = self.operator_replies.get()
             meta = json.loads(msg.metadata_json or "{}")
-            if meta.get("request_id") == request_id:
-                return {"text": msg.text, "authority_level": meta.get("authority_level"),
-                        "interaction_id": meta.get("interaction_id"), "grants": meta.get("grants", []),
-                        "start_wall_t": meta.get("start_wall_t"), "end_wall_t": meta.get("end_wall_t")}
+            if meta.get("request_id") not in self.open_requests:
+                continue
+            self.open_requests.discard(meta["request_id"])
+            self.event("operator_answered", request_id=meta["request_id"], text=msg.text,
+                       authority_level=meta.get("authority_level"), outcome=meta.get("outcome"),
+                       link_status=meta.get("link_status"), interaction_id=meta.get("interaction_id"))
+            for g in meta.get("grants", []):
+                self.event("approval_granted", capability=g["capability"], target=g["target"], request_id=meta["request_id"])
+            n += 1
+        return n
 
     def dispatch(self, call) -> None:
         if isinstance(call, EmitPromptTool):
@@ -186,11 +194,10 @@ class Agent:
             self.request_pub.publish(PromptStamped(text=call.text, metadata_json=json.dumps(
                 {"request_id": request_id, "pending_approvals": pending})))
             self.event("operator_request_sent", request_id=request_id, text=call.text, pending_approvals=pending)
-            reply = self.wait_for_operator_reply(request_id)
-            self.event("operator_answered", request_id=request_id, **reply)
-            for g in reply["grants"]:
-                self.event("approval_granted", capability=g["capability"], target=g["target"], request_id=request_id)
-            return  # the exchange itself is not terminal: the next step continues
+            self.open_requests.add(request_id)
+            self.event("local_tool", success=True, detail="sent to mission control; its answer will appear under "
+                                                          "OPERATOR EXCHANGES when the link delivers it")
+            return  # the exchange itself is not terminal and does not block: the next step continues
         name, args = call.rskill_id, json.loads(call.goal_params_json or "{}")
         if name == DECOMPOSE:
             subtasks, target = [t for t in args["subtasks"] if t.strip()], args.get("target_task_id", "")
@@ -212,6 +219,14 @@ class Agent:
                 self.event("ledger_changed", ledger=ledger.to_state_dict())
             return
         self.proposed(tool=name, args=args, rationale=call.rationale)
+        if name == WAIT:
+            t0 = self.sim_t
+            while not self.operator_replies.qsize() and self.sim_t - t0 < float(args["max_wait_s"]):
+                time.sleep(0.2)
+            n = self.take_operator_replies()
+            self.event("local_tool", success=n > 0, detail=f"waited {self.sim_t - t0:.0f} s of mission time; "
+                                                           + (f"{n} answer(s) arrived" if n else "no answer arrived"))
+            return
         if name == SET_TASK_STATUS:
             ledger = self.ledger()
             ok = ledger is not None and ledger.active() is not None
@@ -271,6 +286,7 @@ class Agent:
                 m = self.fdir_inbox.pop(0)
                 if bool(m.latched) != bool(f["fdir"].get("estop", {}).get("active", False)):
                     self.event("fdir_changed", fault="estop", active=bool(m.latched), detail=m.detail)
+            self.take_operator_replies()
             step += 1
             self.renderer.step = step
             self.event("reasoner_step_started", step=step)  # the model is thinking from here until the next proposal

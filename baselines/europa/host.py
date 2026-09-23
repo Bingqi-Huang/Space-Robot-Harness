@@ -64,7 +64,9 @@ ITEM_DESCRIPTIONS = {
 }
 # Mission A's serviced unit: same status as ITEM_DESCRIPTIONS, mission-instance authoring, not domain reasoning.
 # every PDU's service panel carries the same reset button (site survey), so the description is the same for each unit
-UNIT_DESCRIPTIONS = {u: {"target": "the round red push button set into the yellow sub-panel"} for u in ("pdu_1", "pdu_2", "pdu_3")}
+UNIT_DESCRIPTIONS = {**{u: {"target": "the round red push button set into the yellow sub-panel"} for u in ("pdu_1", "pdu_2", "pdu_3")},
+                     "bess": {"target": "the round white push button on the graphite control panel with the teal border"},
+                     "isru": {"target": "the round black push button on the white control panel with the orange border"}}
 
 
 def ident(name):

@@ -327,9 +327,10 @@ queries:
     inputs: {}
   power_status:
     description: >-
-      The power distribution units' own telemetry over the base network: for each unit the load it feeds and that
-      load's criticality, breaker state (closed / tripped), whether it is energized, the cause of its last trip, how
-      many times it was reset since the mission started, and the serial of the ORU installed in its bay.
+      The serviced units' own telemetry over the base network (the power-field PDUs, the battery storage unit, the ISRU
+      plant): for each unit the load it feeds and that load's criticality, breaker state (closed / tripped), whether it
+      is energized, the cause of its last trip, how many times it was reset since the mission started, and the serial
+      of the module installed in each of its equipment bays (keyed by the bay's place point).
     inputs: {}
   arm_state:
     description: Arm posture from the joint encoders (stowed / ready / other), joint angles and the jaw angle.

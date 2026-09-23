@@ -15,6 +15,16 @@
       <Param type="string">breaker</Param>
       <Value>closed</Value>
     </State>
+    <State name="PowerUnit" type="string">
+      <Param type="string">bess</Param>
+      <Param type="string">breaker</Param>
+      <Value>closed</Value>
+    </State>
+    <State name="PowerUnit" type="string">
+      <Param type="string">isru</Param>
+      <Param type="string">breaker</Param>
+      <Value>closed</Value>
+    </State>
   </InitialState>
   <Script>
     <Command name="navigate_to_feature" type="bool">

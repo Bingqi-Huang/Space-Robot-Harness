@@ -150,19 +150,43 @@ Wizard-of-Oz variance).
 ## 9. Base-wide scene expansion (decided 2026-09-23)
 
 Equipment is a **blocking factor crossed with level**: each level's instances are split across units rather than
-added, so H1 replicates across equipment and drive lengths. Pre-freeze condition: every serviced unit uses the same
-service-panel interface, appears in `power_status`, and the baselines' covered artifacts cover L0/L1 at every unit
-with the unit id as a parameter (otherwise the unit itself would be novel to them). One held-out event per episode;
+added, so H1 replicates across equipment and drive lengths. Pre-freeze condition: every serviced unit is
+serviced with the same verified action forms (press a panel/shutter button; pick/place a module by its top handle on a
+horizontal tray), appears in `power_status`, and the baselines' covered artifacts cover L0/L1 at every unit with the
+unit id as a parameter (otherwise the unit itself would be novel to them). Each unit keeps its own equipment look
+(user decision 2026-09-23: no PDU props reused on other equipment). One held-out event per episode;
 physical-layer failures logged per leg, success conditioned on no physical failure reported as a secondary metric.
 
 | Addition | Zone | Serves | Precedent |
 |---|---|---|---|
-| Battery storage container as a second serviced unit (panel + bay + radiator props, look-alike battery ORU) | power field east (38, 13) | L2-A and L3 replicates | Apollo 15 Mission Report p.94 (LRV batteries: cool with covers open, warm with them closed), Apollo 16/17 over-temperature (Gaier 2005); ISS BCDU robotic replacement from an on-orbit spare (ISS DSR 2019-04-02); Lewis et al. 2022 p.7 |
-| ISRU pilot-plant power unit as the far L4 donor, paired with PDU-3 near | ISRU yard (next to the tank skid) | L4-far vs L4-near (separates distance from level) | Lewis et al. 2022 p.16 (life support precedes non-critical), p.13 (ISRU pilot plants); GAO/NSIAD-88-30BR pp.39-40 (cannibalization, board approval) |
+| Battery storage container as a serviced unit: BMS enclosure + graphite control panel, HV battery-module cradle, free-standing HVAC condenser with a roll-up shutter and its own actuator button, receiving stand | power field east (38, 13) | L2-A and L3 replicates | Apollo 15 Mission Report p.94 (LRV batteries: cool with covers open, warm with them closed), Apollo 16/17 over-temperature (Gaier 2005); ISS BCDU robotic replacement from an on-orbit spare (ISS DSR 2019-04-02); Lewis et al. 2022 p.7 |
+| ISRU oxygen plant as a serviced unit: plant controller + white control panel on the tank skid's service side, a filter-cartridge cradle (L3 replicate: clogged filter swapped for the staged spare) and a power-ORU cradle (the far L4 donor, paired with PDU-3 near), O2 bottle rack, receiving stand | ISRU yard (skid service side faces south) | L3 replicate; L4-far vs L4-near (separates distance from level) | ISS Oxygen Generation System recirculation-loop filters clogged and were replaced on orbit (NTRS 20110023212); Lewis et al. 2022 p.16 (life support precedes non-critical), p.13 (ISRU pilot plants); GAO/NSIAD-88-30BR pp.39-40 (cannibalization, board approval) |
 | Landing-pad offload stand -> habitat logistics shelf, look-alike consumables container | ship pad edge -> habitat front | B long haul (L1) | Lewis et al. 2022 p.12 (robots offload and transport logistics before crew arrival), p.19 |
 | Habitat shelf occupied by an outbound return container (to a depot return stand) | habitat | L2-B replicate | ISS DSR 2019-06-17 (empty carrier removed before installing a spare; the *unexpected* occupancy is our extrapolation); Lewis et al. 2022 p.19 (trash, boneyards) |
 
-Honesty notes for the paper: the 1 kg battery module and consumables container are look-alikes (real ISS battery
+As built (2026-09-23, redesigned after review): the scene's `units` (layout.yaml, exported to interaction.json) drive
+the site model -- no unit list in code. `pdu_1` (habitat life support, crew-critical), `pdu_2` (communication station,
+mission-critical), `pdu_3` (science instruments, non-critical): yellow service panel, spares shelf, ORU bay, radiator
+with shutter. `bess` (battery storage, mission-critical; the container stands on the pad, the source model's plinth cropped
+away): wall-mounted BMS enclosure with a graphite control panel (white reset cap), battery-module cradle (BAT-0101,
+0.29 x 0.42 x 0.367 m so its handle sits at the ORU's height; spare BAT-0102 on the depot spares stand), HVAC condenser
+with shutter and blue actuator button. `isru` (ISRU oxygen plant, non-critical, no shutter): plant control panel
+(black reset cap, dark readout; inspected from 2.0 m), filter-cartridge cradle (FLT-0201; spare
+FLT-0202 on the ISRU receiving stand) and power-ORU cradle (ORU-0285). Reset caps are never red or green (IEC
+60204-1 §10.2.1): red and green appear only on status lamps. A closed breaker trips after the self-test with
+the module's own code (`ORU_SELFTEST_FAIL` / `BATTERY_MODULE_FAULT` / `FILTER_CLOGGED`), at once on an empty bay
+(`MODULE_MISSING`); telemetry lists the installed module serial per bay. Mission A takes `env.faulted_unit`
+(L2-A: PDUs and BESS; L3: every unit with its own spare). L4-near (`heldout_cannibalize`, PDU-1): the depot spare ORU
+is recorded failed and is; PDU-3's ORU and the ISRU plant's power ORU are the energized non-critical candidates. L4-far
+(`heldout_cannibalize_far`): additionally PDU-3's module was removed earlier and sits failed on its own shelf (PDU-3
+down, MODULE_MISSING), so only the ISRU plant is left. Mission B takes `env.cargo` (`spare_oru` from the depot stand |
+`bat_spare` from the depot spares stand | `consumables_container` from the landing-pad offload stand) and
+`env.destination` (a PDU's spares shelf | `bess`, its receiving stand | `habitat`, the habitat logistics stand); the
+occupier of `heldout_destination_occupied` is the returned crate, or the return container on the habitat stand. The
+operator's brief is published by the task itself (latched `/srb/env0/mission_brief`). Authority (guard, console,
+evaluator class 5) keys on the unit a site point belongs to (`points[...].unit`) and on the bay granted.
+
+Honesty notes for the paper: the 1 kg battery module, filter cartridge and consumables container are look-alikes (real ISS battery
 ORUs are far heavier). Not added: a third family, dust cleaning, cables/connectors, commodity transfer, the HLS
 elevator, hatches, comm-station faults in L4 (a dead comm unit with a live link is incoherent), lighting changes,
 stacked held-out events. Video richness comes only from post-hoc overlays (map + path, wrist PiP, the agent's own

@@ -1,37 +1,35 @@
 # Handoff
 
-Updated 2026-09-23 (held-out ladder: scene, scenarios, authority and link built; site check live). Read `AGENT/research_content.md` and
+Updated 2026-09-23 (held-out ladder steps 1-4 reviewed and merged; next: step 5, baseline competence). Read `AGENT/research_content.md` and
 `AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan), then `AGENT/todo.md`.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
-- Research repo and `space_robotics_bench`: branch `feat/heldout-ladder`, cut from `feat/experiment-campaign`
-  (`fb47fd8`, F107); docs committed (`ca492cf`), steps 2-5 work uncommitted at this writing. `openral` unchanged.
-- Nothing pushed; nothing merged to `main`. `artifacts/runs/_debug_archive/` never existed (old handoff error).
+- `feat/heldout-ladder` (with `feat/experiment-campaign` beneath it) merged: research repo `main`, SRB `main`,
+  openral `master`; the research repo's submodule pointers are the merged tips. Nothing pushed (ask first).
+- Start each new task on a fresh `feat/<name>` branch in every repo it touches.
 
 ## Where it stands (2026-09-23)
 
-All three methods complete Mission A/B **covered** on the old scene (runs `*_mission_{a,b}_success_20260922`).
-The scene has since changed (bays, installed ORUs, radiators; service cover gone), so covered must be re-run for
-every method before the freeze -- that is a campaign prerequisite, not a base-rate rerun.
-
-Built today (todo steps 2-5, details there): the shared site model `srb/.../lunar_base/site.py` (one physics for all
-scenarios: breaker trips, radiator overheating under a closed shutter, ORU self-test, ORU missing), telemetry +
-inventory record through the boundary, the new props/labels, the four new scenarios, authority by target in Ours'
-guard with the approval handshake through the console, SPICE Earth-link profile + DTN link gate. Live-verified in
-`artifacts/runs/site_check_2` (`d0_site_check.py`): telemetry/inventory reach the boundary, every bay and cover button
-has a legal stand, the open radiator reads as open. The closed shutter was misread (light grey, slat seams looked
-like fins) -> recoloured charcoal; `site_check_3` reads both states right. Baselines made competent on the covered
-brief and offline-verified (F108).
+Steps 1-4 of `docs/heldout_design.md` §10 are built (F109) and redone after the user's review (F110):
+- Five serviced units as scene data (layout.yaml `units` -> interaction.json; site points tagged `unit`): PDU-1..3
+  (panel, shelf, ORU bay, radiator), BESS (container on the pad, wall BMS enclosure + graphite panel, battery cradle,
+  HVAC condenser with shutter), ISRU plant (plant panel, filter + power-ORU cradles). `site.py` has no unit list;
+  module fault codes per module kind; telemetry lists installed serials per bay.
+- Mission A `env.faulted_unit` in {pdu_1..3, bess, isru}; Mission B `env.cargo` / `env.destination`.
+- Console protocol (§8), async operator requests, evaluator class 5 keyed on unit + granted bay, interaction measures.
+- Nav2: global costmap = the AMCL surveyed map (static + live obstacle + inflation, 0.05 m); the capability server's
+  drive limits no longer zero the crab (they were a hand-copied [0.5, 0.0, 2.0] -- F110 c).
+- Baselines: PLEXIL Identify and EUROPA button descriptions span all five units (plexiltest offline ok).
+Live acceptance: `artifacts/runs/site_check_10` (`d0_site_check.py`; 7-9 are the fixes' intermediate runs).
 
 ## Next
 
-Work order: `docs/heldout_design.md` §10 / `AGENT/todo.md`. Ground protocol decided (§8: scripted, 300 s decision
-time, flight-rule grant table, HOLD reply for "no procedure applies", ALFUS labels); base-wide expansion decided (§9:
-battery-container unit, ISRU donor unit, landing -> habitat logistics, habitat shelf occupancy; equipment as a
-blocking factor). Next up: step 1, the scene expansion.
+Step 5 (`AGENT/todo.md`): make PLEXIL and EUROPA cover every unit and both missions' parameters, then re-run
+covered live for PLEXIL, EUROPA and Ours on the final scene -- covered runs from before the scene change do not
+count for the freeze. Then step 6 (Ours L2-A -> L2-B -> L3 -> L4 near/far), 7 (freeze), 8 (campaign).
 
 ## Constraints the new assets must meet
 
@@ -51,6 +49,8 @@ blocking factor). Next up: step 1, the scene expansion.
 - `check.log`'s bare `t` is wall seconds since script start; `sim_t`/`sim_s` are sim time.
 - Killing a check script mid-`navigate`/`dock` does not cancel Nav2's goal -- cancel it first.
 - Never open a run's bag while its recorder is alive.
+- Isaac can abort mid-run on a carb mutex assertion ("unlock() called by non-owning thread", 5 runs so far):
+  intermittent, not ours -- tear down and relaunch. A Monitor pipe must not end in `cut` (it buffers; use `grep -o`).
 
 ## Running it
 

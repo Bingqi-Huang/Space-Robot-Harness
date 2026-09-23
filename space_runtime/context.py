@@ -51,12 +51,12 @@ def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = N
     out.append("## MANIPULATION ATTEMPTS (operations on items, latest last)\n" + ("\n".join(tries) or "(none yet)"))
     anomalies = [f"- [{a['seq']}] {a['capability']}: {a['reason']}" for a in f["anomalies"]]
     out.append("## UNRESOLVED ANOMALIES\n" + ("\n".join(anomalies) or "(none)"))
-    # request_operator's request/answer pair: not folded into facts.py (mission-generic, no decision logic here about
-    # what the answer means), read straight off the record so a pending request's answer reaches the next step
+    # request_operator's requests and mission control's asynchronous answers, read straight off the record (no decision
+    # logic here about what an answer means); a request with no answer yet is still open
     ops = [e for e in (events or []) if e["kind"] in ("operator_request_sent", "operator_answered")]
     if ops:
         lines = [f"- [{e['seq']}] you asked mission control: {e['text']}" if e["kind"] == "operator_request_sent"
-                 else f"- [{e['seq']}] mission control answered ({e.get('authority_level') or 'authority level unspecified'}): {e['text']}"
+                 else f"- [{e['seq']}] mission control answered ({e.get('outcome') or e.get('link_status')}): {e['text']}"
                  for e in ops[-8:]]
         out.append("## OPERATOR EXCHANGES (your requests and mission control's answers, latest last)\n" + "\n".join(lines))
     if len(f["reasoner_history"]) > 1:

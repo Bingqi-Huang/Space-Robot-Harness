@@ -5063,3 +5063,93 @@ the node runs; offline-verified nominal and re-trip (`scripts/MissionA_Covered_{
 holds restore goals to the horizon and counts a restore that relapses as a failure, so a reset that does not hold
 ends in the operator after 3 relapses instead of pressing forever (offline: nominal pdu_3, no-hold pdu_2, Mission B
 regression). Both now pass the catalogue's item name to pick/place, as the contract says.
+
+## F109 -- The base-wide scene, the protocol and the evaluator, built and run once each (2026-09-23)
+
+`docs/heldout_design.md` §10 steps 1-4 (branches `feat/heldout-ladder` in the research repo, SRB and openral).
+
+**1. Scene.** Two more serviced units with the PDUs' own service interface -- the battery storage unit `bess` (power
+field east, its bay module in the ISS BCDU role) and the ISRU yard's `isru_pdu` -- a landing-pad offload stand, a habitat
+logistics stand and a depot return stand (one-slot `receiving_stand`), ORU-0272/0285, a consumables container and a
+return container (the crate's texture tinted blue / orange, own Data Matrix labels), road spurs; the AMCL map
+re-surveyed with the rover's own lidar (504 poses). The site model generalises from three PDUs to a unit list; every
+unit reports load and criticality (Lewis et al. 2022 load shedding). Live (`site_check_4/5`): every bay, cover button
+and panel of all five units and every stand slot has a legal stand from the robot's own IK (bays 1.10-1.115 m,
+buttons/panels 1.06-1.075 m, stand slots 1.05-1.11 m); the VLM reads the BESS shutter drawn, the ISRU shutter open,
+the BESS lamp red and the ISRU lamp green.
+
+**2. Three defects the first attached runs showed, none of them new.** (a) Nav2's global costmap was a 60 m rolling
+window: from the ISRU yard the battery unit (~60 m) was "off the global costmap. Planning will always fail to this
+goal" -- now 200 m at 0.1 m (LunarBot's robot.yaml / nav2_lunar_bot.yaml; the last metre is docked by the base servo,
+not planned). (b) The evaluator's class 1 read SRB's undesired-contact penalty over the whole fused articulation,
+wheels included: on from the third second of a run in which the rover had not moved (the recorder had never been
+attached before) -- wheels now excluded. (c) Mission A resolved the reported unit in `__post_init__`, before command-line
+overrides: a BESS fault was briefed as "PDU-2" -- now resolved when asked.
+
+**3. Protocol and interaction.** The console (§8) runs with every `run_d0.sh` graph: 300 s decision time, flight-rule
+grants (offline: PDU-3 granted, PDU-2 denied DENY-CRITICAL-DONOR), HOLD for other requests, SPICE link gate. Ours'
+`request_operator` is asynchronous now (`wait_for_mission_control` to hold); a blocking request would have made the
+waiting time unusable and the idle-waiting measure meaningless. `evaluation/interaction.py` computes the §8 measures
+from the console log and the boundary's call windows (now logged in mission time); class 5 (removal from an energized
+unit without approval) added to `evaluation/violations.py`; checked on a synthetic L4 run (removal at 300 s before a
+grant at 454 s -> 1) and on `site_check_4`.
+
+**4. Open.** Nav2 did not converge on the BESS radiator view pose after the 60 m leg from the ISRU yard: it stopped
+0.39 m short (goal tolerance 0.25 m), "Failed to make progress", recoveries "Pose Goes Off Grid", 300 s deadline. The
+same clearance (2.3 m to the nearest mapped structure) at the BESS panel view converged at once. One occurrence; fix
+when a mission run meets it (the observation from where it stopped was still correct).
+
+## F110 -- Each serviced unit gets its own equipment; Nav2's global costmap goes back to the surveyed map (2026-09-23)
+
+Review of F109 (user): the BESS and ISRU units reused the PDU's panel, shelf, bay and radiator props -- the base still
+looked like five PDUs, which defeats the point of the expansion; and widening Nav2's rolling global costmap to 200 m by
+coarsening it to 0.1 m lowered navigation precision for no reason, since the rover localizes with AMCL on a prebuilt
+surveyed map (not SLAM) -- the whole site is already a static map.
+
+**Equipment.** Collected assets first, Blender only for the interactive parts. BESS: the battery storage container,
+a BMS enclosure (`power_box_01`) with an authored graphite control plate (teal border, green reset button, LED bar,
+status lamp), an HV battery-module cradle holding BAT-0101 (`scifi_power_battery` with a top handle; spare BAT-0102 on
+the depot spares stand) and a free-standing HVAC condenser (fans, roll-up shutter, blue actuator button) whose drawn
+shutter is L2-A at this unit. ISRU plant: the tank skid turned so its service side faces the sun, a plant controller
+(`utility_box_02`) with an authored white control plate (orange border, red button, gauge), a filter-cartridge cradle
+(FLT-0201; spare FLT-0202 on its receiving stand) and a power-ORU cradle (ORU-0285, the far L4 donor), an O2 bottle
+rack. The action forms are unchanged (press a button; pick/place a top-handled module on a horizontal tray). The
+units, their panels, shutters and bays are data (layout.yaml `units` -> interaction.json, every site point tagged with
+its `unit`): `site.py` has no unit list; the self-test reports the module's own code (`ORU_SELFTEST_FAIL`,
+`BATTERY_MODULE_FAULT`, `FILTER_CLOGGED`; empty bay `MODULE_MISSING`); telemetry lists the installed serial per bay;
+guard, console and evaluator class 5 key on the unit and the bay granted. L3 at the ISRU plant has a real precedent in
+an oxygen generator: the ISS OGS recirculation-loop filters clogged and were replaced on orbit (NTRS 20110023212).
+
+**Nav2.** The global costmap is the static surveyed map (static layer, `rolling_window: false`) at the map's own
+0.05 m; the local costmap stays rolling. The map was re-surveyed for the new equipment.
+
+**What the acceptance runs found.** (a) `site_check_6`: the BESS battery cradle had no legal stand -- the collected
+battery module is 0.262 m tall, its handle 0.862 m above ground, below what the arm reaches from the nearest stand
+the cradle's hull clearance allows (1.10 m). Stretched 1.40 in height (0.367 m, the ORU's), its handle is at the
+ORU's 0.967 m and `site_check_7` lists the stand at 1.10 m. `site_check_6` itself died on a carb mutex assertion in
+Isaac ("unlock() called by non-owning thread") mid-drive -- the same abort is in four old runs (g9n, g9p, ga5, ga7):
+intermittent, not this change. (b) `site_check_7`: the ISRU lamp (green) was read "red": the new plant panel's reset
+cap was red under the green lamp. Reset caps are now white (BMS) / black (ISRU plant) -- IEC 60204-1 §10.2.1 gives
+reset white, grey, black or blue -- and the BMS state-of-charge LEDs white, so red and green appear only on lamps.
+(c) The F109 "0.39 m short" is not localization: the goal's last 0.39 m was sideways and the capability server's
+drive limits (219d07e) set the velocity smoother to a hand-copied [0.5, **0.0**, 2.0] m/s with 2.5 m/s^2 -- no crab
+at all, a turn rate four times the kernel's 0.47 rad/s, and ten times the robot's traction-limited 0.25 m/s^2
+braking -- the moment any base move started. MPPI planned the crab, the smoother zeroed it, the progress checker
+aborted. The free limits are now the smoother's own launch values (robot.yaml), read once before the first change;
+carrying keeps the crab at the carry speed with the same acceleration share as the straight line.
+(d) `site_check_8` (crab restored): every view reached, no "Failed to make progress" (14 in `site_check_7`); the BESS
+view in 86 s sim instead of an abort at 279 s. The ISRU lamp (green) was now read "white": from 3.5 m the panel is
+~30 px and a round white pressure dial sat just under the lamp. The dial is now a dark rectangular readout and the
+ISRU view aims nearer the panel (skid-local -1.2 m instead of -0.5). (e) Review (user): the BESS container stood on
+the source model's plinth, an open two-walled shell that read as the unit floating. Cropped away (source z >= 19;
+the container body has its own closed floor), the unit stands on the graded pad at 1.99 m high, same footprint -- the
+AMCL map is unchanged. (f) The global costmap was never static on the lunar base: the rolling window is the shared
+OpenRAL SLAM-from-scratch setup (panda_mobile), only widened to 60 m in F50; live lidar obstacles stay in both
+costmaps (global `obstacle_layer`, local 3 m rolling `voxel_layer`).
+(g) `site_check_9`: BESS lamp red, HVAC shutter drawn, all views reached; the ISRU answer was "cannot be seen
+clearly" -- right to say so: the front camera (focal 5 mm over a 12 mm aperture, fx 267 px at 640) puts the 0.068 m
+lamp at ~5 px from 3.5 m, enough for a red lamp on a graphite plate, not for a green one on a white plate. The ISRU
+view is now at the panel from 2.0 m (~9 px).
+(h) `site_check_10` (final acceptance): 24/24 work-stand queries answered (every panel, shutter button, bay and
+stand slot of the five units); BESS lamp red, BESS HVAC shutter drawn, ISRU lamp green "at the top centre of the
+control panel" -- all right; every view reached first time, no "Failed to make progress", no crash.

@@ -32,7 +32,7 @@ class Guard:
             pt = IX["points"][args[rule["target_arg"]]]
             if pt.get("role") != rule["target_role"]:
                 continue
-            unit = facts["power"]["units"][pt["asset"]]
+            unit = facts["power"]["units"][pt["unit"]]
             if all(unit[k] == v for k, v in rule["when_unit"].items()):
                 return rule
         return None

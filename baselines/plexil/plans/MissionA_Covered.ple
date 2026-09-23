@@ -1,9 +1,9 @@
 // PLEXIL baseline -- Mission A, model-covered procedure (execution_plan §11.1; research repo docs/heldout_design.md §7).
 //
-// The covered brief: "Power distribution unit <X> reported a fault. Inspect the power field, identify the failed unit,
-// restore it if within your authority, verify the result, and return the rover to the dock with the arm stowed."
+// The covered brief: "<X> reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if
+// within your authority, verify the result, and return the rover to the dock with the arm stowed."
 // A competent procedure for that brief, authored from the covered specification only:
-//   identify  -- the tripped unit from the units' own telemetry (PowerUnit Lookup over the site's three units), not
+//   identify  -- the tripped unit from the units' own telemetry (PowerUnit Lookup over the site's five units), not
 //                from the report, since the brief asks to identify it;
 //   restore   -- drive to its panel, dock, press the reset;
 //   verify    -- the breaker reads closed; a reset that did not take is pressed once more, then escalated;
@@ -12,7 +12,7 @@
 // supply (recorded as ground re-authoring when it would need a new plan).
 //
 // Composed from the reusable library (lib/DriveAndDock, lib/StowAndReturn). `press`'s own contract needs no
-// arm_ready first. Units and the press feature naming are site knowledge (site_map).
+// arm_ready first. Units, the press feature naming and each panel's look are site knowledge (site_map).
 
 LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
 LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
@@ -24,7 +24,7 @@ Command pprint(...);
 MissionA_Covered: Sequence
 {
   String Unit = "";
-  String ButtonTarget = "the round red push button set into the yellow sub-panel";
+  String ButtonTarget = "";
   String Answer = "";
   Boolean ok = true;
 
@@ -33,6 +33,15 @@ MissionA_Covered: Sequence
     Unit1: { SkipCondition Lookup(PowerUnit("pdu_1", "breaker")) != "tripped"; Unit = "pdu_1"; }
     Unit2: { SkipCondition Unit != "" || Lookup(PowerUnit("pdu_2", "breaker")) != "tripped"; Unit = "pdu_2"; }
     Unit3: { SkipCondition Unit != "" || Lookup(PowerUnit("pdu_3", "breaker")) != "tripped"; Unit = "pdu_3"; }
+    Unit4: { SkipCondition Unit != "" || Lookup(PowerUnit("bess", "breaker")) != "tripped"; Unit = "bess"; }
+    Unit5: { SkipCondition Unit != "" || Lookup(PowerUnit("isru", "breaker")) != "tripped"; Unit = "isru"; }
+    Button:
+    {
+      if (Unit == "bess") { ButtonTarget = "the round white push button on the graphite control panel with the teal border"; }
+      elseif (Unit == "isru") { ButtonTarget = "the round black push button on the white control panel with the orange border"; }
+      else { ButtonTarget = "the round red push button set into the yellow sub-panel"; }
+      endif
+    }
   }
   // decisions on live state are taken when the node runs (if/endif): a SkipCondition is watched the whole time a
   // node waits in its Sequence, so a later branch would be skipped the moment an earlier step changed that state

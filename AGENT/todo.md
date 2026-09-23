@@ -1,41 +1,49 @@
 # TODO
 
-Goal: the Acta Astronautica paper. Held-out set decided 2026-09-23 -- **`docs/heldout_design.md` is the plan**; its
-§8 order is the work order below. Branch `feat/heldout-ladder` (research repo + `space_robotics_bench`), cut from
-`feat/experiment-campaign` at `fb47fd8`. All three methods already complete Mission A/B covered live (F92-F107).
+Goal: the Acta Astronautica paper. **`docs/heldout_design.md` is the plan**; its §10 order is the work order below.
+Steps 1-4 reviewed by the user and merged 2026-09-23: research `main`, SRB `main`, openral `master` (not pushed).
+Start the next task on a new branch (`feat/<name>`) in each repo it touches.
+
+## Done
+
+- F108-F110: the held-out site (one physics, five serviced units each with its own equipment, units as scene data),
+  Mission A/B scenarios over every unit, telemetry + inventory at the boundary, authority by target, SPICE Earth
+  link + ground protocol (300 s, flight-rule grants, HOLD, ALFUS labels), evaluator classes 1-5 + interaction
+  measures, AMCL map as Nav2's global costmap, crab restored (drive limits), live acceptance `site_check_10`.
 
 ## Work order -- `docs/heldout_design.md` §10 (each step: offline check first, then one decisive live run)
 
-Done (F108, commits `ca492cf`, `3edd2d6`; SRB `6d72441`): docs; telemetry + inventory at the boundary; bays, labels,
-radiators; Mission A/B scenarios; Ours' authority by target; SPICE Earth link + gated console; competent PLEXIL/EUROPA
-Mission A (offline-verified). Ground protocol (§8, decision time 300 s) and base-wide expansion (§9) decided 2026-09-23.
+5. [ ] **Baseline competence on the final scene** (paper §5.2-5.3 fairness; Table 2/3). Pre-freeze, not results.
+   - [ ] PLEXIL Mission A over all five units live (Identify + per-unit button text built, plexiltest ok).
+   - [ ] PLEXIL Mission B parameterized by cargo/destination (plan reads them from the brief's site ids).
+   - [ ] EUROPA: one consolidated NDDL domain for both missions and every unit; `--power-field` goals per unit.
+   - [ ] Covered pick/place recovery set for both baselines (retry/re-grasp a baseline author would write).
+   - [ ] Live covered re-runs on the final scene: PLEXIL, EUROPA, Ours x Mission A (one PDU, BESS, ISRU) and
+         Mission B (ORU to a PDU shelf, container to habitat). One run each unless a run fails for a reason
+         the method should have covered -- then fix and rerun.
+6. [ ] **Ours development on the held-out ladder** (paper §4 method, §6.3 trace figure). Generic changes only
+   (§13.1), each in `research_findings.md`; development runs never count as results.
+   - [ ] L2-A shutter (BESS HVAC, a PDU radiator) -> L2-B destination occupied -> L3 module failure (ORU, battery,
+         filter) -> L4-near cannibalize (ground grant) -> L4-far (ISRU donor, Earth link).
+7. [ ] **Freeze** (paper §5.3): run manifests, closed-capability certificates, freeze audit, git tags in all repos.
+8. [ ] **Campaign** (paper §6): Experiment I (ladder x units x 3 methods, repeated for model variance, paired
+       instances) -> §5.7 ablations (Ours without facts / verification / guard / context reconstruction, subset of
+       cases) -> build `scan_label` (Data Matrix, wrist camera) -> Experiment II (timed extension effort,
+       `engineering_worklog.jsonl`, all three methods).
+9. [ ] Real LunarBot segment (§5.8): design deferred until 8 is stable; ask the user before planning it.
 
-1. [ ] Scene expansion (§9): battery-container unit (38,13), ISRU pilot-plant unit (ISRU yard), landing offload
-       stand, habitat logistics shelf, depot return stand, road spurs; site model from 3 PDUs to a unit list; AMCL/Nav2
-       map re-survey; offline `work_stands` for every new tray/button; one site-acceptance run (`d0_site_check.py`).
-2. [ ] Scenarios parameterized by unit (A) and by source/destination/occupier (B).
-3. [ ] Console protocol (§8): `--decision-time-s 300`, flight-rule grant table, HOLD reply, ALFUS labels.
-4. [ ] Evaluator: rewrite `evaluation/violations.py` + `experiments/evaluator_recorder/` for the new mission_state
-       (`units`, `objects`; approved cannibalization is not collateral); §8 interaction metrics in `evaluation/`;
-       recorder wired into all three launch scripts; capability-server call-start timestamp.
-5. [ ] Baselines cover every unit (L0/L1 parameterized), pick/place recovery set, consolidated NDDL; re-run covered
-       live for PLEXIL, EUROPA and Ours on the final scene.
-6. [ ] Ours development runs L2-A -> L2-B -> L3 -> L4-near -> L4-far; mission-generic changes only (§13.1), each in
-       `docs/research_findings.md`.
-7. [ ] Manifests + closed-capability certificates; freeze audit; git tags.
-8. [ ] Experiment I campaign -> §5.7 ablations -> build `scan_label` (wrist-view label decode check there) ->
-       Experiment II (timed, `engineering_worklog.jsonl`).
+## Paper drafting (parallel; LaTeX, Acta Astronautica)
 
-## Paper drafting (parallel)
-
-- [ ] Introduction / Related Work / Method as LaTeX for Acta Astronautica, verified citations, no results language.
+- [ ] Introduction, Related Work, Problem Setting, Method: writable now (no results language), verified citations.
+- [ ] Experimental Methodology (§5): writable after 7 (freeze fixes the cases, metrics and exclusion rules).
+- [ ] Results, trace figure, Discussion: after 8.
 - [ ] Limitations must state: one engineer (no double-blind baseline authoring); "covers closed for landing
-      ejecta" is our extrapolation; L2-B precedent is category-level only.
+      ejecta" is our extrapolation; L2-B precedent is category-level only; look-alike module masses.
 
 ## Open decisions (user)
 
 - `artifacts/runs/` holds ~100 development run dirs, 330 GB; cleanup deferred by the user (2026-09-23).
-- Merge `feat/experiment-campaign` (+ this branch) to `main`: when?
+- Push the merged `main`/`master` of the three repos to their remotes: when?
 
 ## Design items not yet built (pick up when a run needs them)
 
@@ -47,7 +55,6 @@ Mission A (offline-verified). Ground protocol (§8, decision time 300 s) and bas
 - [ ] Single-frame VLM held/identity negatives can contradict visible geometry; unknown is correct, not "empty".
 - [ ] Cache the views within one `pick` call (a pick costs 15-40 min wall; `find` alone ~10 min).
 - [ ] The scene generator's `REACH` table is superseded by the reach model; delete it with `robot.reach_m` copies.
-- [ ] `depot_stand/slot_1` has no legal stand at any reach distance -- nothing may be staged there for a pick.
 - [ ] Servo gains were tuned against the soft arm (F95/F96/F98): re-check only if a run shows a stall or dip.
 
 ## Numbers still owed a measured source

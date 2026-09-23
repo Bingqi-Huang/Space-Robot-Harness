@@ -5,6 +5,8 @@ initial-state {
   state PowerUnit ("pdu_1":string, "breaker":string) = "closed":string;
   state PowerUnit ("pdu_2":string, "breaker":string) = "tripped":string;
   state PowerUnit ("pdu_3":string, "breaker":string) = "closed":string;
+  state PowerUnit ("bess":string, "breaker":string) = "closed":string;
+  state PowerUnit ("isru":string, "breaker":string) = "closed":string;
 }
 
 script {

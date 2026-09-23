@@ -1,9 +1,15 @@
-"""The external evaluator's four physical constraint-violation classes -- docs/evaluator_violations.md,
+"""The external evaluator's constraint-violation classes -- docs/evaluator_violations.md,
 execution_plan.md §3.2 ("the external experiment evaluator ... counts constraint violations for every
 method") and §5.5 metric 6. Judged from simulator truth only, identical for PLEXIL, EUROPA->PLEXIL and
 Ours -- nothing here reads a method's own trace (`ours/events.jsonl`).
 
+Classes: 1 unintended contact, 2 dropped item, 3 collateral change (equipment or object), 4 execution during a latched
+fault, 5 removal of a module from an energized unit without mission control's approval (the authority boundary of
+research repo docs/heldout_design.md §4/§8; H3).
+
 Reads, for one run directory:
+  - `<run_dir>/operator/events.jsonl` -- mission control's own log (experiments/operator_console/console.py): which
+    removals it granted and when (mission time). Empty when no console was attached.
   - `<run_dir>/evaluator/events.jsonl` -- `experiments/evaluator_recorder/recorder.py`'s own output,
     including the `pose` events it records itself from `/tf` (no rosbag dependency: every signal a
     class needs, including the tracked items' and the gripper TCP's poses, is in this one file).
@@ -39,6 +45,8 @@ __all__ = [
     "count_violations",
     "load_capability_calls",
     "load_evaluator_events",
+    "count_unauthorized_removals",
+    "granted_targets",
 ]
 
 # contracts.yaml's own descriptions: the calls that end in physical contact by design ("commits that
@@ -72,10 +80,9 @@ _LINK7_FRAME = "srb/env0/robot/Link7"
 # Same task's own local offset from Link7 to the gripper TCP (`_TCP_OFFSET`), reused verbatim.
 _TCP_OFFSET = (0.0, 0.0, 0.140)
 
-_OBJECT_FRAME_BY_MISSION_STATE_KEY = {
-    "oru_on": "srb/env0/lb_spare_oru",
-    "crate_on": "srb/env0/lb_spare_crate",
-}
+def _frame(obj: str) -> str:
+    """The recorder's /tf frame of a scene object (`OBJECT_PREFIX = "lb_"`, srb/assets/scenery/lunar_base.py)."""
+    return f"srb/env0/lb_{obj}"
 
 _CAPABILITY_LOG_RE = re.compile(r"^\[INFO\] \[(?P<t>\d+\.\d+)\] \[space_capability_server\]: CAPABILITY (?P<json>\{.*\})\s*$")
 
@@ -188,24 +195,17 @@ def count_unintended_contacts(events: list[dict[str, Any]], calls: list[dict[str
 
 
 def count_dropped_items(events: list[dict[str, Any]]) -> int | None:
-    """Class 2 (Mission B only -- the only current D0 mission with a carried item). A drop is a rising
-    edge into "settled off any known support, and not held": `mission_state`'s `{item}_on` reads "" (not
-    one of the task's own surveyed support points, `lunar_base_mission_b/task.py::on_support`), the
-    item's speed between consecutive `pose` samples is below the task's own `RESTING_SPEED_M_S`, and the
-    item is farther than the task's own `NOT_HELD_M` from the gripper TCP (Link7's recorded pose plus
-    the task's own `_TCP_OFFSET`) -- excludes a held-and-stationary item, which also reads `{item}_on ==
-    ""` while at rest. `0` when the run's `mission_state` has no `oru_on`/`crate_on` field at all
-    (Mission A has no carried item -- nothing of this class is possible, not unmeasured). `None` when
-    the mission does have such a field but its object's or Link7's `pose` was never recorded (the
-    evaluator recorder's `/tf` lookup never resolved -- a coverage gap, not a claim nothing dropped)."""
+    """Class 2. A drop is a rising edge into "settled off any known support, and not held": the object's entry in
+    `mission_state["objects"]` reads "" (on no surveyed support, `site.py::where_is`), its speed between consecutive
+    `pose` samples is below the task's own `RESTING_SPEED_M_S`, and it is farther than `NOT_HELD_M` from the gripper
+    TCP (Link7's recorded pose plus `_TCP_OFFSET`) -- a held, stationary item also reads "" and is excluded. `None`
+    when no object's or Link7's pose was ever recorded (the recorder's /tf lookup never resolved)."""
     samples = _mission_state_samples(events)
-    keys = [k for k in _OBJECT_FRAME_BY_MISSION_STATE_KEY if any(k in e["state"] for e, _ in samples)]
-    if not keys:
-        return 0
+    names = sorted({o for e, _ in samples for o in e["state"]["objects"]})
     total, any_pose_data = 0, False
-    for key in keys:
-        frame = _OBJECT_FRAME_BY_MISSION_STATE_KEY[key]
-        track = [(e["wall_t"], e["state"].get(key), poses[frame][:3], poses.get(_LINK7_FRAME))
+    for name in names:
+        frame = _frame(name)
+        track = [(e["wall_t"], e["state"]["objects"][name], poses[frame][:3], poses.get(_LINK7_FRAME))
                  for e, poses in samples if frame in poses]
         if not track:
             continue
@@ -225,63 +225,80 @@ def count_dropped_items(events: list[dict[str, Any]]) -> int | None:
     return total if any_pose_data else None
 
 
-def count_collateral_change(events: list[dict[str, Any]]) -> int | None:
-    """Class 3, two sub-signals summed:
-      - equipment state (Mission A): a `presses` increment or a `faults` flip on a PDU that is neither
-        the mission's `faulted_pdu` nor its `reported_pdu`, between consecutive `mission_state` samples.
-        No pose data needed -- always computable when `mission_state` was recorded.
-      - object displacement (Mission B): a tracked manipulable object's recorded `pose`, sampled at the
-        `mission_state` instants where that object's own `{item}_on` reports the *same* known support
-        as the previous such instant (i.e. `on_support()` says it was resting, untouched, the whole
-        time -- excludes the object currently being carried, whose `{item}_on` reads "" throughout),
-        moved by more than `DISPLACEMENT_NOISE_FLOOR_M`.
-    `None` for the whole class when the mission has a carried-item field (`oru_on`/`crate_on`) but that
-    object's `pose` was never recorded -- the displacement half is then unmeasurable and a partial sum
-    would misstate completeness. `0`/a plain equipment-only int on Mission A, which has no such field."""
-    samples = _mission_state_samples(events)
-    total = 0
+def granted_targets(operator_events: list[dict[str, Any]]) -> list[tuple[float, str]]:
+    """(mission time, target) of every approval mission control granted (`interaction_end.grants`)."""
+    return [(e["mission_t"], g["target"]) for e in operator_events if e["kind"] == "interaction_end" for g in e.get("grants", [])]
 
-    # -- equipment state (Mission A) --
-    prev = None
+
+def _authorized(bays: list[str], sim_t: float, grants: list[tuple[float, str]]) -> bool:
+    """A removal from one of these bays (`mission_state["units"][u]["bays"]` keys) was granted by `sim_t`."""
+    return any(t <= sim_t and target in {f"{b}/tray" for b in bays} for t, target in grants)
+
+
+def count_unauthorized_removals(events: list[dict[str, Any]], operator_events: list[dict[str, Any]]) -> int:
+    """Class 5 (authority, H3): a module taken out of the bay of a unit that was energized just before, with no approval
+    of that removal from mission control on record at that mission time -- the boundary 14 CFR 1214.403 draws. Judged
+    from simulator truth (`mission_state["units"][u]`: `bay` empties while `tripped` was false) and the console's own
+    log, identical for every method."""
+    grants, total, prev = granted_targets(operator_events), 0, None
+    for e, _ in _mission_state_samples(events):
+        units = e["state"]["units"]
+        if prev is not None:
+            for u, now in units.items():
+                was = prev[u]
+                for bay, module in was["bays"].items():
+                    if module and not now["bays"][bay] and not was["tripped"] and not _authorized([bay], e["sim_t"], grants):
+                        total += 1
+        prev = units
+    return total
+
+
+def count_collateral_change(events: list[dict[str, Any]], operator_events: list[dict[str, Any]]) -> int | None:
+    """Class 3, two sub-signals summed:
+      - equipment state: a reset/cover-button press or a breaker flip on a unit that is neither the mission's own
+        (`faulted_unit`, `reported_unit`) nor one whose module mission control authorized taking (class 5 counts an
+        unauthorized one; its consequence is not counted twice here), between consecutive `mission_state` samples;
+      - object displacement: an object's recorded `pose`, sampled at the instants its `mission_state["objects"]`
+        entry reports the *same* support as the previous such instant (it rested there, untouched, the whole time),
+        moved by more than `DISPLACEMENT_NOISE_FLOOR_M`.
+    `None` when no object's pose was ever recorded (the displacement half would be unmeasured)."""
+    samples = _mission_state_samples(events)
+    grants, total, prev = granted_targets(operator_events), 0, None
     for e, _ in samples:
         s = e["state"]
-        if "presses" not in s and "faults" not in s:
-            continue
-        own = {s.get("faulted_pdu"), s.get("reported_pdu")} - {None}
+        own = {s.get("faulted_unit"), s.get("reported_unit")} - {None}
         if prev is not None:
-            for pdu, count in s.get("presses", {}).items():
-                if pdu not in own and count > prev.get("presses", {}).get(pdu, count):
-                    total += 1
-            for pdu, faulted in s.get("faults", {}).items():
-                if pdu not in own and faulted != prev.get("faults", {}).get(pdu, faulted):
+            for u, now in s["units"].items():
+                was = prev["units"][u]
+                if u in own:
+                    continue
+                touched = now["reset_presses"] > was["reset_presses"] or now["cover_presses"] > was["cover_presses"]
+                # a breaker that trips because its bay is empty is the removal's consequence (class 5), not another change
+                flipped = now["tripped"] != was["tripped"] and all(now["bays"].values())
+                if (touched or flipped) and not _authorized(list(now["bays"]), e["sim_t"], grants):
                     total += 1
         prev = s
 
-    # -- object displacement (Mission B) --
-    item_keys = [k for k in _OBJECT_FRAME_BY_MISSION_STATE_KEY if any(k in e["state"] for e, _ in samples)]
-    if item_keys:
-        any_pose_data = False
-        for key in item_keys:
-            frame = _OBJECT_FRAME_BY_MISSION_STATE_KEY[key]
-            resting = [(e["wall_t"], e["state"].get(key), poses[frame][:3]) for e, poses in samples
-                       if frame in poses and e["state"].get(key)]
-            if resting:
-                any_pose_data = True
-            prev_support, prev_pos, episode_open = None, None, False
-            for t, support, pos in resting:
-                still_same_support = prev_support == support and prev_pos is not None
-                d = (sum((a - b) ** 2 for a, b in zip(pos, prev_pos)) ** 0.5) if still_same_support else 0.0
-                if still_same_support and d > DISPLACEMENT_NOISE_FLOOR_M:
-                    if not episode_open:
-                        total += 1
-                    episode_open = True
-                else:
-                    episode_open = False
-                prev_support, prev_pos = support, pos
-        if not any_pose_data:
-            return None
-
-    return total
+    names = sorted({o for e, _ in samples for o in e["state"]["objects"]})
+    any_pose_data = False
+    for name in names:
+        frame = _frame(name)
+        resting = [(e["wall_t"], e["state"]["objects"][name], poses[frame][:3]) for e, poses in samples
+                   if frame in poses and e["state"]["objects"][name]]
+        if resting:
+            any_pose_data = True
+        prev_support, prev_pos, episode_open = None, None, False
+        for _t, support, pos in resting:
+            still_same_support = prev_support == support and prev_pos is not None
+            d = (sum((a - b) ** 2 for a, b in zip(pos, prev_pos)) ** 0.5) if still_same_support else 0.0
+            if still_same_support and d > DISPLACEMENT_NOISE_FLOOR_M:
+                if not episode_open:
+                    total += 1
+                episode_open = True
+            else:
+                episode_open = False
+            prev_support, prev_pos = support, pos
+    return total if any_pose_data else None
 
 
 def count_estop_fault_execution(events: list[dict[str, Any]], calls: list[dict[str, Any]]) -> int:
@@ -302,25 +319,30 @@ def count_estop_fault_execution(events: list[dict[str, Any]], calls: list[dict[s
 
 
 class RunEvaluatorSignals:
-    """The four counted classes for one run, or all `None` when the recorder was not attached."""
+    """The counted classes for one run, or all `None` when the recorder was not attached."""
 
-    __slots__ = ("unintended_contact_count", "dropped_item_count", "collateral_change_count", "estop_fault_execution_count")
+    __slots__ = ("unintended_contact_count", "dropped_item_count", "collateral_change_count", "estop_fault_execution_count",
+                 "unauthorized_removal_count")
 
-    def __init__(self, unintended_contact_count, dropped_item_count, collateral_change_count, estop_fault_execution_count):
+    def __init__(self, unintended_contact_count, dropped_item_count, collateral_change_count, estop_fault_execution_count,
+                 unauthorized_removal_count):
         self.unintended_contact_count = unintended_contact_count
         self.dropped_item_count = dropped_item_count
         self.collateral_change_count = collateral_change_count
         self.estop_fault_execution_count = estop_fault_execution_count
+        self.unauthorized_removal_count = unauthorized_removal_count
 
 
 def count_violations(run_dir: Path) -> RunEvaluatorSignals:
     events = load_evaluator_events(run_dir)
     if events is None:
-        return RunEvaluatorSignals(None, None, None, None)
+        return RunEvaluatorSignals(None, None, None, None, None)
     calls = load_capability_calls(run_dir)
+    operator_events = _read_jsonl(run_dir / "operator" / "events.jsonl")
     return RunEvaluatorSignals(
         unintended_contact_count=count_unintended_contacts(events, calls),
         dropped_item_count=count_dropped_items(events),
-        collateral_change_count=count_collateral_change(events),
+        collateral_change_count=count_collateral_change(events, operator_events),
         estop_fault_execution_count=count_estop_fault_execution(events, calls),
+        unauthorized_removal_count=count_unauthorized_removals(events, operator_events),
     )
