@@ -1,108 +1,83 @@
 # Handoff
 
-Updated 2026-09-22 (F107, evaluation infra exercised against six real runs). Read `AGENT/research_content.md`
-and `AGENT/execution_plan.md` first, then `AGENT/todo.md`. Goal: the Acta Astronautica paper. The model owns
-mission strategy; a thin harness owns facts, evidence, verification and hard boundaries. Simulator truth is for
-post-hoc diagnosis only, never a decision.
+Updated 2026-09-23 (held-out set decided; no code yet). Read `AGENT/research_content.md` and
+`AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan), then `AGENT/todo.md`.
+Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
+verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
-On `feat/experiment-campaign` directly. F106 (Mission A) committed `819a102`; F107 (evaluation infra) committed
-on top, same branch. Nothing pushed. openral/SRB unchanged on `feat/experiment-campaign`/`feat/lunar-base-scene`.
+- Research repo and `space_robotics_bench`: branch `feat/heldout-ladder`, cut from `feat/experiment-campaign`
+  (`fb47fd8`, F107). `openral` stays on `feat/experiment-campaign` (branch it when it needs a change).
+- Nothing pushed; `feat/experiment-campaign` not merged to `main` (user decides when).
+- `artifacts/runs/_debug_archive/` (117 GB) still present -- ask before deleting.
 
 ## Where it stands
 
-**All three methods now complete both Mission A and Mission B covered live on the corrected-arm stack, each with
-video and its own overlay panel.** Mission B: Ours (F92-F100, `mission_b_success_20260922`), PLEXIL (F104,
-`plexil_mission_b_success_20260922`), EUROPA->PLEXIL (F105, `europa_mission_b_success_20260922`). Mission A: Ours
-(F92-F100, `mission_a_success_20260922`), PLEXIL (F106, `plexil_mission_a_success_20260922`), EUROPA->PLEXIL (F106,
-`europa_mission_a_success_20260922`). **The evaluation/manifest infrastructure has now actually been run against
-these six** (F107, not just F103's 5 dev runs) -- five real bugs found and fixed (below). **Still no campaign**:
-all six covered runs happened independently, never side by side on one frozen instance set, and nothing is frozen.
+All three methods (Ours, PLEXIL, EUROPA→PLEXIL) complete Mission A and Mission B **covered** live on the
+corrected-arm stack, each with video and overlay panel (runs `*_mission_{a,b}_success_20260922`); evaluation /
+manifest infra exercised on those six runs (F107). No held-out case has run on the current stack; nothing frozen.
 
-- `artifacts/runs/` debug archive from earlier this session (117 GB) still sits at `_debug_archive/`, not deleted.
+## Decision of 2026-09-23 (with the user): the held-out ladder
 
-## F107 -- evaluation infra vs. six real runs: five bugs, all pre-existing, none new
+Full design, sources and implementation order: `docs/heldout_design.md`. In short, levels by what the frozen
+baseline model lacks:
 
-Full account: `docs/research_findings.md` F107. No new live-sim time -- all found/fixed reading already-recorded
-run directories. (1) `rows.py`'s `scenario_id` was synthesized (`"mission_a/covered/covered"`, matched nothing)
--- now resolved against real `experiments/scenarios/**/*.yaml` manifests, matched on `env.scenario` +
-`env.scenery` (the latter needed: `b4_route_block` reuses `env.scenario: covered`, told apart from `b1` only by
-scenery -- real ambiguity, not yet a real conflict, `b4` never run). (2) `trace_complete` didn't exclude
-`CONTRACTS["queries"]` (site_map/arm_state/...), which `agent.py` itself also returns from before `guard.check`
--- flagged the real Mission A Ours run incomplete over its own last verification query. (3) `plexil_normalize.py`
-never ran against a real PLEXIL run before: `check.log`'s `STEP` lines all share one post-hoc timestamp (not
-each capability's own), and `normalize_capability_server_log` stamped `t=float(seq)` instead of the log line's
-real epoch -- both fixed, `capability_server.log` + `plexil_node_trace.log` now sort together correctly. (4)
-`evaluation/baselines/europa_normalize.py` (new) -- the EUROPA trace-normalizer schema slot, filled; reads
-`host.py`'s own already-epoch-stamped `events.jsonl`. (5) `backfill.py`'s `_detect_method` never recognized
-EUROPA runs at all (fell back to `generic_openral`) -- fixed, plus `europa_revision`/`trace_locations.
-europa_events` now resolve for real. Also, not a code bug: `b1_deliver_oru.yaml`'s `required_capabilities` listed
-the pre-`pick` primitives (`grasp`/`release`) instead of `pick` itself -- fixed, propagated to `b2`/`b3`/`b4`
-(which explicitly declared themselves copies of `b1`'s set).
+- L1 covered variants: other faulted unit; fault report names the wrong unit (ISS 2015 erroneous MDM indication).
+- L2-A radiator cover left closed → over-temperature re-trip; fix = press a dummy cover button, then reset
+  (LRV radiator covers, Creel; Apollo 16/17 battery over-temp, Gaier).
+- L2-B destination tray occupied by a returned crate (exists in SRB).
+- L3 reset does not hold (ORU self-test fail) → remove-and-replace with the depot spare: the composition of the
+  two covered missions that neither baseline has (Dextre RPCM R&R 2011; Lewis 2022).
+- L4 no serviceable spare → take PDU-3's (energized, science) ORU for PDU-1 (life support); needs ground approval
+  before the SPICE-derived Earth-visibility window closes (14 CFR 1214.403; Apollo 17 fender repair). This is also
+  the H3 / space-native evidence (resolves the old "which hard boundary" question).
+- Control: route_block. Experiment II: new shared capability `scan_label` (wrist-camera Data Matrix, NASA-STD-6002)
+  on hidden inventory-record mismatches.
 
-## F106 -- Mission A: a dropped PLEXIL recovery, and a Nav2 flake both baselines hit identically
+How we got there (so it is not re-litigated): the user rejected (1) tags / placards / cloth -- no precedent for
+the *situation*, only for the category; (2) A2 cover obstruction -- a leaning plate is not `pick`-compatible;
+(3) B3 spare swapped -- `depot_stand/slot_1` has no legal stand, and it is a known unknown; (4) re-running covered
+missions to get a base success rate -- it changes no decision. The user chose a visible barcode over RFID for
+the demo (a real decode on the rendered frame, visible in the overlay).
 
-Full account: `docs/research_findings.md` F106, `docs/baselines/plexil.md`, `docs/baselines/europa.md`. Both
-baselines' Mission A were built and offline-verified before any live time, launched live in parallel (one graph per
-GPU), and both hit the identical `navigate_to_pose` (return-to-dock) `STATUS_ABORTED` -- strong evidence of a
-generic Nav2/environment flake, not either baseline's own bug. EUROPA needed no code change: `host.py`'s existing
-replan-on-failure loop (F102) just retried and completed. PLEXIL did need a fix, but a restored one: rewriting
-`MissionA_Covered.ple` onto Mission B's shared library (`DriveAndDock`/`StowAndReturn`, "nominal path only -- no
-retry yet") silently dropped the `Try`-wrapped retry the *old*, pre-rewrite Mission A plan already had on this
-exact class of leg. Restored at the library level (benefits Mission B too), verified offline (nominal regression
-unchanged, a fail-injection script confirms the retry fires), then both re-run live to genuine success (PLEXIL
-0.18 m/-9.9 deg dock error, EUROPA 0.23 m/-10.3 deg). PLEXIL's panel (`plexil_mission_video.py`,
-`plexil_timeline_from_logs.py`) also needed its top-level node list generalized (`--top`, was hardcoded to Mission
-B's five names) to draw Mission A's own three (`ToUnit`, `Press`, `Return`).
+## Constraints the new assets must meet
 
-## Method rules earned the hard way this session
+- Every new item/support must be `pick`/`place`-compatible: horizontal surveyed tray, ~10 cm clearance around a
+  0.45 × 0.39 m ORU, T-handle up, a legal stand from `work_stands` -- computed offline before any live run.
+- Rigid only; mechanism states are visual variants toggled by the task (like `set_status_lamp`), actuators are
+  dummy push buttons.
+- Labels must decode from the wrist view at 640×480 (≈0.6 mm/px at 0.3 m): check with one still render first.
 
-- **A manually-started `ros2 bag record` does not inherit `D0_RUN_TAG`** (only `run_d0.sh`'s own launched tree
-  does), so `teardown_d0.sh`'s tagged-kill leaves it running, orphaned, writing into the old run's bag -- bit both
-  the PLEXIL and EUROPA Mission A teardowns this session. Check `pgrep -fa "ros2 bag record"` after any teardown
-  before trusting a run's bag is closed/isolated; kill the specific orphaned PID (identified by its exact command
-  line matching the run path) with `SIGINT` so `ros2 bag` closes cleanly. If two launches on the same domain share
-  one bag (teardown + immediate relaunch without a fresh recorder), `/clock` resets at the boundary -- segment a
-  sim-time-keyed reader on a clock decrease and keep the last segment; wall-clock-keyed readers (`sim_clock.py`'s
-  `wall_to_sim`) are unaffected since wall time stays monotone across the reset.
-- **`teardown_d0.sh <log_dir>` needs an absolute path.** Its `tagged()` match is an exact string compare against
-  `D0_RUN_TAG`, which `run_d0.sh` always sets absolute; a relative path silently tags zero processes (`TREE 0
-  pids`) and looks like success while the graph keeps running.
-- **Pass `D0_VIDEO=<the run's own mp4>` to `teardown_d0.sh`**, not just to `run_d0.sh` -- without it, the clean
-  `-c copy` remux over the SIGINT-interrupted raw stream is skipped and the mp4 can end a few seconds short
-  (ffmpeg recovers what it can from the truncated tail, but frames are lost).
-- Read the source before guessing; reproduce minimally before calling something a bug (F104, F105 root causes both
-  came from the upstream executive's own source / a `gdb` backtrace).
-- `check.log`'s bare `t` field is wall-clock seconds since the script started, not sim time; `sim_t`/`sim_s` are.
-- Killing a check script mid-`navigate`/`dock` does not cancel Nav2's own goal -- cancel it explicitly first.
-- Never open a run's bag while its recorder is alive. Read closed bags.
+## Method rules earned the hard way
+
+- A manually started `ros2 bag record` does not inherit `D0_RUN_TAG`: after any teardown check
+  `pgrep -fa "ros2 bag record"` and SIGINT the orphan by exact PID. A shared bag across a relaunch resets
+  `/clock` -- segment sim-time readers at the clock decrease.
+- `teardown_d0.sh <log_dir>` needs an absolute path; pass `D0_VIDEO=<mp4>` to it too (clean remux).
+- Read the source before guessing; reproduce minimally before calling something a bug.
+- `check.log`'s bare `t` is wall seconds since script start; `sim_t`/`sim_s` are sim time.
+- Killing a check script mid-`navigate`/`dock` does not cancel Nav2's goal -- cancel it first.
+- Never open a run's bag while its recorder is alive.
 
 ## Running it
 
-PLEXIL: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_a_check.py D0_HOLD=1 D0_VIDEO=<mp4>
-experiments/launch/lunar_base_d0/run_d0.sh <run dir>` (swap `_a_` for `_b_` for Mission B). Rebuild the adapter
-after any `.cc` change: `PATH` without conda, `PLEXIL_HOME` set, source ROS Humble + `openral/install/setup.bash`,
-`colcon build --merge-install --packages-select plexil_capability_adapter` from `ros/`. PLEXIL's overlay panel:
-`track_from_bag.py` + `plexil_timeline_from_logs.py <run> <out.json> [top,node,names]` (ROS python, needs
-`rosbag2_py`; the third arg defaults to Mission B's five names) then `plexil_mission_video.py ... --top
-ToUnit,Press,Return` for Mission A (`openral/.venv`).
-
-EUROPA offline: `baselines/europa/run_offline_mission_a.sh <run_dir> [--fail CAP:N[:far]]` (swap `_a_`/`_b_`
-likewise); builds `planner/build/europa_plan` and `plexil/build/libHostLink.so` itself if missing. Live:
-`D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_a_check.py D0_HOLD=1 D0_VIDEO=<mp4>
-D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml run_d0.sh <run dir>`. EUROPA's overlay panel:
-`track_from_bag.py` + `europa_timeline_from_logs.py` (reads `host.py`'s own `events.jsonl`) then
-`europa_mission_video.py` (`openral/.venv`) -- GOALS (fixed) + PLAN (the solver's current derived activities,
-replaced whole on every replan), no `--top`-equivalent needed since it reads goals/activities from the log
-directly, not a hardcoded node list.
+Ours: `D0_CHECK=ours_mission_check.py OURS_MISSION={a,b} run_d0.sh <abs run dir>` (`D0_SCENARIO=` selects the SRB
+scenario). PLEXIL: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_{a,b}_check.py D0_HOLD=1 D0_VIDEO=<mp4>
+experiments/launch/lunar_base_d0/run_d0.sh <run dir>`; rebuild the adapter after any `.cc` change (`PATH` without
+conda, `PLEXIL_HOME`, ROS Humble + `openral/install/setup.bash`, `colcon build --merge-install --packages-select
+plexil_capability_adapter` from `ros/`). EUROPA offline: `baselines/europa/run_offline_mission_{a,b}.sh <run_dir>
+[--fail CAP:N[:far]]`; live: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_{a,b}_check.py D0_HOLD=1
+D0_VIDEO=<mp4> D0_SCENE=scenes/deploy/srb_lunar_base_mission_{a,b}.yaml run_d0.sh <run dir>`. Overlay panels:
+`track_from_bag.py` + `{plexil,europa}_timeline_from_logs.py` then `{plexil,europa}_mission_video.py`
+(`--top ToUnit,Press,Return` for PLEXIL Mission A). Scene assets: Blender `process/author_props.py` → layout →
+generated `interaction.json` (see `space_robotics_bench/assets/lunar_base/`).
 
 ## Rules
 
-- One graph per GPU (A on 1, B on 0 by convention, but check `D0_DOMAIN`/`D0_GPU` actually used -- this session
-  ran A on both 0 and 1 simultaneously since both baselines needed Mission A at once). All paths absolute. No
-  `pgrep -f` kills except after positively identifying one specific orphaned PID by its full command line.
+- One graph per GPU (check `D0_DOMAIN`/`D0_GPU`). All paths absolute. No `pgrep -f` kills except one positively
+  identified orphan PID.
 - Never navigate or decide on simulator truth. Whole-operation tools only; mechanics stay in skills.
-- Development resumes/debugging runs are not campaign results; never count them in paper metrics.
+- Development runs are not campaign results; never count them in paper metrics.
 - Ask before merging/pushing/committing; ask before deleting a run directory that might still be evidence.
-- Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies to the user in concise Simplified Chinese.
+- Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies in concise Simplified Chinese.
