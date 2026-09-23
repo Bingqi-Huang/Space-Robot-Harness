@@ -1,7 +1,7 @@
 # TODO
 
 Goal: the Acta Astronautica paper. **`docs/heldout_design.md` is the plan**; its §10 order is the work order below.
-Steps 1-4 reviewed by the user and merged 2026-09-23: research `main`, SRB `main`, openral `master` (not pushed).
+Steps 1-4 reviewed by the user, merged and pushed 2026-09-23: research `main`, SRB `main`, openral `master`.
 Start the next task on a new branch (`feat/<name>`) in each repo it touches.
 
 ## Done
@@ -43,7 +43,6 @@ Start the next task on a new branch (`feat/<name>`) in each repo it touches.
 ## Open decisions (user)
 
 - `artifacts/runs/` holds ~100 development run dirs, 330 GB; cleanup deferred by the user (2026-09-23).
-- Push the merged `main`/`master` of the three repos to their remotes: when?
 
 ## Design items not yet built (pick up when a run needs them)
 

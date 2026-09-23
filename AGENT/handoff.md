@@ -8,7 +8,7 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 ## Heads
 
 - `feat/heldout-ladder` (with `feat/experiment-campaign` beneath it) merged: research repo `main`, SRB `main`,
-  openral `master`; the research repo's submodule pointers are the merged tips. Nothing pushed (ask first).
+  openral `master`; the research repo's submodule pointers are the merged tips. All pushed 2026-09-23; ask before any later push.
 - Start each new task on a fresh `feat/<name>` branch in every repo it touches.
 
 ## Where it stands (2026-09-23)
