@@ -40,7 +40,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | C3 | Exp I held-out validity | On each §14 held-out state, both baselines end in "detected -> escalated", never solve it (a solve would make the case covered for that baseline) | plexiltest + sim_boundary with each held-out state | DONE 2026-09-24: 6 x 2 escalate -> hold at N=3; N=1,2,5 same outcome (representative cases); none solved. The offline stand-ins model occupancy only as a failed place and report every trip as OVERCURRENT (does not change either baseline's decisions) |
 | C4 | Exp I L0/L1 | All three methods complete the seven covered instances live | step 9 | DONE 2026-09-24: 18/21; the three failures shared-layer, fixed (F115) |
 | C5 | Exp I held-out | Ours solves the six held-out instances with generic changes only | step 10 | TODO |
-| C6 | Exp I | Ours' step budget (`max_steps` 80) fits the longest held-out case | from the first L3 run | TODO |
+| C6 | Exp I | Ours' step budget (`max_steps` 80) fits the longest held-out case | from the first L3 run | ESTIMATE 2026-09-24: step 9 used 2.2 steps per physical call (17-21 steps, 5-9 calls); L3/L4 ~17 calls -> ~40 steps; waiting for ground is one step. Kept at 80; confirm on the first L3 run |
 | C7 | fairness | Same mission goal to all three (brief / formal goal equivalence per instance) | read the three inputs per §14 instance | DONE 2026-09-24: no method told the true unit; Mission B item/source/destination identical for all three |
 
 ## D. Operator protocol and space context
@@ -48,8 +48,8 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
 | D1 | L4 | Flight-rule table grants PDU-3 -> PDU-1, denies other donors; HOLD for no-procedure; 300 s | console offline cases | DONE 2026-09-24: PDU-3 -> PDU-1 GRANT, ISRU power ORU -> PDU-1 GRANT (also non-critical), PDU-2 donor DENY, no procedure -> HOLD |
-| D2 | L4, ALFUS | The Earth-set falls inside an L4 run as it will actually run (mission time at request) | compare the SPICE epoch with L4 run timing from step 10 | TODO |
-| D3 | ALFUS metrics | interaction_start/end, authority level, request/grant events logged for all three methods | `evaluation/interaction.py` on real runs | OPEN: covered runs raise no request, so the path is still exercised only on the synthetic L4; the first held-out run with a request (step 10) checks it |
+| D2 | L4, ALFUS | The Earth-set falls inside an L4 run as it will actually run (mission time at request) | compare the SPICE epoch with L4 run timing | FIXED 2026-09-24: 45 min fell after every run (covered 5-12 min of mission time, L4 ~25 est.); Earth-set now 925 s after the start (three request-answer cycles of the protocol), profile regenerated. Check on the first L4 run |
+| D3 | ALFUS metrics | interaction_start/end, authority level, request/grant events logged for all three methods | `evaluation/interaction.py` on real runs | OPEN: covered runs raise no request, so the path is still exercised only on the synthetic L4; the first held-out run with a request (step 10) checks it; a queued escalation now counts as re-authoring required (console + interaction.py, offline-checked) |
 
 ## E. Evaluation and metrics (pre-registered before the campaign, §15)
 
@@ -68,7 +68,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
 | F1 | every run | Run manifest (revisions, model config, capability registry, seeds) written by every run | `openral_ext/run_manifest` wired into run_d0? | DONE 2026-09-24: run_d0.sh writes run_manifest.yaml + capability_registry.json after teardown; step 9 backfilled; first live check in check1 |
-| F2 | fairness | Freeze audit: no situation-specific hint in any Ours artifact; baselines match the lock | audit script + read | TODO (step 11) |
+| F2 | fairness | Freeze audit: no situation-specific hint in any Ours artifact; baselines match the lock | audit script + read | STARTED 2026-09-24: step 10's starting point read (playbook, tools, contracts, guard, config): no situation hint; observe's example "whether a place is occupied" (matches L2-B) removed. Step 10's changes are audited against this point at the freeze |
 | F3 | reproducibility | Image, repos tagged; model id and decoding config recorded | tags + manifest | TODO (step 11) |
 
 ## G. Experiment II

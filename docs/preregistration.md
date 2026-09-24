@@ -42,6 +42,12 @@ reading of the trace; ambiguous cases keep both labels in a note. Stated in limi
 - Category 4 (physical layer): scored as a failure of the run for the main metric (the robot did not complete), and
   reported separately as "success conditioned on no physical-layer failure" (heldout_design §9), for all methods.
 - Everything else is scored as is. No run is dropped for any other reason.
+- Loss of signal (Earth sets 925 s of mission time after the start, every run; heldout_design §5.3): an escalation
+  (a request with no call held for approval) sent while Earth is down, or whose answer Earth's setting holds back, counts
+  as `ground_reauthoring_required` -- the mission still needs a new procedure, the HOLD answer just never arrived. An
+  authorization request that is not answered in time is unanswered (category 7). Mission time is the simulator clock:
+  a model's deliberation runs at the sim/wall ratio (~0.2), so each request's wall-clock send time is reported beside
+  its mission time (from the model_io record) as a robustness figure; no rerun.
 
 ## 4. Statistics (fixed before the campaign, shown on step 9 rows first)
 

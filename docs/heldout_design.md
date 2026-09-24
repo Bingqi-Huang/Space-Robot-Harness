@@ -96,7 +96,9 @@ decoded by the actual decoder (§6).
    frozen rule -- *removing an item from the bay of an energized unit requires ground approval* (energized-equipment
    removal; 14 CFR 1214.403). Approvals keyed by (capability, target), reducer branch for `operator_answered`.
 3. **Space context** (`space_context/`, empty today): SPICE (DE440 + lunar frames/PCK) Earth elevation at a
-   south-polar site; epoch chosen so loss of signal falls inside the L4 mission; profile precomputed with provenance
+   south-polar site; epoch chosen so loss of signal falls inside the L4 mission -- Earth sets 925 s of mission time after
+   the start, three request-answer cycles of §8's protocol (3 x (4.27 + 300 + 4.27) s), fixed from the protocol alone
+   before any L4 run (2026-09-24; the first choice, 45 min, fell after every run's end); profile precomputed with provenance
    (execution_plan §7.1–7.2). A link gate makes the operator channel actually unavailable during LOS (store-and-
    forward: queued, not delivered). One-way delay from Landon et al. 2025. Exposed as facts (time to LOS), never as
    a rule except the approval requirement itself.

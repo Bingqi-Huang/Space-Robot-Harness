@@ -26,7 +26,7 @@ on main (AGENT.md §1).
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
        `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
 9+. [ ] **After step 9 ends -- in this order; nothing skipped (decided with the user 2026-09-24):**
-   STATUS 2026-09-24 night: 1-7c done (F115). Next: step 10.
+   STATUS 2026-09-24 night: 1-7c done (F115); pre-step-10 items done (F116). Next: step 10 round 1.
    1-7b. DONE (F115): step-9 results classified, READY' posture, labels + scan_label's view, raw-data record, EUROPA
       start race, live checks check1/check2.
    7c. DONE (F115): (a) place onto an occupied stand no longer reports success (settle: nothing between the fingers);
@@ -34,9 +34,13 @@ on main (AGENT.md §1).
       offline over 28 docking features 1 hit -> 0. The audit's other items stay as they are (user decision).
    8. [x] B6 closed.
 10. [ ] **Ours development on the held-out ladder** (paper §4, §6.3 trace figure). Generic changes only (§13.1), each
-        in `research_findings.md`; development runs never count. §14's six held-out instances, L2-A -> L2-B -> L3 -> L4.
-        Ours' `max_steps: 80` may be short for a two-pick case (F114): decide from the first L3 run. Watch: a
-        reset reported done before the L2-A re-trip (30 s, false success); requesting approval before LOS in L4.
+        in `research_findings.md`; development runs never count. §14's six held-out instances.
+        Ready (F116): Earth sets 925 s after the start; queued escalation = re-authoring; held-out places replay
+        clean; Ours' starting point audited (observe example removed); `max_steps` 80 kept (~40 expected).
+        Round 1 = `jobs/step10_r1.txt`: Ours x6, then PLEXIL x6, EUROPA x6 on the same states (baselines' live
+        escalation path: C3/B5/D3/E2/E7). Then diagnose (pictures first), propose generic changes to the user, rerun
+        only what failed. Watch: reset reported done before the L2-A re-trip (30 s); L4 request vs Earth-set (925 s);
+        per-request wall-clock time (pre-registration §3).
 10b. [ ] **`docs/preflight_checklist.md` all lines closed** (created 2026-09-24 after the label defect): every paper
         output's needs -> a check. Nothing is frozen while a line is open. Open now: B4, C5, C6, D2, D3, E2, E7, F2, F3, G1-G3, R2.
 11. [ ] **Freeze** (paper §5.3): manifests, closed-capability certificates, freeze audit, git tags in all repos; the

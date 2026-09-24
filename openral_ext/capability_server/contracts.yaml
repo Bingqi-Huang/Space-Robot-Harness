@@ -307,7 +307,7 @@ queries:
     uses_model: true   # answered by the remote vision model, so it can legitimately take tens of seconds
     inputs:
       camera: ["string(front|wrist)", true, "which camera"]
-      question: [string, true, "what to look for, e.g. the colour of a status lamp or whether a place is occupied"]
+      question: [string, true, "what to look for, e.g. the colour of a status lamp"]
   locate_in_view:
     description: >-
       Find a target described in words in one camera's current image (vision-language model) and measure it with the

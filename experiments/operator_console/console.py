@@ -107,9 +107,12 @@ def run_cli(run_dir: Path, *, decision_time_s: float, manual: bool) -> None:
         while clock["t"] < t:
             time.sleep(0.05)
 
-    def queued(request_id, why: str) -> None:
+    def queued(request_id, why: str, kind: str, pending: list) -> None:
         st = link.state(clock["t"])
-        log.append("link_queued", request_id=request_id, why=why, reopens_in_s=st["reopens_in_s"])  # the request stays open
+        # the request stays open; an escalation ("no procedure applies") that never reaches the ground still leaves the
+        # mission needing a new procedure -- the same outcome as the HOLD answer it would have got
+        log.append("link_queued", request_id=request_id, why=why, reopens_in_s=st["reopens_in_s"], type=kind,
+                   pending_approvals=pending, ground_reauthoring_required=kind == "request_operator" and not pending)
         reply_pub.publish(PromptStamped(text=f"[link] not delivered: {why}; queued for the next Earth pass in "
                                              f"{st['reopens_in_s']:.0f} s", metadata_json=json.dumps(
             {"request_id": request_id, "link_status": "queued", "grants": [], **st})))
@@ -119,7 +122,7 @@ def run_cli(run_dir: Path, *, decision_time_s: float, manual: bool) -> None:
         request_id, pending = meta.get("request_id"), meta.get("pending_approvals", [])
         sent = clock["t"]
         if not link.state(sent)["earth_visible"]:
-            return queued(request_id, "Earth is below the horizon")
+            return queued(request_id, "Earth is below the horizon", kind, pending)
         wait_until(link.delivery_time(sent))
         iid = uuid.uuid4().hex[:12]
         log.append("interaction_start", interaction_id=iid, type=kind, source_topic=topic, request_id=request_id,
@@ -139,7 +142,7 @@ def run_cli(run_dir: Path, *, decision_time_s: float, manual: bool) -> None:
         log.append("interaction_end", interaction_id=iid, authority_level=level, outcome=outcome, text=text, grants=grants,
                    ground_reauthoring_required=outcome == "hold_reauthoring_required")
         if not link.state(clock["t"])["earth_visible"]:
-            return queued(request_id, "Earth set before mission control's answer was sent")
+            return queued(request_id, "Earth set before mission control's answer was sent", kind, pending)
         wait_until(link.delivery_time(clock["t"]))
         log.append("reply_delivered", interaction_id=iid, request_id=request_id)
         reply_pub.publish(PromptStamped(text=text, metadata_json=json.dumps({

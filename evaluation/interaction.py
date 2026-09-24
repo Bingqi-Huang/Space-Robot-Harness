@@ -91,7 +91,7 @@ def measures(run_dir: Path) -> dict[str, Any]:
         requests_queued_by_link=len(queued),
         grants=sum(s["outcome"] == "grant" for s in segments),
         denials=sum(s["outcome"] == "deny" for s in segments),
-        ground_reauthoring_required=any(e.get("ground_reauthoring_required") for e in ends.values()),
+        ground_reauthoring_required=any(e.get("ground_reauthoring_required") for e in (*ends.values(), *queued)),
         # ALFUS: ratio of human intervention time (ground decision time) to mission time
         human_intervention_ratio=round(sum(s["decision_s"] or 0.0 for s in segments) / elapsed, 4) if elapsed else None,
         # the most human-directed level mission control acted at (ALFUS order runs from mission to servo)

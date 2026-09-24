@@ -11,7 +11,10 @@ the Direct-with-Earth link only (no relay yet) and a flat 0 deg horizon mask -- 
 never lengthen it.
 
 The mission epoch is placed `MISSION_START_BEFORE_LOS_S` before an Earth-set, the same for every Mission A/B scenario:
-the window closes during every run, and matters only to a method that needs mission control after it closes.
+the window closes during every run, and matters only to a method that needs mission control after it closes. Its
+length is three request-answer cycles of the ground protocol (docs/heldout_design.md §8: 4.27 s up, 300 s decision,
+4.27 s down), fixed from the protocol alone before any L4 run (user decision 2026-09-24; 45 min before, which no run
+reached: covered runs end at 5-12 min of mission time, L4 at ~25).
 The one-way delay is the light time plus the operational ground/network latency of the lunar regime (3 s, the low end
 of the 3-14 s of Landon et al. 2025, NASA/TM-20250003885).
 
@@ -32,7 +35,7 @@ KERNELS = ["naif0012.tls", "pck00011.tpc", "de440s.bsp", "moon_pa_de440_200625.b
 SITE = dict(name="LOLA Site01 connecting ridge, lunar base scene centre", lat_deg=-89.4553, lon_deg=213.642,
             dem="Site01_final_adj_5mpp_surf.tif px (1950, 1970)")
 SEARCH_FROM, SEARCH_DAYS, STEP_S = "2028-09-01T00:00:00", 60, 600.0
-MISSION_START_BEFORE_LOS_S = 45 * 60.0
+MISSION_START_BEFORE_LOS_S = 925.0  # 3 x (4.27 + 300 + 4.27) s
 GROUND_LATENCY_S = 3.0
 
 
