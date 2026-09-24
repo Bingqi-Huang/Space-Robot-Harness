@@ -26,7 +26,7 @@ on main (AGENT.md §1).
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
        `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
 9+. [ ] **After step 9 ends -- in this order; nothing skipped (decided with the user 2026-09-24):**
-   STATUS 2026-09-25: 1-7c done (F115); pre-step-10 items (F116); step 10 round 1 4/6 (F117). Next: round 2.
+   STATUS 2026-09-25: 1-7c done (F115); pre-step-10 items (F116); step 10 stopped at 4/6 after three rounds (F117-F118).
    1-7b. DONE (F115): step-9 results classified, READY' posture, labels + scan_label's view, raw-data record, EUROPA
       start race, live checks check1/check2.
    7c. DONE (F115): (a) place onto an occupied stand no longer reports success (settle: nothing between the fingers);
@@ -37,10 +37,10 @@ on main (AGENT.md §1).
         in `research_findings.md`; development runs never count. §14's six held-out instances.
         Ready (F116): Earth sets 925 s after the start; queued escalation = re-authoring; held-out places replay
         clean; Ours' starting point audited (observe example removed); `max_steps` 80 kept (~40 expected).
-        Round 1 (F117): 4/6; L2-B + L4 failed on Ours' harness (place verifier, link context), fixed; round 2 =
-        `jobs/step10_r2.txt` (L2-B, L4). Round 1 = `jobs/step10_r1.txt`: Ours x6. Then diagnose
-        (pictures first), fix generically (prompt/playbook edits allowed if they name no unit, cause, object or
-        ordering and hold for every mission; each recorded), rerun only what failed; at most 3 rounds (user goal).
+        STOPPED at the goal's three-round limit (F118): 4/6 solved (L2-A PDU-1/BESS, L3 BESS/ISRU); L2-B (model placed
+        onto the occupier it had seen) and L4 (never sought authority before Earth-set) unsolved on the model's own
+        reasoning. Generic fixes made: place verifier counts the fingers; snapshot carries time, link, decision time,
+        approval mechanics. NEXT: user decides (accept 4/6 as the development result, more rounds, or other changes).
         Watch: reset reported done before the L2-A re-trip (30 s); L4 request vs Earth-set (925 s);
         per-request wall-clock time (pre-registration §3).
 10b. [ ] **`docs/preflight_checklist.md` all lines closed** (created 2026-09-24 after the label defect): every paper

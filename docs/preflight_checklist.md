@@ -39,7 +39,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | C2 | Exp I baselines | EUROPA: every §14 covered instance solved and dispatched | `run_offline_mission_{a,b}.sh` in the image | DONE (6/6, 2026-09-24) |
 | C3 | Exp I held-out validity | On each §14 held-out state, both baselines end in "detected -> escalated", never solve it (a solve would make the case covered for that baseline) | plexiltest + sim_boundary with each held-out state | DONE 2026-09-24: 6 x 2 escalate -> hold at N=3; N=1,2,5 same outcome (representative cases); none solved. The offline stand-ins model occupancy only as a failed place and report every trip as OVERCURRENT (does not change either baseline's decisions) |
 | C4 | Exp I L0/L1 | All three methods complete the seven covered instances live | step 9 | DONE 2026-09-24: 18/21; the three failures shared-layer, fixed (F115) |
-| C5 | Exp I held-out | Ours solves the six held-out instances with generic changes only | step 10 | IN PROGRESS: round 1 4/6 (L2-A x2, L3 x2); L2-B (verifier false place) and L4 (no link context) fixed generically, round 2 (F117) |
+| C5 | Exp I held-out | Ours solves the six held-out instances with generic changes only | step 10 | STOPPED 2026-09-25 at the three-round limit: 4/6 (L2-A x2, L3 x2); L2-B and L4 unsolved on the model's own reasoning after three generic harness fixes (F117, F118) -- user to decide |
 | C6 | Exp I | Ours' step budget (`max_steps` 80) fits the longest held-out case | from the first L3 run | DONE 2026-09-25: L3 BESS 45, L3 ISRU 44, L2-A 29/42 steps (F117) |
 | C7 | fairness | Same mission goal to all three (brief / formal goal equivalence per instance) | read the three inputs per §14 instance | DONE 2026-09-24: no method told the true unit; Mission B item/source/destination identical for all three |
 
@@ -48,8 +48,8 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
 | D1 | L4 | Flight-rule table grants PDU-3 -> PDU-1, denies other donors; HOLD for no-procedure; 300 s | console offline cases | DONE 2026-09-24: PDU-3 -> PDU-1 GRANT, ISRU power ORU -> PDU-1 GRANT (also non-critical), PDU-2 donor DENY, no procedure -> HOLD |
-| D2 | L4, ALFUS | The Earth-set falls inside an L4 run as it will actually run (mission time at request) | compare the SPICE epoch with L4 run timing | PARTIAL 2026-09-25: Earth set at 925 s inside every round-1 run (all ran 1000-1200 s); L4's request timing still to see (round 1 never asked, F117) |
-| D3 | ALFUS metrics | interaction_start/end, authority level, request/grant events logged for all three methods | `evaluation/interaction.py` on real runs | OPEN: covered runs raise no request, so the path is still exercised only on the synthetic L4; the first held-out run with a request (step 10) checks it; a queued escalation now counts as re-authoring required (console + interaction.py, offline-checked) |
+| D2 | L4, ALFUS | The Earth-set falls inside an L4 run as it will actually run (mission time at request) | compare the SPICE epoch with L4 run timing | DONE 2026-09-25: Earth set at 925 s inside every step-10 run; L4 r2 asked at 766.6 s (answer due 1075 s, queued), r3 never asked (F118) |
+| D3 | ALFUS metrics | interaction_start/end, authority level, request/grant events logged for all three methods | `evaluation/interaction.py` on real runs | OPEN: covered runs raise no request, so the path is still exercised only on the synthetic L4; the first held-out run with a request (step 10) checks it; a queued escalation now counts as re-authoring required (console + interaction.py, offline-checked); live 2026-09-25: an escalation answered after Earth-set logged queued and scored re-authoring required (step10_r2 L4); the approval (held call) path still not exercised live |
 
 ## E. Evaluation and metrics (pre-registered before the campaign, §15)
 
