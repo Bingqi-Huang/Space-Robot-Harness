@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-24 (steps 7 and 8 done; next: todo step 9). Read `AGENT/research_content.md` and
+Updated 2026-09-24 late (steps 7 and 8 done; next: the Nav2 freeze in todo "Open", then step 9). Read `AGENT/research_content.md` and
 `AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan), **`docs/baselines/authoring_spec.md`**
 (the locked baseline specification), then `AGENT/todo.md`, then `docs/research_findings.md` F108-F112.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
@@ -8,8 +8,9 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 
 ## Heads
 
-- research `main`, openral `master`, SRB `main`: all work of 2026-09-24 committed locally, **not pushed** (ask first).
-  No open feature branches or worktrees.
+- research `main`, openral `master`, SRB `main`: all committed and pushed 2026-09-24. No feature branches/worktrees.
+- Possibly still running: container `rf-alone-0` (single-run freeze test, see todo "Open"); `docker stop rf-alone-0`
+  when read. Image `runfarm-gdb:22.04` = runfarm + gdb (for ptrace diagnosis; built locally, not in git).
 - Development runs on `pro6000` (host astroeng, uid 1007). The dev machine (z890) syncs only through origin.
 
 ## Run farm (pro6000; heldout_design §11, F111, F112)
@@ -51,7 +52,8 @@ Pick's region choice answers in 10-115 s (median 61 s); pick/press allow 300 s p
   mixed (`cannot import name 'STOW'`). Capability server / contracts are loaded at run start (safe).
 - Judge a run by `CHECK_EXIT`/`RESULT`/`CHAIN_DONE`; teardown tracebacks and move_group segfaults are shutdown noise.
 - Look first: pick evidence has `view.jpg`, `regions.jpg`, `fit.jpg`, depth, and now K + camera pose (offline replay).
-- A live costmap can be grabbed from a running container (`artifacts/runs/grab_costmap.py`); never open a live bag.
+- Live diagnosis tools in `experiments/analysis/` (README there); never open a live bag.
+- Do not run more than one hypothesis batch without reporting: the freeze hunt burned hours on A/B batches.
 - Isaac can abort on a carb mutex assertion: not ours, relaunch. Monitor pipes: `grep --line-buffered`, no `cut`.
 - Killing a check mid-navigation: cancel `/navigate_to_pose/_action/cancel_goal` (all-zero goal_id) first.
 - PLEXIL: `if/endif` on live state, never SkipCondition; root `UncheckedSequence` so escalation can run.

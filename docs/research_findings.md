@@ -5281,3 +5281,11 @@ The indicator questions (`observe`) answer in seconds.
 Every held-out action form has now been executed and verified by the evaluator at least once. Two navigation /
 localization defects remain before step 9, both in shared infrastructure: the planner-start freeze (§3) and AMCL's
 bias on the landing pad's ramp (the pad sits at its own level; error rises from y ~ 33 m on the access road).
+
+**7. Closing (2026-09-24 late).** Landing offload stand moved onto the core platform level, map re-surveyed:
+`chain_b_consumables` (landing stand -> habitat stand) passed with every call first try -- all nine held-out sequences
+now executed end to end. The robot-pose freeze of §3 is broader than the planner: any of controller_server,
+planner_server or AMCL can permanently stop seeing fresh /tf (no error), ~1 in 10-15 legs with six concurrent runs;
+not CPU saturation (containers used ~9 of 20 threads), and it happened with Fast-DDS shared memory, with UDP only
+and with a raised SHM health-check timeout alike. Never seen on the development machine (one simulation at a time).
+Open; a single-run test with a gdb watcher was left running (`artifacts/runs/alone_0`).

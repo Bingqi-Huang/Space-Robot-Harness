@@ -14,8 +14,8 @@ on main (AGENT.md §1). Local commits since 2026-09-23 are NOT pushed yet (resea
 ## Work order -- `docs/heldout_design.md` §10
 
 7. [x] Baselines built to the lock (offline): PLEXIL 51 cases, EUROPA A x 5 units + failure paths, B 15 x 3.
-8. [~] Physical validation: 8 of 9 held-out sequences end to end on frozen code (F112 table). Missing: the consumables
-       container pick at the landing stand -- blocked by AMCL's 0.3 m bias there (Open, below).
+8. [x] Physical validation: all 9 held-out sequences end to end (F112 table); the landing stand was moved onto the
+       platform level (AMCL bias on the pad ramp) and `chain_b_consumables` passed first try.
 9. [ ] Covered live re-runs on the final scene: PLEXIL, EUROPA, Ours x Mission A (one PDU, BESS, ISRU) and Mission B
        (ORU to a PDU shelf, container to habitat). One run each; failures classified by the lock's change-control table.
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
@@ -46,18 +46,21 @@ on main (AGENT.md §1). Local commits since 2026-09-23 are NOT pushed yet (resea
 
 ## Open decisions (user)
 
-- Push the 2026-09-24 commits (research, openral, SRB) -- ask first.
-- `artifacts/runs/` development dirs of this session (site_check_11/12, navrepro_*, chain_* before `_f`, diag_nav_1):
-  keep or delete? Dev machine: ~100 old run dirs, 330 GB, cleanup deferred.
+- Dev machine: ~100 old run dirs, 330 GB, cleanup deferred.
 
 ## Open (fix when a run meets it)
 
-- **Before step 9**: AMCL is 0.26-0.33 m off on the landing pad's ramp (<= 0.1 m elsewhere; `artifacts/runs/
-  bag_loc_error.py` on `chain_l2b_habitat_f`); Mission B's consumables container starts there. User decision on the fix.
-- MPPI "Resulting plan has 0 poses" (~1 in 15 legs): the global planner's start pose freezes while TF and AMCL stay
-  fresh (bag `chain_l2a_pdu_f`, F112 §3; `artifacts/runs/bag_plan_lag.py`). Cause inside planner_server not found.
-- VLM region choice takes ~60 s median; if the campaign time budget needs it, measure a non-reasoning setting.
-- `observe`'s own VLM timeout is still 120 s (answers in seconds today).
+- **Nav2 robot-pose freeze** (blocks reliable step-9 runs): one Nav2 process (controller_server local costmap,
+  planner_server global costmap, or AMCL) permanently stops seeing fresh /tf, no error logged; ~1 in 10-15 legs with
+  6 concurrent runs; never seen on the dev machine (one sim at a time). Ruled out: CPU saturation, Fast-DDS shared
+  memory vs UDP (both freeze), SHM health-check timeout. Running when the session ended: `artifacts/runs/alone_0`
+  (container `rf-alone-0`, image `runfarm-gdb:22.04`, ptrace) = the nav loop ALONE on pro6000 with a gdb watcher
+  (`experiments/analysis/freeze_gdb_watch.sh`, dumps `gdb_*.txt` into the run dir on a freeze). Read it first:
+  freezes alone -> container/system; no freeze -> concurrency (then run fewer at once / stagger starts).
+  Tools: `experiments/analysis/` (bag_freeze_scan, footprint_age, bag_plan_lag, ...).
+- AMCL republishes map->odom only sporadically right after activation: d0_common's LOCALIZED gate can pass on the
+  initial-pose publish; revisit together with the freeze.
+- VLM region choice ~60 s median (pick/press allow 300 s).
 
 ## Design items not yet built (pick up when a run needs them)
 
