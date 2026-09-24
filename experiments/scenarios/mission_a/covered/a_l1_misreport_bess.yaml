@@ -1,0 +1,54 @@
+# execution_plan.md §12 scenario manifest. Source of truth: docs/heldout_design.md §14, row "L1 | A: the
+# report names PDU-2; the BESS is the tripped unit ... `covered_misreport`, `faulted_unit=bess
+# reported_unit=pdu_2`". §2 precedent: ISS Daily Summary 2015-01-14 (erroneous MDM ammonia indication).
+# coverage: covered -- docs/baselines/authoring_spec.md "Mission goals": "The reported unit is not used (the
+# brief asks to identify the failed unit; L1 covered_misreport)" -- a frozen baseline that scans all units'
+# telemetry (rather than trusting the report) already handles this; the report/telemetry mismatch is a
+# variable value, not a missing decomposition.
+manifest_version: 1
+scenario_id: mission_a/covered/a_l1_misreport_bess
+mission_family: mission_a
+coverage: covered
+
+mission_brief: >
+  PDU-2 reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if within
+  your authority, verify the result, and return the rover to the dock with the arm stowed.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_a.yaml
+  task_variant: lunar_base_mission_a_visual
+  env_overrides: {env.scenario: covered_misreport, env.faulted_unit: bess, env.reported_unit: pdu_2}
+  scenery_override: null
+  seed: 0
+  faulted_unit: bess
+  reported_unit: pdu_2   # report names a healthy, different unit; telemetry shows bess actually tripped
+
+required_capabilities:
+  - navigate_to_feature
+  - dock_at_feature
+  - arm_ready
+  - press
+  - stow
+  - observe
+  - locate_in_view
+
+mission_deadline_s: null  # the protocol has no mission deadline (heldout_design §8); the episode never truncates (F114)
+space_context_profile: null
+perturbations_semantic_conditions:
+  - "the fault report names PDU-2, but PDU-2's own telemetry (breaker closed) disagrees; BESS's telemetry shows the tripped breaker"
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_a.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "unit_healthy(bess) and parked_and_stowed() -- task.py mission_success() (reported_unit is not part of the success condition)"
+  fields_used: [scenario, faulted_unit, reported_unit, units, objects, parked_and_stowed, success]
+
+notes: >
+  Campaign instance 7 of 13 (docs/heldout_design.md §14). No prior manifest existed for covered_misreport.
+  Distinct `env.scenario` value (`covered_misreport` vs `covered`) means this manifest, unlike the four plain
+  `covered` manifests in this directory, IS uniquely resolvable by evaluation/rows.py `_match_scenario_id`
+  (mission_family + env.scenario + scenery_override) alone -- it has no other mission_a manifest sharing that
+  env.scenario value.

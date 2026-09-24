@@ -25,10 +25,56 @@ on main (AGENT.md §1).
        (deleted); restart in tmux `step9` on the user's go (see handoff).
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
        `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
+9+. [ ] **After step 9 ends -- in this order; nothing skipped (decided with the user 2026-09-24):**
+   1. Read all 21 results; classify failures by the lock's change-control table. Known: `plexil_b_bat_bess` arm_ready
+      stopped 3x on contact with the battery (nudged 9 mm / 2.3 deg): a shared-capability gap, not the plan -- docked
+      rear to a stand, no camera has measured the item, the planning scene holds only the plinth (0.55 m), the STOW->READY
+      sweep (joint6 2.47 rad) crosses it. Backfill run manifests (`openral_ext/run_manifest` backfill); rows -> tables on
+      all 21 incl. baselines; write F115.
+   2. Ask the user to commit: evaluation fixes (class-2 drop read from the handle; manifest match on every override),
+      13 manifests + 6 certificates (stale ones removed), preflight checklist, heldout_design L4 `faulted_unit=pdu_1`,
+      pre-registration (user-approved: preplanned fraction per instance, one primary failure category, only
+      infrastructure reruns) -> `docs/preregistration.md` made final (done 2026-09-24).
+   3. arm_ready fix (shared): a SMALL keep-out above each surveyed support (support top x catalogue max item height +
+      a few cm), only for posture moves (arm_ready/stow/fold), the support being worked at exempt, a start inside a zone
+      not a planning failure. Check offline with MoveIt alone in a container (every dock pose: STOW<->READY, pick/place
+      approach, before/after). Live: rerun only `plexil_b_bat_bess` + one Ours pick/place. Then re-check which step-9
+      conclusions still hold and say so in F115 (user: selective reruns, no full step 8/9 repeat).
+   4. Labels (Exp II): lid data plate off the handle's centre line, upright from the rover; `scan_label` gets its own
+      higher, downward wrist view (heldout_design §6 to be updated). Design from the running offline agent (scratchpad
+      label_design/); regenerate item assets, rebuild the scene (no collider, no map re-survey); verify in Isaac: decode
+      at the scan pose for every item x support; multi-angle look.
+   5. Raw data (user rule: never re-simulate for a new metric): D0_BAG + joint_states, power telemetry, cmd_vel,
+      costmaps, amcl; the evaluator recorder saves front + wrist JPEG at 1 Hz; run manifest wired into run_d0.sh; confirm
+      Ours keeps every step's full model input/output and every VLM question/answer; measure size + sim-speed cost on one
+      run; recompute every metric from the raw record alone.
+   6. EUROPA start race (F114 class, missed by the audit): d0_europa_mission_*_check.py waits a fixed 2 s after host.py
+      before universalExec, whose HostLink connects once; host.py only listens after its site_map/manifest/power_status
+      queries -> under load the exec died, the host waited forever (`europa_b_oru_pdu3`, stopped as infrastructure, not
+      scored). Fix: host.py opens its listening socket first, accepts after the queries. Rerun `europa_b_oru_pdu3`.
+      PLEXIL adapter logs the plan node id with each command (trace join key); rebuild; rerun its offline check.
+      Tools: `*_timeline_from_logs.py` bag dir `robot_motion` -> `bag`; `mission_video.py` absolute default paths.
+   7. One selected live batch (6 GPUs): label decode at the scan pose; placing onto the occupied habitat stand fails
+      cleanly (the path both baselines take at L2-B); VLM reads PDU-1's shutter and the habitat occupier; the arm_ready
+      reruns of 3, `europa_b_oru_pdu3` after 6; the full-recording run of 5 (+ a video rendered from it); optionally the L4-near carry chain.
+   7b. Step 9 found more (2026-09-24 17:10): `europa_b_cons_habitat` failed -- EUROPA readies the arm at the start and
+      docks with it out; the arm turned the consumables container 18 deg / 5 cm in the last 1.5 s of the dock, and
+      three picks failed on the skewed item. Same root as `plexil_b_bat_bess`: the READY posture puts the tool ~1.04 m
+      behind the rover at ~1.11 m, where a docked item's handle is -> READY itself (not only a keep-out) is the fix
+      candidate; the offline MoveIt agent studies a READY clear of every docked item. Evaluator: Ours' battery carry
+      logged 151 contact windows, EUROPA's 6, all while driving with the battery (ORU carries: 0) -> check the carried
+      battery's clearance offline -> FOUND: the battery's column is 0.10 m (body stretched to 0.367 m in F110, neck at
+      0.4669 m by F112), ORU 0.205, container 0.297; the palm sits just above the lid and the ~3.5 cm swing leaving the
+      stand rubs it (both methods, same moment). Candidate fix (user to approve): battery body back to 0.262 m, neck
+      height unchanged (longer column); PLEXIL's 9 mm nudge of the battery counted
+      nowhere (contact threshold 10 N; collateral excludes the cargo) -> record raw contact forces (raw-data rule).
+   8. Close the checklist lines this settles (`docs/preflight_checklist.md`), then step 10.
 10. [ ] **Ours development on the held-out ladder** (paper §4, §6.3 trace figure). Generic changes only (§13.1), each
         in `research_findings.md`; development runs never count. §14's six held-out instances, L2-A -> L2-B -> L3 -> L4.
         Ours' `max_steps: 80` may be short for a two-pick case (F114): decide from the first L3 run. Watch: a
         reset reported done before the L2-A re-trip (30 s, false success); requesting approval before LOS in L4.
+10b. [ ] **`docs/preflight_checklist.md` all lines closed** (created 2026-09-24 after the label defect): every paper
+        output's needs -> a check. Nothing is frozen while a line is open. First: A1 labels (FAIL), C3, E1, A2.
 11. [ ] **Freeze** (paper §5.3): manifests, closed-capability certificates, freeze audit, git tags in all repos; the
         run-farm image + synced home installs are the campaign environment. Then offline retry-budget sensitivity
         (N = 1, 2, 3, 5 on every held-out state).
@@ -85,6 +131,8 @@ posture pull's 0.05/s.
 - Teardown prints tracebacks and a move_group segfault after SIGINT: shutdown noise, not a run failure.
 
 ## Rules
+
+- Acceptance is derived from each paper output's needs (`docs/preflight_checklist.md`), never "the task ran".
 
 - Branch + worktree for larger tasks only; delete both after merge. Clean debug/pilot artifacts.
 - Overwrite-update this file and `handoff.md`; <=150 lines each; update at every milestone.

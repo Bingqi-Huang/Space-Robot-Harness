@@ -1,0 +1,60 @@
+# execution_plan.md §12 scenario manifest. Source of truth: docs/heldout_design.md §14, row "L2-A | PDU-1
+# (habitat life support): radiator shutter drawn". `heldout_radiator_cover`, `faulted_unit=pdu_1`
+# (lunar_base_mission_a/task.py `initial_closed_covers()`: {faulted_unit} iff scenario==heldout_radiator_cover;
+# layout.yaml pdu_1.cover = pdu_1_radiator).
+manifest_version: 1
+scenario_id: mission_a/held_out/a_l2_radiator_cover_pdu1
+mission_family: mission_a
+coverage: held_out
+
+mission_brief: >
+  PDU-1 reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if within
+  your authority, verify the result, and return the rover to the dock with the arm stowed.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_a.yaml
+  task_variant: lunar_base_mission_a_visual
+  env_overrides: {env.scenario: heldout_radiator_cover, env.faulted_unit: pdu_1}
+  scenery_override: null
+  seed: 0
+  faulted_unit: pdu_1
+  reported_unit: pdu_1
+
+required_capabilities:   # no new capability -- press is the same generic capability on a different feature (the
+  - navigate_to_feature   # shutter's own button, not the panel reset button); site.py: "pressing a shutter's
+  - dock_at_feature        # button opens or closes the shutter"
+  - arm_ready
+  - press
+  - stow
+  - observe
+  - locate_in_view
+
+mission_deadline_s: null  # the protocol has no mission deadline (heldout_design §8); the episode never truncates (F114)
+space_context_profile: null
+perturbations_semantic_conditions:
+  - "PDU-1's heat-rejection shutter (radiator cover) is drawn; a reset alone re-trips OVERTEMP after retrip_delay_s unless the shutter is opened first"
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_a.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "unit_healthy(pdu_1) and parked_and_stowed() -- task.py mission_success(); unit_healthy requires the breaker closed AND no pending overtemp/self-test timer (site.py unit_healthy())"
+  fields_used: [scenario, faulted_unit, reported_unit, units, objects, parked_and_stowed, success]
+  diagnostic_note: >-
+    A reset that does not hold (re-trips OVERTEMP after retrip_delay_s) is visible in telemetry as
+    resets_since_start > 1 and trip_cause == OVERTEMP on a later power_status read -- the evaluator (and the
+    agent, if it re-checks) does not need simulator-internal state.
+
+held_out_basis: >
+  docs/heldout_design.md §2 L2-A precedent: LRV radiator dust covers opened for cooling (Creel, DAP-2017;
+  TFAWS 2023); Apollo 16/17 battery over-temperature (Gaier, NASA/TM-2005-213610). Closing covers for landing
+  ejecta is the design's own extrapolation from Metzger (plume ejecta) -- stated as an extrapolation, not a
+  direct precedent, per §2's own note (to be repeated in the paper).
+
+notes: >
+  Campaign instance 8 of 13 (docs/heldout_design.md §14). No prior manifest existed for any mission_a
+  held-out instance (experiments/scenarios/mission_a/held_out/ did not exist before this task). See
+  a_l2_radiator_cover_bess.yaml (same env.scenario value, different faulted_unit) for the paired L2-A
+  instance and the same rows.py matching-ambiguity caveat as the covered mission_a manifests.

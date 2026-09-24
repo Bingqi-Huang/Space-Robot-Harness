@@ -80,10 +80,16 @@ from tf2_ros import Buffer, TransformListener
 
 from contracts import CONTRACTS, IX, check_args, item_catalogue
 from space_context import link
-# The arm's ready posture (robot, not mission). The wrist roll is half a turn: that is the branch with the wrist camera
-# above the tool axis, the one every view and every grasp works from (research repo F57), and it is the posture the
-# manipulation skills start and end in. `openral_rskill._eye_in_hand.READY` is the same seven numbers.
-READY = [0.0, -1.0, 0.0, -1.4, 0.0, 1.2, math.pi]
+# The arm's ready posture (robot, not mission): out of the travel posture, tool 0.84 m behind the rover origin at 1.19 m,
+# pitched 30 deg down at the work, wrist camera above the tool axis (research repo F57). It stays out of the column any
+# docked item can occupy: nearest face at the shortest stand (1.065 m) less a dock error (0.06) and the deepest catalogue
+# half-depth (ORU 0.196) = 0.809 m, top at the stand's 0.55 m plus the catalogue height with handle (0.495) = 1.05 m,
+# both with 3 cm to spare -- docked, and all the way in from 0.5 m out. The former ready posture (0, -1.0, 0, -1.4, 0,
+# 1.2, pi) is the skills' IK seed, `openral_rskill._eye_in_hand.READY`, chosen as a working branch at the work (F45):
+# as a posture it put the open jaws round a docked item's handle at every stand (TCP 1.069 m back, 1.054 m up), so
+# arm_ready docked pushed the depot battery (plexil_b_bat_bess) and a dock with the arm raised turned the landing
+# container (europa_b_cons_habitat). The skills plan from wherever the arm is; none starts from the seed.
+READY = [0.0, 0.1, 0.0, -1.1, 0.0, -1.1, math.pi]
 #: rskill-procedural-stow's pose, and what the arm holds whenever no operation owns it: reaching back over
 #: the rear hull edge with the wrist camera level and facing the way the arm works. Measured from this
 #: robot's own URDF: tool 1.089 m behind the rover origin at 0.951 m, look 0.0 deg from level, 180 deg from
@@ -439,7 +445,11 @@ class CapabilityServer(Node):
         return {"inventory": self._inventory, "equipment_catalogue": CATALOGUE}
 
     def power_status(self):
-        """The serviced units' own telemetry, the latest the base network carried."""
+        """The serviced units' own telemetry, the latest the base network carried. The topic is periodic, not latched:
+        a query before its first message waits for it rather than answering with nothing (a baseline host asks at
+        start; research repo F114)."""
+        while not self._power:
+            time.sleep(0.05)
         return dict(self._power)
 
     def site_map(self):
@@ -814,6 +824,10 @@ class CapabilityServer(Node):
         (about 13 s for a grasp or a press), the rest come from the cache."""
         self.ik.wait_for_service()
         self.validity.wait_for_service()
+        # the stands are computed in the tool and camera frames: at start the robot's TF may not be up yet, and a failed
+        # lookup ended this thread for every feature (step 9, F114)
+        while not self.buf.can_transform("tcp_frame", "wrist_camera_optical_frame", Time()):
+            time.sleep(0.5)
         for feature, pt in IX["points"].items():
             if pt["type"] in ("place", "press"):
                 try:

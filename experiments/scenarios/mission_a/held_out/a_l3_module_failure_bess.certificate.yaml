@@ -1,0 +1,58 @@
+scenario_id: mission_a/held_out/a_l3_module_failure_bess
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: >-
+      Offline review only (no Isaac/GPU run; status stays OPEN). Capability sequence (evaluator-only, never
+      exposed to a method): navigate_to_feature+dock_at_feature at BESS's panel; power_status/observe to read
+      the tripped breaker; press the reset button; power_status re-check (after SELFTEST_S) shows a re-trip
+      with cause BATTERY_MODULE_FAULT -- a different trip cause than OVERTEMP, distinguishing this from the
+      L2-A shutter case by telemetry alone; manifest query to find the depot spares stand's spare battery
+      module and its recorded-serviceable status; navigate_to_feature+dock_at_feature at BESS's own equipment
+      bay (bess_cradle, layout.yaml); pick the failed battery module (bat_bess) out of the bay; place it on
+      some free support nearby (not the depot spares stand slot the spare occupies -- any other free
+      place-type point, a free choice within capability); navigate_to_feature+dock_at_feature at the depot
+      spares stand; pick the spare battery module (bat_spare); navigate_to_feature+dock_at_feature back at
+      BESS's bay; place the spare into the now-empty bay; press the reset button again; power_status confirms
+      it holds; stow; return to dock. Every step is navigate_to_feature/dock_at_feature/pick/place/press/
+      observe/power_status/manifest -- Mission A's press/reset plus Mission B's pick/place, already both
+      pre-freeze capabilities; only their composition is new (docs/heldout_design.md §2 L3: "every piece
+      exists in both baselines' frozen libraries ... only the composition does not").
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: >-
+      Trip cause and breaker state: `power_status` (per-unit telemetry, contracts.yaml). Which module is
+      installed in a bay and its serial: also `power_status` (`installed_modules` keyed by bay). The spare's
+      recorded status and location: `manifest` (contracts.yaml: inventory record with `recorded_location` and
+      `status`, updated for this scenario by task.py's own inventory_record() override -- though for
+      heldout_module_failure neither failed nor spare module is marked unserviceable in the record itself,
+      only the failed one's presence is diagnosable via power_status's self-test trip cause). Visual
+      confirmation of the module/handle for grasping: `observe`/`locate_in_view` (the same VLM path pick/place
+      already use). No capability gap.
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: >-
+      Grepped (case-insensitive) space_runtime/playbook.md, configs/space_runtime.yaml,
+      openral_ext/capability_server/contracts.yaml, space_runtime/guard.py for: shutter, radiator, cover,
+      self-test/self_test, swap, cannibal, donor, occupied. Zero matches for "self-test"/"self_test"/"swap" in
+      any of the four files. playbook.md and guard.py: zero matches for any of the eight terms. configs/
+      space_runtime.yaml: zero matches. The `energized_equipment_removal` rule (lines 22-29) does not fire for
+      this instance in any case: task.py initial_trips() sets BESS's fault cause to BATTERY_MODULE_FAULT
+      directly at t=0 (unlike the L0/L1 OVERCURRENT case), so BESS's breaker is already open/tripped
+      (energized: false, site.py power_telemetry()) before any agent action reaches its bay -- removing
+      bat_bess is a pick on a de-energized unit's bay, unlike PDU-3 in the L4 instance, which stays closed the
+      whole time. contracts.yaml: two generic matches (line 237, 310), unrelated to
+      self-test/module failure. docs/baselines/authoring_spec.md's forbidden list names
+      `heldout_module_failure` explicitly; confirm at freeze time.
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: >-
+      pick/place (from Mission B) and press/power_status (from Mission A) are all unchanged, already-frozen
+      capabilities; nothing about their contracts changes for this scenario. What a frozen baseline lacks is
+      the cross-family composition itself -- that a self-test failure (a Mission-A-style diagnosis) is
+      resolved by a Mission-B-style remove-and-replace, then closed out with Mission A's own reset/verify --
+      a mission-level structural gap (docs/heldout_design.md §2: "a cross-family composition"), not a missing
+      controller (pick/place/press all work) or sensor (power_status/observe/manifest all already exist and
+      are used the same way as in the covered cases).
+evaluator_only: true
+solution_sequence: null

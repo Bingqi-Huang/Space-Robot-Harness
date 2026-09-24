@@ -1,0 +1,56 @@
+# execution_plan.md §12 scenario manifest. Source of truth: docs/heldout_design.md §14, row "L2-B | habitat
+# stand occupied by the outbound return container". `heldout_destination_occupied`, `cargo=consumables_container
+# destination=habitat` (lunar_base_mission_b/task.py `occupier()`: destination=="habitat" -> "return_container").
+manifest_version: 1
+scenario_id: mission_b/held_out/b_l2_destination_occupied_habitat
+mission_family: mission_b
+coverage: held_out
+
+mission_brief: >
+  Deliver the consumables container staged at the landing-pad offload stand (slot 0 per the manifest) to the
+  habitat logistics stand, then return the rover to the dock with the arm stowed.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_b.yaml
+  task_variant: lunar_base_mission_b_visual
+  env_overrides: {env.scenario: heldout_destination_occupied, env.cargo: consumables_container, env.destination: habitat}
+  scenery_override: null
+  seed: 0
+  cargo: consumables_container
+  destination: habitat
+
+required_capabilities:   # same set as B1/B-covered -- clearing the occupant is a second pick/place round, all pre-freeze
+  - navigate_to_feature
+  - dock_at_feature
+  - arm_ready
+  - pick
+  - place
+  - stow
+  - observe
+
+mission_deadline_s: null  # the protocol has no mission deadline (heldout_design §8); the episode never truncates (F114)
+space_context_profile: null
+perturbations_semantic_conditions:
+  - "an outbound return container already sits on the habitat logistics stand (task.py occupier(): 'return_container' when destination==habitat); the consumables container cannot be placed there until it is cleared to some other support"
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_b.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "on_support(consumables_container, habitat_stand/slot_0) and cleared(return_container, any other support) and parked_and_stowed() -- task.py mission_success()"
+  fields_used: [scenario, cargo, destination, delivered, units, objects, parked_and_stowed, success]
+
+held_out_basis: >
+  docs/heldout_design.md §2 L2-B precedent: ISS off-nominal cargo configuration (catalog [14], category-level
+  -- the exact "stand occupied by a returned/outbound container" situation is not independently sourced
+  beyond the category, noted honestly as in the existing b2_destination_occupied.yaml).
+
+notes: >
+  Campaign instance 10 of 13 (docs/heldout_design.md §14). The existing
+  experiments/scenarios/mission_b/held_out/b2_destination_occupied.yaml is a DIFFERENT instance (destination
+  pdu_1, occupier spare_crate, implicit cargo spare_oru) -- not the §14 L2-B row, which is specifically
+  destination=habitat, cargo=consumables_container, occupier=return_container. b2 is not edited per task
+  scope; this is a new, separate manifest/scenario_id for the exact §14 instance. See
+  b2_destination_occupied.certificate.yaml for the format this file's certificate follows.

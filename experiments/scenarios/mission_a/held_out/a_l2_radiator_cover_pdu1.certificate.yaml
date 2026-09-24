@@ -1,0 +1,53 @@
+scenario_id: mission_a/held_out/a_l2_radiator_cover_pdu1
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: >-
+      Offline review only (no Isaac/GPU run; status stays OPEN, matching every existing certificate). Capability
+      sequence (evaluator-only, never exposed to a method): navigate_to_feature+dock_at_feature at PDU-1's
+      panel; observe/power_status to read the tripped breaker and trip cause; press the panel's reset button
+      (the same `press` capability the covered case uses, target=PDU-1's panel button); power_status re-check
+      shows the breaker re-trips OVERTEMP after retrip_delay_s (site.py: "a closed breaker whose shutter is
+      drawn overheats and trips OVERTEMP ... unless the shutter is opened in time"); observe/locate_in_view at
+      PDU-1's radiator to confirm the shutter is drawn (a visual variant, site.py set_radiator_cover); press
+      the shutter's own button (same `press` capability, target=PDU-1's cover feature, e.g.
+      pdu_1_radiator/cover_button per d0_site_check.py's own STANDS query pattern) to open the shutter; press
+      the panel reset button again; power_status re-check confirms the breaker holds; stow; return to dock.
+      Two calls to the same generic `press` capability on two different declared features -- no new
+      capability, matching docs/heldout_design.md §2 L2's description ("Units with a shutter only").
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: >-
+      Whether the shutter is drawn is answerable by `observe` (VLM question on the front camera, the exact
+      style d0_site_check.py already uses for the BESS condenser: "are its fans and fins exposed, or is a dark
+      roll-up shutter drawn down over them?") or `locate_in_view`. Whether the reset held or re-tripped, and
+      the trip cause (OVERTEMP), come from `power_status` (contracts.yaml: breaker state, trip cause,
+      resets_since_start -- all per-unit telemetry fields). No capability beyond observe/locate_in_view/
+      power_status is needed.
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: >-
+      Grepped (case-insensitive) space_runtime/playbook.md, configs/space_runtime.yaml,
+      openral_ext/capability_server/contracts.yaml, space_runtime/guard.py for: shutter, radiator, cover,
+      self-test/self_test, swap, cannibal, donor, occupied. playbook.md and guard.py: zero matches.
+      configs/space_runtime.yaml: zero matches (its one target_authority rule, `energized_equipment_removal`,
+      lines 22-29, is about pick on an equipment bay, not about shutters/covers -- inapplicable here in any
+      case since this instance never removes a module). contracts.yaml: two matches, both generic and unrelated
+      -- line 237 "a gold MLI-covered box" (a `pick` target-description example, about item appearance, not a
+      radiator cover) and line 310 "whether a place is occupied" (an `observe` question-description example,
+      about cargo occupancy, not a shutter). Neither names a radiator, a shutter, or a retrip mechanism.
+      docs/baselines/authoring_spec.md's forbidden list names `heldout_radiator_cover` explicitly as something
+      baseline plan artifacts must not encode -- confirm at freeze time (docs/freeze_audit.md).
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: >-
+      `press` already exists and is used identically for both the panel button and the shutter button (same
+      capability, different `feature`/`target` arguments) -- no controller gap. `observe`/`power_status`
+      already exist and are used identically to the covered case's own verification step -- no sensor gap.
+      What is missing is the causal/diagnostic knowledge that an OVERTEMP re-trip after a reset means the
+      shutter, not the breaker, needs attention, and that the fix is a second press on a different feature --
+      a mission-level cause/relation (docs/heldout_design.md §2: "a cause/relation"), matching
+      docs/baselines/authoring_spec.md tier 3 (branching on trip cause / VLM observation is explicitly
+      forbidden to pre-author).
+evaluator_only: true
+solution_sequence: null

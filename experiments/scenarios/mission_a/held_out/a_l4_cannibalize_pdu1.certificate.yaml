@@ -1,0 +1,75 @@
+scenario_id: mission_a/held_out/a_l4_cannibalize_pdu1
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: >-
+      Offline review only (no Isaac/GPU run; status stays OPEN). Capability sequence (evaluator-only, never
+      exposed to a method): navigate_to_feature+dock_at_feature at PDU-1's panel; power_status/observe to
+      read PDU-1 tripped with cause ORU_SELFTEST_FAIL (set at t=0, task.py initial_trips() for this scenario
+      -- not reached via a reset attempt); manifest query shows the depot's staged spare ORU recorded
+      "failed -- removed from service for failure analysis, awaiting return shipment" (task.py
+      inventory_record() override for heldout_cannibalize) -- not a candidate; power_status across all five
+      units to find another serviceable, installed ORU: PDU-2's own ORU is in active service (its own load,
+      not a spare); PDU-3's ORU (oru_pdu_3) is installed, PDU-3 is energized (breaker closed, not the faulted
+      unit in this scenario) and non-critical (layout.yaml criticality: non-critical, vs. PDU-1's crew-critical
+      habitat life support) -- the only remaining candidate; request_operator (space_runtime/tools.py, a
+      generic mission-control-escalation primitive, not a contracts.yaml capability) to ask ground for
+      approval to remove a module from PDU-3's bay while it is energized -- the guard denies the `pick` call
+      with `approval_required` until an approval is on record (configs/space_runtime.yaml target_authority
+      rule `energized_equipment_removal`, guard.py Guard.target_rule/check -- both generic, pre-freeze,
+      written for no named unit or scenario); once granted, navigate_to_feature+dock_at_feature at PDU-3's
+      bay; pick oru_pdu_3; navigate_to_feature+dock_at_feature at PDU-1's bay; pick the failed oru_pdu_1 out
+      and place it on a free support; place oru_pdu_3 into PDU-1's now-empty bay; navigate_to_feature+
+      dock_at_feature at PDU-1's panel; press the reset button; power_status confirms PDU-1 holds; stow;
+      return to dock. Every capability call (navigate_to_feature, dock_at_feature, observe, locate_in_view,
+      power_status, manifest, pick, place, press, stow) is the same set the L3 instances use, plus
+      request_operator, which is a mission-generic runtime primitive already used for any authority exchange,
+      not something built for this scenario. No new capability.
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: >-
+      PDU-1's trip cause and PDU-3's energized/breaker state: `power_status` (per-unit telemetry, including
+      `energized`, `criticality`, `load`, `installed_modules` -- contracts.yaml). The depot spare's
+      recorded-failed status: `manifest` (contracts.yaml inventory record, `status`/`recorded_location`
+      fields, updated by task.py inventory_record() for this scenario). Which physical module sits in which
+      bay, for grasping: `observe`/`locate_in_view` (same VLM path every pick/place already uses). The
+      approval outcome itself: the guard's own structured reason returned on the denied `pick` call (guard.py
+      check(), reaches the agent as context per space_runtime/playbook.md rule 4 "read the reason"), not a
+      separate query. No capability gap.
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: >-
+      Grepped (case-insensitive) space_runtime/playbook.md, configs/space_runtime.yaml,
+      openral_ext/capability_server/contracts.yaml, space_runtime/guard.py for: shutter, radiator, cover,
+      self-test/self_test, swap, cannibal, donor, occupied. Zero matches for "cannibal"/"donor"/
+      "self-test"/"self_test"/"swap" in any of the four files (grep confirmed, no results). playbook.md
+      (14 lines) is entirely generic operating rules, names no mission, unit or scenario. guard.py: zero
+      matches; its only mission-relevant text (line 6, a module docstring) is "removing a module from an
+      energized unit's bay needs ground authorization, 14 CFR 1214.403" -- a citation of the same regulation,
+      generic across every energized-bay removal, not naming PDU-1, PDU-3, or this scenario.
+      configs/space_runtime.yaml lines 22-29: the `energized_equipment_removal` target_authority rule --
+      `applies_to: [pick]`, `target_role: equipment_bay`, `when_unit: {energized: true}` -- is written purely
+      in terms of the site survey's own role classification and the unit's own telemetry field, with no unit
+      name, no scenario name and no mention of PDU-1/PDU-3/ORU/cannibalize anywhere in the file; this is
+      exactly the generic authority rule the task brief calls out as acceptable, not a solution hint.
+      contracts.yaml: two generic matches (lines 237, 310), unrelated to module swapping. No PLEXIL/EUROPA
+      artifact exists for `heldout_cannibalize`; docs/baselines/authoring_spec.md's forbidden list names it
+      explicitly (and its retired sibling terms swap/cannibal/donor as prose, not as file content); confirm at
+      freeze time (docs/freeze_audit.md).
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: >-
+      Every capability call used (pick/place/press/navigate_to_feature/dock_at_feature/observe/
+      locate_in_view/power_status/manifest/request_operator) is unchanged and used exactly as in the covered
+      and L3 cases; the guard's authority rule is generic and pre-existing, not added for this scenario. What
+      is missing is mission-level judgment across three facts the shared perception stack already supplies
+      separately (the depot spare is unusable, PDU-3 is the only energized non-critical unit with a
+      serviceable ORU, and taking its module needs ground authorization) plus a goal conflict (life support
+      vs. a science instrument) and a real communication constraint -- docs/heldout_design.md §2 L4: "a goal
+      conflict + authority", the sharpest level in the ladder. This is mission-level structure, not a missing
+      controller (pick/place/press are unchanged) or sensor (power_status/manifest/observe are unchanged);
+      the authority mechanism itself is a generic, mission-agnostic guard rule already present before freeze,
+      matching docs/baselines/authoring_spec.md's line that a generic authority/energized-removal rule is
+      fine while a scenario-specific branch is not.
+evaluator_only: true
+solution_sequence: null

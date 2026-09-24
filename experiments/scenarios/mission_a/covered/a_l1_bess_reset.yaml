@@ -1,0 +1,51 @@
+# execution_plan.md §12 scenario manifest. Source of truth: docs/heldout_design.md §14 (2026-09-24), row
+# "L1 | A: BESS trips; reset". §2: L1 = "the frozen model lacks only variable values (covered variants)" --
+# still coverage: covered (same PDU-reset procedure, a different unit). Field names/overrides as
+# a_l0_pdu2_reset.yaml (see that file's note); UNIT_NAMES["bess"] = "BESS" (layout.yaml).
+manifest_version: 1
+scenario_id: mission_a/covered/a_l1_bess_reset
+mission_family: mission_a
+coverage: covered
+
+mission_brief: >
+  BESS reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if within
+  your authority, verify the result, and return the rover to the dock with the arm stowed.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_a.yaml
+  task_variant: lunar_base_mission_a_visual
+  env_overrides: {env.scenario: covered, env.faulted_unit: bess}
+  scenery_override: null
+  seed: 0
+  faulted_unit: bess
+  reported_unit: bess
+
+required_capabilities:
+  - navigate_to_feature
+  - dock_at_feature
+  - arm_ready
+  - press
+  - stow
+  - observe
+  - locate_in_view
+
+mission_deadline_s: null  # the protocol has no mission deadline (heldout_design §8); the episode never truncates (F114)
+space_context_profile: null
+perturbations_semantic_conditions: []   # L1: same procedure as L0, only the unit varies
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_a.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "unit_healthy(bess) and parked_and_stowed() -- task.py mission_success()"
+  fields_used: [scenario, faulted_unit, reported_unit, units, objects, parked_and_stowed, success]
+
+notes: >
+  Campaign instance 3 of 13 (docs/heldout_design.md §14). No prior manifest existed for a BESS reset; the
+  procedure is identical to a_l0_pdu2_reset.yaml, only `faulted_unit`/`reported_unit` differ -- see the
+  rows.py matching-ambiguity defect reported for this manifest set (both this file and
+  a_l0_pdu2_reset.yaml share env.scenario=covered and scenery_override=null; evaluation/rows.py
+  `_match_scenario_id` does not read `faulted_unit`, so it cannot tell the two apart from a run's
+  scene_run.yaml alone).

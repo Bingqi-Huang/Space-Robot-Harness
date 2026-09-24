@@ -35,7 +35,8 @@ from openral_ext.capability_server.contracts import CONTRACTS
 
 __all__ = ["NormalizedRunRow", "PREPLANNED_TRANSITION_CATEGORIES", "extract_row"]
 
-# DRAFT (§14.2, pending user decision): who generated each executed mission transition.
+# Superseded for the paper by docs/preregistration.md §1 (decided 2026-09-24): the fraction is computed per instance x
+# method from the instance's certificate, not per run; this per-run label stays a description of the method.
 PREPLANNED_TRANSITION_CATEGORIES = (
     "human_preauthored",  # PLEXIL: written into the plan/library before the run
     "planner_generated",  # EUROPA: produced by the solver from a human-authored domain
@@ -142,44 +143,34 @@ def _real_manifests() -> list:
     return [m for _, m in iter_manifests(_SCENARIOS_DIR)] if _SCENARIOS_DIR.is_dir() else []
 
 
-def _scenery_override(run_dir: Path) -> str | None:
-    """The `env.scenery=<value>` deploy arg the run actually used, from `scene_run.yaml`'s own recorded
-    `simulator.argv` -- `None` when absent (the default scenery), matching a manifest's own
-    `scenery_override: null`. `b4_route_block` is the one manifest so far that needs this: it reuses
-    `env.scenario: covered` (§12) and is told apart from `b1_deliver_oru` only by scenery."""
+def _run_env(run_dir: Path) -> dict[str, str]:
+    """Every `env.<key>=<value>` deploy arg the run actually used, from `scene_run.yaml`'s recorded `simulator.argv`
+    (the scene's own args plus D0_SCENARIO / D0_ENV / D0_SCENERY overrides)."""
     p = run_dir / "scene_run.yaml"
     if not p.is_file():
-        return None
+        return {}
     argv = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("simulator", {}).get("argv", [])
-    for arg in argv:
-        if isinstance(arg, str) and arg.startswith("env.scenery="):
-            return arg.split("=", 1)[1]
-    return None
+    return dict(arg.split("=", 1) for arg in argv if isinstance(arg, str) and arg.startswith("env.") and "=" in arg)
 
 
 def _match_scenario_id(mission: dict[str, Any] | None, run_dir: Path) -> tuple[str | None, str | None, str | None]:
-    """`(scenario_id, mission_family, coverage)` resolved against the *real* manifests under
-    `experiments/scenarios/` -- not synthesized from the raw `scenario=` value, which is not a manifest id
-    (e.g. `"covered"`, not `"mission_a/covered/a1_pdu_reset"`). `mission_family` comes from which fields the
-    MISSION verdict carries (Mission A has `faulted_unit`, Mission B has `cargo`); within that family,
-    the manifest whose `simulator.env_overrides["env.scenario"]` matches the run's raw `scenario` value AND
-    whose `scenery_override` matches what `scene_run.yaml` actually used (`_scenery_override`) is the match
-    -- needed because `b4_route_block`'s manifest reuses `env.scenario: covered`, told apart from
-    `b1_deliver_oru` only by scenery. Zero or more-than-one match leaves `scenario_id` `None`; `coverage`
-    then falls back to the same-value heuristic (`"covered"` iff `scenario == "covered"`), still
-    best-effort."""
+    """`(scenario_id, mission_family, coverage)` resolved against the real manifests under `experiments/scenarios/`.
+    A manifest matches when every `simulator.env_overrides` entry it declares equals what the run actually used and
+    its `scenery_override` equals the run's `env.scenery` (both `None` for the default scenery): the campaign's
+    instances differ by `env.faulted_unit` / `env.cargo` / `env.destination` / `env.reported_unit`, not only by
+    `env.scenario` (docs/heldout_design.md §14; matching on the scenario alone left 11 of 13 unresolved, F114).
+    Anything but exactly one match leaves all three `None` -- an unmatched run is not scored, not guessed."""
     if not mission:
         return None, None, None
-    scenario = mission.get("scenario")
     family = "mission_a" if "faulted_unit" in mission else "mission_b" if "cargo" in mission else None
-    scenery = _scenery_override(run_dir)
+    env = _run_env(run_dir)
     candidates = [m for m in _real_manifests()
-                  if m.mission_family == family and m.simulator.get("env_overrides", {}).get("env.scenario") == scenario
-                  and m.simulator.get("scenery_override") == scenery]
+                  if m.mission_family == family
+                  and all(env.get(k) == str(v) for k, v in m.simulator.get("env_overrides", {}).items())
+                  and m.simulator.get("scenery_override") == env.get("env.scenery")]
     if len(candidates) == 1:
         return candidates[0].scenario_id, family, candidates[0].coverage
-    coverage = "covered" if scenario == "covered" else "held_out" if scenario else None
-    return None, family, coverage
+    return None, family, None
 
 
 def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow:

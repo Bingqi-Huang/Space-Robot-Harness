@@ -39,6 +39,7 @@
 // pre-engineered knowledge), never in the adapter.
 //
 
+#include <iostream>
 #include "AdapterConfiguration.hh"
 #include "AdapterExecInterface.hh"
 #include "AdapterFactory.hh"
@@ -244,6 +245,9 @@ private:
     ExecuteCapability::Goal goal;
     goal.capability = capability;
     goal.args_json = args_json;
+    // The executive's own node trace is on the same stream (plexil_node_trace.log): this line follows the transition of
+    // the Command node that issued it, which is how a plan node and its capability call are joined (research repo F114).
+    std::cout << "[CapabilityAdapter] COMMAND " << capability << " " << args_json << std::endl;
     rclcpp_action::Client<ExecuteCapability>::SendGoalOptions opts;
     // Only ack a genuine rejection here. PLEXIL's own actionComplete gate (CommandHandleKnown, src/intfc/CommandImpl.cc)
     // is satisfied by ANY known command_handle, terminal or not -- acking COMMAND_SENT_TO_SYSTEM the instant the ROS

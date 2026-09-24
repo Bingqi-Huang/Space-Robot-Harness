@@ -72,10 +72,13 @@ DISPLACEMENT_NOISE_FLOOR_M = 1e-3
 # gripper TCP counts as "not held", both inside that task's own `on_support()`.
 _RESTING_SPEED_M_S = 0.05
 _NOT_HELD_M = 0.30
-# That task measures NOT_HELD_M from the item's *handle* point (`handle_pos_env`, a per-object local
-# offset from the site's interaction survey), not the item's root; this evaluator approximates with the
-# item's own root position (`pose` events carry the object's root frame, not its handle) instead of
-# also loading that survey. Only matters near the 0.30 m boundary.
+# That task measures NOT_HELD_M from the item's *handle* point (`handle_pos_env`: the object's root plus its surveyed
+# handle offset rotated by the object's orientation), and so does this evaluator. Measuring from the root instead
+# (the neck is 0.47 m above an item's base) read every carried item as not held and counted each stop of a carry as a
+# drop: 23 "drops" in a delivered run (step 9, F114).
+_IX = json.loads((Path(__file__).resolve().parents[1]
+                  / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json").read_text())
+_HANDLE_LOCAL = {name: tuple(o["handle"]["xyz"]) for name, o in _IX["objects"].items() if o.get("handle")}
 _LINK7_FRAME = "srb/env0/robot/Link7"
 # Same task's own local offset from Link7 to the gripper TCP (`_TCP_OFFSET`), reused verbatim.
 _TCP_OFFSET = (0.0, 0.0, 0.140)
@@ -158,9 +161,11 @@ def _tcp_position(link7_pose: tuple) -> tuple[float, float, float]:
     return x + ox, y + oy, z + oz
 
 
-def _held(item_pos: tuple[float, float, float], link7_pose: tuple) -> bool:
+def _held(name: str, item_pose: tuple, link7_pose: tuple) -> bool:
+    x, y, z, qw, qx, qy, qz = item_pose
+    hx, hy, hz = _quat_apply((qw, qx, qy, qz), _HANDLE_LOCAL[name])
     tcp = _tcp_position(link7_pose)
-    return sum((a - b) ** 2 for a, b in zip(item_pos, tcp)) ** 0.5 <= _NOT_HELD_M
+    return sum((a - b) ** 2 for a, b in zip((x + hx, y + hy, z + hz), tcp)) ** 0.5 <= _NOT_HELD_M
 
 
 def _count_episodes(timestamps: list[float]) -> int:
@@ -205,20 +210,20 @@ def count_dropped_items(events: list[dict[str, Any]]) -> int | None:
     total, any_pose_data = 0, False
     for name in names:
         frame = _frame(name)
-        track = [(e["wall_t"], e["state"]["objects"][name], poses[frame][:3], poses.get(_LINK7_FRAME))
+        track = [(e["wall_t"], e["state"]["objects"][name], poses[frame], poses.get(_LINK7_FRAME))
                  for e, poses in samples if frame in poses]
         if not track:
             continue
         any_pose_data = True
         settled_off_support = []
         for i in range(1, len(track)):
-            t, on, pos, link7 = track[i]
+            t, on, pose, link7 = track[i]
             if on != "" or link7 is None:
                 continue
-            t0, _, pos0, _ = track[i - 1]
+            t0, _, pose0, _ = track[i - 1]
             dt = t - t0
-            speed = (sum((a - b) ** 2 for a, b in zip(pos, pos0)) ** 0.5) / dt if dt > 0 else 0.0
-            if speed >= _RESTING_SPEED_M_S or _held(pos, link7):
+            speed = (sum((a - b) ** 2 for a, b in zip(pose[:3], pose0[:3])) ** 0.5) / dt if dt > 0 else 0.0
+            if speed >= _RESTING_SPEED_M_S or _held(name, pose, link7):
                 continue
             settled_off_support.append(t)
         total += _count_episodes(settled_off_support)

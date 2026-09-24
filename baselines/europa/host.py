@@ -226,9 +226,8 @@ def parse_goal(token, loc, units, delivery):
 
 # ---- the PLEXIL link (HostLink adapter) --------------------------------------------------------------------------
 class Link:
-    def __init__(self, port):
-        srv = socket.create_server(("127.0.0.1", port))
-        self.sock, _ = srv.accept()
+    def __init__(self, listener):
+        self.sock, _ = listener.accept()
         self.rf = self.sock.makefile("rb")
 
     def send(self, payload):
@@ -286,6 +285,10 @@ def main():
     ap.add_argument("--final", help="the goal (of the same kinds as --goal) the run ends at")
     ap.add_argument("--port", type=int, default=47810)
     a = ap.parse_args()
+    # Listen before anything else: the check script starts universalExec shortly after this process, and its HostLink
+    # adapter connects once. Listening only after the boundary queries below lost that race with six runs on one host
+    # (the exec exited, this process waited in accept() forever; research repo F114). A connect now waits in the backlog.
+    listener = socket.create_server(("127.0.0.1", a.port))
     run_dir, model = Path(a.run_dir), Path(a.model)
     run_dir.mkdir(parents=True, exist_ok=True)
     events = (run_dir / "events.jsonl").open("a")
@@ -329,7 +332,7 @@ def main():
     state = initial_state(query(node, client, "base_pose"), query(node, client, "arm_state"), site, items_at)
     state = panels_from_telemetry(state, units, query(node, client, "power_status"))
     log("mission", goals=goals, state=state)
-    link = Link(a.port)
+    link = Link(listener)
     failures, n_plan, reached = {}, 0, set()
     while True:
         state = panels_from_telemetry(state, units, query(node, client, "power_status"))

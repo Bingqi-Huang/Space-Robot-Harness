@@ -1,0 +1,36 @@
+scenario_id: mission_a/held_out/a_l2_radiator_cover_bess
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: >-
+      Offline review only (no Isaac/GPU run; status stays OPEN). Same sequence as
+      a_l2_radiator_cover_pdu1.certificate.yaml with BESS's own panel and HVAC condenser shutter in place of
+      PDU-1's: navigate_to_feature+dock_at_feature at BESS's panel; observe/power_status to read the tripped
+      breaker; press the panel reset button; power_status re-check shows re-trip OVERTEMP; observe/
+      locate_in_view at the BESS HVAC condenser (the exact view/question d0_site_check.py already exercises)
+      to confirm the shutter is drawn; press the condenser shutter's own button (same generic `press`
+      capability, a different declared feature); press the panel reset button again; power_status confirms it
+      holds; stow; return to dock. No new capability beyond the two-press composition.
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: >-
+      Same as a_l2_radiator_cover_pdu1.certificate.yaml: `observe`/`locate_in_view` for the shutter's visual
+      state (d0_site_check.py already asks exactly this question of the BESS condenser view), `power_status`
+      for breaker/trip-cause/resets telemetry. No capability gap.
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: >-
+      Same grep as a_l2_radiator_cover_pdu1.certificate.yaml, same four files, same terms (shutter, radiator,
+      cover, self-test/self_test, swap, cannibal, donor, occupied) -- identical result: zero matches in
+      playbook.md/guard.py, zero relevant matches in configs/space_runtime.yaml, two generic/unrelated matches
+      in contracts.yaml (line 237 item-appearance example, line 310 cargo-occupancy example). BESS is not
+      named in any of the four files. docs/baselines/authoring_spec.md's forbidden list names
+      `heldout_radiator_cover` explicitly; confirm at freeze time.
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: >-
+      Same reasoning as a_l2_radiator_cover_pdu1.certificate.yaml: press/observe/power_status are unchanged
+      capabilities used in an unchanged way; the missing piece is the cause/relation (OVERTEMP re-trip implies
+      a drawn shutter, fixed by a second press elsewhere) -- mission-level, not a controller or sensor gap.
+evaluator_only: true
+solution_sequence: null

@@ -1,0 +1,60 @@
+scenario_id: mission_b/held_out/b_l2_destination_occupied_habitat
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: >-
+      Offline review only (no Isaac/GPU run in this pass; status stays OPEN until a live run confirms it, per
+      the README convention -- none of the existing certificates are CONFIRMED yet either). Capability
+      sequence (evaluator-only, never exposed to a method): navigate_to_feature+dock_at_feature to the
+      landing-pad offload stand; observe/locate_in_view to find/confirm the consumables container; pick the
+      consumables container; navigate_to_feature+dock_at_feature to the habitat logistics stand; observe (or
+      locate_in_view) the stand and recognize it already holds the outbound return container -- the intended
+      place target is occupied; pick the return_container off the stand; place it on some other free support
+      (any place-type point not the destination, e.g. an empty stand slot or shelf -- power_status/manifest
+      do not constrain which one, so this is a free choice within capability, not a scenario-specific target);
+      place the consumables container on the now-clear habitat_stand/slot_0; stow; navigate_to_feature+
+      dock_at_feature back to the rover dock. Every step is pick/place/navigate_to_feature/dock_at_feature/
+      observe/stow -- the same capability set B1 (covered) uses, just one extra pick/place round; all
+      pre-freeze per docs/heldout_design.md §1 rule 3 and §4.
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: >-
+      "the destination shelf already holds an item" is answerable by `observe` (VLM on the front camera,
+      contracts.yaml `observe` capability, e.g. the question style in d0_site_check.py's LAMP/condenser
+      questions) or `locate_in_view` (contracts.yaml: finds a described target in the current image and
+      measures it with depth) once docked at the habitat stand; which item it is (return_container vs. some
+      other object) can be cross-checked against `manifest` (contracts.yaml: mission control's inventory
+      record, recorded_location updated to the destination support by task.py inventory_record() for this
+      scenario). No capability beyond these three (observe, locate_in_view, manifest) is needed for the
+      observation half of the task.
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: >-
+      Grepped (case-insensitive) space_runtime/playbook.md, configs/space_runtime.yaml,
+      openral_ext/capability_server/contracts.yaml and space_runtime/guard.py for: shutter, radiator, cover,
+      self-test/self_test, swap, cannibal, donor, occupied. playbook.md (14 lines, generic operating rules
+      for every mission) and guard.py: zero matches. configs/space_runtime.yaml: zero matches (the only
+      target_authority rule, `energized_equipment_removal`, lines 22-29, is about equipment_bay removal, not
+      cargo-destination occupancy -- irrelevant to this instance, and generic in any case). contracts.yaml:
+      two matches, both generic and not about this scenario -- line 237 "a gold MLI-covered box" (an example
+      item-appearance phrase inside the `pick` capability's `target` input description, illustrating how to
+      describe any item's look, not a place being occupied) and line 310 "whether a place is occupied" (an
+      example question inside the `observe` capability's `question` input description -- a generic
+      illustration of what `observe` can be asked, present regardless of any scenario, not a hint that this
+      particular mission has an occupied place). No PLEXIL/EUROPA artifact exists for this scenario per
+      docs/baselines/authoring_spec.md's forbidden list, which names heldout_destination_occupied explicitly
+      as something baseline artifacts must NOT encode -- confirm at freeze time (docs/freeze_audit.md).
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: >-
+      Both baselines already have pick/place/navigate/dock as native capabilities and the covered Mission B
+      brief already names (cargo, destination) as parameters (docs/baselines/authoring_spec.md "Mission
+      goals"). What is missing is the decomposition step "check whether the destination is free before
+      placing, and if not, clear the occupant to another support first" -- a mission-level branch/subgoal, not
+      a missing controller (pick/place already work) or a missing sensor (observe/locate_in_view already
+      exist and are used identically in the covered case to confirm delivery). This matches
+      docs/baselines/authoring_spec.md tier 3 ("a response composed of capabilities outside the covered
+      procedure" -- forbidden to pre-author into a baseline) and the existing
+      b2_destination_occupied.certificate.yaml's identical finding for its own (different) destination.
+evaluator_only: true
+solution_sequence: null

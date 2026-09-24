@@ -1,0 +1,42 @@
+scenario_id: mission_a/held_out/a_l3_module_failure_isru
+checklist:
+  valid_solution_with_only_pre_freeze_capabilities:
+    status: OPEN
+    note: >-
+      Offline review only (no Isaac/GPU run; status stays OPEN). Same composition as
+      a_l3_module_failure_bess.certificate.yaml with the ISRU plant's own panel/bay in place of BESS's:
+      navigate_to_feature+dock_at_feature at the ISRU panel; power_status/observe to read the tripped breaker
+      (cause FILTER_CLOGGED, task.py initial_trips() -- already set at t=0, not reached by a reset attempt);
+      manifest query for the ISRU receiving stand's spare filter cartridge (flt_spare) and its recorded
+      status; navigate_to_feature+dock_at_feature at the isru_filter bay; pick the clogged filter cartridge
+      (flt_isru); place it on a free support; navigate_to_feature+dock_at_feature at the ISRU receiving stand;
+      pick the spare filter cartridge; navigate_to_feature+dock_at_feature back at the isru_filter bay; place
+      the spare into the bay; press the panel reset button; power_status confirms it holds; stow; return to
+      dock. Same capability set as the BESS L3 instance -- Mission A press/reset composed with Mission B
+      pick/place; no new capability.
+  required_observation_available_via_shared_perception:
+    status: OPEN
+    note: >-
+      Same as a_l3_module_failure_bess.certificate.yaml: `power_status` for breaker/trip-cause/installed-
+      module telemetry (per bay, including isru's second bay isru_power, which this instance does not touch),
+      `manifest` for the spare's recorded status/location, `observe`/`locate_in_view` for grasping. No gap.
+  no_scenario_specific_solution_in_method_artifacts:
+    status: OPEN
+    note: >-
+      Same grep as a_l3_module_failure_bess.certificate.yaml, same four files, same terms -- identical result
+      (zero matches in playbook.md/guard.py/space_runtime.yaml for any of the eight terms including
+      "self-test"/"self_test"/"swap"; two generic, unrelated matches in contracts.yaml at lines 237/310).
+      ISRU and "filter"/"cartridge"/"FILTER_CLOGGED" are not named in any of the four files.
+      docs/baselines/authoring_spec.md's forbidden list names `heldout_module_failure` explicitly; confirm at
+      freeze time. The `energized_equipment_removal` rule does not fire here either: the ISRU plant's own
+      cause is set to FILTER_CLOGGED at t=0 (task.py initial_trips()), so its breaker is already open before
+      the agent reaches isru_filter.
+  baseline_missing_knowledge_is_mission_level_not_controller_sensor:
+    status: OPEN
+    note: >-
+      Same reasoning as a_l3_module_failure_bess.certificate.yaml: every capability used (pick/place/press/
+      power_status/observe/manifest) is unchanged and used the same way as in the covered cases; the missing
+      piece is the cross-family composition (a Mission-A-style diagnosis resolved by a Mission-B-style
+      remove-and-replace) -- mission-level structure, not a controller or sensor gap.
+evaluator_only: true
+solution_sequence: null

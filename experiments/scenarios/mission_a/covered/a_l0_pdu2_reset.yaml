@@ -1,0 +1,58 @@
+# execution_plan.md §12 scenario manifest. Source of truth: docs/heldout_design.md §14 (2026-09-24), row
+# "L0 | A: PDU-2 (communication station) trips; reset". Field names follow the real TaskCfg
+# (space_robotics_bench/srb/tasks/mobile_manipulation/lunar_base_mission_a/task.py: `faulted_unit`,
+# `reported_unit`, not the older `faulted_pdu`/`reported_pdu` in a1_pdu_reset.yaml -- see that file's note in
+# experiments/scenarios/README.md staleness report) and the real override keys used by real launches
+# (experiments/launch/lunar_base_d0/jobs/step9_covered.txt: `env.faulted_unit=pdu_2`).
+manifest_version: 1
+scenario_id: mission_a/covered/a_l0_pdu2_reset
+mission_family: mission_a
+coverage: covered
+
+# Exact wording every method receives (task.py TaskCfg.mission_brief(), UNIT_NAMES[reported] substituted;
+# UNIT_NAMES comes from assets/lunar_base/scene/layout.yaml `units.<id>.name`).
+mission_brief: >
+  PDU-2 reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if within
+  your authority, verify the result, and return the rover to the dock with the arm stowed.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_a.yaml
+  task_variant: lunar_base_mission_a_visual
+  env_overrides: {env.scenario: covered, env.faulted_unit: pdu_2}
+  scenery_override: null
+  seed: 0
+  faulted_unit: pdu_2
+  reported_unit: pdu_2   # covered: reported_unit == faulted_unit (task.py reported(): "auto" resolves to faulted_unit outside covered_misreport)
+
+required_capabilities:   # openral_ext/capability_server/contracts.yaml effect/perception names; power_status/manifest
+  - navigate_to_feature   # are always-on queries (CONTRACTS["queries"]), not gated by closed-capability validation
+  - dock_at_feature
+  - arm_ready
+  - press
+  - stow
+  - observe
+  - locate_in_view
+
+mission_deadline_s: null  # the protocol has no mission deadline (heldout_design §8); the episode never truncates (F114)
+space_context_profile: null   # space_context/ is still an empty placeholder (execution_plan §21.6-7)
+perturbations_semantic_conditions: []   # L0: report and fault agree, single trip cause (OVERCURRENT), no obstruction
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_a.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log (d0_common.py: log("MISSION", **mission))'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "unit_healthy(pdu_2) and parked_and_stowed() -- task.py mission_success()"
+  fields_used: [scenario, faulted_unit, reported_unit, units, objects, parked_and_stowed, success]
+
+notes: >
+  Campaign instance 1 of 13 (docs/heldout_design.md §14, decided 2026-09-24). This is the same physical
+  situation as the older experiments/scenarios/mission_a/covered/a1_pdu_reset.yaml (also PDU-2, covered), but
+  that file predates the base-wide unit set (§9) and uses field names (`faulted_pdu`/`reported_pdu`) and
+  evidence_verifier_mapping.fields_used entries (`faults`/`presses`/`blocked_presses`/`covered`) that do not
+  match the real TaskCfg or the real site_state()/mission_state() return keys (`units`, `objects`,
+  `parked_and_stowed`, `scenario`, `faulted_unit`, `reported_unit`, `success` -- lunar_base/site.py
+  site_state(), lunar_base_mission_a/task.py mission_state()). a1_pdu_reset.yaml is left unedited per task
+  scope; this manifest is the corrected, §14-matching instance and is a new, separate scenario_id.
+  Runs: PLEXIL/EUROPA once, Ours once (covered instance, §14 repetitions note).

@@ -331,7 +331,7 @@ piece of equipment per row, spread so that no unit dominates; the three PDUs are
 | L2-B | habitat stand occupied by the outbound return container | `heldout_destination_occupied`, `cargo=consumables_container destination=habitat` |
 | L3 | BESS battery module fails self-test; spare on the depot spares stand | `heldout_module_failure`, `faulted_unit=bess` |
 | L3 | ISRU filter cartridge clogged; spare on the ISRU receiving stand | `heldout_module_failure`, `faulted_unit=isru` |
-| L4 | PDU-1's module failed, the depot spare is recorded failed; PDU-3 (energized, non-critical) holds the serviceable ORU: approval before loss of signal, then PDU-3 -> PDU-1 | `heldout_cannibalize` (near) |
+| L4 | PDU-1's module failed, the depot spare is recorded failed; PDU-3 (energized, non-critical) holds the serviceable ORU: approval before loss of signal, then PDU-3 -> PDU-1 | `heldout_cannibalize` (near), `faulted_unit=pdu_1` |
 
 Dropped: every other unit x level pairing, L4-far (`heldout_cannibalize_far`), the `route_block` control. L0 and L1
 (seven instances) are step 9's covered set. Runs: PLEXIL and EUROPA once per instance (deterministic; 26);

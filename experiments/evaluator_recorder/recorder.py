@@ -4,7 +4,9 @@ Method-independent (subscribes the same topics no matter which of PLEXIL / EUROP
 driving the run): a small rclpy node that appends the simulator-truth signals the four physical
 violation classes are counted from to `<run_dir>/evaluator/events.jsonl`, in the same append-only
 JSONL shape `experiments/operator_console/console.py` already uses (`seq`/`kind`/`t`/`wall_t` plus
-per-kind fields). `evaluation/rows.py` reads this file (never a method's own trace) to count.
+per-kind fields). `evaluation/rows.py` reads this file (never a method's own trace) to count. It also saves
+front/wrist camera frames to `<run_dir>/frames/` (§R1's raw-data pass) -- not evaluation input, just the
+cheapest complete source of what a post-hoc video needs that isn't already in the bag.
 
 What this subscribes and why (sources in docs/evaluator_violations.md):
   - `/srb/env0/reward/penalty_undesired_robot_contacts` (std_msgs/Float32) -- SRB's own undesired-contact
@@ -41,6 +43,14 @@ What this subscribes and why (sources in docs/evaluator_violations.md):
     `_TCP_OFFSET`) and the held/rest/displacement judgements from these raw poses; this node only
     records them.
 
+  - `/openral/cameras/front/image`, `/openral/cameras/wrist/image` (sensor_msgs/Image, rgb8 -- the bridged
+    OpenRAL-convention topics `openral_ext/capability_server/node.py` itself subscribes for VLM evidence) --
+    saved as JPEG to `<run_dir>/frames/{front,wrist}/<sim_t>.jpg` at 1 Hz of SIM time (not every frame: a
+    campaign of many-minute runs would put tens of GB of full-rate camera video in every run dir for what
+    post-hoc video/trace figures need only as a low-rate strip -- docs/preflight_checklist.md H1). No bag
+    entry for these (item 2 of the R1 raw-data pass): a rosbag2 sqlite row per image is the same bytes as a
+    file, with none of a JPEG's compression.
+
 What this deliberately does NOT subscribe (see docs/evaluator_violations.md "what's missing"):
   - the in-progress capability call and its target -- already recorded, per call, by
     `capability_server.log` (the shared `/space/capability/execute` boundary's own log line,
@@ -73,6 +83,9 @@ SAFETY_STATUS_TOPIC = "/openral/safety_status"
 ESTOP_TOPIC = "/openral/estop"
 ESTOP_CLEARED_TOPIC = "/openral/estop_cleared"
 CLOCK_TOPIC = "/clock"
+CAMERA_TOPICS = {"front": "/openral/cameras/front/image", "wrist": "/openral/cameras/wrist/image"}
+FRAME_PERIOD_S = 1.0  # sim time between saved camera frames, per camera
+FRAME_JPEG_QUALITY = 85  # ~38 KB/frame at 640x480 (measured); two cameras at 1 Hz is ~0.27 GB/h
 
 # The frames docs/evaluator_violations.md's classes 2/3 need, looked up in this common frame -- every
 # scene rigid object and articulation is broadcast as a direct child of its env frame
@@ -113,12 +126,16 @@ def run_cli(run_dir: Path) -> None:
     """Blocking spin: subscribes the topics above, logs every evaluator-relevant transition/message.
     Assumes `rclpy.init()` has already been called by the caller (so a self-test publisher can share
     one context, as in `operator_console.console`)."""
+    import cv2
+    import numpy as np
     import rclpy
     import rclpy.time
     import tf2_ros
     from openral_msgs.msg import SafetyStatus
     from rclpy.node import Node
+    from rclpy.qos import qos_profile_sensor_data
     from rosgraph_msgs.msg import Clock
+    from sensor_msgs.msg import Image
     from std_msgs.msg import Empty, Float32, String
 
     log = EvaluatorEventLog(run_dir)
@@ -126,6 +143,21 @@ def run_cli(run_dir: Path) -> None:
     tf_buffer = tf2_ros.Buffer()
     tf2_ros.TransformListener(tf_buffer, node)
     state = {"sim_t": None, "contact_violation_active": False}
+    frame_dirs = {cam: run_dir / "frames" / cam for cam in CAMERA_TOPICS}
+    for d in frame_dirs.values():
+        d.mkdir(parents=True, exist_ok=True)
+    last_frame_sim_t: dict[str, float | None] = dict.fromkeys(CAMERA_TOPICS)
+
+    def on_image(cam: str, msg: Image) -> None:
+        t = state["sim_t"]
+        last = last_frame_sim_t[cam]
+        if t is None or (last is not None and t - last < FRAME_PERIOD_S):
+            return
+        last_frame_sim_t[cam] = t
+        img = np.frombuffer(msg.data, np.uint8).reshape(msg.height, msg.width, -1)
+        bgr = cv2.cvtColor(img, {"rgb8": cv2.COLOR_RGB2BGR, "rgba8": cv2.COLOR_RGBA2BGR,
+                                 "bgra8": cv2.COLOR_BGRA2BGR}[msg.encoding]) if msg.encoding != "bgr8" else img
+        cv2.imwrite(str(frame_dirs[cam] / f"{t:010.2f}.jpg"), bgr, [cv2.IMWRITE_JPEG_QUALITY, FRAME_JPEG_QUALITY])
 
     def on_clock(msg: Clock) -> None:
         state["sim_t"] = msg.clock.sec + msg.clock.nanosec * 1e-9
@@ -166,8 +198,11 @@ def run_cli(run_dir: Path) -> None:
     node.create_subscription(SafetyStatus, SAFETY_STATUS_TOPIC, on_safety_status, 10)
     node.create_subscription(Empty, ESTOP_TOPIC, on_estop, 10)
     node.create_subscription(Empty, ESTOP_CLEARED_TOPIC, on_estop_cleared, 10)
+    for cam, topic in CAMERA_TOPICS.items():
+        node.create_subscription(Image, topic, lambda m, cam=cam: on_image(cam, m), qos_profile_sensor_data)
     print(f"space_evaluator_recorder: logging to {log.path}, listening on {CONTACT_TOPIC}, {MISSION_STATE_TOPIC}, "
-          f"{SAFETY_STATUS_TOPIC}, {ESTOP_TOPIC}, {ESTOP_CLEARED_TOPIC}, and /tf for {TRACKED_POSE_FRAMES}")
+          f"{SAFETY_STATUS_TOPIC}, {ESTOP_TOPIC}, {ESTOP_CLEARED_TOPIC}, and /tf for {TRACKED_POSE_FRAMES}; saving "
+          f"{', '.join(CAMERA_TOPICS)} to {run_dir / 'frames'} at {FRAME_PERIOD_S} s of sim time")
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -191,7 +226,9 @@ def _selftest(run_dir: Path) -> None:
     from geometry_msgs.msg import TransformStamped
     from openral_msgs.msg import SafetyStatus
     from rclpy.node import Node
+    from rclpy.qos import qos_profile_sensor_data
     from rosgraph_msgs.msg import Clock
+    from sensor_msgs.msg import Image
     from std_msgs.msg import Empty, Float32, String
 
     pub_node = Node("selftest_publisher")
@@ -201,11 +238,15 @@ def _selftest(run_dir: Path) -> None:
     pub_safety = pub_node.create_publisher(SafetyStatus, SAFETY_STATUS_TOPIC, 10)
     pub_estop = pub_node.create_publisher(Empty, ESTOP_TOPIC, 10)
     pub_estop_cleared = pub_node.create_publisher(Empty, ESTOP_CLEARED_TOPIC, 10)
+    pub_front = pub_node.create_publisher(Image, CAMERA_TOPICS["front"], qos_profile_sensor_data)
     tf_broadcaster = tf2_ros.TransformBroadcaster(pub_node)
 
     def publish_sequence():
         time.sleep(1.0)
         pub_clock.publish(Clock(clock=Time(sec=10, nanosec=0)))
+        time.sleep(0.2)
+        img = Image(height=2, width=2, encoding="rgb8", step=6, data=bytes([200] * 12))
+        pub_front.publish(img)  # one synthetic front frame; wrist stays unpublished, same as a camera-less mission
         time.sleep(0.2)
         pub_contact.publish(Float32(data=-1.0))  # violation starts
         time.sleep(0.2)
@@ -232,9 +273,9 @@ def _selftest(run_dir: Path) -> None:
         pub_estop_cleared.publish(Empty())
 
     threading.Thread(target=publish_sequence, daemon=True).start()
-    print("(selftest) publishing one synthetic message on each topic, incl. one /tf transform -- Ctrl+C to stop once "
-          f"{run_dir / 'evaluator' / 'events.jsonl'} shows 7 lines (contact x2, pose, mission_state, safety_status, "
-          "estop x2)")
+    print("(selftest) publishing one synthetic message on each topic, incl. one /tf transform and one front-camera "
+          f"frame -- Ctrl+C to stop once {run_dir / 'evaluator' / 'events.jsonl'} shows 7 lines (contact x2, pose, "
+          f"mission_state, safety_status, estop x2) and {run_dir / 'frames' / 'front'} has one .jpg")
     try:
         run_cli(run_dir)
     finally:

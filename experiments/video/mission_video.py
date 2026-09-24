@@ -377,9 +377,9 @@ def main() -> None:
     ap.add_argument("--times", type=Path, default=None)
     ap.add_argument("--track", type=Path, default=None)
     ap.add_argument("--points", type=Path,
-                    default=Path("space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json"))
+                    default=Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json")
     ap.add_argument("--structures", type=Path,
-                    default=Path("space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/site_structures.json"))
+                    default=Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/site_structures.json")
     ap.add_argument("--title", default="Space Robotics Agent Harness — Mission B")
     ap.add_argument("--from-sim", type=float, default=-1e9)
     ap.add_argument("--to-sim", type=float, default=1e9)

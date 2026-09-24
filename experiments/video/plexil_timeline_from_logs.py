@@ -70,7 +70,7 @@ def parse_capability_log(log: Path, to_sim) -> list[dict]:
 
 def main(run_dir: str, out: str, top: list[str] = TOP) -> None:
     run = Path(run_dir)
-    to_sim = wall_to_sim(run / "robot_motion")
+    to_sim = wall_to_sim(run / "bag")
     events = parse_node_trace(run / "plexil_node_trace.log", to_sim, top) + parse_capability_log(run / "capability_server.log", to_sim)
     events.sort(key=lambda e: e.get("sim_t", e.get("sim_t_start", 0.0)))
     Path(out).write_text(json.dumps({"run": run_dir, "events": events}))

@@ -9,7 +9,9 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 ## Heads
 
 - research `main`, openral `master`, SRB `main`: committed 2026-09-24 (F114 fixes). No feature branches/worktrees.
-- **Step 9 is not running**: its first launch (14:38) stopped on the F114 livelock and was deleted; restart only on the
+- **After step 9: follow todo item "9+" in order** (results + F115, commits, arm_ready keep-out, labels, raw-data
+  recording, PLEXIL node ids + tool fixes, one selected live batch, checklist). `docs/preflight_checklist.md` gates the freeze.
+- **Step 9 (restarted 15:01, tmux `step9`) was running at the last update**; earlier note: its first launch (14:38) stopped on the F114 livelock and was deleted; restart only on the
   user's go. Launch: `tmux new-session -d -s step9 "experiments/launch/lunar_base_d0/farm_queue.sh
   experiments/launch/lunar_base_d0/jobs/step9_covered.txt artifacts/runs/step9"` (`tmux attach -t step9`; it outlives
   the Claude session). 21 runs, Ours first; progress in `artifacts/runs/step9/queue.log`; containers `rf-<run name>`.

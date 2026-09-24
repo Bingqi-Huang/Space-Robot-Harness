@@ -97,7 +97,7 @@ class Agent:
         self.store = FactStore(run_dir / "events.jsonl")
         self.guard = Guard(cfg["guard"])
         self.client = HarnessToolClient(model_id=model, base_url=rc["endpoint"], api_key=os.environ[rc.get("api_key_env", "SPACE_LLM_API_KEY")],
-                                        timeout_s=rc["timeout_s"], thinking=rc["thinking"])
+                                        timeout_s=rc["timeout_s"], thinking=rc["thinking"], run_dir=run_dir)
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())
         self.renderer = HarnessRenderer(self.store, self.max_steps, self.guard.target_authority)
@@ -293,6 +293,7 @@ class Agent:
             self.take_operator_replies()
             step += 1
             self.renderer.step = step
+            self.client.step = step  # so <run>/ours/model_io.jsonl's rows line up with events.jsonl's own step numbers
             self.event("reasoner_step_started", step=step)  # the model is thinking from here until the next proposal
             t = time.time()
             res = self.core.tick(world_state=None, renderer=self.renderer, palette=self.palette, force=True)

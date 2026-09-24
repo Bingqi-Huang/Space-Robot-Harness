@@ -17,7 +17,7 @@ from sim_clock import wall_to_sim
 
 def main(run_dir: str, out: str) -> None:
     run = Path(run_dir)
-    to_sim = wall_to_sim(run / "robot_motion")
+    to_sim = wall_to_sim(run / "bag")
     events = []
     for line in (run / "events.jsonl").read_text().splitlines():
         e = json.loads(line)

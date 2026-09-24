@@ -87,11 +87,20 @@ sleep 30
 # session kill on $DEPLOY reaches (stale launch trees survived runs 3-7 that way)
 LAUNCH=$(pgrep -P "$DEPLOY" | head -1)
 echo "LAUNCH_PID $LAUNCH sid $(ps -o sid= -p "$LAUNCH")" >> "$LOG/deploy.pid"
-if [ -n "$D0_BAG" ]; then
-  # D0_BAG="<topic> <topic> ...": a bag of just those topics in $LOG/bag, tagged, so the teardown's SIGINT closes it
-  D0_RUN_TAG="$LOG" setsid ros2 bag record -o "$LOG/bag" --use-sim-time --qos-profile-overrides-path "$HERE/record_qos.yaml" \
-    $D0_BAG > "$LOG/bag.log" 2>&1 &
-fi
+# The raw record every run keeps (docs/preflight_checklist.md R1: a metric defined later is recomputed from the run dir,
+# never re-simulated): simulator truth (/tf carries every srb/env0/* frame), joint states, unit telemetry, the latched
+# brief/inventory/space context (transient_local in record_qos.yaml), raw contact forces, navigation inputs and
+# outputs (scans and the static map, not the 1 Hz full global costmap: ~20 GB/h and recomputable from them), safety
+# edges and the operator channel. D0_BAG adds topics on top.
+D0_BAG_DEFAULT="/tf /tf_static /clock /srb/env0/robot/joint_states /srb/env0/power_telemetry /srb/env0/mission_brief \
+/srb/env0/inventory_record /srb/env0/space_context /srb/env0/mission_state \
+/srb/env0/reward/penalty_undesired_robot_contacts /srb/env0/contacts_robot/force_norm /srb/env0/contacts_end_effector/force_norm /openral/safety_status /openral/estop /openral/estop_cleared \
+/amcl_pose /plan /cmd_vel /cmd_vel_smoothed /odom /map /scan /openral/nav2/scan /local_costmap/costmap \
+/local_costmap/published_footprint /global_costmap/published_footprint \
+/space/operator/report /space/operator/request /space/operator/reply"
+D0_BAG_TOPICS=$(echo "$D0_BAG_DEFAULT $D0_BAG" | tr -s ' ' '\n' | sort -u | tr '\n' ' ')
+D0_RUN_TAG="$LOG" setsid ros2 bag record -o "$LOG/bag" --use-sim-time --qos-profile-overrides-path "$HERE/record_qos.yaml" \
+  $D0_BAG_TOPICS > "$LOG/bag.log" 2>&1 &
 if [ -n "$D0_CAPABILITY_SERVER" ]; then
   # the common capability boundary (§21.4) for boundary-driven checks; tagged so the teardown takes it down too
   source ../ros/install/setup.bash
@@ -135,4 +144,27 @@ if [ -n "$D0_HOLD" ]; then
   exit 0
 fi
 bash "$HERE/teardown_d0.sh" "$LOG"
+# §19 run manifest (openral_ext/run_manifest): this script launches `openral deploy sim` itself rather than through
+# RunManifestWriter, so it backfills post-hoc from what the finished run dir already has on disk -- read-only,
+# starts nothing (openral_ext/run_manifest/backfill.py's own hard rule)
+.venv/bin/python - "$LOG" "$HERE/../../.." <<'PY'
+import json
+import sys
+from pathlib import Path
+
+import yaml
+
+run_dir, repo_root = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
+sys.path.insert(0, str(repo_root))
+from openral_ext.run_manifest.backfill import backfill_run_manifest
+from openral_ext.run_manifest.capability_registry import resolve_capability_registry
+
+manifest = backfill_run_manifest(run_dir, repo_root=repo_root)
+(run_dir / "run_manifest.yaml").write_text(yaml.safe_dump(manifest, sort_keys=False))
+robot_id = manifest.get("robot_id")
+if robot_id:
+    registry = resolve_capability_registry(robot_yaml=repo_root / "openral/robots" / robot_id / "robot.yaml",
+                                            rskills_dir=repo_root / "openral/rskills")
+    (run_dir / "capability_registry.json").write_text(json.dumps(registry, indent=2))
+PY
 echo done > "$LOG/done"

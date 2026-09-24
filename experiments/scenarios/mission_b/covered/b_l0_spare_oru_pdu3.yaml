@@ -1,0 +1,52 @@
+# execution_plan.md §12 scenario manifest. Source of truth: docs/heldout_design.md §14, row "L0 | B: spare
+# ORU (depot) -> PDU-3 spares shelf". Field names/values follow the real TaskCfg
+# (lunar_base_mission_b/task.py: `cargo`, `destination`) and the real launch overrides
+# (experiments/launch/lunar_base_d0/jobs/step9_covered.txt: `env.cargo=spare_oru env.destination=pdu_3`).
+manifest_version: 1
+scenario_id: mission_b/covered/b_l0_spare_oru_pdu3
+mission_family: mission_b
+coverage: covered
+
+# task.py mission_brief(): item/source from _CARGO["spare_oru"], destination name from _DESTINATION["pdu_3"][1]
+mission_brief: >
+  Deliver the spare ORU staged at the depot stand (slot 0 per the manifest) to the spares shelf of PDU-3,
+  then return the rover to the dock with the arm stowed.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_b.yaml
+  task_variant: lunar_base_mission_b_visual
+  env_overrides: {env.scenario: covered, env.cargo: spare_oru, env.destination: pdu_3}
+  scenery_override: null
+  seed: 0
+  cargo: spare_oru
+  destination: pdu_3
+
+required_capabilities:   # pick/place carry their own grasp/release internally -- not two separate calls
+  - navigate_to_feature
+  - dock_at_feature
+  - arm_ready
+  - pick
+  - place
+  - stow
+  - observe
+
+mission_deadline_s: null  # the protocol has no mission deadline (heldout_design §8); the episode never truncates (F114)
+space_context_profile: null
+perturbations_semantic_conditions: []   # L0: destination free, no obstruction
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_b.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "on_support(spare_oru, pdu_3_shelf/shelf) and parked_and_stowed() -- task.py mission_success()"
+  fields_used: [scenario, cargo, destination, delivered, units, objects, parked_and_stowed, success]
+
+notes: >
+  Campaign instance 2 of 13 (docs/heldout_design.md §14). The existing
+  experiments/scenarios/mission_b/covered/b1_deliver_oru.yaml is a different instance (destination pdu_1, not
+  in the §14 set) and its evidence_verifier_mapping.fields_used lists `oru_on`/`crate_on`, which are not keys
+  Task.mission_state() actually returns (real keys: scenario, cargo, destination, delivered, units, objects,
+  parked_and_stowed, success -- lunar_base_mission_b/task.py mission_state(), lunar_base/site.py
+  site_state()). b1_deliver_oru.yaml is left unedited per task scope; flagged here as stale.

@@ -24,6 +24,8 @@ it arrives or a time limit passes -- the operator PROTOCOL (when to escalate, wh
 module.
 """
 import json
+import time
+from pathlib import Path
 
 from openral_core import EmitPromptTool, ExecuteRskillTool
 from openral_core.exceptions import ROSPlanningError, ROSReasonerInvalidPlan
@@ -131,7 +133,8 @@ class HarnessToolClient:
     Stateless per step: the only input is the context the harness rebuilt from the authoritative record.
     """
 
-    def __init__(self, *, model_id: str, base_url: str, api_key: str, timeout_s: float, thinking: bool = True):
+    def __init__(self, *, model_id: str, base_url: str, api_key: str, timeout_s: float, thinking: bool = True,
+                 run_dir: Path | None = None):
         from openai import OpenAI
 
         self.model_id, self.base_url = model_id, base_url
@@ -141,10 +144,37 @@ class HarnessToolClient:
         self.last_prompt_tokens = None
         self.last_raw = None
         self.last_reply = {}  # what the model said beside the call: its text, and its reasoning where the endpoint returns it
+        # <run>/ours/model_io.jsonl (§R1): the raw request/response `last_reply`/`tool_proposed` only keep a
+        # paraphrase of -- the exact messages sent (system prompt + the harness context the model actually saw
+        # that step) and the exact response (every tool call offered, finish_reason, token usage), not just the
+        # one call the agent went with. `events.jsonl` alone lets `context.render()` reconstruct what a *current*
+        # checkout of this module would have sent; this is what was actually sent, immune to that code changing.
+        self._model_io_path = (run_dir / "model_io.jsonl") if run_dir else None
+        self.step = 0  # set by Agent before each tick, same pattern as HarnessRenderer.step
+
+    def _log_model_io(self, *, messages: list, resp, latency_s: float) -> None:
+        if self._model_io_path is None:
+            return
+        msg = resp.choices[0].message
+        usage = resp.usage
+        entry = {
+            "step": self.step, "wall_t": time.time(), "model": self.model_id, "latency_s": round(latency_s, 3),
+            "request": {"messages": messages},
+            "response": {
+                "content": msg.content or "", "reasoning": getattr(msg, "reasoning_content", None) or "",
+                "finish_reason": resp.choices[0].finish_reason,
+                "tool_calls": [{"name": tc.function.name, "arguments": tc.function.arguments} for tc in (msg.tool_calls or [])],
+            },
+            "usage": {"prompt_tokens": usage.prompt_tokens, "completion_tokens": usage.completion_tokens,
+                      "total_tokens": usage.total_tokens} if usage else None,
+        }
+        with self._model_io_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
 
     def select_tool(self, *, context_text: str, palette, system_prompt: str):
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": context_text}]
         self.last_reply = {}
+        t0 = time.time()
         try:
             resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto", **self.extra)
             if not resp.choices[0].message.tool_calls:
@@ -153,6 +183,7 @@ class HarnessToolClient:
                 resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto", **self.extra)
         except Exception as exc:  # reason: provider SDK boundary -> typed planning error for ReasonerCore
             raise ROSPlanningError(f"LLM call failed: {exc}") from exc
+        self._log_model_io(messages=messages, resp=resp, latency_s=time.time() - t0)
         self.last_prompt_tokens = resp.usage.prompt_tokens if resp.usage else None
         msg = resp.choices[0].message
         self.last_reply = {"content": msg.content or "", "reasoning": getattr(msg, "reasoning_content", None) or ""}

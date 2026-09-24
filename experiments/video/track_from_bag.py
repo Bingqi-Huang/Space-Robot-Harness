@@ -1,6 +1,6 @@
 """Robot, payload and gripper tracks from a run's closed bag, on the simulation clock.
 
-    /usr/bin/python3.10 experiments/video/track_from_bag.py <run>/robot_motion <out.json>
+    /usr/bin/python3.10 experiments/video/track_from_bag.py <run>/bag <out.json>
 
 The mini-map in `mission_video.py` needs where the rover and the carried item were at each moment; the bag holds
 that in the same clock as `ours/events.jsonl` and the video's `.times`. Evaluator truth is used for drawing only:

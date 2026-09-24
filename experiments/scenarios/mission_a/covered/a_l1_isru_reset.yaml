@@ -1,0 +1,48 @@
+# execution_plan.md §12 scenario manifest. Source of truth: docs/heldout_design.md §14, row "L1 | A: ISRU
+# plant trips; reset". coverage: covered per §2 (L1 = variable-value variant of the same reset procedure).
+# UNIT_NAMES["isru"] = "ISRU plant" (layout.yaml).
+manifest_version: 1
+scenario_id: mission_a/covered/a_l1_isru_reset
+mission_family: mission_a
+coverage: covered
+
+mission_brief: >
+  ISRU plant reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if
+  within your authority, verify the result, and return the rover to the dock with the arm stowed.
+
+simulator:
+  scene_config: openral/scenes/deploy/srb_lunar_base_mission_a.yaml
+  task_variant: lunar_base_mission_a_visual
+  env_overrides: {env.scenario: covered, env.faulted_unit: isru}
+  scenery_override: null
+  seed: 0
+  faulted_unit: isru
+  reported_unit: isru
+
+required_capabilities:
+  - navigate_to_feature
+  - dock_at_feature
+  - arm_ready
+  - press
+  - stow
+  - observe
+  - locate_in_view
+
+mission_deadline_s: null  # the protocol has no mission deadline (heldout_design §8); the episode never truncates (F114)
+space_context_profile: null
+perturbations_semantic_conditions: []
+
+evidence_verifier_mapping:
+  source_topic: /srb/env0/mission_state
+  produced_by: srb.tasks.mobile_manipulation.lunar_base_mission_a.task.Task.mission_state
+  logged_as: 'MISSION {...} line in check.log'
+  evaluator_only: true
+  success_condition: "mission.success == true"
+  success_definition: "unit_healthy(isru) and parked_and_stowed() -- task.py mission_success()"
+  fields_used: [scenario, faulted_unit, reported_unit, units, objects, parked_and_stowed, success]
+
+notes: >
+  Campaign instance 4 of 13 (docs/heldout_design.md §14). Same rows.py matching-ambiguity caveat as
+  a_l1_bess_reset.yaml: this manifest, a_l0_pdu2_reset.yaml and a_l1_bess_reset.yaml all have
+  env.scenario=covered and scenery_override=null, distinguished only by env.faulted_unit, which
+  `_match_scenario_id` (evaluation/rows.py) does not read.
