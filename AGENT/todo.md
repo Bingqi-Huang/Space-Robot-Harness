@@ -37,9 +37,10 @@ on main (AGENT.md §1).
         in `research_findings.md`; development runs never count. §14's six held-out instances.
         Ready (F116): Earth sets 925 s after the start; queued escalation = re-authoring; held-out places replay
         clean; Ours' starting point audited (observe example removed); `max_steps` 80 kept (~40 expected).
-        Round 1 = `jobs/step10_r1.txt`: Ours x6, then PLEXIL x6, EUROPA x6 on the same states (baselines' live
-        escalation path: C3/B5/D3/E2/E7). Then diagnose (pictures first), propose generic changes to the user, rerun
-        only what failed. Watch: reset reported done before the L2-A re-trip (30 s); L4 request vs Earth-set (925 s);
+        Round 1 = `jobs/step10_r1.txt`: Ours x6 (baselines run the held-out states in the campaign). Then diagnose
+        (pictures first), fix generically (prompt/playbook edits allowed if they name no unit, cause, object or
+        ordering and hold for every mission; each recorded), rerun only what failed; at most 3 rounds (user goal).
+        Watch: reset reported done before the L2-A re-trip (30 s); L4 request vs Earth-set (925 s);
         per-request wall-clock time (pre-registration §3).
 10b. [ ] **`docs/preflight_checklist.md` all lines closed** (created 2026-09-24 after the label defect): every paper
         output's needs -> a check. Nothing is frozen while a line is open. Open now: B4, C5, C6, D2, D3, E2, E7, F2, F3, G1-G3, R2.

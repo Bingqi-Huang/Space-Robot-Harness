@@ -14,7 +14,7 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
   drove the rover into the return stand leaving the depot spares stand -> 1.2 m everywhere (offline: 0 hits over 28
   features; live verify12: delivered, no non-wheel contact). The audit's other items (fixed arm retreats, press fold, unsourced thresholds) stay (user).
 - **Step 10 round 1 ready (F116)**: `tmux new-session -d -s step10 "experiments/launch/lunar_base_d0/farm_queue.sh
-  experiments/launch/lunar_base_d0/jobs/step10_r1.txt artifacts/runs/step10_r1"` (18 runs: Ours, PLEXIL, EUROPA x6).
+  experiments/launch/lunar_base_d0/jobs/step10_r1.txt artifacts/runs/step10_r1"` (Ours x the six held-out instances).
   Earth now sets 925 s of mission time after the start (was 45 min, after every run).
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
