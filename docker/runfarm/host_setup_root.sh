@@ -19,4 +19,10 @@ nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 mkdir -p /mnt/SharedData
 grep -q " /mnt/SharedData " /etc/fstab || echo "/nvme02/$USER_NAME/SharedData /mnt/SharedData none bind,nofail 0 0" >> /etc/fstab
 mountpoint -q /mnt/SharedData || mount /mnt/SharedData
+# 4. socket buffers for DDS inside the containers (not namespaced, so set on the host; F113): a 1.2 MB camera image
+#    over UDP needs more than the kernel's 208 kB default per socket (Cyclone's config asks 8 MB). Raises only the
+#    per-socket ceiling; persists across reboots.
+printf '%s\n' 'net.core.rmem_max = 67108864' 'net.core.wmem_max = 67108864' 'net.core.netdev_max_backlog = 10000' \
+  > /etc/sysctl.d/60-runfarm-dds.conf
+sysctl -p /etc/sysctl.d/60-runfarm-dds.conf
 echo "done: docker group (re-login), nvidia-container-toolkit $(nvidia-ctk --version | head -1), /mnt/SharedData -> /nvme02/$USER_NAME/SharedData"

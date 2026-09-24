@@ -4,6 +4,8 @@ Supersedes the held-out selection in `docs/lunar_task_catalog.md` §5 and the ol
 set. Serves research_content §5.5 (Experiment I), §5.6 (Experiment II), §5.7 (ablations), H3, and resolves the
 "space-native boundary" open question (decision 2) through the L4 case.
 
+**Instance set: §14 (decided 2026-09-24) supersedes the unit x level crossing of §9 and the L4-far case.**
+
 ## 1. Selection rules
 
 1. **The situation itself has a real precedent** (not just its category). Category-only support is marked as such.
@@ -222,9 +224,9 @@ step 5 done as docs (2026-09-23); steps 6-8 done (F111-F112, 2026-09-24). 9 onwa
    covered cargo x destination). Parallel with 6 and 8.
 8. **Physical validation of the held-out action forms** (§12): offline geometry first, then scripted chains, one
    run each. Prerequisite for every live run below -- BESS/ISRU L0/L1 already use unexecuted buttons.
-9. Covered live re-runs on the final scene: PLEXIL, EUROPA, Ours x Mission A (one PDU, BESS, ISRU) and Mission B (ORU
-   to a PDU shelf, container to habitat). One run each; a failure is classified by the lock's change-control table.
-10. Ours development runs L2-A -> L2-B -> L3 -> L4 (near, then far); mission-generic changes only (§13.1).
+9. Covered live re-runs on the final scene: PLEXIL, EUROPA, Ours x the seven covered instances of §14 (L0 and L1). One run
+   each; a failure is classified by the lock's change-control table.
+10. Ours development runs on the §14 held-out instances, L2-A -> L2-B -> L3 -> L4; mission-generic changes only (§13.1).
 11. Manifests + closed-capability certificates; freeze audit; git tags; the frozen image is the campaign environment.
     Then the offline retry-budget sensitivity check (§7).
 12. Experiment I campaign (entirely on the run farm; the three methods of a paired instance on the same hardware)
@@ -234,7 +236,7 @@ Cost note (measured 2026-09-23 on the development machine, sim runs at 0.17-0.31
 11-24 min wall, Ours covered Mission A 46 min; held-out Ours runs estimated 1-3 h (two picks + two places, 300 s of
 ground decision time ~ 20-25 min wall). Remaining live work estimated ~310 GPU-hours (±50%), ~170 of them the
 campaign; a campaign rerun after a post-freeze infrastructure fix (execution_plan §13.1) adds ~170. Repetition
-counts are set after the first variance is seen, not now.
+counts are set after the first variance is seen, not now. Superseded by §14's estimate (~70 runs).
 
 ## 11. Run farm (decided 2026-09-23)
 
@@ -307,3 +309,32 @@ Lim et al. LPSC 2024 #1647 (VIPER ops); Steinfeld et al. HRI 2006; Olsen & Goodr
 NIST SP 1011-II-1.0 (ALFUS); RFC 4838; Morgan (JPL fault protection); Rabideau et al. 2025 (CADRE idle 28%); NASA ISS
 blog 2019-05-02 (MBSU-3); ISS DSR 2019-04-02 and 2019-06-17; GAO/NSIAD-88-30BR; STS-120 NASA Facts; Apollo 13 Flight
 Journal.
+
+## 14. Campaign instance set (decided 2026-09-24)
+
+Why: the paper needs a success-versus-level curve that a reviewer cannot call cherry-picked, not every unit at every
+level. §9's crossing of every unit with every level (~22-28 instances, ~170 GPU-hours) is cut to one appearance per
+piece of equipment per row, spread so that no unit dominates; the three PDUs are assigned to different rows. The scene
+(§9) is unchanged. Limitation to state: each level is instantiated on one or two units.
+
+| Level | Instance | Scenario / overrides |
+|---|---|---|
+| L0 | A: PDU-2 (communication station) trips; reset | `covered`, `faulted_unit=pdu_2` |
+| L0 | B: spare ORU (depot) -> PDU-3 spares shelf | Mission B, `cargo=spare_oru destination=pdu_3` |
+| L1 | A: BESS trips; reset | `covered`, `faulted_unit=bess` |
+| L1 | A: ISRU plant trips; reset | `covered`, `faulted_unit=isru` |
+| L1 | B: spare battery module (depot spares stand) -> BESS receiving stand | `cargo=bat_spare destination=bess` |
+| L1 | B: consumables container (landing offload stand) -> habitat logistics stand | `cargo=consumables_container destination=habitat` |
+| L1 | A: the report names PDU-2; the BESS is the tripped unit (both power equipment: a plausible mix-up) | `covered_misreport`, `faulted_unit=bess reported_unit=pdu_2` |
+| L2-A | PDU-1 (habitat life support): radiator shutter drawn | `heldout_radiator_cover`, `faulted_unit=pdu_1` |
+| L2-A | BESS: HVAC condenser shutter drawn | `heldout_radiator_cover`, `faulted_unit=bess` |
+| L2-B | habitat stand occupied by the outbound return container | `heldout_destination_occupied`, `cargo=consumables_container destination=habitat` |
+| L3 | BESS battery module fails self-test; spare on the depot spares stand | `heldout_module_failure`, `faulted_unit=bess` |
+| L3 | ISRU filter cartridge clogged; spare on the ISRU receiving stand | `heldout_module_failure`, `faulted_unit=isru` |
+| L4 | PDU-1's module failed, the depot spare is recorded failed; PDU-3 (energized, non-critical) holds the serviceable ORU: approval before loss of signal, then PDU-3 -> PDU-1 | `heldout_cannibalize` (near) |
+
+Dropped: every other unit x level pairing, L4-far (`heldout_cannibalize_far`), the `route_block` control. L0 and L1
+(seven instances) are step 9's covered set. Runs: PLEXIL and EUROPA once per instance (deterministic; 26);
+Ours once per covered instance and three times per held-out instance (7 + 18 = 25); §5.7 ablations 4 x one L3
+instance x 2 (8); Experiment II ~10. About 70 runs; repetitions revisited once the first held-out variance is seen.
+

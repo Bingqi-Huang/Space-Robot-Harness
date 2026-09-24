@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- Cyclone DDS for one run-farm container, the alternative to Fast-DDS (docker/runfarm/runfarm.sh; F113: the Nav2 freeze
+     was a tf2 deadlock, not the middleware, so the graph stays on Fast-DDS).
+     The whole graph lives in the container, so DDS stays on loopback: no multicast (lo has none), discovery by
+     unicast to the local ports of up to 120 participants (a run has ~30 processes; Cyclone's default of 9 ran out
+     in openral's validation matrix). 64 kB datagrams (lo's MTU) and 8 MB socket buffers carry a 1.2 MB 640x480
+     depth image in one burst; `min` makes Cyclone refuse to start when the host's net.core.rmem_max/wmem_max are
+     below it (host_setup_root.sh raises them), instead of silently dropping frames as F57 saw with small buffers. -->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="any">
+    <General>
+      <Interfaces>
+        <NetworkInterface name="lo" multicast="false"/>
+      </Interfaces>
+      <AllowMulticast>false</AllowMulticast>
+      <MaxMessageSize>65500B</MaxMessageSize>
+    </General>
+    <Internal>
+      <SocketReceiveBufferSize min="8MB"/>
+      <SocketSendBufferSize min="8MB"/>
+    </Internal>
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>120</MaxAutoParticipantIndex>
+      <Peers>
+        <Peer address="127.0.0.1"/>
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>

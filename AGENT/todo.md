@@ -2,7 +2,7 @@
 
 Goal: the Acta Astronautica paper. **`docs/heldout_design.md` is the plan**; its §10 order is the work order below.
 Development runs on `pro6000` (see handoff). Larger tasks on `feat/<name>` + `.worktree/<name>`; small fixes straight
-on main (AGENT.md §1). Local commits since 2026-09-23 are NOT pushed yet (research main, openral master, SRB main).
+on main (AGENT.md §1).
 
 ## Done
 
@@ -10,24 +10,28 @@ on main (AGENT.md §1). Local commits since 2026-09-23 are NOT pushed yet (resea
 - F112 (2026-09-24): step 7 (baselines built to the lock, EUROPA use-after-free patched) and step 8 (physical
   validation: every held-out action form executed; shared-layer fixes in nav map, pick, place, press, capability
   boundary, run farm). Final batch `artifacts/runs/chain_*_f` (see the F112 table).
+- F113 (2026-09-24): the Nav2 pose freeze was a tf2 ABBA deadlock (upstream fix 9997e969, built into the run-farm
+  image); bt_navigator ack timeout 20 -> 1000 ms; containers set up once (NUMA, domain, gdb); campaign cut to the
+  13 instances of `docs/heldout_design.md` §14.
 
 ## Work order -- `docs/heldout_design.md` §10
 
 7. [x] Baselines built to the lock (offline): PLEXIL 51 cases, EUROPA A x 5 units + failure paths, B 15 x 3.
 8. [x] Physical validation: all 9 held-out sequences end to end (F112 table); the landing stand was moved onto the
        platform level (AMCL bias on the pad ramp) and `chain_b_consumables` passed first try.
-9. [ ] Covered live re-runs on the final scene: PLEXIL, EUROPA, Ours x Mission A (one PDU, BESS, ISRU) and Mission B
-       (ORU to a PDU shelf, container to habitat). One run each; failures classified by the lock's change-control table.
+8b. [x] Sim speed: `_get_dones` batched (F113 §7), ~10-15% per run; the ROS bridge publishing left as is.
+9. [ ] Covered live re-runs: PLEXIL, EUROPA, Ours x the seven L0/L1 instances of heldout_design §14. One run
+       each; failures classified by the lock's change-control table.
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
        `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
 10. [ ] **Ours development on the held-out ladder** (paper §4, §6.3 trace figure). Generic changes only (§13.1), each
-        in `research_findings.md`; development runs never count. L2-A -> L2-B -> L3 -> L4-near -> L4-far. Watch: a
+        in `research_findings.md`; development runs never count. §14's six held-out instances, L2-A -> L2-B -> L3 -> L4. Watch: a
         reset reported done before the L2-A re-trip (30 s, false success); requesting approval before LOS in L4.
 11. [ ] **Freeze** (paper §5.3): manifests, closed-capability certificates, freeze audit, git tags in all repos; the
         run-farm image + synced home installs are the campaign environment. Then offline retry-budget sensitivity
         (N = 1, 2, 3, 5 on every held-out state).
 12. [ ] **Campaign** (paper §6), entirely on the run farm, a paired instance's three methods on the same hardware:
-        Experiment I (ladder x units x 3 methods, repeated for model variance) -> §5.7 ablations -> build `scan_label`
+        Experiment I (§14's 13 instances x 3 methods; Ours x3 on held-out) -> §5.7 ablations -> build `scan_label`
         -> Experiment II -> §8 re-authoring cost per held-out case.
 13. [ ] Real LunarBot segment (§5.8): design deferred until 12 is stable; ask the user before planning it.
 
@@ -50,16 +54,10 @@ on main (AGENT.md §1). Local commits since 2026-09-23 are NOT pushed yet (resea
 
 ## Open (fix when a run meets it)
 
-- **Nav2 robot-pose freeze** (blocks reliable step-9 runs): one Nav2 process (controller_server local costmap,
-  planner_server global costmap, or AMCL) permanently stops seeing fresh /tf, no error logged; ~1 in 10-15 legs with
-  6 concurrent runs; never seen on the dev machine (one sim at a time). Ruled out: CPU saturation, Fast-DDS shared
-  memory vs UDP (both freeze), SHM health-check timeout. Running when the session ended: `artifacts/runs/alone_0`
-  (container `rf-alone-0`, image `runfarm-gdb:22.04`, ptrace) = the nav loop ALONE on pro6000 with a gdb watcher
-  (`experiments/analysis/freeze_gdb_watch.sh`, dumps `gdb_*.txt` into the run dir on a freeze). Read it first:
-  freezes alone -> container/system; no freeze -> concurrency (then run fewer at once / stagger starts).
-  Tools: `experiments/analysis/` (bag_freeze_scan, footprint_age, bag_plan_lag, ...).
+- If a run-farm process hangs: `experiments/analysis/freeze_gdb_watch.sh <run dir>` in the container, or
+  `docker exec -u root <ctr> gdb -p <pid> -batch -ex "thread apply all bt"` (F113).
 - AMCL republishes map->odom only sporadically right after activation: d0_common's LOCALIZED gate can pass on the
-  initial-pose publish; revisit together with the freeze.
+  initial-pose publish; revisit if a run meets it.
 - VLM region choice ~60 s median (pick/press allow 300 s).
 
 ## Design items not yet built (pick up when a run needs them)

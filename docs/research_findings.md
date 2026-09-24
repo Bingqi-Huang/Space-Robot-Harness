@@ -5289,3 +5289,53 @@ planner_server or AMCL can permanently stop seeing fresh /tf (no error), ~1 in 1
 not CPU saturation (containers used ~9 of 20 threads), and it happened with Fast-DDS shared memory, with UDP only
 and with a raised SHM health-check timeout alike. Never seen on the development machine (one simulation at a time).
 Open; a single-run test with a gdb watcher was left running (`artifacts/runs/alone_0`).
+
+## F113 -- The Nav2 robot-pose freeze was a tf2 deadlock (upstream-fixed, not yet released); run-farm containers set up once; the campaign cut to 13 instances (2026-09-24)
+
+**1. Single run.** `alone_0` (the nav loop alone on pro6000): 12/12 legs first attempt, no pose source ever lagged the
+sim clock by > 3 s (`bag_freeze_scan`). Its sim/wall was 0.20, the same as with six at once: concurrency does not
+slow a run. Its gdb watcher never armed: it ran outside the run's ROS domain (`{} clock 0.0` every line).
+
+**2. Not the middleware.** Six at once under Cyclone DDS (loopback only, 8 MB socket buffers after raising the host's
+`net.core.rmem_max`): `cyc_nav_2` froze on its first leg ("Resulting plan has 0 poses", both attempts). Cyclone joins
+Fast-DDS shared memory and Fast-DDS UDP as a transport that freezes.
+
+**3. The cause, from the frozen process.** gdb (as root: the host's yama `ptrace_scope` is 1) on the frozen
+planner_server: the global costmap's laser message filter was in `tf2_ros::Buffer::waitForTransform`, holding
+`timer_to_request_map_mutex_` and waiting in `BufferCore::addTransformableRequest` for `transformable_requests_mutex_`;
+the TF listener thread was in `setTransform -> testTransformableRequests`, holding `transformable_requests_mutex_` and
+waiting inside the request callback for `timer_to_request_map_mutex_`. An ABBA deadlock: the listener thread never
+runs again, so the process never sees a fresh /tf, logs nothing, and every later plan starts at the frozen pose.
+Transport-independent, per process, and more likely the more the threads interleave under load -- every property of
+F112 §7. geometry2 fixed it on the humble branch on 2026-09-10 (9997e969, "Fix ABBA deadlock between
+`waitForTransform` and `testTransformableRequests`": callbacks are invoked after the mutex is released); Humble's
+latest release, tf2 0.25.23 (built 2026-09-07), predates it. 9997e969 is 0.25.23 plus that one change to
+`tf2/src/buffer_core.cpp`, header untouched: the run-farm image rebuilds `libtf2.so` from it and replaces the packaged
+one (exports a superset, same SONAME). To delete when apt ships tf2 >= 0.25.24.
+
+**4. Validation.** Six at once, Fast-DDS, fixed tf2 (`tf2fix_*`): 32 legs, no freeze (at the old rate of ~1 in 12,
+P(0 in 32) ~ 6%, and the mechanism is identified); the l2b_pdu chain's two picks and a place first attempt. One leg
+failed and passed on its retry: bt_navigator "Timed out while waiting for action server to acknowledge goal request
+for compute_path_to_pose" -- Nav2's `default_server_timeout` of 20 ms, exceeded under load. Now 1000 ms
+(`nav2_lunar_bot.yaml`): latency tolerance, not navigation precision; a spurious abort costs a baseline one of its
+three attempts.
+
+**5. Containers (`docker/runfarm/`).** Memory bound to the GPU socket's NUMA nodes (sub-NUMA clustering: 4 nodes);
+`ROS_DOMAIN_ID` container-wide (`docker exec` tools join the run's graph); gdb in the image + SYS_PTRACE; memlock
+unlimited; host socket-buffer ceiling 64 MB (`host_setup_root.sh` step 4, persistent). Cyclone stays installed as an
+alternative (`cyclonedds_runfarm.xml`); the graph runs Fast-DDS as validated in F112. CPU: each run already has 20
+logical CPUs and uses 6-10; 120 of 128 are given out. One run's speed is bound by SRB's serial main thread (per tick
+102 ms: physics 30, TF publishing 24, `_get_dones` 17, sensors 22, render 4), not by cores.
+
+**6. Campaign instance set** (`docs/heldout_design.md` §14, user decision): every level kept, each on one or two units,
+each piece of equipment at most once per row, no unit dominating; L4-far and the route-block control dropped;
+13 instances, about 70 runs instead of ~110-140.
+
+**7. Sim speed (SRB).** `_get_dones` was ~60 small-tensor on-support tests per tick (every module x every bay, plus
+Mission B's occupier x every place frame); now one batched test (`SiteTask.on_supports`), offline-identical to the old
+per-pair test on 37,800 random (object, support, settled) cases incl. 2,370 positives. Per tick (median, profile):
+`_get_dones` 16.3 -> 4.1 ms, total 102 -> 86 ms (Mission A) / 94 ms (Mission B, lidar refresh slower that run).
+The `tf` bucket (24 ms) is mostly the lidar and camera refreshes it triggers (~15 ms); batching its reads changed
+nothing, so that change was reverted. What is left is physics (30), the sensor refreshes and the rclpy publishing:
+further speed would mean changing the ROS bridge, not done. Checked live: `speed_l2a_pdu` (L2-A PDU-1: shutter,
+reset, holds) and `speed_b_consumables` (landing stand -> habitat, delivered) both every call first attempt.

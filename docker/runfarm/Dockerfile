@@ -40,6 +40,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # the NVIDIA driver's Vulkan/EGL entry points are injected by the container toolkit (NVIDIA_DRIVER_CAPABILITIES=all)
 ENV NVIDIA_VISIBLE_DEVICES=all NVIDIA_DRIVER_CAPABILITIES=all
 
+# gdb to attach to a live process (runfarm.sh: SYS_PTRACE; attach with sudo, yama ptrace_scope is 1); Cyclone DDS as an
+# alternative middleware (experiments/launch/lunar_base_d0/cyclonedds_runfarm.xml; the graph runs Fast-DDS)
+RUN apt-get update && apt-get install -y --no-install-recommends ros-humble-rmw-cyclonedds-cpp gdb \
+ && rm -rf /var/lib/apt/lists/*
+
+# tf2 with upstream's ABBA-deadlock fix (F113). Humble's tf2 0.25.23 invokes a transformable-request callback while
+# holding its request mutex; tf2_ros::Buffer::waitForTransform takes the two locks in the other order, so the TF
+# listener thread of a Nav2 server deadlocked with its costmap's laser filter and the process never saw /tf again
+# (~1 leg in 10-15 with six runs at once). geometry2 9997e969 (humble branch, 2026-09-10) is 0.25.23 + that one fix in
+# tf2/src/buffer_core.cpp, header unchanged: the rebuilt libtf2.so replaces the packaged one (its exports are a
+# superset). Delete this step once apt ships ros-humble-tf2 >= 0.25.24.
+RUN mkdir /tmp/tf2 && curl -fsSL https://github.com/ros2/geometry2/archive/9997e969556f5fe5d32ad498d02b3b3473da70b6.tar.gz \
+      | tar xz -C /tmp/tf2 --strip-components 1 \
+ && cd /tmp/tf2/tf2 && mkdir b && cd b \
+ && bash -c "source /opt/ros/humble/setup.bash && cmake .. -DCMAKE_BUILD_TYPE=RelWithDebInfo -DBUILD_TESTING=OFF && make -j2 tf2" \
+ && install -m 644 libtf2.so /opt/ros/humble/lib/libtf2.so && rm -rf /tmp/tf2
+
 # the host user, same name, uid/gid and home path as the files it owns
 RUN groupadd -g ${GID} bingqi && useradd -m -u ${UID} -g ${GID} -s /bin/bash bingqi \
  && echo "bingqi ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/bingqi \

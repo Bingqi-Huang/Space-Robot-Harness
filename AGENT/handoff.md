@@ -1,26 +1,29 @@
 # Handoff
 
-Updated 2026-09-24 late (steps 7 and 8 done; next: the Nav2 freeze in todo "Open", then step 9). Read `AGENT/research_content.md` and
-`AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan), **`docs/baselines/authoring_spec.md`**
-(the locked baseline specification), then `AGENT/todo.md`, then `docs/research_findings.md` F108-F112.
+Updated 2026-09-24 afternoon (steps 7-8 done, Nav2 freeze fixed (F113); sim speed done; next: step 9). Read `AGENT/research_content.md` and
+`AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan; §14 = the campaign instances), **`docs/baselines/authoring_spec.md`**
+(the locked baseline specification), then `AGENT/todo.md`, then `docs/research_findings.md` F108-F113.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
 - research `main`, openral `master`, SRB `main`: all committed and pushed 2026-09-24. No feature branches/worktrees.
-- Possibly still running: container `rf-alone-0` (single-run freeze test, see todo "Open"); `docker stop rf-alone-0`
-  when read. Image `runfarm-gdb:22.04` = runfarm + gdb (for ptrace diagnosis; built locally, not in git).
+- Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
+  `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
 - Development runs on `pro6000` (host astroeng, uid 1007). The dev machine (z890) syncs only through origin.
 
 ## Run farm (pro6000; heldout_design §11, F111, F112)
 
 - Repo at `/mnt/SharedData/Research/Space_Robot_Harness` (bind mount of `/nvme02/bingqi/SharedData`; never `/nvme01`).
-- Image `runfarm:22.04`; home installs and caches mounted, incl. `~/.nv` (shader/compute cache: compiles once per host).
+- Image `runfarm:22.04` (Dockerfile in git; build with the proxy variables unset: every source is a domestic mirror,
+  except the tf2 tarball from GitHub); home installs and caches mounted, incl. `~/.nv`.
 - **One run = one container**: `docker/runfarm/runfarm.sh <gpu 0-5> <name> "<env vars> <abs path>/run_d0.sh <abs run
   dir>"`. Each container gets ROS domain 77 + GPU (they share the docker bridge; Humble ignores
   `ROS_AUTOMATIC_DISCOVERY_RANGE`). Two containers on one GPU share a domain and break each other's launch.
 - Interactive shell: `runfarm.sh 0 rf-dev-0 sleep infinity`, then `docker exec -it rf-dev-0 bash -l`.
+- runfarm.sh also binds memory to the GPU socket's NUMA nodes, sets ROS_DOMAIN_ID container-wide, grants SYS_PTRACE
+  (gdb as root: `docker exec -u root`; the host's yama ptrace_scope is 1).
 - Throwaway containers (builds, offline checks) without a GPU and ALWAYS `--cpuset-cpus 30,31,62,63` + `nice -n 19`:
   an unpinned build starved six pinned simulations (F112).
 - `D0_BAG="<topics>"` records a tagged bag; the scripted chains record nav topics by default (scratchpad launcher).
