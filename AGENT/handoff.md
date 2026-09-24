@@ -12,7 +12,7 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 - **Step 9 done (F115): 18/21, the three failures shared-layer and fixed.** Live checks done (artifacts/runs/check{1,2}).
   Blocker fixed: the shared 1.5 m (approach point, dock corridor entry, inserted undock; PLEXIL plans, EUROPA domain)
   drove the rover into the return stand leaving the depot spares stand -> 1.2 m everywhere (offline: 0 hits over 28
-  features). The audit's other items (fixed arm retreats, press fold, unsourced thresholds) stay (user). **Next: step 10.**
+  features; live verify12: delivered, no non-wheel contact). The audit's other items (fixed arm retreats, press fold, unsourced thresholds) stay (user). **Next: step 10.**
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
