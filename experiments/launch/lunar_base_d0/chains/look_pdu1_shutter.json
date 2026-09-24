@@ -1,0 +1,28 @@
+[
+ [
+  "view",
+  {
+   "name": "pdu_1_radiator"
+  }
+ ],
+ [
+  "observe",
+  {
+   "camera": "front",
+   "question": "Look at the radiator straight ahead: are its fins exposed, or is a dark roll-up shutter drawn down over them? Answer 'exposed' or 'shutter drawn' and why."
+  }
+ ],
+ [
+  "view",
+  {
+   "name": "pdu_1"
+  }
+ ],
+ [
+  "observe",
+  {
+   "camera": "front",
+   "question": "What colour is the round status lamp on the control panel straight ahead? Answer with the colour and where it is."
+  }
+ ]
+]

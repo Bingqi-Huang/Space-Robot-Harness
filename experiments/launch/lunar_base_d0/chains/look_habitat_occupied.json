@@ -1,0 +1,63 @@
+[
+ [
+  "navigate_to_feature",
+  {
+   "feature": "habitat_stand/slot_0",
+   "standoff_m": 1.5
+  }
+ ],
+ [
+  "observe",
+  {
+   "camera": "wrist",
+   "question": "Look at the stand top straight behind the rover: is anything standing on it? Name what you see and say whether the stand is free to receive another item."
+  }
+ ],
+ [
+  "navigate_to_feature",
+  {
+   "feature": "landing_stand/slot_0",
+   "standoff_m": 1.5
+  }
+ ],
+ [
+  "dock_at_feature",
+  {
+   "feature": "landing_stand/slot_0",
+   "standoff_m": 0.0
+  }
+ ],
+ [
+  "pick",
+  {
+   "target": "the consumables container, a white and grey supply case",
+   "part": "the slot on the narrow neck between the transverse head above and the collar below",
+   "item": "consumables container",
+   "support": "landing_stand/slot_0",
+   "grasp_height_m": 1.0169
+  }
+ ],
+ [
+  "navigate_to_feature",
+  {
+   "feature": "habitat_stand/slot_0",
+   "standoff_m": 1.5
+  }
+ ],
+ [
+  "dock_at_feature",
+  {
+   "feature": "habitat_stand/slot_0",
+   "standoff_m": 0.0
+  }
+ ],
+ [
+  "place",
+  {
+   "support": "habitat_stand/slot_0",
+   "item": "consumables container",
+   "release_constraint": "below_overhang"
+  },
+  "may_fail"
+ ]
+]

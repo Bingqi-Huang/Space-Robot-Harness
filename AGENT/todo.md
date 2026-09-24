@@ -26,6 +26,8 @@ on main (AGENT.md §1).
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
        `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
 9+. [ ] **After step 9 ends -- in this order; nothing skipped (decided with the user 2026-09-24):**
+   STATUS 2026-09-24 18:10: 1-6 and 7b done offline (F115; READY' replaces the keep-out, user-approved); 7 running as
+   tmux check1 + check2 (fewer runs: the rest verified offline); then 8, the user's review of the uncommitted part, commit.
    1. Read all 21 results; classify failures by the lock's change-control table. Known: `plexil_b_bat_bess` arm_ready
       stopped 3x on contact with the battery (nudged 9 mm / 2.3 deg): a shared-capability gap, not the plan -- docked
       rear to a stand, no camera has measured the item, the planning scene holds only the plinth (0.55 m), the STOW->READY

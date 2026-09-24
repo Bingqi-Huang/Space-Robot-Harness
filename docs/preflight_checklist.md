@@ -13,10 +13,10 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
-| A1 | Exp II scan_label, demo video | Every labelled item's Data Matrix decodes from the wrist view `pick` takes, at every support it is picked from; S/N text upright from the rover | render the pick view pose per item x support, decode with zxing-cpp (the capability's own decoder); look at every image | **FAIL** (1/42 recorded views decode; labels sit on the handle's centre line: column and palm cover them) |
+| A1 | Exp II scan_label, demo video | Every labelled item's Data Matrix decodes from the wrist view `pick` takes, at every support it is picked from; S/N text upright from the rover | render the pick view pose per item x support, decode with zxing-cpp (the capability's own decoder); look at every image | FIXED offline 2026-09-24: flat lid plates + scan_label's own view; offline renders read every ORU view (2x upscale), all non-battery items; assets regenerated, scene rebuilt; Isaac photos in check2 (F115) |
 | A2 | Exp I all levels | Every §14 instance boots into the intended initial state (tripped unit + cause, shutters, unserviceable modules, occupier, inventory record, reported unit) | instantiate each §14 config offline through the site model's own initial-state functions; compare with §14 | DONE 2026-09-24: all 13 as §14 says (L4 needs `faulted_unit=pdu_1`, now in §14) |
-| A3 | Exp I L0-L4 (VLM observations) | The VLM reads every indicator a §14 instance needs (lamp colour per unit, shutter drawn/open at PDU-1 and BESS, occupier on the habitat stand) from the view poses | still renders at the surveyed view poses, one VLM call each (paratera, as runs use) | VERIFY (site_check_13 covered BESS/ISRU lamps, BESS shutter; PDU-1 shutter and habitat occupier not re-read) |
-| A4 | all figures and video | Scene and items look right from several angles after any asset change | multi-angle stills, looked at | TODO after A1's fix |
+| A3 | Exp I L0-L4 (VLM observations) | The VLM reads every indicator a §14 instance needs (lamp colour per unit, shutter drawn/open at PDU-1 and BESS, occupier on the habitat stand) from the view poses | still renders at the surveyed view poses, one VLM call each (paratera, as runs use) | RUNNING: PDU-1 shutter + lamp, habitat occupier (check1) |
+| A4 | all figures and video | Scene and items look right from several angles after any asset change | multi-angle stills, looked at | DONE 2026-09-24: item previews after the rebuild looked at (labels flat plates, battery at its own height) |
 | A5 | Exp I physical layer | Handle graspable, item-on-support clearance for every item x support used by §14 | `process/check_handles.py`, work_stands for every §14 support | DONE (F112) |
 | A6 | Nav / localization | Surveyed map matches the structures | re-survey after footprint changes | DONE (F112, landing stand) |
 
@@ -27,7 +27,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | B1 | Exp I | Every action form of every §14 instance executed once | scripted chains | DONE (F112); L4-near's own chain (PDU-3 bay -> PDU-1 bay) not run, its forms are |
 | B2 | all runs | No limit set on a single-run host misfires with six at once | sweep of every timeout/resend/window + run-log evidence | DONE (F113, F114) |
 | B3 | all runs | Nothing resets or truncates a run (episode length, auto-reset) | config read-back | DONE (F114) |
-| B5 | Exp I L2-B baselines | Placing onto an occupied support fails cleanly (no stacking, the occupier not knocked off): the path both baselines take at L2-B, never executed | one scripted chain after step 9 | TODO (found 2026-09-24 by C3) |
+| B5 | Exp I L2-B baselines | Placing onto an occupied support fails cleanly (no stacking, the occupier not knocked off): the path both baselines take at L2-B, never executed | RUNNING (check1 look_habitat_occupied) |
 | B4 | Exp I secondary metric | Physical-layer failures logged per leg, attributable to a capability, not a method | rows.py field on real runs | PARTIAL: failure_kind/reason come from the shared boundary's log for every method; no failed call yet in step 9 to test on |
 
 ## C. Methods
@@ -66,7 +66,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
-| F1 | every run | Run manifest (revisions, model config, capability registry, seeds) written by every run | `openral_ext/run_manifest` wired into run_d0? | FAIL: run_d0.sh never writes it (the module exists). Wire in after step 9; backfill step 9 runs with `backfill_run_manifest()` |
+| F1 | every run | Run manifest (revisions, model config, capability registry, seeds) written by every run | `openral_ext/run_manifest` wired into run_d0? | DONE 2026-09-24: run_d0.sh writes run_manifest.yaml + capability_registry.json after teardown; step 9 backfilled; first live check in check1 |
 | F2 | fairness | Freeze audit: no situation-specific hint in any Ours artifact; baselines match the lock | audit script + read | TODO (step 11) |
 | F3 | reproducibility | Image, repos tagged; model id and decoding config recorded | tags + manifest | TODO (step 11) |
 
@@ -83,7 +83,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
-| R1 | any later metric | Every campaign run records the raw data any metric could need: simulator truth (rover, TCP, every object pose, unit states, contacts), joint states, telemetry / brief / inventory, front + wrist frames (low-rate JPEG), navigation (localization, plan, costmaps, cmd_vel), every capability call, Ours' full model input + output per step and every VLM question + answer, baseline plan-node traces and EUROPA solve in/out, operator exchanges, run manifest | list each item's source in a run dir; add what is missing (D0_BAG topics, the evaluator recorder, run manifest); measure data size and sim-speed cost on one run | TODO after step 9 |
+| R1 | any later metric | Every campaign run records the raw data any metric could need: simulator truth (rover, TCP, every object pose, unit states, contacts), joint states, telemetry / brief / inventory, front + wrist frames (low-rate JPEG), navigation (localization, plan, costmaps, cmd_vel), every capability call, Ours' full model input + output per step and every VLM question + answer, baseline plan-node traces and EUROPA solve in/out, operator exchanges, run manifest | list each item's source in a run dir; add what is missing (D0_BAG topics, the evaluator recorder, run manifest); measure data size and sim-speed cost on one run | IMPLEMENTED 2026-09-24 (default bag topics, 1 Hz JPEG frames, model_io.jsonl, per-body contact forces, run manifest); size + speed measured on check1 |
 | R2 | re-evaluation | A metric can be recomputed from R1 alone | recompute rows/violations/interaction from the raw record of one run, without the run's derived logs | TODO |
 
 ## H. Video and figures

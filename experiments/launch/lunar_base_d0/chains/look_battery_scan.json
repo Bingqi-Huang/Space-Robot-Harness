@@ -1,0 +1,132 @@
+[
+ [
+  "navigate_to_feature",
+  {
+   "feature": "depot_stand/slot_0",
+   "standoff_m": 1.5
+  }
+ ],
+ [
+  "dock_at_feature",
+  {
+   "feature": "depot_stand/slot_0",
+   "standoff_m": 0.0
+  }
+ ],
+ [
+  "move_joints",
+  {
+   "joint_targets": [
+    -0.0175,
+    -0.5061,
+    0.0349,
+    -0.9774,
+    -0.0175,
+    -0.9948,
+    1.5708
+   ],
+   "tolerance_rad": 0.08
+  }
+ ],
+ [
+  "observe",
+  {
+   "camera": "wrist",
+   "question": "Is there a label with a square black-and-white 2D code on the item's top below the camera? Say where it is in the image."
+  }
+ ],
+ [
+  "stow",
+  {}
+ ],
+ [
+  "navigate_to_feature",
+  {
+   "feature": "depot_spares_stand/slot_0",
+   "standoff_m": 1.5
+  }
+ ],
+ [
+  "dock_at_feature",
+  {
+   "feature": "depot_spares_stand/slot_0",
+   "standoff_m": 0.0
+  }
+ ],
+ [
+  "pick",
+  {
+   "target": "the battery module, a black box with a round grey-and-yellow dial on its front",
+   "part": "the slot on the narrow neck between the transverse head above and the collar below",
+   "item": "battery module",
+   "support": "depot_spares_stand/slot_0",
+   "grasp_height_m": 1.0169
+  }
+ ],
+ [
+  "navigate_to_feature",
+  {
+   "feature": "bess_stand/slot_0",
+   "standoff_m": 1.5
+  }
+ ],
+ [
+  "dock_at_feature",
+  {
+   "feature": "bess_stand/slot_0",
+   "standoff_m": 0.0
+  }
+ ],
+ [
+  "place",
+  {
+   "support": "bess_stand/slot_0",
+   "item": "battery module",
+   "release_constraint": "below_overhang"
+  }
+ ],
+ [
+  "stow",
+  {}
+ ],
+ [
+  "navigate_to_feature",
+  {
+   "feature": "pdu_1_bay/tray",
+   "standoff_m": 1.5
+  }
+ ],
+ [
+  "dock_at_feature",
+  {
+   "feature": "pdu_1_bay/tray",
+   "standoff_m": 0.0
+  }
+ ],
+ [
+  "move_joints",
+  {
+   "joint_targets": [
+    0.0698,
+    -0.3665,
+    0.0524,
+    -1.4312,
+    -0.1222,
+    -0.6807,
+    1.7453
+   ],
+   "tolerance_rad": 0.08
+  }
+ ],
+ [
+  "observe",
+  {
+   "camera": "wrist",
+   "question": "Is there a label with a square black-and-white 2D code on the item's top below the camera? Say where it is in the image."
+  }
+ ],
+ [
+  "stow",
+  {}
+ ]
+]

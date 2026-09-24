@@ -9,12 +9,15 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 ## Heads
 
 - research `main`, openral `master`, SRB `main`: committed 2026-09-24 (F114 fixes). No feature branches/worktrees.
-- **After step 9: follow todo item "9+" in order** (results + F115, commits, arm_ready keep-out, labels, raw-data
-  recording, PLEXIL node ids + tool fixes, one selected live batch, checklist). `docs/preflight_checklist.md` gates the freeze.
-- **Step 9 (restarted 15:01, tmux `step9`) was running at the last update**; earlier note: its first launch (14:38) stopped on the F114 livelock and was deleted; restart only on the
-  user's go. Launch: `tmux new-session -d -s step9 "experiments/launch/lunar_base_d0/farm_queue.sh
-  experiments/launch/lunar_base_d0/jobs/step9_covered.txt artifacts/runs/step9"` (`tmux attach -t step9`; it outlives
-  the Claude session). 21 runs, Ours first; progress in `artifacts/runs/step9/queue.log`; containers `rf-<run name>`.
+- **Step 9 done (F115): 18/21, the three failures shared-layer and fixed offline.** Commits b21d4db (research) and
+  SRB ab3f0a6, not pushed. Uncommitted, for the user's review: SRB label rule + battery at its own height + regenerated
+  item assets + rebuilt scene; heldout_design §6; look_chain_check.py + chains/look_*.json + jobs/check1-2; F115.
+- **Running at the last update (tmux, `tmux attach -t check1` / `check2`):** check1 = PLEXIL battery with READY',
+  VLM readings (PDU-1 shutter/lamp, habitat occupier), placing onto the occupied habitat stand; check2 = scan-view label
+  photos (decode the saved wrist images offline with zxing, 2x upscale) + the shortened battery's carry (contact
+  windows should be ~0). Run dirs artifacts/runs/check{1,2}; queue.log in each. Then: close the checklist lines, F115
+  results, commit, step 10.
+- PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
 - Development runs on `pro6000` (host astroeng, uid 1007). The dev machine (z890) syncs only through origin.

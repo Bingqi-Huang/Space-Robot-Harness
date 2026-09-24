@@ -1,0 +1,2 @@
+# F114 follow-up, after the label/battery asset rebuild: scan-view label photos + the battery carry.
+look_battery_scan D0_CAPABILITY_SERVER=1 D0_CHECK=look_chain_check.py LOOK_JSON=/mnt/SharedData/Research/Space_Robot_Harness/experiments/launch/lunar_base_d0/chains/look_battery_scan.json D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=covered D0_ENV='env.cargo=bat_spare env.destination=bess'

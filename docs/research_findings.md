@@ -5369,3 +5369,40 @@ staleness -- a warning that heals on the next read (7 in 28 runs); PLEXIL/EUROPA
 client side; deadlines on the sim clock in the runner); EUROPA's horizon (plan units, not wall). Both baselines'
 offline checks pass in the run-farm image (PLEXIL 51/51; EUROPA the six step-9 instances). Open for step 10: Ours'
 `max_steps: 80` (a covered Mission A took 43; a two-pick held-out case may need more -- decide from its first run).
+
+## F115 -- Step 9 (covered live re-runs): 18 of 21; the three failures were the shared layer's, and what else it exposed (2026-09-24)
+
+**Result.** PLEXIL, EUROPA, Ours x the seven L0/L1 instances of heldout_design §14, one run each, six at once
+(`artifacts/runs/step9/`). Ours 7/7, PLEXIL 6/7, EUROPA 5/7 (one of them never started). Development runs: none counts
+in the paper; the campaign reruns every instance on the frozen system. Every run resolves to its §14 instance in the
+normalized rows (after F114's manifest fix); run manifests backfilled (`run_manifest.backfilled.yaml`).
+
+**The three failures, all shared-layer (lock change control: fix for every method, rerun once):**
+1. `plexil_b_bat_bess`: after docking at the depot spares stand, arm_ready stopped 0.2 rad short three times and
+   pushed the battery 9 mm / 2.3 deg. 2. `europa_b_cons_habitat`: EUROPA readies the arm at the start and docks with it
+   out; in the last 1.5 s of the dock the arm turned the consumables container 18 deg and moved it 5 cm, and three
+   picks failed on the skewed item (fit agreement 0.42/0.20/0.21). Same root: the READY posture was the skills' IK seed
+   chosen at the work (F45) -- as a posture it put the open jaws round a docked item's handle at every stand (TCP
+   1.069 m back, 1.054 m up; FK) and into 4 of 9 panel boxes; docked rear-to-stand, no camera sees the item, so the
+   planner had nothing to avoid. New READY (0, 0.1, 0, -1.1, 0, -1.1, pi): tool 0.84 m back at 1.19 m, 30 deg down, clear
+   of every docked item's box (nearest face 1.065 - 0.06 - 0.196 = 0.809 m, top 1.05 m) with 3 cm to spare, docked and
+   all the way in. Offline move_group, 26 stands x 3: STOW<->READY' 102/102, 0 item hits; pick/place approach from READY'
+   as from STOW. A keep-out alone would only have turned the push into a clean planning failure. The skills' IK seed
+   is unchanged. 3. `europa_b_oru_pdu3`: the executive died at start and the host waited forever -- a start race
+   (F114); not scored.
+
+**Found by the step-9 data, fixed offline:** the battery module's column was 0.10 m (body stretched to 0.367 m in F110,
+neck fixed by F112): the palm rode just above the lid and rubbed it leaving the stand -- 151 contact windows in Ours'
+delivered run, 6 in EUROPA's, 0 for ORU/container carries. Body back to 0.262 m, column 0.206 m (the ORU's); handle
+check 12/12, neck heights unchanged, map footprint unchanged. The evaluator's contact signal was only SRB's 10 N flag
+(the 9 mm push left no trace): SRB now publishes every contact sensor's per-body force magnitude (raw record).
+
+**Labels (Exp II).** Pick's view read 1 of 42 recorded labels (column and palm cover the lid). `scan_label` gets its own
+view (0.45 m from the column foot, 70 deg down; reachable at every §14 stand, >= 35 deg joint slack) and the labels are
+flat 40 x 56 mm data plates beside the handle. Offline renders: every ORU view reads (2x upscale first), filters,
+crates, containers read both plates; the battery's domed lid has no flat seat (not an Exp II item). Pick's interface fit
+unchanged on all 21 recorded views. Assets regenerated, scene rebuilt (heldout_design §6).
+
+**Live checks** (`artifacts/runs/check1`, `check2`): READY' at the depot battery; VLM readings of PDU-1's shutter and
+the habitat occupier; placing onto the occupied habitat stand; scan-view label photos in Isaac; the shortened battery's
+carry. Results below when they end.
