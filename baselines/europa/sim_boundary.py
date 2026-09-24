@@ -82,7 +82,7 @@ class SimBoundary(Node):
             if cap == "navigate_to_pose":
                 target = dict(frame="map", x=args["x"], y=args["y"], yaw=args["yaw"])
             else:
-                target = feature_pose(args["feature"], args.get("standoff_m", 1.5 if cap == "navigate_to_feature" else 0.0))
+                target = feature_pose(args["feature"], args.get("standoff_m", 1.2 if cap == "navigate_to_feature" else 0.0))
             self.base = target if ok else (dict(target, x=target["x"] + 5.0) if rule == "far" else self.base)
         elif cap in ("arm_ready", "stow") and ok:
             self.posture = "ready" if cap == "arm_ready" else "stowed"

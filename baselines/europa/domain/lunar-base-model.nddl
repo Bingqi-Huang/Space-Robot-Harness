@@ -94,7 +94,7 @@ class LunarBot
   Jaws jaws;
   LunarBot() { base = new Base(); posture = new Posture(); jaws = new Jaws(); }
 
-  action navigate_to_feature { Feature feature; float standoff_m; eq(standoff_m, 1.5); leq(duration, 400); }
+  action navigate_to_feature { Feature feature; float standoff_m; eq(standoff_m, 1.2); leq(duration, 400); }
   action dock_at_feature { Feature feature; float standoff_m; eq(standoff_m, 0.0); leq(duration, 240); }
   action navigate_to_pose { NamedPose pose; leq(duration, 400); }
   action arm_ready { float tolerance_rad; eq(tolerance_rad, 0.08); leq(duration, 120); }

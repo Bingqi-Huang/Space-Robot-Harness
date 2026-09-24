@@ -32,7 +32,7 @@ effects:
       x: [number, true, "goal x in map, m"]
       y: [number, true, "goal y in map, m"]
       yaw: [number, true, "goal heading in map, rad"]
-      approach_m: [number, false, "length of the entry corridor along the goal axis, m (default 1.5)"]
+      approach_m: [number, false, "length of the entry corridor along the goal axis, m (default 1.2)"]
     default_deadline_s: 240
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-mobile_base-move_base_to_pose
@@ -103,7 +103,7 @@ effects:
       normal beyond the pose from which the arm reaches it, heading along the normal (rear towards the feature).
     inputs:
       feature: [string, true, "site interaction point, e.g. pdu_2_panel/press"]
-      standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 1.5)"]
+      standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 1.2)"]
     default_deadline_s: 400
     authority_class: routine
     lowers_to: OpenRAL/rskill-nav2-mobile_base-navigate_to_pose
@@ -133,7 +133,7 @@ effects:
     inputs:
       feature: [string, true, "site interaction point"]
       standoff_m: [number, false, "distance beyond the reach pose along the normal, m (default 0)"]
-      approach_m: [number, false, "entry corridor length, m (default 1.5)"]
+      approach_m: [number, false, "entry corridor length, m (default 1.2)"]
     default_deadline_s: 240
     authority_class: routine
     lowers_to: OpenRAL/rskill-procedural-mobile_base-move_base_to_pose

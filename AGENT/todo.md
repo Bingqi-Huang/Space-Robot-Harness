@@ -26,33 +26,19 @@ on main (AGENT.md §1).
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
        `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
 9+. [ ] **After step 9 ends -- in this order; nothing skipped (decided with the user 2026-09-24):**
-   STATUS 2026-09-24 evening: 1-7b done (F115). Open: 7c(b) (the shared layer's hard-coded 1.5 m), then step 10.
-   1-7b. DONE 2026-09-24 (F115): 21 results classified, manifests backfilled, evaluation fixes + pre-registration
-      committed; READY' posture (replaces the keep-out); labels as flat lid plates + scan_label's own view; raw-data
-      record (bag topics, 1 Hz frames, model_io, per-body contact force, run manifest); EUROPA start race; live checks
-      check1/check2. The "battery palm rubs the lid" reading was wrong (see 7c); the shortened battery is kept.
-   7c. Live checks found (F115): (a) placing onto an occupied stand reported success with the container hanging on the
-      open fingers -> settle fails on points between the fingers (openral, replayed on all 9 recorded places, done);
-      (b) leaving the depot spares stand, the rover drove 1.47 m straight into the return stand. Root (user: "fixed-
-      distance behaviour is never allowed in this project"): the shared layer uses one hard-coded 1.5 m, blind to the
-      site, in three places -- navigate_to_feature's default approach point (contracts.yaml standoff_m 1.5; here it
-      lies inside the return stand, Nav2 stopped 0.32 m short on its costmap and hid it), dock_at_feature's corridor
-      entry (move_base_to_pose approach_m 1.5; driven straight with no costmap when the rover is outside the corridor),
-      and the undock the capability server inserts on its own before any navigation from a dock (node.py ~1047,
-      stand_at(..., 1.5); no method asks for it, the methods never see it -- a hidden behaviour). NEXT, in order, each
-      step to the user first: (1) audit the whole shared layer (capability server, contracts, mobile/arm rSkills) for
-      every hard-coded distance, every blind straight-line motion, every action the boundary inserts on its own; list
-      them; (2) replace with values computed from the site survey (e.g. the nearest point on the feature axis where the
-      rover footprint clears every surveyed structure by Nav2's own footprint padding) and make inserted actions
-      explicit; (3) verify offline over every feature in the survey (how many 1.5 m points hit a structure now; zero
-      after). No sim needed for (1)-(3).
-   8. Close the checklist lines this settles (`docs/preflight_checklist.md`), then step 10.
+   STATUS 2026-09-24 night: 1-7c done (F115). Next: step 10.
+   1-7b. DONE (F115): step-9 results classified, READY' posture, labels + scan_label's view, raw-data record, EUROPA
+      start race, live checks check1/check2.
+   7c. DONE (F115): (a) place onto an occupied stand no longer reports success (settle: nothing between the fingers);
+      (b) the shared 1.5 m (approach point, dock corridor entry, inserted undock, PLEXIL plans, EUROPA domain) -> 1.2 m;
+      offline over 28 docking features 1 hit -> 0. The audit's other items stay as they are (user decision).
+   8. [x] B6 closed.
 10. [ ] **Ours development on the held-out ladder** (paper §4, §6.3 trace figure). Generic changes only (§13.1), each
         in `research_findings.md`; development runs never count. §14's six held-out instances, L2-A -> L2-B -> L3 -> L4.
         Ours' `max_steps: 80` may be short for a two-pick case (F114): decide from the first L3 run. Watch: a
         reset reported done before the L2-A re-trip (30 s, false success); requesting approval before LOS in L4.
 10b. [ ] **`docs/preflight_checklist.md` all lines closed** (created 2026-09-24 after the label defect): every paper
-        output's needs -> a check. Nothing is frozen while a line is open. Open now: B6 (7c(b)), B4, C5, C6, D2, D3, E2, E7, F2, F3, G1-G3, R2.
+        output's needs -> a check. Nothing is frozen while a line is open. Open now: B4, C5, C6, D2, D3, E2, E7, F2, F3, G1-G3, R2.
 11. [ ] **Freeze** (paper §5.3): manifests, closed-capability certificates, freeze audit, git tags in all repos; the
         run-farm image + synced home installs are the campaign environment. Then offline retry-budget sensitivity
         (N = 1, 2, 3, 5 on every held-out state).

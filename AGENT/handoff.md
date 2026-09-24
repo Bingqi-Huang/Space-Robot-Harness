@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-24 evening (step 9 + its live checks done, F115; open: the undock collision, then step 10). Read `AGENT/research_content.md` and
+Updated 2026-09-24 night (step 9, its live checks and the 1.5 m blocker done, F115; next: step 10). Read `AGENT/research_content.md` and
 `AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan; §14 = the campaign instances), **`docs/baselines/authoring_spec.md`**
 (the locked baseline specification), then `AGENT/todo.md`, then `docs/research_findings.md` F108-F115.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
@@ -9,12 +9,10 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 ## Heads
 
 - research `main`, openral `master`, SRB `main`: committed 2026-09-24 (F114 fixes). No feature branches/worktrees.
-- **Step 9 done (F115): 18/21, the three failures shared-layer and fixed.** Live checks done (artifacts/runs/check{1,2}):
-  READY' fine, VLM readings right, labels decode in Isaac; place's false success on an occupied stand fixed in openral
-  (settle: nothing left between the fingers; replayed offline on all 9 recorded places). **Open before step 10:** the
-  shared layer's hard-coded 1.5 m (approach point, dock corridor entry, and the undock the capability server inserts
-  unasked) drove the rover into the return stand leaving the depot spares stand (todo 9+.7c, checklist B6, F115).
-  User rule: no fixed-distance / blind behaviour anywhere. Next: audit the shared layer, report the list, then fix. Offline replay of place's settle check: `experiments/analysis/replay_place_settle.py`.
+- **Step 9 done (F115): 18/21, the three failures shared-layer and fixed.** Live checks done (artifacts/runs/check{1,2}).
+  Blocker fixed: the shared 1.5 m (approach point, dock corridor entry, inserted undock; PLEXIL plans, EUROPA domain)
+  drove the rover into the return stand leaving the depot spares stand -> 1.2 m everywhere (offline: 0 hits over 28
+  features). The audit's other items (fixed arm retreats, press fold, unsourced thresholds) stay (user). **Next: step 10.**
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).

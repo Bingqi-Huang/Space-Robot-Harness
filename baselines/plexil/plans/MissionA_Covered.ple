@@ -62,7 +62,7 @@ MissionA_Covered: UncheckedSequence
     }
     endif
   }
-  ToUnit: { PreCondition ok; LibraryCall DriveAndDock(feature = Unit + "_panel/press", standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  ToUnit: { PreCondition ok; LibraryCall DriveAndDock(feature = Unit + "_panel/press", standoff_m = 1.2, approach_m = 1.2, ok = ok); }
   NotReached:
   {
     if (!ok && !held) {

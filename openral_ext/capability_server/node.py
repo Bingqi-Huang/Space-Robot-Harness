@@ -731,7 +731,7 @@ class CapabilityServer(Node):
                                               yaw=b["yaw"] + float(a.get("dyaw_rad", 0.0)), approach_m=0.0))
         if capability in ("navigate_to_feature", "dock_at_feature"):
             p, n = self.feature_geometry(a["feature"])
-            d0, standoff = self.stand_distance(a["feature"]), a.get("standoff_m", 1.5 if capability == "navigate_to_feature" else 0.0)
+            d0, standoff = self.stand_distance(a["feature"]), a.get("standoff_m", 1.2 if capability == "navigate_to_feature" else 0.0)
             self._stand_advice = None
             if capability == "dock_at_feature" and standoff:
                 # The dock is the model's to choose: the rover may back off a panel to free the arm as well as close on it, and
@@ -1051,7 +1051,7 @@ class CapabilityServer(Node):
                 # at -- and of what it just set down there -- and Nav2's planner cannot start from there
                 # (chain_l3_bess_r5: the battery module on the BESS stand, "failed to create plan" 3/3 from the dock).
                 f = self._docked_at
-                x, y, yaw = stand_at(*self.feature_geometry(f), self.stand_distance(f), 1.5)
+                x, y, yaw = stand_at(*self.feature_geometry(f), self.stand_distance(f), 1.2)
                 undock = self.dispatch(handle, "OpenRAL/rskill-procedural-mobile_base-move_base_to_pose",
                                        lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, approach_m=0.0)), 120.0)
             r = undock if undock is not None and not undock.success else self.dispatch(handle, contract["lowers_to"], params, deadline)

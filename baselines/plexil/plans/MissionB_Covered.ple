@@ -46,9 +46,9 @@ MissionB_Covered: UncheckedSequence
     GetPart: { Part = Lookup(ItemDescription(Item, "part")); }
     GetRelease: { Release = Lookup(ItemDescription(Item, "release_constraint")); }
   }
-  ToSource:      { PreCondition ok; LibraryCall DriveAndDock(feature = Source, standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  ToSource:      { PreCondition ok; LibraryCall DriveAndDock(feature = Source, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
   Pick:          { PreCondition ok; LibraryCall PickItem(target = Target, part = Part, item = Item, support = Source, ok = ok); }
-  ToDestination: { PreCondition ok; LibraryCall DriveAndDock(feature = Destination, standoff_m = 1.5, approach_m = 1.5, ok = ok); }
+  ToDestination: { PreCondition ok; LibraryCall DriveAndDock(feature = Destination, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
   Place:         { PreCondition ok; LibraryCall PlaceItem(support = Destination, release_constraint = Release, item = Item, ok = ok); }
   Return:        { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }
   Escalate:

@@ -66,7 +66,7 @@ def mission_a(u):
     f = f"{u}_panel/press"
     initial = [("PowerUnit", (v, "breaker"), "tripped" if v == u else "closed") for v in UNITS]
     initial.append(("PowerUnit", (u, "trip_cause"), "OVERCURRENT"))
-    calls = [call("ToUnit.Nav", "navigate_to_feature", f, 1.5), call("ToUnit.Dock", "dock_at_feature", f, 0.0, 1.5),
+    calls = [call("ToUnit.Nav", "navigate_to_feature", f, 1.2), call("ToUnit.Dock", "dock_at_feature", f, 0.0, 1.2),
              call("Reset.Press", "press", BUTTON[u], f, before=[("PowerUnit", (u, "breaker"), "closed")]),
              call("Return.Stow", "stow", 0.08), call("Return.Return", "navigate_to_pose", 0.0, 0.0, 0.0)]
     escalation = {"ToUnit": f"Could not reach the panel of {u}: a call failed 3 times." + HOLD,
@@ -80,10 +80,10 @@ def mission_b(cargo, dest):
     dst, d = DESTINATION[dest], ITEMS[item]
     initial = [("MissionGoal", ("item",), item), ("MissionGoal", ("source",), src), ("MissionGoal", ("destination",), dst),
                *(("ItemDescription", (item, k), d[k]) for k in ("target", "part", "release_constraint"))]
-    calls = [call("ToSource.Nav", "navigate_to_feature", src, 1.5), call("ToSource.Dock", "dock_at_feature", src, 0.0, 1.5),
+    calls = [call("ToSource.Nav", "navigate_to_feature", src, 1.2), call("ToSource.Dock", "dock_at_feature", src, 0.0, 1.2),
              call("Pick.Ready", "arm_ready", 0.08), call("Pick.Pick", "pick", d["target"], d["part"], item, src),
-             call("ToDestination.Nav", "navigate_to_feature", dst, 1.5),
-             call("ToDestination.Dock", "dock_at_feature", dst, 0.0, 1.5),
+             call("ToDestination.Nav", "navigate_to_feature", dst, 1.2),
+             call("ToDestination.Dock", "dock_at_feature", dst, 0.0, 1.2),
              call("Place.Place", "place", dst, d["release_constraint"], item),
              call("Return.Stow", "stow", 0.08), call("Return.Return", "navigate_to_pose", 0.0, 0.0, 0.0)]
     message = f"Delivering the {item} from {src} to {dst}: a call failed 3 times." + HOLD
