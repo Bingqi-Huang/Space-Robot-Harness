@@ -1,22 +1,19 @@
 # Handoff
 
-Updated 2026-09-24 afternoon (steps 7-8 done, Nav2 freeze fixed (F113); sim speed done; next: step 9). Read `AGENT/research_content.md` and
+Updated 2026-09-24 evening (step 9 + its live checks done, F115; open: the undock collision, then step 10). Read `AGENT/research_content.md` and
 `AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan; §14 = the campaign instances), **`docs/baselines/authoring_spec.md`**
-(the locked baseline specification), then `AGENT/todo.md`, then `docs/research_findings.md` F108-F113.
+(the locked baseline specification), then `AGENT/todo.md`, then `docs/research_findings.md` F108-F115.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
 - research `main`, openral `master`, SRB `main`: committed 2026-09-24 (F114 fixes). No feature branches/worktrees.
-- **Step 9 done (F115): 18/21, the three failures shared-layer and fixed offline.** Commits b21d4db (research) and
-  SRB ab3f0a6, not pushed. Uncommitted, for the user's review: SRB label rule + battery at its own height + regenerated
-  item assets + rebuilt scene; heldout_design §6; look_chain_check.py + chains/look_*.json + jobs/check1-2; F115.
-- **Running at the last update (tmux, `tmux attach -t check1` / `check2`):** check1 = PLEXIL battery with READY',
-  VLM readings (PDU-1 shutter/lamp, habitat occupier), placing onto the occupied habitat stand; check2 = scan-view label
-  photos (decode the saved wrist images offline with zxing, 2x upscale) + the shortened battery's carry (contact
-  windows should be ~0). Run dirs artifacts/runs/check{1,2}; queue.log in each. Then: close the checklist lines, F115
-  results, commit, step 10.
+- **Step 9 done (F115): 18/21, the three failures shared-layer and fixed.** Live checks done (artifacts/runs/check{1,2}):
+  READY' fine, VLM readings right, labels decode in Isaac; place's false success on an occupied stand fixed in openral
+  (settle: nothing left between the fingers; replayed offline on all 9 recorded places). **Open before step 10:** the
+  undock from the depot spares stand drives into the return stand (todo 9+.7c, checklist B6) -- fix to be decided
+  with the user. Offline replay of place's settle check: `experiments/analysis/replay_place_settle.py`.
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
@@ -60,6 +57,9 @@ Pick's region choice answers in 10-115 s (median 61 s); pick/press allow 300 s p
 
 ## Method rules earned the hard way
 
+- Never regenerate SRB assets or the scene (USD, textures, interaction.json) while any simulation runs: Isaac reloads a
+  changed layer and aborts ("unlock() called by non-owning thread") -- three check runs died at the second
+  oru_0417.usdc was rewritten (2026-09-24).
 - Never edit shared skill modules (openral rskill) while runs are live: runners import them lazily, and old+new code
   mixed (`cannot import name 'STOW'`). Capability server / contracts are loaded at run start (safe).
 - Judge a run by `CHECK_EXIT`/`RESULT`/`CHAIN_DONE`; teardown tracebacks and move_group segfaults are shutdown noise.

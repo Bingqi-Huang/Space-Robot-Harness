@@ -26,8 +26,8 @@ on main (AGENT.md §1).
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
        `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
 9+. [ ] **After step 9 ends -- in this order; nothing skipped (decided with the user 2026-09-24):**
-   STATUS 2026-09-24 18:10: 1-6 and 7b done offline (F115; READY' replaces the keep-out, user-approved); 7 running as
-   tmux check1 + check2 (fewer runs: the rest verified offline); then 8, the user's review of the uncommitted part, commit.
+   STATUS 2026-09-24 evening: 1-7 done (F115). Open: 7c (the undock into the return stand, fix to be decided with the
+   user), then step 10.
    1. Read all 21 results; classify failures by the lock's change-control table. Known: `plexil_b_bat_bess` arm_ready
       stopped 3x on contact with the battery (nudged 9 mm / 2.3 deg): a shared-capability gap, not the plan -- docked
       rear to a stand, no camera has measured the item, the planning scene holds only the plinth (0.55 m), the STOW->READY
@@ -70,6 +70,12 @@ on main (AGENT.md §1).
       stand rubs it (both methods, same moment). Candidate fix (user to approve): battery body back to 0.262 m, neck
       height unchanged (longer column); PLEXIL's 9 mm nudge of the battery counted
       nowhere (contact threshold 10 N; collateral excludes the cargo) -> record raw contact forces (raw-data rule).
+      CORRECTED by the live checks: the contact is not the battery; see 7c. The shortened battery is kept (harmless).
+   7c. Live checks found (F115): (a) placing onto an occupied stand reported success with the container hanging on the
+      open fingers -> settle fails on points between the fingers (openral, replayed on all 9 recorded places, done);
+      (b) leaving the depot spares stand, the capability server's undock drives straight out 1.5 m into the return
+      stand (per-body force + ground truth; every battery mission, every method). Fix: TO DECIDE with the user; then
+      check it offline against every dock in the site survey (what lies on each undock line).
    8. Close the checklist lines this settles (`docs/preflight_checklist.md`), then step 10.
 10. [ ] **Ours development on the held-out ladder** (paper §4, §6.3 trace figure). Generic changes only (§13.1), each
         in `research_findings.md`; development runs never count. §14's six held-out instances, L2-A -> L2-B -> L3 -> L4.

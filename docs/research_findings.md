@@ -5391,11 +5391,13 @@ normalized rows (after F114's manifest fix); run manifests backfilled (`run_mani
    is unchanged. 3. `europa_b_oru_pdu3`: the executive died at start and the host waited forever -- a start race
    (F114); not scored.
 
-**Found by the step-9 data, fixed offline:** the battery module's column was 0.10 m (body stretched to 0.367 m in F110,
-neck fixed by F112): the palm rode just above the lid and rubbed it leaving the stand -- 151 contact windows in Ours'
-delivered run, 6 in EUROPA's, 0 for ORU/container carries. Body back to 0.262 m, column 0.206 m (the ORU's); handle
-check 12/12, neck heights unchanged, map footprint unchanged. The evaluator's contact signal was only SRB's 10 N flag
-(the 9 mm push left no trace): SRB now publishes every contact sensor's per-body force magnitude (raw record).
+**Found by the step-9 data:** carries of the battery module had contact windows leaving the depot (151 in Ours'
+delivered run, 6 in EUROPA's, 0 for ORU/container carries). Read at the time as the palm rubbing the battery's lid
+(column 0.10 m, body stretched to 0.367 m in F110), and the body was put back to 0.262 m with the ORU's 0.206 m column
+(handle check 12/12, neck heights and map footprint unchanged; kept, it is harmless). **That reading was wrong** -- see
+the live checks: the contact is the rover's front against the return stand. The evaluator's contact signal was only
+SRB's 10 N flag (the 9 mm push left no trace): SRB now publishes every contact sensor's per-body force magnitude (raw
+record), which is what showed it.
 
 **Labels (Exp II).** Pick's view read 1 of 42 recorded labels (column and palm cover the lid). `scan_label` gets its own
 view (0.45 m from the column foot, 70 deg down; reachable at every §14 stand, >= 35 deg joint slack) and the labels are
@@ -5403,6 +5405,34 @@ flat 40 x 56 mm data plates beside the handle. Offline renders: every ORU view r
 crates, containers read both plates; the battery's domed lid has no flat seat (not an Exp II item). Pick's interface fit
 unchanged on all 21 recorded views. Assets regenerated, scene rebuilt (heldout_design §6).
 
-**Live checks** (`artifacts/runs/check1`, `check2`): READY' at the depot battery; VLM readings of PDU-1's shutter and
-the habitat occupier; placing onto the occupied habitat stand; scan-view label photos in Isaac; the shortened battery's
-carry. Results below when they end.
+**Live checks** (`artifacts/runs/check1`, `check2`; three runs of `look_chain_check.py` and PLEXIL's battery run):
+- READY' at the depot battery: PLEXIL's battery run delivered (placed 5.9 cm along the stand normal off the slot centre,
+  6.3 cm across); the arm readied without touching the docked battery.
+- VLM readings: PDU-1's shutter (drawn) and lamp (red) read correctly. The habitat occupier is not visible from the
+  stowed wrist at the approach pose -- a question for Ours in step 10, not a shared-layer defect.
+- Labels: Isaac wrist photos from the new scan view decode offline (ORU-0417, ORU-0211; zxing, 2x upscale).
+- Battery carry, second run (`check2/look_battery_scan`): placed 14.4 cm along the normal off the slot centre (the other
+  three battery places 4.5-5.9 cm); one run, recorded, not chased.
+- **Placing onto the occupied habitat stand reported success with the item hanging from the tool.** Lowered onto the
+  occupier, the consumables container was stopped at the seated height; on release its handle head was left resting on
+  the open fingers, and the retreat lifted it 0.24 m (its base ended 0.235 m up). The settle check saw it hanging still
+  between the fingers: "nothing moving" -> placed. Fix (openral `procedural_place` settle, shared by every method): after
+  the retreat, count measured points in the space between the fingers (`procedural_pick.in_jaws`, the tool frame's grip
+  space; the opposite of pick's hold check); >= 200 -> fails "the item came away with the tool", no local retry. The
+  settle record now also keeps K and T_base_cam. Replayed offline on all nine recorded places
+  (`experiments/analysis/replay_place_settle.py`, camera pose rebuilt from each bag's /tf, checked against a recorded
+  pick view to the millimetre): the occupied one 8279 points -> fails; the eight normal ones (six step-9, two checks) 0
+  -> pass. Step 9's place outcomes stand. A first attempt (fit the item's interface in the settle view, fail if it is
+  above the seated height) missed it: the hanging handle is nearer than the gripper's own depth band, which the fit
+  excludes, and on another run the fit latched onto an unrelated structure at 0.99 agreement.
+- **The rover drives into the return stand when it leaves the depot spares stand.** Force per body
+  (`check2/look_battery_scan`): front-left steering link 1-458 N for 12.5 s, front-right once 396 N; in
+  `check1/plexil_b_bat_bess` 14 samples up to 634 N, both at the start of the navigation after the battery pick. The only other
+  non-wheel contact in the four runs that record per-body force: arm Link1, once, 19 N, docking at the BESS stand. Ground truth: with no /cmd_vel, the rover drove straight
+  north 1.47 m at 0.14 m/s from the dock (y -14.89) and stopped at y -13.42 with its front against the return stand
+  (centre y -12.5, near edge -12.81; front steering links at y -12.93, wheels 0.145 m radius), sat there 12 s, then
+  Nav2 reversed out. That drive is the capability server's undock (`node.py`, `navigate_*` from a dock): straight out
+  along the feature's axis to 1.5 m beyond the stand distance, with no look at what is there; the depot spares stand
+  and the return stand face the same way 3.5 m apart on one line, so the undock ends inside the return stand. It
+  reported success (3 cm short of its target). Shared by every method; every battery mission (bat_spare starts on the
+  depot spares stand) hits it. Not the ground, not the battery. Fix pending the user's decision.
