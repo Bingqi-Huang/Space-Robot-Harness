@@ -176,6 +176,18 @@ ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.g
 PRESS_DEPTH_M = max(float(p["interface"]["travel_m"]) for p in IX["points"].values() if p.get("type") == "press" and p.get("interface"))
 
 
+def answer(future, what: str, limit_s: float = 120.0):
+    """The response of a service call, however long a loaded host makes it take. A wall-clock cap of a few seconds
+    turned a slow answer into a wrong one -- no IK solution, no stand here (cached for the whole run), free-drive limits
+    left on under a load -- with six runs on one host (F114). Past `limit_s` the service is gone, which is an error."""
+    t0 = time.time()
+    while not future.done():
+        if time.time() - t0 > limit_s:
+            raise RuntimeError(f"{what} did not answer in {limit_s:.0f} s")
+        time.sleep(0.005)
+    return future.result()
+
+
 def horizontal(v) -> np.ndarray:
     v = np.array([v[0], v[1], 0.0])
     return v / np.linalg.norm(v)
@@ -384,7 +396,8 @@ class CapabilityServer(Node):
         self._docked_at: str | None = None  # the feature the rover last docked at, until the base moves again
         self._free_limits: dict | None = None  # the smoother's launch limits, read before the first change
         from openai import OpenAI
-        self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=120)
+        # the gateway answers one view in 10-115 s with six runs at once (F112): 300 s, as pick and press allow (F114)
+        self.vlm = OpenAI(api_key=os.environ["SPACE_LLM_API_KEY"], base_url=VLM_ENDPOINT, timeout=300)
         self.vlm_pool = ThreadPoolExecutor(8)
         self.rskill = ActionClient(self, ExecuteRskill, "/openral/execute_rskill", callback_group=cb)
         self.ik = self.create_client(GetPositionIK, "/compute_ik", callback_group=cb)
@@ -484,15 +497,9 @@ class CapabilityServer(Node):
         from rcl_interfaces.srv import GetParameters, SetParameters
 
         if self._free_limits is None:
-            if not self._smoother_get.wait_for_service(timeout_sec=2.0):
-                return {"carrying": carrying, "changed": False, "why": "the velocity smoother is not answering parameter reads"}
-            fut = self._smoother_get.call_async(GetParameters.Request(names=list(SMOOTHER_LIMITS)))
-            t0 = time.time()
-            while not fut.done() and time.time() - t0 < 3.0:
-                time.sleep(0.02)
-            if not fut.done():
-                return {"carrying": carrying, "changed": False, "why": "the velocity smoother did not answer"}
-            self._free_limits = {n: list(v.double_array_value) for n, v in zip(SMOOTHER_LIMITS, fut.result().values)}
+            res = answer(self._smoother_get.call_async(GetParameters.Request(names=list(SMOOTHER_LIMITS))),
+                         "the velocity smoother's parameter read")
+            self._free_limits = {n: list(v.double_array_value) for n, v in zip(SMOOTHER_LIMITS, res.values)}
         free = self._free_limits
         if carrying:
             p = self.tcp_pose()["position"]
@@ -517,18 +524,10 @@ class CapabilityServer(Node):
             want = dict(free)
         if want == self._drive_limits:
             return {"carrying": carrying, "changed": False}
-        cli = self._smoother_params
-        if not cli.wait_for_service(timeout_sec=2.0):
-            return {"carrying": carrying, "changed": False, "why": "the velocity smoother is not accepting parameters"}
         req = SetParameters.Request(parameters=[
             ParamMsg(name=n, value=ParameterValue(type=ParameterType.PARAMETER_DOUBLE_ARRAY, double_array_value=v))
             for n, v in want.items() if n not in ("lever_m", "gravity_m_s2")])  # evidence, not smoother parameters
-        fut = cli.call_async(req)
-        t0 = time.time()
-        while not fut.done() and time.time() - t0 < 3.0:
-            time.sleep(0.02)
-        if not fut.done():
-            return {"carrying": carrying, "changed": False, "why": "the velocity smoother did not answer"}
+        answer(self._smoother_params.call_async(req), "the velocity smoother's parameter write")
         self._drive_limits = want
         self.get_logger().info(f"drive limits: {'carrying' if carrying else 'free'} {want['max_velocity'][0]} m/s, "
                                f"{want['max_accel'][0]} m/s^2")
@@ -802,13 +801,8 @@ class CapabilityServer(Node):
         q = mat_to_quat(R)
         pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = q
         req.ik_request.timeout.nanosec = 100_000_000
-        f = self.ik.call_async(req)
-        t0 = time.time()
-        while not f.done():
-            if time.time() - t0 > 5.0:
-                return False
-            time.sleep(0.02)
-        return f.result() is not None and f.result().error_code.val == 1
+        res = answer(self.ik.call_async(req), "MoveIt's IK service")
+        return res is not None and res.error_code.val == 1
 
     def arm_reaches(self, d: float, heights: list[float]) -> bool:
         """Standing `d` from a site point, can the arm put its tool where the work is?"""
@@ -841,13 +835,7 @@ class CapabilityServer(Node):
         pp.position.x, pp.position.y, pp.position.z = (float(v) for v in p_base)
         pp.orientation.x, pp.orientation.y, pp.orientation.z, pp.orientation.w = mat_to_quat(R)
         r.timeout.nanosec = 100_000_000
-        f = self.ik.call_async(req)
-        t0 = time.time()
-        while not f.done():
-            if time.time() - t0 > 5.0:
-                return None
-            time.sleep(0.005)
-        res = f.result()
+        res = answer(self.ik.call_async(req), "MoveIt's IK service")
         if res is None or res.error_code.val != 1:
             return None
         js = res.solution.joint_state
@@ -861,13 +849,7 @@ class CapabilityServer(Node):
         req.group_name = "rm_group"
         req.robot_state.joint_state.name = [f"joint{i}" for i in range(1, 8)]
         req.robot_state.joint_state.position, req.robot_state.is_diff = [float(v) for v in q], True
-        f = self.validity.call_async(req)
-        t0 = time.time()
-        while not f.done():
-            if time.time() - t0 > 5.0:
-                return False
-            time.sleep(0.005)
-        res = f.result()
+        res = answer(self.validity.call_async(req), "MoveIt's state-validity service")
         return res is not None and not any("/" not in c.contact_body_1 and "/" not in c.contact_body_2 for c in res.contacts)
 
     def arm_free(self, p_base: np.ndarray, R: np.ndarray) -> bool:

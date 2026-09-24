@@ -5339,3 +5339,33 @@ The `tf` bucket (24 ms) is mostly the lidar and camera refreshes it triggers (~1
 nothing, so that change was reverted. What is left is physics (30), the sensor refreshes and the rclpy publishing:
 further speed would mean changing the ROS bridge, not done. Checked live: `speed_l2a_pdu` (L2-A PDU-1: shutter,
 reset, holds) and `speed_b_consumables` (landing stand -> habitat, delivered) both every call first attempt.
+
+## F114 -- Step 9's first launch stopped on a livelock; an offline sweep for its class found four more (2026-09-24)
+
+**The livelock.** Step 9 started six Ours runs at once. Both Mission B runs stopped at their first `work_stands`
+(where to stand to pick): the query runs the arm's IK over every candidate stand, 25-60 s with six runs on one host,
+and the agent resent any non-model query every 4 s, waiting only on the newest request -- no answer was ever the
+newest (the server answered three times). Single runs on the development machine answered inside 4 s. Now every
+request sent stays a valid answer and the resend interval doubles (`space_runtime/agent.py`). The batch was stopped
+and deleted; step 9 restarts from zero.
+
+**The class** is a limit set where one run had the host to itself: the 20 ms Nav2 ack timeout (F113), the SRB
+episode length (below), this resend. A sweep of every timeout, resend, deadline and time window in Ours, the shared
+boundary, both baselines, the OpenRAL skills and the Nav2/MoveIt configuration (three read-only audits, each
+candidate verified here in code and against the 28 run-farm runs' logs):
+
+| Where | What it did on a loaded host | Now |
+|---|---|---|
+| SRB task episode length (900 s Mission A, 1200 s Mission B, sim) | truncation resets the whole site mid-mission; an Ours covered run at a far unit, and every held-out run, outlasts it | `env.truncate_episodes=false` in both deploy scenes (as `terminate_on_success`, F51) |
+| capability server `ik_reaches` / `ik_solution` / `robot_free` (5 s wall) | a slow MoveIt answer became "no IK solution" -- cached by `job_ok` for the whole run, so a stand or a dock distance could be wrong or "no stand" for every method | `answer()`: waits for the response, raises after 120 s (not cached) |
+| capability server `drive_limits` (2-3 s wall) | a slow velocity-smoother answer silently left free-drive limits on while carrying | same `answer()` |
+| PLEXIL adapter Lookup (5 s wall) | a late `PowerUnit` answer resolves UNKNOWN; an UNKNOWN SkipCondition runs the node, naming a healthy unit the tripped one | 120 s; adapter rebuilt |
+| capability server VLM client (120 s) | the gateway answers in 10-115 s with six runs (F112); ~1 in 10 `observe` calls cut | 300 s as pick/press; the agent resends a model query after 330 s |
+
+Checked and left: the eye-in-hand skills' IK/FK (5 s), planning (60 s) and scene (30 s) waits -- each fails loudly as
+a stage failure, and none fired in the 28 run-farm runs (11 of them six-at-once pick/place/press chains); the 10 s
+result deadline of `rskill-moveit-*` -- only `plan_ee_*` lower to it, both engineering-only; the HAL's 0.5 s joint-state
+staleness -- a warning that heals on the next read (7 in 28 runs); PLEXIL/EUROPA execution waits (none on the
+client side; deadlines on the sim clock in the runner); EUROPA's horizon (plan units, not wall). Both baselines'
+offline checks pass in the run-farm image (PLEXIL 51/51; EUROPA the six step-9 instances). Open for step 10: Ours'
+`max_steps: 80` (a covered Mission A took 43; a two-pick held-out case may need more -- decide from its first run).

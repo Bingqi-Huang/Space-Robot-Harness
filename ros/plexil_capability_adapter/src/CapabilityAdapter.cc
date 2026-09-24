@@ -329,14 +329,16 @@ private:
   }
 
   // Humble's async_send_request returns a std::future: get() exactly once (a second get() threw inside the exec
-  // thread and stalled the plan).
+  // thread and stalled the plan). The wait is as long as a loaded host takes to answer: a Lookup that gives up
+  // resolves UNKNOWN, and an UNKNOWN SkipCondition runs the node -- a 5 s cap could have named a healthy unit the
+  // tripped one with six runs on one host (research repo F114). Past 120 s the boundary is gone.
   bool query(std::string const &q, std::string const &args_json, std::string &value)
   {
     auto req = std::make_shared<QueryCapability::Request>();
     req->query = q;
     req->args_json = args_json;
     auto pending = query_->async_send_request(req);
-    if (pending.future.wait_for(std::chrono::seconds(5)) != std::future_status::ready) return false;
+    if (pending.future.wait_for(std::chrono::seconds(120)) != std::future_status::ready) return false;
     auto response = pending.future.get();
     value = response->value_json;
     return response->success;

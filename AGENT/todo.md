@@ -21,11 +21,13 @@ on main (AGENT.md §1).
        platform level (AMCL bias on the pad ramp) and `chain_b_consumables` passed first try.
 8b. [x] Sim speed: `_get_dones` batched (F113 §7), ~10-15% per run; the ROS bridge publishing left as is.
 9. [ ] Covered live re-runs: PLEXIL, EUROPA, Ours x the seven L0/L1 instances of heldout_design §14. One run
-       each; failures classified by the lock's change-control table.
+       each; failures classified by the lock's change-control table. First launch stopped on the F114 livelock
+       (deleted); restart in tmux `step9` on the user's go (see handoff).
        Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
        `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
 10. [ ] **Ours development on the held-out ladder** (paper §4, §6.3 trace figure). Generic changes only (§13.1), each
-        in `research_findings.md`; development runs never count. §14's six held-out instances, L2-A -> L2-B -> L3 -> L4. Watch: a
+        in `research_findings.md`; development runs never count. §14's six held-out instances, L2-A -> L2-B -> L3 -> L4.
+        Ours' `max_steps: 80` may be short for a two-pick case (F114): decide from the first L3 run. Watch: a
         reset reported done before the L2-A re-trip (30 s, false success); requesting approval before LOS in L4.
 11. [ ] **Freeze** (paper §5.3): manifests, closed-capability certificates, freeze audit, git tags in all repos; the
         run-farm image + synced home installs are the campaign environment. Then offline retry-budget sensitivity

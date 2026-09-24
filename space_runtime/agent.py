@@ -55,10 +55,13 @@ REPO = Path(__file__).resolve().parents[1]
 #: call after discovery, and a read-only query is free to repeat -- but one timer served two unrelated things: how
 #: long a lost response costs, and how long the slowest legitimate answer takes. At 180 s every run paid three
 #: minutes at the start for one dropped `site_map`, with the rover standing still (F90). What a query actually does
-#: is in its own contract: the three that go out to the vision model declare `uses_model`, and nothing else can take
-#: longer than the boundary needs to read its own state.
-QUERY_RESEND_S = 180.0      # a query answered by the remote vision model
-QUERY_RESEND_FAST_S = 4.0   # a query the boundary answers from its own state
+#: is in its own contract: the three that go out to the vision model declare `uses_model`; the rest are answered from
+#: the boundary's own state -- but not always fast: `work_stands` runs the arm's IK over every candidate stand, 25-60 s
+#: with six runs on one host. Resending every 4 s and waiting only on the newest request then never took an answer at
+#: all (step 9's first Mission B runs, F114). So every request sent stays a valid answer, and the resend interval
+#: doubles: a lost response still costs seconds, a slow answer is not buried under copies of itself.
+QUERY_RESEND_S = 330.0      # a query answered by the remote vision model (the boundary allows the model 300 s)
+QUERY_RESEND_FAST_S = 4.0   # first resend of a query the boundary answers from its own state; doubles each time
 
 
 def wait(future):
@@ -111,14 +114,15 @@ class Agent:
         # run ob1 hung 30 min on site_map) is simply sent again
         req = QueryCapability.Request(query=name, args_json=json.dumps(args))
         resend = QUERY_RESEND_S if (CONTRACTS["queries"].get(name) or {}).get("uses_model") else QUERY_RESEND_FAST_S
-        future = self.qry.call_async(req)
-        while not future.done():
+        futures = [self.qry.call_async(req)]
+        while not any(f.done() for f in futures):
             t = time.time()
-            while not future.done() and time.time() - t < resend:
+            while not any(f.done() for f in futures) and time.time() - t < resend:
                 time.sleep(0.05)
-            if not future.done():
-                future = self.qry.call_async(req)
-        r = future.result()
+            if not any(f.done() for f in futures):
+                futures.append(self.qry.call_async(req))
+                resend *= 2
+        r = next(f for f in futures if f.done()).result()
         return dict(success=r.success, value=json.loads(r.value_json) if r.success else None, failure_reason=r.failure_reason)
 
     def execute(self, name: str, args: dict) -> dict:

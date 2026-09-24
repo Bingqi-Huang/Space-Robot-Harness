@@ -8,7 +8,11 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 
 ## Heads
 
-- research `main`, openral `master`, SRB `main`: all committed and pushed 2026-09-24. No feature branches/worktrees.
+- research `main`, openral `master`, SRB `main`: committed 2026-09-24 (F114 fixes). No feature branches/worktrees.
+- **Step 9 is not running**: its first launch (14:38) stopped on the F114 livelock and was deleted; restart only on the
+  user's go. Launch: `tmux new-session -d -s step9 "experiments/launch/lunar_base_d0/farm_queue.sh
+  experiments/launch/lunar_base_d0/jobs/step9_covered.txt artifacts/runs/step9"` (`tmux attach -t step9`; it outlives
+  the Claude session). 21 runs, Ours first; progress in `artifacts/runs/step9/queue.log`; containers `rf-<run name>`.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
 - Development runs on `pro6000` (host astroeng, uid 1007). The dev machine (z890) syncs only through origin.
@@ -64,7 +68,8 @@ Pick's region choice answers in 10-115 s (median 61 s); pick/press allow 300 s p
 
 ## Running it
 
-Ours: `D0_CHECK=ours_mission_check.py OURS_MISSION={a,b}`; PLEXIL: `D0_CAPABILITY_SERVER=1
+Queued batches: `tmux new-session -d -s <name> "experiments/launch/lunar_base_d0/farm_queue.sh <jobs file> <run root>"`
+(one worker per GPU; a jobs line = `<run name> <env assignments>`). Ours: `D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py`; PLEXIL: `D0_CAPABILITY_SERVER=1
 D0_CHECK=d0_plexil_mission_{a,b}_check.py`; EUROPA: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_{a,b}_check.py
 D0_SCENE=scenes/deploy/srb_lunar_base_mission_{a,b}.yaml`; Mission B cargo/destination via `D0_ENV="env.cargo=...
 env.destination=..."` (both baselines read the same goal). Scripted chains: `D0_CAPABILITY_SERVER=1
