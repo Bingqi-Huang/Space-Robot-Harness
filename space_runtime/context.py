@@ -10,6 +10,7 @@ import json
 from openral_reasoner.context import ContextRenderer
 
 from openral_ext.capability_server.contracts import CONTRACTS
+from experiments.operator_console.console import DECISION_TIME_S
 from space_context import link
 
 
@@ -72,11 +73,17 @@ def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = N
                   f"up; Earth sets below the site's horizon in {ls['closes_in_s']:.0f} s; one-way delay {ls['one_way_delay_s']} s"
                   if ls["earth_visible"] else
                   f"down (Earth below the horizon); it reopens in {ls['reopens_in_s']:.0f} s; a message sent now waits for it"),
+              # the published ground protocol (docs/heldout_design.md §8), a fact of the operator channel like its delay
+              f"mission control decides a request {DECISION_TIME_S:.0f} s of mission time after it arrives",
               f"unavailable capabilities: {_j(f['unavailable']) if f['unavailable'] else 'none'}",
               f"active faults: {_j({k: v for k, v in f['fdir'].items() if v['active']}) or 'none'}",
               "authority: " + ", ".join(sorted({c['authority_class'] for c in CONTRACTS['effects'].values()})) + " operations are autonomous"
               + "".join(f"; except {r['name']}: {', '.join(r['applies_to'])} on a {r['target_role']} whose unit reports "
                         f"{_j(r['when_unit'])} is {r['outcome']} ({r['why']})" for r in authority_rules or [])
+              # how an approval is obtained, for any rule (l4_pdu1, step 10 round 2: asked in prose with nothing held,
+              # which mission control can only answer as a request with no procedure)
+              + ("; an approval is given for one call on one target: propose the call itself, the guard holds it (listed "
+                 "here), and a request_operator sent while it is held carries it to mission control" if authority_rules else "")
               + (f"; operator approvals on record: {_j(f['approvals'])}" if f["approvals"] else "")
               + (f"; held for mission control's approval (send request_operator; the request carries these): "
                  f"{_j([{k: p[k] for k in ('capability', 'target')} for p in f['pending_approvals']])}" if f["pending_approvals"] else "")]
