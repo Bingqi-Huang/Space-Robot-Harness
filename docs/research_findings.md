@@ -5435,4 +5435,8 @@ unchanged on all 21 recorded views. Assets regenerated, scene rebuilt (heldout_d
   along the feature's axis to 1.5 m beyond the stand distance, with no look at what is there; the depot spares stand
   and the return stand face the same way 3.5 m apart on one line, so the undock ends inside the return stand. It
   reported success (3 cm short of its target). Shared by every method; every battery mission (bat_spare starts on the
-  depot spares stand) hits it. Not the ground, not the battery. Fix pending the user's decision.
+  depot spares stand) hits it. Not the ground, not the battery. The same blind 1.5 m is also navigate_to_feature's
+  default approach point (here inside the return stand; Nav2 stopped 0.32 m short on its costmap, which hid it) and
+  dock_at_feature's corridor entry (driven straight when the rover starts outside the corridor). User rule: no
+  fixed-distance or blind behaviour in the project; the undock is also a hidden action no method asked for. Next: audit
+  the shared layer for all such behaviour, replace with survey-computed values (todo 9+.7c).

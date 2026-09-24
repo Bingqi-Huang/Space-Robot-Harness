@@ -12,8 +12,9 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 - **Step 9 done (F115): 18/21, the three failures shared-layer and fixed.** Live checks done (artifacts/runs/check{1,2}):
   READY' fine, VLM readings right, labels decode in Isaac; place's false success on an occupied stand fixed in openral
   (settle: nothing left between the fingers; replayed offline on all 9 recorded places). **Open before step 10:** the
-  undock from the depot spares stand drives into the return stand (todo 9+.7c, checklist B6) -- fix to be decided
-  with the user. Offline replay of place's settle check: `experiments/analysis/replay_place_settle.py`.
+  shared layer's hard-coded 1.5 m (approach point, dock corridor entry, and the undock the capability server inserts
+  unasked) drove the rover into the return stand leaving the depot spares stand (todo 9+.7c, checklist B6, F115).
+  User rule: no fixed-distance / blind behaviour anywhere. Next: audit the shared layer, report the list, then fix. Offline replay of place's settle check: `experiments/analysis/replay_place_settle.py`.
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
@@ -60,6 +61,10 @@ Pick's region choice answers in 10-115 s (median 61 s); pick/press allow 300 s p
 - Never regenerate SRB assets or the scene (USD, textures, interaction.json) while any simulation runs: Isaac reloads a
   changed layer and aborts ("unlock() called by non-owning thread") -- three check runs died at the second
   oru_0417.usdc was rewritten (2026-09-24).
+- No hard-coded distances or blind straight-line motions in the shared layer, and no action the boundary inserts
+  on its own without the method seeing it (user, 2026-09-24; the 1.5 m undock into the return stand, F115).
+- Name the other body of a contact only from ground-truth poses + the site layout, never from the link name
+  (F115: "palm rubs the battery" and "steering link on the ground" were both wrong).
 - Never edit shared skill modules (openral rskill) while runs are live: runners import them lazily, and old+new code
   mixed (`cannot import name 'STOW'`). Capability server / contracts are loaded at run start (safe).
 - Judge a run by `CHECK_EXIT`/`RESULT`/`CHAIN_DONE`; teardown tracebacks and move_group segfaults are shutdown noise.
