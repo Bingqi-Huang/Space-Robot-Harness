@@ -8,9 +8,11 @@ skill's own verdict is not evidence), with the jaw encoder and the arm kinematic
 """
 import math
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
+from openral_rskill.procedural_pick import IN_JAWS_MIN_POINTS, in_jaws
 
 BASE_NAV = {"navigate_to_pose", "navigate_to_feature"}
 BASE_DOCK = {"dock_to_pose", "dock_at_feature"}
@@ -122,7 +124,8 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         st, contact = sk.get("settle"), sk.get("contact")
         state = jaw_state(arm["jaw_rad"], cfg)
         m = dict(effect="item_placed", support=args["support"], jaw=state, jaw_rad=arm["jaw_rad"],
-                 source="jaw encoder + arm kinematics (tool clear of the release point) + wrist images after the retreat (flow recomputed here)")
+                 source="jaw encoder + arm kinematics (tool clear of the release point) + wrist images and depth after the retreat "
+                        "(flow and the points between the open fingers recomputed here)")
         # What the skill got as far as, kept whether or not it finished: a skill that let go and then stopped in its retreat
         # (gc1) leaves the model asking a camera whether the item is there, when the record says where it was let go
         if contact:
@@ -135,8 +138,15 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
             # a distance, not a pixel count: `settle_moved_mm` at the region's own depth through the camera's focal length
             limit = st["fx"] * cfg["place"]["settle_moved_mm"] / 1000.0 / depth if n else float("nan")
             still = n >= cfg["hold"]["min_pixels"] and flow < limit
-            m.update(tool_clear_of_release_m=round(clear, 3), image_flow_px=round(flow, 2), item_still=bool(still))
-            m["holds"] = state == "open" and clear >= cfg["place"]["min_clear_m"] and bool(still)
+            # still and clear is not enough: an item caught on the open fingers hangs still from the retreated tool
+            # (step10_r1/ours_l2b_habitat: "item_placed HOLDS" with the container on the fingers, dropped at the stow).
+            # The settle frame's own depth, counted inside the fingers' grip space; absent when the skill stopped first.
+            between = (in_jaws(SimpleNamespace(depth=np.load(st["before_depth"]), K=np.array(st["K"])), np.array(st["T_tool_cam"]))
+                       if "T_tool_cam" in st else None)
+            m.update(tool_clear_of_release_m=round(clear, 3), image_flow_px=round(flow, 2), item_still=bool(still),
+                     points_between_open_fingers=between)
+            m["holds"] = (state == "open" and clear >= cfg["place"]["min_clear_m"] and bool(still)
+                          and between is not None and between < IN_JAWS_MIN_POINTS)
         else:
             m["holds"] = False
         out.append(m)

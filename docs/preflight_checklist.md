@@ -29,7 +29,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | B3 | all runs | Nothing resets or truncates a run (episode length, auto-reset) | config read-back | DONE (F114) |
 | B5 | Exp I L2-B baselines | Placing onto an occupied support fails cleanly (no stacking, the occupier not knocked off): the path both baselines take at L2-B, never executed | FIXED 2026-09-24: the place reported success with the container hanging on the open fingers (lifted 0.24 m by the retreat); settle now fails when points remain between the fingers; replayed offline on all 9 recorded places, 1 fails / 8 pass (F115) |
 | B6 | Exp I unintended contact | No shared motion drives the rover into a structure: every method's contact count is its own | per-body contact force on the recorded runs; offline sweep of the rover hull along every docking feature's axis | DONE 2026-09-24: the shared 1.5 m (approach point, dock corridor entry, inserted undock; also in the PLEXIL plans and the EUROPA domain) -> 1.2 m everywhere. Offline over all 28 docking features: at 1.5 m 1 hit (depot spares stand -> return stand at 1.38 m), at 1.2 m 0; smallest hull gap 0.18 m; every end point a valid Nav2 pose. PLEXIL 51/51, EUROPA 6/6 offline; live `verify12` (PLEXIL battery run): delivered, no non-wheel contact > 1 N (F115) |
-| B4 | Exp I secondary metric | Physical-layer failures logged per leg, attributable to a capability, not a method | rows.py field on real runs | PARTIAL: failure_kind/reason come from the shared boundary's log for every method; no failed call yet in step 9 to test on |
+| B4 | Exp I secondary metric | Physical-layer failures logged per leg, attributable to a capability, not a method | rows.py field on real runs | PARTIAL 2026-09-25: the round-1 press locate failures carry failure_kind + reason from the shared boundary; per-leg table from rows.py still to check |
 
 ## C. Methods
 
@@ -39,8 +39,8 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | C2 | Exp I baselines | EUROPA: every §14 covered instance solved and dispatched | `run_offline_mission_{a,b}.sh` in the image | DONE (6/6, 2026-09-24) |
 | C3 | Exp I held-out validity | On each §14 held-out state, both baselines end in "detected -> escalated", never solve it (a solve would make the case covered for that baseline) | plexiltest + sim_boundary with each held-out state | DONE 2026-09-24: 6 x 2 escalate -> hold at N=3; N=1,2,5 same outcome (representative cases); none solved. The offline stand-ins model occupancy only as a failed place and report every trip as OVERCURRENT (does not change either baseline's decisions) |
 | C4 | Exp I L0/L1 | All three methods complete the seven covered instances live | step 9 | DONE 2026-09-24: 18/21; the three failures shared-layer, fixed (F115) |
-| C5 | Exp I held-out | Ours solves the six held-out instances with generic changes only | step 10 | TODO |
-| C6 | Exp I | Ours' step budget (`max_steps` 80) fits the longest held-out case | from the first L3 run | ESTIMATE 2026-09-24: step 9 used 2.2 steps per physical call (17-21 steps, 5-9 calls); L3/L4 ~17 calls -> ~40 steps; waiting for ground is one step. Kept at 80; confirm on the first L3 run |
+| C5 | Exp I held-out | Ours solves the six held-out instances with generic changes only | step 10 | IN PROGRESS: round 1 4/6 (L2-A x2, L3 x2); L2-B (verifier false place) and L4 (no link context) fixed generically, round 2 (F117) |
+| C6 | Exp I | Ours' step budget (`max_steps` 80) fits the longest held-out case | from the first L3 run | DONE 2026-09-25: L3 BESS 45, L3 ISRU 44, L2-A 29/42 steps (F117) |
 | C7 | fairness | Same mission goal to all three (brief / formal goal equivalence per instance) | read the three inputs per §14 instance | DONE 2026-09-24: no method told the true unit; Mission B item/source/destination identical for all three |
 
 ## D. Operator protocol and space context
@@ -48,7 +48,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
 | D1 | L4 | Flight-rule table grants PDU-3 -> PDU-1, denies other donors; HOLD for no-procedure; 300 s | console offline cases | DONE 2026-09-24: PDU-3 -> PDU-1 GRANT, ISRU power ORU -> PDU-1 GRANT (also non-critical), PDU-2 donor DENY, no procedure -> HOLD |
-| D2 | L4, ALFUS | The Earth-set falls inside an L4 run as it will actually run (mission time at request) | compare the SPICE epoch with L4 run timing | FIXED 2026-09-24: 45 min fell after every run (covered 5-12 min of mission time, L4 ~25 est.); Earth-set now 925 s after the start (three request-answer cycles of the protocol), profile regenerated. Check on the first L4 run |
+| D2 | L4, ALFUS | The Earth-set falls inside an L4 run as it will actually run (mission time at request) | compare the SPICE epoch with L4 run timing | PARTIAL 2026-09-25: Earth set at 925 s inside every round-1 run (all ran 1000-1200 s); L4's request timing still to see (round 1 never asked, F117) |
 | D3 | ALFUS metrics | interaction_start/end, authority level, request/grant events logged for all three methods | `evaluation/interaction.py` on real runs | OPEN: covered runs raise no request, so the path is still exercised only on the synthetic L4; the first held-out run with a request (step 10) checks it; a queued escalation now counts as re-authoring required (console + interaction.py, offline-checked) |
 
 ## E. Evaluation and metrics (pre-registered before the campaign, §15)

@@ -100,7 +100,7 @@ class Agent:
                                         timeout_s=rc["timeout_s"], thinking=rc["thinking"], run_dir=run_dir)
         self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
                                  system_prompt=(REPO / "space_runtime/playbook.md").read_text())
-        self.renderer = HarnessRenderer(self.store, self.max_steps, self.guard.target_authority)
+        self.renderer = HarnessRenderer(self.store, self.max_steps, self.guard.target_authority, lambda: self.sim_t)
         self.palette = ToolPalette(execute_rskill_ids=frozenset([*(k for k, c in CONTRACTS["effects"].items() if not c.get("engineering")),
                                                                  *(k for k, c in CONTRACTS["queries"].items() if not c.get("engineering")),
                                                                  SET_TASK_STATUS, DECOMPOSE, WAIT]))

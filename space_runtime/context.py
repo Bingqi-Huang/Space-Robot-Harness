@@ -10,13 +10,15 @@ import json
 from openral_reasoner.context import ContextRenderer
 
 from openral_ext.capability_server.contracts import CONTRACTS
+from space_context import link
 
 
 def _j(v) -> str:
     return json.dumps(v, separators=(",", ":"))
 
 
-def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = None, authority_rules: list[dict] | None = None) -> str:
+def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = None, authority_rules: list[dict] | None = None,
+           mission_t: float = 0.0) -> str:
     f = facts
     out = [f"## MISSION (from mission control)\n{f['mission']['text']}",
            f"## STEP\n{step} of the mission step budget {max_steps}"]
@@ -62,7 +64,15 @@ def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = N
     if len(f["reasoner_history"]) > 1:
         out.append("## REASONER CONTINUITY\nthis record was continued by another reasoner session: "
                    + " -> ".join(f"{r['model']} (from record #{r['seq']})" for r in f["reasoner_history"]))
-    status = [f"unavailable capabilities: {_j(f['unavailable']) if f['unavailable'] else 'none'}",
+    # the operating context every step (research_content §3.4.3, §4.5): mission time and the Earth link are facts of the
+    # run, not answers to a question the agent has to think of asking (l4_pdu1, step 10 round 1: never asked, never knew)
+    ls = link.state(mission_t)
+    status = [f"mission time: {mission_t:.0f} s since the mission started",
+              f"link to mission control ({ls['link']}): " + (
+                  f"up; Earth sets below the site's horizon in {ls['closes_in_s']:.0f} s; one-way delay {ls['one_way_delay_s']} s"
+                  if ls["earth_visible"] else
+                  f"down (Earth below the horizon); it reopens in {ls['reopens_in_s']:.0f} s; a message sent now waits for it"),
+              f"unavailable capabilities: {_j(f['unavailable']) if f['unavailable'] else 'none'}",
               f"active faults: {_j({k: v for k, v in f['fdir'].items() if v['active']}) or 'none'}",
               "authority: " + ", ".join(sorted({c['authority_class'] for c in CONTRACTS['effects'].values()})) + " operations are autonomous"
               + "".join(f"; except {r['name']}: {', '.join(r['applies_to'])} on a {r['target_role']} whose unit reports "
@@ -92,9 +102,9 @@ def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = N
 class HarnessRenderer(ContextRenderer):
     """OpenRAL's renderer slot filled with the harness context (ReasonerCore calls `render` each tick)."""
 
-    def __init__(self, store, max_steps: int, authority_rules: list[dict]):
+    def __init__(self, store, max_steps: int, authority_rules: list[dict], clock):
         super().__init__()
-        self.store, self.max_steps, self.step, self.authority_rules = store, max_steps, 0, authority_rules
+        self.store, self.max_steps, self.step, self.authority_rules, self.clock = store, max_steps, 0, authority_rules, clock
 
     def render(self, *, world_state=None) -> str:
-        return render(self.store.facts, self.step, self.max_steps, self.store.events, self.authority_rules)
+        return render(self.store.facts, self.step, self.max_steps, self.store.events, self.authority_rules, self.clock())

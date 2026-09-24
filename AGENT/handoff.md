@@ -13,9 +13,10 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
   Blocker fixed: the shared 1.5 m (approach point, dock corridor entry, inserted undock; PLEXIL plans, EUROPA domain)
   drove the rover into the return stand leaving the depot spares stand -> 1.2 m everywhere (offline: 0 hits over 28
   features; live verify12: delivered, no non-wheel contact). The audit's other items (fixed arm retreats, press fold, unsourced thresholds) stay (user).
-- **Step 10 round 1 ready (F116)**: `tmux new-session -d -s step10 "experiments/launch/lunar_base_d0/farm_queue.sh
-  experiments/launch/lunar_base_d0/jobs/step10_r1.txt artifacts/runs/step10_r1"` (Ours x the six held-out instances).
-  Earth now sets 925 s of mission time after the start (was 45 min, after every run).
+- **Step 10 (F116-F117)**: round 1 (`artifacts/runs/step10_r1`) 4/6 -- L2-A x2, L3 x2 solved; L2-B failed on Ours'
+  place verifier (hanging item judged placed), L4 never asked mission control (no link state in the snapshot); both fixed
+  generically. Round 2: `tmux new-session -d -s step10 "experiments/launch/lunar_base_d0/farm_queue.sh
+  experiments/launch/lunar_base_d0/jobs/step10_r2.txt artifacts/runs/step10_r2"`. Earth sets 925 s after the start.
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).

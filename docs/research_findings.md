@@ -5452,3 +5452,22 @@ unchanged on all 21 recorded views. Assets regenerated, scene rebuilt (heldout_d
 **Scoring.** An escalation sent after Earth-set was logged only as `link_queued`, so the run was scored as not needing re-authoring. The console now logs the request's type and held calls with every queued message, and `evaluation/interaction.py` counts a queued escalation as `ground_reauthoring_required` (offline: a synthetic queued escalation -> true). Pre-registration §3 amended.
 
 **Held-out places, offline.** Place's new settle rule (F115) replayed on the 13 places of the step-8 chains, bays and cradles included (PDU-1/PDU-2 bays, BESS cradle, ISRU filter cradle, shelves, stands): 0 points between the fingers, all pass. **Ours' starting point** (playbook, tools, contracts, guard, config) read for situation hints: none; observe's example question "whether a place is occupied" (dating from 2026-09-17, but matching L2-B) removed. Step budget kept at 80 (estimate ~40 for L3/L4; waiting for ground is one step).
+
+## F117 -- Step 10 round 1: four of six held-out instances solved; the two failures were Ours' own harness (2026-09-25)
+
+Ours x §14's six held-out instances, one run each, six at once (`artifacts/runs/step10_r1`; development runs, never scored). Pictures first, then the record; contact partners from ground truth.
+
+| Instance | Result | Steps | What happened |
+|---|---|---|---|
+| L2-A PDU-1 (radiator shutter drawn) | success | 29 | read OVERTEMP from telemetry, pressed the shutter button, then the reset; held to the end |
+| L2-A BESS (HVAC shutter drawn) | success | 42 | shutter button, reset, held; a second shutter press failed at locate (button not in the wrist view) and was dropped |
+| L2-B habitat (stand occupied) | **fail, false completion** | 23 | place failed correctly ("came away with the tool": 9021 points between the fingers) but Ours' verifier said item_placed HOLDS; the model saw the conflict, checked -- wrist view showed the handle still in the jaws, the front camera the occupier on the stand -- and took the verified effect; stowed with the container on the open fingers: it swung, touched the chassis (10 N) and fell to the ground (truth), and the report claimed delivery |
+| L3 BESS (module fault) | success | 45 | faulty module out to the BESS stand, spare from the depot spares stand (1.2 m undock clean) into the cradle, reset. The carried battery touched the arm's own Link1 once (32 N) on the turn out of the depot (truth: the held item; nearest structure on the rover's other side) |
+| L3 ISRU (filter clogged) | success | 44 | filter out to the return stand, spare in, reset |
+| L4 PDU-1 (cannibalize) | **fail, no request** | 26 | reset, re-trip ORU_SELFTEST_FAIL; then ~20 steps resolving "bay looks empty" (its front-camera views framed the neighbouring shelf) vs telemetry/manifest; never asked mission control; Earth set at 925 s; stopped at 1063 s of mission time (agent SIGINT, run torn down normally). Median model step 88 s wall (others 7-24 s) |
+
+**Two generic fixes (Ours' harness; no instance named, true for every mission):**
+1. *Verification of a place* (`space_runtime/verification.py`): `item_placed` also requires the settle frame's points between the open fingers below the skill's floor (`IN_JAWS_MIN_POINTS`), recounted by the verifier from the recorded depth (openral `procedural_place` now records the camera-in-tool transform with the settle frame). A still item hanging from the retreated tool is not placed, whatever the flow says. Offline on round 1's five places: L2-B 9025 points -> does not hold; the four L3 places 0 -> hold.
+2. *Operating context* (`space_runtime/context.py`): every step's OPERATING STATUS carries the mission time and the Direct-with-Earth link state (up / sets in s, delay; or down / reopens in s), from `space_context.link` -- the same facts the space_context query returns, now part of the snapshot as research_content §3.4.3/§4.5 specify, instead of an answer the agent has to think of asking (L4 never asked). Facts only, no advice. Rendered offline at 300 s and 1000 s.
+
+Checklist: C6 closed (longest held-out 45 steps of 80); D2: Earth sets inside every run (all ran past 925 s); B4: failed calls carry kind + reason (the two press locate failures). Round 2: L2-B and L4 only.
