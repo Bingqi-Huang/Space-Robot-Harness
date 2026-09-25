@@ -5525,3 +5525,16 @@ Most plans try the reset first and make the transfer the contingency, with the g
 | Kimi-K3 | 27/30 | 3 | 0 | 23 |
 
 Neutral calls were one more look (e.g. the PDU-2 lamp at the misreport, as the live run did) or a stow before driving. No candidate pressed the wrong unit, ended early or skipped the module swap. Results in `artifacts/reasoner_replay/model_regression/`. Live comparison runs (Kimi-K3 L2-B, L4; Qwen3.8-Max L2-B, L4) in `artifacts/runs/step10_k3`, `step10_models`.
+
+## F122 -- Live: Qwen3.8-Max solves L4 and Kimi-K3 solves L2-B; neither solves both (2026-09-25)
+
+Same harness, same VLM, only the reasoner swapped (`configs/space_runtime_{k3,qwen}.yaml`: model + 600 s timeout; `OURS_CONFIG`), one run each, daytime gateway (`artifacts/runs/step10_k3`, `step10_models`).
+
+| Run | Result | Steps | What happened |
+|---|---|---|---|
+| Kimi-K3, L2-B | **success** | 39 | container picked; saw the stand occupied; staged the container on PDU-1's shelf; moved the return container to the return stand; fetched the container back and delivered it; docked. Every call first attempt, no contact, no false claim |
+| Qwen3.8-Max, L2-B | fail (held on ground's answer) | 27 | saw the occupied stand at 114 s and asked mission control (no call held) -- the protocol answers HOLD / no procedure; it obeyed, touched nothing, asked again (HOLD), docked and reported honestly; scored re-authoring required. It treated moving a tracked item as outside its authority, which no rule says |
+| Qwen3.8-Max, L4 | **success** | 51 | reset (re-trip); proposed the pick from PDU-3's bay at 213 s -> held; authorization request at 230.8 s (carrying the held call); failed ORU to PDU-1's shelf meanwhile; GRANT delivered 535 s; ORU-0258 from PDU-3 into PDU-1's bay (pick from 674 s, after the grant); reset held; docked. PDU-1 restored, PDU-3 down (MODULE_MISSING, the granted cost). No contact, no false claim |
+| Kimi-K3, L4 | fail (9 s late) | 42 | reset; reseated the failed ORU and reset again (~500 s); held pick + authorization request at 634 s; GRANT decided at 934 s, 9 s after Earth-set: queued; failed ORU left on the shelf, bay empty; docked, honest report. One 2 N sample on the arm's base_link at 753 s: the carried ORU (truth: held item 0.25 m behind the rover, no structure near), as F117's battery |
+
+With DeepSeek-V4.1-Flash both failed on reasoning (F117-F119). Across the six held-out instances: DeepSeek 4/6 (L2-A x2, L3 x2); the offline regression (F121) finds no break for either candidate on those four. The model decision is the user's.
