@@ -15,3 +15,7 @@ bash -lc "source /opt/ros/humble/setup.bash && nice -n 19 python3 experiments/an
 - `replay_pick_find.py` -- replays every recorded pick `find` stage against the current interface fit.
 
 Runs need `D0_BAG="<topics>"` to have a bag.
+
+- `bag_contacts.py <run>/bag`: non-wheel contact windows (per-body force) from a finished bag.
+- `bag_truth_at.py <run>/bag <t> <frame substrings...>`: ground-truth poses around bag time t (who touched what).
+- `run_summary.py <run>`: one page per Ours run -- verdict, steps, calls, operator exchanges with mission and wall time.
