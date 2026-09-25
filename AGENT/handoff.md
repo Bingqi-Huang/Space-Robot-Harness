@@ -15,7 +15,8 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
   features; live verify12: delivered, no non-wheel contact). The audit's other items (fixed arm retreats, press fold, unsourced thresholds) stay (user).
 - **Step 10 stopped at 4/6 (F116-F118)**: runs `artifacts/runs/step10_r{1,2,3}`. Solved L2-A x2, L3 x2; L2-B and L4
   unsolved on the model's reasoning after three generic fixes (place verifier; time/link/decision time/approval
-  mechanics in the snapshot). Night-time reasoner latency 170-330 s/step with 180 s timeouts. User decides next.
+  mechanics in the snapshot). L4 round 4 by day (51 s/step): still no transfer idea. L2-B offline (F119): Kimi-K3
+  plans the relocation 4/6, the live model places onto the occupier. User decides next (model choice).
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).

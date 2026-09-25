@@ -5498,3 +5498,5 @@ User request. `experiments/reasoner_replay/l2b_occupied.py`: at the two decision
 | GLM-5.3-Flash | 2/6 | 1/6 | 3/6 ("proceeding autonomously" before Earth-set) | 185-431 |
 
 The live failure reproduces with the live model; Kimi-K3 never placed onto the occupier and wrote the complete relocation plan in 4 of 6. One-step offline evidence only: it shows the idea, not its execution. A model change is a method change (every development run before it is not comparable) -- the user's decision.
+
+**L4 round 4 (user: daytime gateway, unchanged; `artifacts/runs/step10_r4`).** Model steps 3-125 s (mean 51 s; night 170-330 s). Still fail: it drove to the depot to look at the spares, concluded "no serviceable spare on site, the swap is infeasible", pressed the reset again (re-trip) and kept inspecting PDU-1's bay; never considered another unit's module, never asked mission control; 31 steps, stopped at ~1300 s of mission time (agent SIGINT, normal teardown), no contact, no false claim. Speed was not the cause. DeepSeek-V4.1-Flash on L4 across rounds 2-4: once thought of the transfer (too late, in prose), twice never did.
