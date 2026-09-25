@@ -5513,3 +5513,15 @@ The live failure reproduces with the live model; Kimi-K3 never placed onto the o
 | Kimi-K3 | 2 | 1 pick (after the re-trip) |
 
 Most plans try the reset first and make the transfer the contingency, with the guard-held pick and the request -- Qwen's even names the 925 s Earth-set and the 300 s decision. **What the model sees** (checked): telemetry gives each unit's load, criticality (PDU-1 crew-critical, PDU-3 and ISRU non-critical), energized state and installed serial; the manifest records ORU-0258 in PDU-3's bay serviceable; the authority line states that removing a module from an energized bay needs approval and how to get it; time, link and decision time are in the snapshot. The mission brief (the task's own, every Mission A scenario) reads "restore it if within your authority"; the playbook's rule 5 sends a request only when "a boundary blocks the only way forward" (i.e. after a call is held). Nothing states urgency beyond the telemetry's criticality. Other models derive the transfer from the same snapshot, so the information suffices; the live model's reasoning does not reach it. Kimi-K3 is best at L2-B (F119) but weak here; Qwen3.8-Max the reverse.
+
+## F121 -- A model change does not break what already worked (offline regression, 2026-09-25)
+
+`experiments/reasoner_replay/model_regression.py`: ten decision points where DeepSeek-V4.1-Flash chose right live (covered: choose the tripped unit, the misreport, return after restore, Mission B after the pick; held-out: L2-A diagnosis and after both presses, L3 BESS/ISRU repair plans and next steps), each with a mission-breaking choice fixed before as FAIL. 3 calls per model per point, text only, contexts rendered by the current harness.
+
+| Model | PASS | NEUTRAL | FAIL | median s |
+|---|---|---|---|---|
+| DeepSeek-V4.1-Flash (control) | 25/30 | 5 | 0 | 13 |
+| Qwen3.8-Max | 26/30 | 4 | 0 | 19 |
+| Kimi-K3 | 27/30 | 3 | 0 | 23 |
+
+Neutral calls were one more look (e.g. the PDU-2 lamp at the misreport, as the live run did) or a stow before driving. No candidate pressed the wrong unit, ended early or skipped the module swap. Results in `artifacts/reasoner_replay/model_regression/`. Live comparison runs (Kimi-K3 L2-B, L4; Qwen3.8-Max L2-B, L4) in `artifacts/runs/step10_k3`, `step10_models`.
