@@ -71,8 +71,12 @@ def steps():
     return sum('"kind": "tool_proposed"' in line or '"kind": "reasoner_step_failed"' in line for line in p.read_text().splitlines()) if p.exists() else 0
 
 
+# OURS_CONFIG=<path>: another harness configuration (e.g. another reasoner model), for development comparisons
+CONFIG = ["--config", os.environ["OURS_CONFIG"]] if os.environ.get("OURS_CONFIG") else []
+
+
 def start(extra):
-    return subprocess.Popen([sys.executable, "-m", "space_runtime.agent", "--run-dir", str(run_dir), *extra], cwd=REPO, env=env,
+    return subprocess.Popen([sys.executable, "-m", "space_runtime.agent", "--run-dir", str(run_dir), *CONFIG, *extra], cwd=REPO, env=env,
                             stdout=(run_dir / "agent.log").open("a"), stderr=subprocess.STDOUT)
 
 

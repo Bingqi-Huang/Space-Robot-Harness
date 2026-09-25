@@ -1,0 +1,2 @@
+# Step 10 development comparison (user 2026-09-25): L2-B with Kimi-K3 as the reasoner (configs/space_runtime_k3.yaml).
+ours_k3_l2b_habitat OURS_CONFIG=/mnt/SharedData/Research/Space_Robot_Harness/configs/space_runtime_k3.yaml D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=heldout_destination_occupied D0_ENV='env.cargo=consumables_container env.destination=habitat'
