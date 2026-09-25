@@ -40,8 +40,12 @@ on main (AGENT.md §1).
         STOPPED at the goal's three-round limit (F118): 4/6 solved (L2-A PDU-1/BESS, L3 BESS/ISRU); L2-B (model placed
         onto the occupier it had seen) and L4 (never sought authority before Earth-set) unsolved on the model's own
         reasoning. Generic fixes made: place verifier counts the fingers; snapshot carries time, link, decision time,
-        approval mechanics. Model comparison (F119-F122): Qwen3.8-Max solves L4, Kimi-K3 solves L2-B live; offline
-        regression clean. NEXT: user picks the model; then that model on all six held-out states.
+        approval mechanics. Model comparison (F119-F122): Qwen3.8-Max solves L4, Kimi-K3 solves L2-B live.
+        DECIDED (user, F123): reasoner = Qwen3.8-Max (config switched); held-out only with it, covered not rerun.
+        NEXT, in order: (a) every model-facing text into files (`docs/prompt_text_design.md`; branch feat/prompt-text,
+        worktree .worktree/prompt-text; golden byte-equality on all recorded runs; snapshot reorganized by meaning,
+        rechecked offline with Qwen, each script in its own container); (b) Qwen on the six held-out states
+        (`jobs/step10_qwen_heldout.txt`, GPUs 0-3, daytime); diagnose, generic fixes only.
 10c. [ ] Pre-freeze infrastructure (docs/prefreeze_workorder.md): session B in .worktree/prefreeze.
         Watch: reset reported done before the L2-A re-trip (30 s); L4 request vs Earth-set (925 s);
         per-request wall-clock time (pre-registration §3).

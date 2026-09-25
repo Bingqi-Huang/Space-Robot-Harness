@@ -17,8 +17,9 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
   unsolved on the model's reasoning after three generic fixes (place verifier; time/link/decision time/approval
   mechanics in the snapshot). L4 round 4 by day (51 s/step): still no transfer idea. L2-B offline (F119): Kimi-K3
   plans the relocation 4/6, the live model places onto the occupier. Live (F122): Qwen3.8-Max solves L4, Kimi-K3
-  solves L2-B; Qwen held on ground at L2-B, Kimi 9 s late at L4. User decides the model. Pre-freeze infra: session B
-  in `.worktree/prefreeze` (docs/prefreeze_workorder.md, findings F130+, GPUs 4-5).
+  solves L2-B. **Reasoner is now Qwen3.8-Max (F123, user).** Next: model-facing texts into files
+  (docs/prompt_text_design.md), then Qwen on the six held-out states. Session B (pre-freeze infra) works in
+  `.worktree/prefreeze` (docs/prefreeze_workorder.md, findings F130+, GPUs 4-5).
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).

@@ -35,7 +35,9 @@ Everything that must exist before the freeze (step 11) besides step 10 itself. D
 Experiment II and the re-authoring cost (the user, or Claude Code -- changes what H2's time measures, research_content
 §5.6). Items 1-4 do not depend on them; item 3's timed authoring does, its infrastructure does not.
 
-**1. Ablation switches -- checklist C8 (H3, research_content §5.7).** Four variants of Ours, each one configuration switch
+**1. Ablation switches -- checklist C8 (H3, research_content §5.7).** Wait for `feat/prompt-text` (docs/prompt_text_design.md,
+session A) to be merged: the context variant builds on the reorganized snapshot, and `space_runtime/`, `console.py` and
+every model-facing text belong to that task until then. Design the switches meanwhile. Four variants of Ours, each one configuration switch
 in `configs/space_runtime.yaml` (or a variant file) read by `space_runtime`: (a) no authoritative facts -- the agent's
 own claims advance state; (b) no internal effect verification -- the skill's success flag is taken as the effect;
 (c) no invariant/authority guard -- every call dispatched; (d) no dynamic context reconstruction -- plain accumulated

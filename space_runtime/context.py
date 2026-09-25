@@ -77,16 +77,7 @@ def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = N
               f"mission control decides a request {DECISION_TIME_S:.0f} s of mission time after it arrives",
               f"unavailable capabilities: {_j(f['unavailable']) if f['unavailable'] else 'none'}",
               f"active faults: {_j({k: v for k, v in f['fdir'].items() if v['active']}) or 'none'}",
-              "authority: " + ", ".join(sorted({c['authority_class'] for c in CONTRACTS['effects'].values()})) + " operations are autonomous"
-              + "".join(f"; except {r['name']}: {', '.join(r['applies_to'])} on a {r['target_role']} whose unit reports "
-                        f"{_j(r['when_unit'])} is {r['outcome']} ({r['why']})" for r in authority_rules or [])
-              # how an approval is obtained, for any rule (l4_pdu1, step 10 round 2: asked in prose with nothing held,
-              # which mission control can only answer as a request with no procedure)
-              + ("; an approval is given for one call on one target: propose the call itself, the guard holds it (listed "
-                 "here), and a request_operator sent while it is held carries it to mission control" if authority_rules else "")
-              + (f"; operator approvals on record: {_j(f['approvals'])}" if f["approvals"] else "")
-              + (f"; held for mission control's approval (send request_operator; the request carries these): "
-                 f"{_j([{k: p[k] for k in ('capability', 'target')} for p in f['pending_approvals']])}" if f["pending_approvals"] else "")]
+              authority(f, authority_rules)]
     out.append("## OPERATING STATUS\n" + "\n".join(status))
     ledger = f["ledger"]
     if ledger:
@@ -104,6 +95,28 @@ def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = N
         steps.append(line)
     out.append("## RECENT STEPS (oldest first)\n" + ("\n".join(steps) or "(none yet)"))
     return "\n\n".join(out)
+
+
+def authority(f: dict, rules: list[dict] | None) -> str:
+    """The authority model as one statement: acting is the default; what needs mission control's approval (a contract's
+    authority class, or a guard rule on what a call acts on) is the listed exception, with how such an approval is had.
+    Read off the contracts and the guard configuration, never written per mission (step10 L2-B, L4: a model that asked
+    permission for what no rule restricts, another that asked in prose with nothing held)."""
+    classed = {k: c["authority_class"] for k, c in CONTRACTS["effects"].items() if c["authority_class"] != "routine"}
+    exceptions = [f"{k} ({cls.replace('_', ' ')})" for k, cls in sorted(classed.items())]
+    exceptions += [f"{', '.join(r['applies_to'])} on a {r['target_role']} whose unit reports {_j(r['when_unit'])} -- "
+                   f"{r['why']}" for r in rules or []]
+    line = "authority: every capability call is yours to decide and make on your own"
+    if exceptions:
+        line += ("; the exceptions need mission control's approval first: " + "; ".join(exceptions)
+                 + ". An approval covers one call on one target: propose the call, the guard holds it, and a "
+                   "request_operator sent while it is held carries it to mission control")
+    if f["approvals"]:
+        line += f"; approvals on record: {_j(f['approvals'])}"
+    if f["pending_approvals"]:
+        line += (f"; held now for approval (a request_operator carries them): "
+                 f"{_j([{k: p[k] for k in ('capability', 'target')} for p in f['pending_approvals']])}")
+    return line
 
 
 class HarnessRenderer(ContextRenderer):

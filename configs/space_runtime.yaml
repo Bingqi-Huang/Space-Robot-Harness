@@ -63,10 +63,10 @@ verification:
 
 # ---- reasoner -----------------------------------------------------------------------------------------------------
 reasoner:
-  model: DeepSeek-V4.1-Flash
+  model: Qwen3.8-Max  # user decision 2026-09-25 (F119-F122); DeepSeek-V4.1-Flash before
   endpoint: https://llmapi.paratera.com/v1
   api_key_env: SPACE_REASONER_API_KEY  # the paratera gateway (AGENT/VLM_provider.md, first key); the scene VLM runs there too
-  timeout_s: 180
+  timeout_s: 600  # Qwen3.8-Max: 33-314 s per call offline (F119-F121)
   # DeepSeek's thinking mode stays on (user decision): offline A/B over run oa1's 42 decision points, off = 3.9 s median
   # per step vs 13.3 s on, but the reasoning capability matters more than the latency (research repo F53)
   thinking: true
