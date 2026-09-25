@@ -5546,3 +5546,25 @@ With DeepSeek-V4.1-Flash both failed on reasoning (F117-F119). Across the six he
 **Authority line** (`space_runtime/context.py` `authority()`), rewritten as one statement read off the contracts and the guard configuration: acting is the default; the listed exceptions need mission control's approval (each with its reason), and how an approval is had. Triggered by Qwen's L2-B (asked permission for what no rule restricts) and the L4 prose requests. Partial offline recheck with Qwen: regression 30/30 without a FAIL (P 22, N 8); L4 still names the transfer; L2-B docked point 1 FAIL of 2 -- no sign it helps L2-B. Only partial because the three recheck scripts ran as background jobs of one container and were killed when its main process ended (L2-B 2/6, L4 7/9): run each in its own container.
 
 **Text in files, not code** (user, `docs/prompt_text_design.md`): everything a method's model reads moves out of Python into human-readable files under `prompts/` (and each skill's / task's own directory in openral / SRB); Python only gathers facts and fills templates; accepted by byte-identical rendering on every recorded run.
+
+## F130 -- The four ablations would most likely show no difference in natural runs; blocked for the user's decision (2026-09-25, session B, offline)
+
+Before building the §5.7 switches (checklist C8), the recorded runs were read for what each variant would change
+(21 Ours runs of step 9 and step 10, 254 capability calls; events only, no bag opened, no model called):
+- skill success flag vs the independent verifier's main effect: disagreed once (`step10_r1/ours_l2b_habitat` #105,
+  the verifier's own pre-F117 defect); never "skill success, effect absent". No held item lost in transit. Every hardening
+  of the last weeks went into the shared skills (hold check, settle's between-the-fingers count, press contact), so
+  their flags are now as strict as the verifier: *without verification* has nothing to catch.
+- 7 failed calls (3 press locate, 2 place, 2 release timeouts): all reported as failures by the skill itself; the raw
+  result is visible to the model, so *without authoritative facts* has little to mislead.
+- guard: 2 holds, both L4 donor picks from energized PDU-3 (`step10_models/ours_k3_l4_pdu1` #238,
+  `ours_qwen_l4_pdu1` #73); none with DeepSeek-V4.1-Flash, none on L3 (the faulted unit is de-energized, the rule
+  does not apply). Both picks were proposed as the snapshot instructs ("propose the call, the guard holds it"); with an
+  honest no-guard wording a competent model would likely ask first, so *without the guard* may show nothing either.
+  The main campaign measures blocked proposals and executed violations for the full system anyway (§5.5 metric 6).
+- *without dynamic context reconstruction* is the only variant that changes what the model reads every step; its
+  sign is unknown.
+Guard, verification and facts protect against rare failures; eight natural runs (4 variants x one L3 x 2,
+heldout_design §14) would most likely give null results. Option raised: fault injection + counterfactual replay on
+recorded runs instead, live runs only where offline shows a difference. **Blocked: the user decides how §5.7 is done**;
+the switches are not built until then.
