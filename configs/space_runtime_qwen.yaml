@@ -1,0 +1,75 @@
+# Development variant of configs/space_runtime.yaml: only the reasoner model and its timeout differ.
+# Ours' thin harness configuration (execution_plan §4.3, §4.4, §10.2). Mission-generic: nothing here names a mission,
+# a site feature or an ordering. Frozen with the rest of Ours' artifacts before the campaign.
+
+# ---- invariant / authority guard (§4.3) --------------------------------------------------------------------------
+guard:
+  # authority class (contracts.yaml `authority_class`) -> outcome without an operator approval on record
+  authority:
+    routine: allow
+    approval_required: approval_required
+    prohibited: deny
+  # hard execution invariants: {name, why, applies_to: [capabilities | all_effects], requires: {fact path: value}}.
+  # Only documented hard operating limits belong here (space-context limits enter with the scenarios that exercise them).
+  invariants: []
+  # an active fault prohibits these capability groups (§10.3); every other fault is context for the agent
+  fdir_prohibits:
+    estop: [all_effects]
+  # authority by what a call acts on: {name, why, applies_to, target_arg (the argument naming a site point), target_role
+  # (the site survey's role of that point), when_unit (fields of that point's unit in the units' own telemetry),
+  # outcome}. Classes of operation, never a mission step; a matching call needs an operator approval of (capability,
+  # target) on record.
+  target_authority:
+    - name: energized_equipment_removal
+      why: >-
+        taking a module out of an energized unit's bay alters operating infrastructure and cuts its load; it needs
+        ground authorization first (14 CFR 1214.403: authorization before altering or removing station property)
+      applies_to: [pick]
+      target_arg: support
+      target_role: equipment_bay
+      when_unit: {energized: true}
+      outcome: approval_required
+
+# ---- independent effect verification (§4.4, §10.4) ---------------------------------------------------------------
+# Effects are established from robot-observable evidence the boundary returns (AMCL base estimate, arm kinematics, jaw
+# encoder) against the commanded goal -- never from the skill's own success flag alone, never from simulator truth.
+verification:
+  base:
+    # Nav2 goal checker (openral_nav2_bringup/config/nav2_lunar_bot.yaml: xy_goal_tolerance 0.25)
+    navigate: {position_m: 0.25, yaw_rad: 0.3}
+    # move_base_to_pose closes to 0.03 m / 0.03 rad on the same estimate; twice that as the verification band
+    dock: {position_m: 0.06, yaw_rad: 0.06}
+  tcp:
+    tolerance_factor: 1.5  # x the call's own position tolerance
+    # MoveIt plans meet the tolerance at the planned goal; the executed trajectory ends 0.009-0.030 m from it
+    # (9 successful plan_ee_to_feature calls, runs oa1/oa2/rs1/ob5): added to the band of plan_* effects
+    plan_execution_m: 0.025
+    approach_band_m: 0.02  # approach_target: tool-to-target distance within this of the stand-off (servo tolerance 0.008 m x 2.5)
+  jaw:  # EG2 jaw angle, rad: 0.10 closed on nothing, 0.82 open (F49)
+    empty_max_rad: 0.12
+    open_min_rad: 0.6
+  hold:  # item_held after pick: the item's image moves less than this fraction of a left-behind item's lift displacement
+    flow_fraction: 0.35
+    near_m: 0.6  # fallback when the skill did not record its gripper's own reach
+    beyond_gripper_m: 0.12  # a held item lies within this of the gripper's own surface, outside its silhouette
+    min_pixels: 200
+    min_lift_m: 0.05
+  press:  # pressed: the tool reached this far past the face the view measured, and is this far back off it again
+    min_contact_m: 0.005
+    min_retreat_m: 0.04
+  place:  # item_placed: jaws open, tool this far from the release point, the scene still between two frames
+    min_clear_m: 0.10
+    near_m: 1.0
+    settle_moved_mm: 3.0  # the item counts as still if the region moved less than this at its own depth
+
+# ---- reasoner -----------------------------------------------------------------------------------------------------
+reasoner:
+  model: Qwen3.8-Max  # development comparison (research repo F119-F120): same harness, another reasoner
+  endpoint: https://llmapi.paratera.com/v1
+  api_key_env: SPACE_REASONER_API_KEY  # the paratera gateway (AGENT/VLM_provider.md, first key); the scene VLM runs there too
+  timeout_s: 600  # Qwen3.8-Max took 33-314 s per call offline (F119-F120)
+  # DeepSeek's thinking mode stays on (user decision): offline A/B over run oa1's 42 decision points, off = 3.9 s median
+  # per step vs 13.3 s on, but the reasoning capability matters more than the latency (research repo F53)
+  thinking: true
+  retry_cap_per_call: 3  # ReasonerCore's identical-call cap
+  max_steps: 80  # mission step budget: exhausted -> run ends as needing ground assistance
