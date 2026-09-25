@@ -5568,3 +5568,36 @@ Guard, verification and facts protect against rare failures; eight natural runs 
 heldout_design §14) would most likely give null results. Option raised: fault injection + counterfactual replay on
 recorded runs instead, live runs only where offline shows a difference. **Blocked: the user decides how §5.7 is done**;
 the switches are not built until then.
+
+## F131 -- `scan_label` built and not registered; its one view reads every plate in the frame (2026-09-25, session B)
+
+Experiment II's new shared capability (heldout_design §6, checklist G1), built before the freeze and registered with no
+method: `openral_ext/scan_label.py` has no entry in `contracts.yaml` (so neither Ours' palette nor the PLEXIL adapter
+reaches it), no PLEXIL Command, no EUROPA activity; the development check calls it directly
+(`experiments/launch/lunar_base_d0/scan_label_check.py`). One whole operation with the rover docked at a support: the
+wrist camera to its one scan view of the point where the item's handle column meets its lid (the support's surveyed
+point raised by the catalogued item's height), arm configuration from MoveIt's collision-checked IK chosen as the
+skills' planned moves choose it, reached along the posture skill's planned path (`move_joints`); one frame; zxing-cpp
+Data Matrix on the frame upscaled 2x; the arm folded (`stow`). It returns the serials, each plate's corners and its
+distance in the image from the aimed column foot, and the frame; reading nothing is a result, not a failure. No text
+goes to any model.
+
+**The view.** F115 wrote it down as 0.45 m from the column foot at 70 deg below the horizontal. The view that actually
+read labels on the robot (`check2/look_battery_scan`, F115's Isaac photos) stood 0.356 m from the foot at 67 deg (its
+bag's /tf); 0.45 m / 70 deg puts the camera 0.10 m higher and has no arm configuration at the depot stand
+(`artifacts/runs/pf/scan_label_1`). The view is 0.36 m / 67 deg; heldout_design §6 corrected.
+
+**Checks.** Offline: the decoder reads both F115 photos (ORU-0417, ORU-0211). Live, one run launched from the worktree
+(`artifacts/runs/pf/scan_label_2`, `heldout_cannibalize_far` at PDU-1 so that ORUs stand in bays, on a shelf and one bay
+is empty; GPU 4): six supports, the view reached at all six (camera within 5 mm of its pose), every plate that was in
+the frame decoded correctly (depot ORU-0417, PDU-1 bay ORU-0211, ISRU power tray ORU-0285), no false reading, the empty
+PDU-3 bay read empty. At PDU-2's bay and PDU-3's shelf nothing was read: the items stood on their supports to 1 mm,
+but the rover's own docked pose estimate was 5-7 cm off sideways (bag truth vs. AMCL), which put one plate half or
+wholly out of the frame; the other plate sits behind the gripper's body in this view. That is the shared localization,
+not the scan; the operation returned no serials with the frame as evidence.
+
+**Before a live use from the main checkout:** zxing-cpp is not in the openral venv (these runs put it on PYTHONPATH from
+`artifacts/pydeps`); it has to be installed there at the merge. The boundary now counts an item's `catalogue_source`
+from the SRB checkout (the scene export records main's absolute asset paths, and a worktree's boundary died at import on
+them); the string is unchanged in the main checkout. When the capability is registered in Experiment II, its lowering
+supplies the item height from the equipment catalogue (the check uses the ORU's).

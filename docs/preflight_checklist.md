@@ -76,7 +76,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
-| G1 | Exp II | `scan_label` shared implementation, unregistered | build + decode on A1 renders | TODO |
+| G1 | Exp II | `scan_label` shared implementation, unregistered | build + decode on A1 renders | DONE 2026-09-25 (F131): `openral_ext/scan_label.py`, in no method's artifacts; offline both F115 Isaac photos decode; live (`pf/scan_label_2`, six supports): view reached 6/6, every plate in the frame decoded (3/3), no false reading, empty bay empty; the two no-reads were the rover's docked pose estimate 5-7 cm off sideways (bag truth), plate out of the frame |
 | G2 | Exp II held-out | Hidden cases (spare recorded at the depot but in another PDU's tray/shelf; two ORUs with swapped records) boot and are physically solvable | configs + A2-style check + label decode at each candidate location | TODO |
 | G3 | Exp II | Visible validation suite (build, wiring, one nominal case, trace completeness) | write | TODO |
 | G4 | Exp II | Timer and artifact-delta tools | `engineering_worklog.py`, `artifact_delta.py` | DONE 2026-09-24: both work (scratch clone with dummy tags) |
