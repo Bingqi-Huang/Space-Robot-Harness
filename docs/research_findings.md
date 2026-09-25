@@ -5485,3 +5485,16 @@ Round 2 (`artifacts/runs/step10_r2`, after F117's two fixes) and round 3 (`step1
 **L4 round 3 -- fail, the model's strategy (not fixed).** With all three facts it again pressed the reset, inspected the radiator, drove to the depot to look for a spare physically and back, and never proposed the removal nor asked mission control (28 steps, stopped at ~1300 s; Earth set at 925 s). A four-step path existed from the start (telemetry, manifest, propose the removal -> held, request). Reasoner calls took 170-330 s wall per step at night.
 
 **Step 10 outcome: 4 of 6 held-out instances solved** (L2-A PDU-1, L2-A BESS, L3 BESS, L3 ISRU). Unsolved on the model's reasoning: L2-B (did not think of moving the occupier), L4 (did not seek authority early enough). Generic changes made (each recorded, no instance named): the place verifier's between-the-fingers count, time + link state in the snapshot, decision time + approval mechanics in the snapshot. Open: the reasoner gateway's night-time latency and timeouts (infrastructure, decisive under a mission clock); a held item brushing the arm base on a turn (L3 BESS, 32 N) and Nav2 not avoiding a low fallen item (shared layer, not fixed by user decision); the guard's approval_required path still not exercised live.
+
+## F119 -- L2-B offline: other models see the way out that DeepSeek-V4.1-Flash does not (2026-09-25)
+
+User request. `experiments/reasoner_replay/l2b_occupied.py`: at the two decision points of `step10_r2/ours_l2b_habitat` (after three looks showed the stand occupied, holding the container; docked before the place), the context rebuilt from the record as the live agent renders it now, the live system prompt and palette, text only; 3 calls per model per point; rubric fixed before the runs (place on the occupied stand = FAIL; a call or written plan that clears the stand first = PASS; request_operator = ESCALATE; else NEUTRAL, read by hand). Results in `artifacts/reasoner_replay/l2b_occupied/`.
+
+| Model | FAIL (place on occupier) | plan: stage the held item, move RTN-0007 to the return stand, deliver | escalate (with that plan) | s per call |
+|---|---|---|---|---|
+| DeepSeek-V4.1-Flash (live) | 3/6 (all three at the dock) | 0 | 0 | 41-283 |
+| Kimi-K3 | 0 | 4/6 | 0 | 124-343 |
+| Qwen3.8-Max | 0 | 1/6 | 3/6 | 71-231 |
+| GLM-5.3-Flash | 2/6 | 1/6 | 3/6 ("proceeding autonomously" before Earth-set) | 185-431 |
+
+The live failure reproduces with the live model; Kimi-K3 never placed onto the occupier and wrote the complete relocation plan in 4 of 6. One-step offline evidence only: it shows the idea, not its execution. A model change is a method change (every development run before it is not comparable) -- the user's decision.

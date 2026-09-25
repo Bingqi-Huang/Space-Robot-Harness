@@ -1,0 +1,2 @@
+# Step 10, round 4 (user 2026-09-25): L4 again, unchanged, daytime gateway latency.
+ours_l4_pdu1 D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_cannibalize D0_ENV='env.faulted_unit=pdu_1'
