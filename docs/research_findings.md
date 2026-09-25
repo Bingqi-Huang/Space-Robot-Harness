@@ -5500,3 +5500,16 @@ User request. `experiments/reasoner_replay/l2b_occupied.py`: at the two decision
 The live failure reproduces with the live model; Kimi-K3 never placed onto the occupier and wrote the complete relocation plan in 4 of 6. One-step offline evidence only: it shows the idea, not its execution. A model change is a method change (every development run before it is not comparable) -- the user's decision.
 
 **L4 round 4 (user: daytime gateway, unchanged; `artifacts/runs/step10_r4`).** Model steps 3-125 s (mean 51 s; night 170-330 s). Still fail: it drove to the depot to look at the spares, concluded "no serviceable spare on site, the swap is infeasible", pressed the reset again (re-trip) and kept inspecting PDU-1's bay; never considered another unit's module, never asked mission control; 31 steps, stopped at ~1300 s of mission time (agent SIGINT, normal teardown), no contact, no false claim. Speed was not the cause. DeepSeek-V4.1-Flash on L4 across rounds 2-4: once thought of the transfer (too late, in prose), twice never did.
+
+## F120 -- L4 offline: the facts are in the snapshot; Qwen3.8-Max finds the transfer, DeepSeek-V4.1-Flash never does (2026-09-25)
+
+`experiments/reasoner_replay/l4_transfer.py` at three decision points of `step10_r4/ours_l4_pdu1` (after telemetry + manifest showed the spare failed; after the depot showed no spare; after the reset re-tripped), 3 calls per model per point, rubric fixed before (a pick from an energized donor bay = PASS; any written plan naming another unit's module = the idea, read by hand). Results in `artifacts/reasoner_replay/l4_transfer/`.
+
+| Model | calls naming the transfer (of 9) | donor pick proposed / authorization request |
+|---|---|---|
+| DeepSeek-V4.1-Flash (live) | 0 | 0 |
+| Qwen3.8-Max | 8 | 1 pick + 1 authorization request + 1 plan starting with the held pick (after the re-trip) |
+| GLM-5.3-Flash | 4 (all three at the first point) | 0 (plans: reset first, then the held pick + request) |
+| Kimi-K3 | 2 | 1 pick (after the re-trip) |
+
+Most plans try the reset first and make the transfer the contingency, with the guard-held pick and the request -- Qwen's even names the 925 s Earth-set and the 300 s decision. **What the model sees** (checked): telemetry gives each unit's load, criticality (PDU-1 crew-critical, PDU-3 and ISRU non-critical), energized state and installed serial; the manifest records ORU-0258 in PDU-3's bay serviceable; the authority line states that removing a module from an energized bay needs approval and how to get it; time, link and decision time are in the snapshot. The mission brief (the task's own, every Mission A scenario) reads "restore it if within your authority"; the playbook's rule 5 sends a request only when "a boundary blocks the only way forward" (i.e. after a call is held). Nothing states urgency beyond the telemetry's criticality. Other models derive the transfer from the same snapshot, so the information suffices; the live model's reasoning does not reach it. Kimi-K3 is best at L2-B (F119) but weak here; Qwen3.8-Max the reverse.
