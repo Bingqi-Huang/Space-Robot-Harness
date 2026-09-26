@@ -5816,3 +5816,42 @@ the 14th sequential EUROPA chain's host hung once before its first query; with i
 **Open (user):** PLEXIL N = 1, 2, 5 needs either a generated variant of the plans (a temporary copy keeping the first
 N legs of every Try, locked files untouched but the run is on a derived plan), or the analytical statement above in
 the paper, or a lock change that makes N a plan variable.
+
+## F125 -- Requests carry a kind; mission control answers by kind and held calls, never by text (2026-09-26)
+
+Triggered by step10_qwen L4 (a perfect authorization request in prose, no call held -> HOLD) and L2-B (asked the ground
+whether it may move another item -> HOLD, then waited). User decision: a systematic protocol, not a patch.
+`experiments/operator_console/console.py`: a request's metadata names its kind; scripted answers per kind:
+`authorization` (held calls -> flight-rule table; none held -> "nothing to authorize, propose the call first"),
+`authority_check` (the published rules restated), `new_procedure` (HOLD, re-authoring required -- the only kind that
+counts as re-authoring), `information` ("no data beyond your own queries"). A request without a kind (the baselines'
+plans and domain, unchanged) is `new_procedure`. Ours: `request_operator` takes `kind` (prompts/ours/tools.yaml), the
+standing text lists the four answers (system.md). `evaluation/interaction.py` counts requests per kind; heldout_design
+§8 and preregistration §3 updated. Bug on the way: the request event's field `kind` clashed with the event kind (three
+reruns died at their first request); now `request_kind`, checked offline by driving every local tool and each request
+kind through `Agent.dispatch` with a stand-in agent (3ed0d13). Local tool results moved into tools.yaml too.
+Live (step10_qwen): L4 r2 (one-sentence tool text) and r4 (request kinds) both **success** -- guard hold, authorization
+request, GRANT after 300 s, donor ORU installed, reset held. L2-B r3: after "no data beyond your queries" the model
+decided on its own authority to stage its cargo, move the occupier to the return stand and deliver.
+
+## F138 -- Step 10 closes with Qwen3.8-Max: 5 of 6 solved live, L2-B's last place and two generic fixes it exposed (2026-09-26)
+
+`artifacts/runs/step10_qwen/` (development runs, never scored). Solved: L2-A PDU-1, L2-A BESS, L3 ISRU (first batch),
+L4 (r2, r4), L3 BESS (r3; r1 had placed the spare 9 deg crooked on a stand and pick's fixed-yaw fit refused it twice,
+0.48 < 0.5 -- not fixed, user). L2-B r3: strategy right (stage, move occupier, deliver), then the place's retreat
+dragged the container off the habitat stand edge (elbow at its stop: the servo left the line 0.10 m sideways, 0.07 m
+up, fingers still under the T head; truth), the settle frame showed only sky, the verifier judged "still" on the
+fingers' own pixels -> item_placed HOLDS -> "MISSION COMPLETE"; the container fell when the rover left. A false
+completion.
+Fix 1 (Ours, 5344ec6): item_placed is `holds: null` when the skill's settle frame shows nothing of the item (not a
+verdict either way; the item's state becomes unknown and the model decides whether to look). Offline over all 26
+recorded step-10 places: the 13 stand places -> null, bay/shelf places unchanged.
+Fix 2 (shared place skill, openral b1985f5): the stroke out of the released handle is driven by the base (BODY_TWIST
+along the release direction, odometry-measured, arm held), then the tool goes up. Two failed attempts first: the arm
+solved along the straight line had no IK 8-11 cm along (with and without collision avoidance, resume43/43b) -- the
+place posture leaves joint4 at its stop in every recorded place (known, not changed). Verified from the r3 snapshot
+before the re-pick (`OURS_RESUME_FROM=l2b_r3_resume_src OURS_RESUME_BEFORE_STEP=43`; the record's one item_placed
+event recomputed by the fixed verifier): see resume43c below.
+Also: the snapshot restore had lost its PoseWithCovarianceStamped import (d0_common, 259a578).
+Not fixed, recorded: dock "no progress" at 6 mm / 1.7 deg (two runs); AMCL bias 5-13 cm vs truth; arm pushing the rover
+during a stalled place (L3 BESS r1: 14 deg); pick's yaw fixed to the declared one.

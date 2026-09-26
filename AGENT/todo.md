@@ -1,121 +1,59 @@
 # TODO
 
-Goal: the Acta Astronautica paper. **`docs/heldout_design.md` is the plan**; its §10 order is the work order below.
-Development runs on `pro6000` (see handoff). Larger tasks on `feat/<name>` + `.worktree/<name>`; small fixes straight
-on main (AGENT.md §1).
+Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 work order, §14 instances).
+`docs/preflight_checklist.md` is the acceptance list: nothing is frozen while a line is open.
 
-## Done
+## Done (see docs/research_findings.md)
 
-- F108-F111: held-out site, scenarios, protocol, evaluator, baseline lock, run farm, models on paratera.
-- F112 (2026-09-24): step 7 (baselines built to the lock, EUROPA use-after-free patched) and step 8 (physical
-  validation: every held-out action form executed; shared-layer fixes in nav map, pick, place, press, capability
-  boundary, run farm). Final batch `artifacts/runs/chain_*_f` (see the F112 table).
-- F113 (2026-09-24): the Nav2 pose freeze was a tf2 ABBA deadlock (upstream fix 9997e969, built into the run-farm
-  image); bt_navigator ack timeout 20 -> 1000 ms; containers set up once (NUMA, domain, gdb); campaign cut to the
-  13 instances of `docs/heldout_design.md` §14.
+- F108-F116: site, scenarios, protocol, evaluator, baseline lock, run farm, step 7-9 (covered live 18/21, shared fixes).
+- F117-F123: step 10 rounds 1-4 with DeepSeek (4/6); model comparison; reasoner = Qwen3.8-Max (user).
+- F124: every text Ours' reasoner reads is in `prompts/ours/` (system.md, step.md, tools.yaml).
+- F125: request kinds (authorization / authority_check / new_procedure / information); console answers by kind.
+- F130-F131 (session B): ablations -> user decides later; `scan_label` built, unregistered.
+- F132: rows -> tables on 35 runs, per-leg failure table, raw-record recompute (E2, B4 done; R2 partial).
+- F133: PLEXIL adapter logs the issuing node id (E7); live `ros/install` NOT rebuilt yet.
+- F135: mission video + swimlane figures (H1, H3). F136: retry-budget sensitivity (EUROPA N=1/2/3/5; PLEXIL N by
+  argument, decided). F137: freeze audit + tag tools (F2, F3 tools ready).
+- F138: step 10 with Qwen: 5/6 solved live; L2-B false completion -> verifier `holds: null` fix + place retreat by base.
 
-## Work order -- `docs/heldout_design.md` §10
+## Step 10 -- closing
 
-7. [x] Baselines built to the lock (offline): PLEXIL 51 cases, EUROPA A x 5 units + failure paths, B 15 x 3.
-8. [x] Physical validation: all 9 held-out sequences end to end (F112 table); the landing stand was moved onto the
-       platform level (AMCL bias on the pad ramp) and `chain_b_consumables` passed first try.
-8b. [x] Sim speed: `_get_dones` batched (F113 §7), ~10-15% per run; the ROS bridge publishing left as is.
-9. [ ] Covered live re-runs: PLEXIL, EUROPA, Ours x the seven L0/L1 instances of heldout_design §14. One run
-       each; failures classified by the lock's change-control table. First launch stopped on the F114 livelock
-       (deleted); restart in tmux `step9` on the user's go (see handoff).
-       Before launching: the PLEXIL adapter is rebuilt in main's `ros/` (done 2026-09-24); Mission B's goal comes from
-       `D0_ENV` cargo/destination (`d0_common.mission_b_goal`); EUROPA runs the patched build.
-9+. [ ] **After step 9 ends -- in this order; nothing skipped (decided with the user 2026-09-24):**
-   STATUS 2026-09-25: 1-7c done (F115); pre-step-10 items (F116); step 10 stopped at 4/6 after three rounds (F117-F118).
-   1-7b. DONE (F115): step-9 results classified, READY' posture, labels + scan_label's view, raw-data record, EUROPA
-      start race, live checks check1/check2.
-   7c. DONE (F115): (a) place onto an occupied stand no longer reports success (settle: nothing between the fingers);
-      (b) the shared 1.5 m (approach point, dock corridor entry, inserted undock, PLEXIL plans, EUROPA domain) -> 1.2 m;
-      offline over 28 docking features 1 hit -> 0. The audit's other items stay as they are (user decision).
-   8. [x] B6 closed.
-10. [ ] **Ours development on the held-out ladder** (paper §4, §6.3 trace figure). Generic changes only (§13.1), each
-        in `research_findings.md`; development runs never count. §14's six held-out instances.
-        Ready (F116): Earth sets 925 s after the start; queued escalation = re-authoring; held-out places replay
-        clean; Ours' starting point audited (observe example removed); `max_steps` 80 kept (~40 expected).
-        STOPPED at the goal's three-round limit (F118): 4/6 solved (L2-A PDU-1/BESS, L3 BESS/ISRU); L2-B (model placed
-        onto the occupier it had seen) and L4 (never sought authority before Earth-set) unsolved on the model's own
-        reasoning. Generic fixes made: place verifier counts the fingers; snapshot carries time, link, decision time,
-        approval mechanics. Model comparison (F119-F122): Qwen3.8-Max solves L4, Kimi-K3 solves L2-B live.
-        DECIDED (user, F123): reasoner = Qwen3.8-Max (config switched); held-out only with it, covered not rerun.
-        DONE 2026-09-26 (F124): every text the reasoner reads is in `prompts/ours/` (system.md standing text, step.md
-        record template, tools.yaml); context.py only fills them; record as JSON lines (docs/prompt_text_design.md).
-        NEXT: Qwen on the six held-out states (`experiments/launch/lunar_base_d0/jobs/step10_qwen_heldout.txt`,
-        GPUs 0-3, daytime, two batches); pictures first, then data; generic fixes only. Then close C5.
-10c. [ ] Pre-freeze infrastructure (docs/prefreeze_workorder.md): session B in .worktree/prefreeze.
-        Watch: reset reported done before the L2-A re-trip (30 s); L4 request vs Earth-set (925 s);
-        per-request wall-clock time (pre-registration §3).
-10b. [ ] **`docs/preflight_checklist.md` all lines closed** (created 2026-09-24 after the label defect): every paper
-        output's needs -> a check. Nothing is frozen while a line is open. Open now: B4, C5, C6, D2, D3, E2, E7, F2, F3, G1-G3, R2.
-11. [ ] **Freeze** (paper §5.3): manifests, closed-capability certificates, freeze audit, git tags in all repos; the
-        run-farm image + synced home installs are the campaign environment. Then offline retry-budget sensitivity
-        (N = 1, 2, 3, 5 on every held-out state).
-12. [ ] **Campaign** (paper §6), entirely on the run farm, a paired instance's three methods on the same hardware:
-        Experiment I (§14's 13 instances x 3 methods; Ours x3 on held-out) -> §5.7 ablations -> build `scan_label`
-        -> Experiment II -> §8 re-authoring cost per held-out case.
-13. [ ] Real LunarBot segment (§5.8): design deferred until 12 is stable; ask the user before planning it.
+- [ ] **L2-B verification** `artifacts/runs/step10_qwen/ours_q_l2b_resume43c` (resume before the re-pick, base
+      withdrawal). Accept: the container stays on habitat_stand/slot_0 upright (evaluator truth, z 0.55, tilt ~0),
+      item_placed holds true or null (never a false "holds" with the item elsewhere), no drag in the wrist frames.
+      If it passes: L2-B solved -> 6/6 -> close C5 in the checklist (cite F138), step 10 done.
+      If the base withdrawal fails: record, do NOT invent a new retreat; report to the user.
+- [ ] Clean up after closing: tmux/containers none; `artifacts/runs/step10_final` (stopped, incomplete) can be deleted
+      with the user's OK; `artifacts/runs/step10_qwen/l2b_r3_resume_src` is a derived resume source (keep).
 
-## Paper drafting (parallel; LaTeX, Acta Astronautica)
+## Freeze (step 11) -- in order
 
-- [ ] Introduction, Related Work, Problem Setting, Method: writable now (no results language), verified citations.
-- [ ] Experimental Methodology (§5): after 11. Baseline paragraph: ECSS E3 (PLEXIL) / E4 (EUROPA), pre-planned
-      responses for covered failure modes, the rest to ground (ECSS-E-ST-70-11C §5.7.5.2g); sources in authoring_spec.
-- [ ] Results, trace figure, Discussion: after 12.
-- [ ] Limitations must state: one engineer (no double-blind baseline authoring); "covers closed for landing ejecta"
-      is our extrapolation; L2-B precedent is category-level only; look-alike module masses (1 kg); baselines authored
-      to the covered specification (a wider failure-mode analysis would cover L2-A at the measured re-authoring cost);
-      EUROPA solves one goal at a time and needed an upstream memory fix (F112); a dropped item is unrepresentable in
-      the EUROPA domain; physical-layer failures reported per leg; one LLM/VLM (DeepSeek-V4.1-Flash, 60 s VLM choices);
-      `retrip_delay_s` 30 s is our thermal estimate.
+1. Rebuild the PLEXIL adapter into `ros/install` (E7 node id; no run may be live): `colcon build --merge-install
+   --packages-select plexil_capability_adapter` in a pinned container, `PLEXIL_HOME=$HOME/Programs/plexil`; rerun
+   `baselines/plexil/scripts/offline_check.py` (51/51 must stay).
+2. Shared-layer changes since step 9 touch all methods (place withdrawal by base, F138): run ONE covered place per
+   baseline offline/live only if a line of the checklist needs it (B1/B5 wording) -- do not rerun step 9.
+3. `python3 -m evaluation.freeze_audit` on the freeze commit; read the report (F137); all hunks traced.
+4. `python3 -m evaluation.freeze_tag <tag> --tag` (all three repos clean), then the retry-budget script on the frozen
+   artifacts (`baselines/scripts/retry_budget_sensitivity.py`, docker `--init`).
+5. Checklist lines still open at the freeze: R2 PARTIAL (baseline per-call record only in capability_server.log --
+   accepted or add a topic), C8/G2/G3 DEFERRED past Experiment I (user).
 
-## Open decisions (user)
+## Campaign (step 12)
 
-- Dev machine: ~100 old run dirs, 330 GB, cleanup deferred.
+- Experiment I: §14's 13 instances x 3 methods; Ours x3 on held-out; 6 GPUs via `farm_queue.sh`; daytime gateway.
+- Then ablations (§5.7, method decided then), scan_label registration + Experiment II, re-authoring cost.
+- Figures: `experiments/video/swimlane.py`, `mission_video.py`; tables: `evaluation/rows.py` -> `tables.py`.
 
-## Open (fix when a run meets it)
+## Paper drafting (parallel)
 
-- If a run-farm process hangs: `experiments/analysis/freeze_gdb_watch.sh <run dir>` in the container, or
-  `docker exec -u root <ctr> gdb -p <pid> -batch -ex "thread apply all bt"` (F113).
-- AMCL republishes map->odom only sporadically right after activation: d0_common's LOCALIZED gate can pass on the
-  initial-pose publish; revisit if a run meets it.
-- VLM region choice ~60 s median (pick/press allow 300 s).
+- Intro, related work, problem setting, method: writable now. Limitations list: see F138 "not fixed" + earlier ones
+  (one engineer, look-alike masses, category-level L2-B precedent, AMCL bias, fixed 300 s ground decision).
 
-## Design items not yet built (pick up when a run needs them)
+## Rules (user)
 
-- [ ] Claims/reconcile: `check_item_at`, `read_indicator`, a claim ledger.
-- [ ] Dock error band from localization's own uncertainty (real bias 12-13 cm; `DOCK_ERROR_M` 0.06).
-- [ ] Unify pick's and press's per-frame tracking class.
-- [ ] An exception inside `_execute` leaves `failure_reason` blank; `OURS_RESET=1` reads TF before seeding AMCL.
-- [ ] Single-frame VLM held/identity negatives can contradict visible geometry; unknown is correct, not "empty".
-- [ ] Cache the views within one `pick` call.
-- [ ] The scene generator's `REACH` table is superseded by the reach model; delete it with `robot.reach_m` copies.
-- [ ] If sim speed is ever needed: TF publishing (24 ms/tick) and `_get_dones` (17 ms) outweigh everything but physics.
-
-## Numbers still owed a measured source
-
-`bring_in`'s sag margin (`held_drop_m`); the posture-window margin; the fit's agreement floor of one half; the
-posture pull's 0.05/s.
-
-## Known stack issues (fix only when a run fails on them)
-
-- Wedged rover with spinning wheels defeats AMCL; Nav2/MPPI cuts the charging station's corner.
-- MoveIt plans 15-77 s sim; an arm pushing a structure moves the rover (vc3: 7 cm).
-- Teardown prints tracebacks and a move_group segfault after SIGINT: shutdown noise, not a run failure.
-
-## Rules
-
-- Acceptance is derived from each paper output's needs (`docs/preflight_checklist.md`), never "the task ran".
-
-- Branch + worktree for larger tasks only; delete both after merge. Clean debug/pilot artifacts.
-- Overwrite-update this file and `handoff.md`; <=150 lines each; update at every milestone.
-- No pytest beyond upstream suites; offline checks before one decisive live run. No base-rate reruns.
-- No defensive coding, corner-case guards, hash checks or ad-hoc patches (AGENT.md §4).
-- Baselines: native mechanism + covered knowledge only; never strengthened after a failed run (lock change control).
-- Ours gets generic improvements only; never a situation-specific solution hint (§13.1).
-- One simulation per GPU; never navigate on truth; kill only your own processes / containers.
-- Never edit the shared skills (openral rskill modules) while runs are live: runners import them lazily.
-- Replies to the user: Simplified Chinese, plain words, concise; design choices are the user's to make.
+- Simplified Chinese replies, plain words, conclusion first. Decide defaults yourself; ask only design questions.
+- Only fix the current blocker; offline check first, one decisive live test; never rerun what already passed
+  (resume from a snapshot: `OURS_RESUME_FROM` + `OURS_RESUME_BEFORE_STEP`, jaws must be empty at that snapshot).
+- No defensive code, no hash checks, pytest only if essential. Never edit openral rskill modules while a run is live.
+- Contacts from truth + layout; never navigate on truth; generic changes only for Ours (three checks, recorded).

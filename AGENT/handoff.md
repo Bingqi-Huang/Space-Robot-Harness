@@ -1,27 +1,32 @@
 # Handoff
 
-Updated 2026-09-26 (F124 texts in prompts/ours; next: Qwen held-out runs). Read `AGENT/research_content.md` and
-`AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan; §14 = the campaign instances), **`docs/baselines/authoring_spec.md`**
-(the locked baseline specification), then `AGENT/todo.md`, then `docs/research_findings.md` F108-F115.
+Updated 2026-09-26 17:20 (step 10 closing: 5/6 solved live with Qwen3.8-Max, L2-B's last place under verification).
+Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
+instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
+`AGENT/todo.md`, then `docs/research_findings.md` F115-F138 (F124, F125, F138 are today's method changes).
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
-- research `main`, openral `master`, SRB `main`: committed 2026-09-24 (F114 fixes). No feature branches/worktrees.
-- **Step 9 done (F115): 18/21, the three failures shared-layer and fixed.** Live checks done (artifacts/runs/check{1,2}).
-  Blocker fixed: the shared 1.5 m (approach point, dock corridor entry, inserted undock; PLEXIL plans, EUROPA domain)
-  drove the rover into the return stand leaving the depot spares stand -> 1.2 m everywhere (offline: 0 hits over 28
-  features; live verify12: delivered, no non-wheel contact). The audit's other items (fixed arm retreats, press fold, unsourced thresholds) stay (user).
-- **Step 10 stopped at 4/6 (F116-F118)**: runs `artifacts/runs/step10_r{1,2,3}`. Solved L2-A x2, L3 x2; L2-B and L4
-  unsolved on the model's reasoning after three generic fixes (place verifier; time/link/decision time/approval
-  mechanics in the snapshot). L4 round 4 by day (51 s/step): still no transfer idea. L2-B offline (F119): Kimi-K3
-  plans the relocation 4/6, the live model places onto the occupier. Live (F122): Qwen3.8-Max solves L4, Kimi-K3
-  solves L2-B. **Reasoner is now Qwen3.8-Max (F123, user).** Every text the reasoner reads is in
-  `prompts/ours/` (F124; system.md = standing text incl. authority, link, site; step.md = the record template; tools.yaml);
-  `space_runtime/context.py` only fills them. Next: Qwen on the six held-out states. Session B's branch merged 2026-09-26 (F130 ablations blocked for the user,
-  F131 scan_label; zxing-cpp installed in openral/.venv); B continues in `.worktree/prefreeze` after rebasing on main. Session B (pre-freeze infra) works in
-  `.worktree/prefreeze` (docs/prefreeze_workorder.md, findings F130+, GPUs 4-5).
+- research `main`, openral `master` (b1985f5: place withdrawal by base), SRB `main` (2b5e2a3). All pushed up to
+  548c19b; later commits on main are local -- push them. Worktree `.worktree/prefreeze` (session B, idle; its
+  branch was merged at c6e677d; delete worktree + branch once nobody uses it).
+- **Reasoner Qwen3.8-Max** (configs/space_runtime.yaml, 600 s), VLM DeepSeek-V4.1-Flash, paratera gateway.
+- **What the reasoner reads** (F124): `prompts/ours/system.md` (standing text: rules, authority, mission-control
+  protocol incl. request kinds, how to read the record incl. `holds: null`, site), `prompts/ours/step.md` (record
+  template, JSON lines), `prompts/ours/tools.yaml` (local tools incl. `request_operator(kind, text)`, tool results).
+  `space_runtime/context.py` only fills them. Change texts there, never in Python.
+- **Mission control** (F125, console.py): answers by request kind + held calls; only `new_procedure` = re-authoring.
+- **Step 10 status** (F138, `artifacts/runs/step10_qwen/queue.log` lists every run): solved L2-A PDU-1, L2-A BESS,
+  L3 ISRU, L3 BESS (r3), L4 (r2, r4). L2-B: strategy solved (r3), place dragged the container off the stand -> two
+  fixes (verifier `holds: null` when the item is not seen; place retreat driven by the base). Verification run
+  `ours_q_l2b_resume43c` (resume before the re-pick): read its result first (todo.md has the acceptance).
+- Freeze tooling ready: `evaluation/freeze_audit.py`, `evaluation/freeze_tag.py` (F137). Eval: `evaluation/rows.py`
+  -> `tables.py` (F132). Figures: `experiments/video/swimlane.py`, `mission_video.py` (F135).
+- Resume from a snapshot (every Ours run saves `snapshots/before_step_<n>.pt`): `OURS_RESUME_FROM=<run dir>
+  OURS_RESUME_BEFORE_STEP=<n>` on `run_d0.sh`; the jaws must be empty at that snapshot (a held item falls out).
+  To change a verdict in the resumed record, write a derived source dir (see `step10_qwen/l2b_r3_resume_src`).
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
   `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
