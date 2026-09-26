@@ -1,36 +1,33 @@
 # Handoff
 
-Updated 2026-09-26 17:20 (step 10 closing: 5/6 solved live with Qwen3.8-Max, L2-B's last place under verification).
+Updated 2026-09-26 19:00 (frozen at `freeze-1`; Experiment I campaign running).
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
-`AGENT/todo.md`, then `docs/research_findings.md` F115-F138 (F124, F125, F138 are today's method changes).
-Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
+**`docs/preregistration.md`** (metrics, taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md`
+F115-F139. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
-- research `main`, openral `master` (b1985f5: place withdrawal by base), SRB `main` (2b5e2a3). All pushed up to
-  548c19b; later commits on main are local -- push them. Worktree `.worktree/prefreeze` (session B, idle; its
-  branch was merged at c6e677d; delete worktree + branch once nobody uses it).
+- **Frozen: tag `freeze-1`** in research `main`, openral `master` (971f2ea), SRB `main` (2b5e2a3); manifest
+  `artifacts/freeze/freeze-1.yaml` (F139). Nothing a method or a shared skill runs may change during the campaign.
+  Local commits + tags not pushed yet (ask the user). Worktree `.worktree/prefreeze` idle (merged; can go).
+- **Campaign** (step 12): `experiments/launch/lunar_base_d0/jobs/exp1_campaign.txt` (51 runs) -> `artifacts/runs/exp1/`,
+  tmux `exp1`, `queue.log` there. These runs are scored; development runs (step 9/10, checks) never are.
 - **Reasoner Qwen3.8-Max** (configs/space_runtime.yaml, 600 s), VLM DeepSeek-V4.1-Flash, paratera gateway.
-- **What the reasoner reads** (F124): `prompts/ours/system.md` (standing text: rules, authority, mission-control
-  protocol incl. request kinds, how to read the record incl. `holds: null`, site), `prompts/ours/step.md` (record
-  template, JSON lines), `prompts/ours/tools.yaml` (local tools incl. `request_operator(kind, text)`, tool results).
-  `space_runtime/context.py` only fills them. Change texts there, never in Python.
+- **What the reasoner reads** (F124): `prompts/ours/system.md`, `prompts/ours/step.md`, `prompts/ours/tools.yaml`;
+  `space_runtime/context.py` only fills them.
 - **Mission control** (F125, console.py): answers by request kind + held calls; only `new_procedure` = re-authoring.
-- **Step 10 status** (F138, `artifacts/runs/step10_qwen/queue.log` lists every run): solved L2-A PDU-1, L2-A BESS,
-  L3 ISRU, L3 BESS (r3), L4 (r2, r4). L2-B: strategy solved (r3), place dragged the container off the stand -> two
-  fixes (verifier `holds: null` when the item is not seen; place retreat driven by the base). resume43c: the base
-  withdrawal works (container upright on the stand), the lift after it stalls 2.4 cm short -> place still reports a
-  failure. One small fix left (todo.md), then one resume run, then close C5.
-- Freeze tooling ready: `evaluation/freeze_audit.py`, `evaluation/freeze_tag.py` (F137). Eval: `evaluation/rows.py`
-  -> `tables.py` (F132). Figures: `experiments/video/swimlane.py`, `mission_video.py` (F135).
+- **Step 10** (F138): 6/6 held-out solved live with Qwen (development). Place: the base backs the arm out of the
+  released handle, a short lift after it is recorded, not a failure; the verifier's `item_placed` is `holds: null`
+  when the settle frame shows nothing of the item. B5 rechecked live after that change (clean failure).
+- Eval: `evaluation/rows.py` -> `tables.py` (F132). Figures: `experiments/video/swimlane.py`, `mission_video.py` (F135).
 - Resume from a snapshot (every Ours run saves `snapshots/before_step_<n>.pt`): `OURS_RESUME_FROM=<run dir>
-  OURS_RESUME_BEFORE_STEP=<n>` on `run_d0.sh`; the jaws must be empty at that snapshot (a held item falls out).
-  To change a verdict in the resumed record, write a derived source dir (see `step10_qwen/l2b_r3_resume_src`).
-- PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
-- Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
-  `runfarm-gdb:22.04` is obsolete. Host sysctl: socket-buffer ceiling 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
+  OURS_RESUME_BEFORE_STEP=<n>` on `run_d0.sh`; jaws must be empty at that snapshot. Development only, never scored.
+- PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil`; the offline check also needs
+  `source $PLEXIL_HOME/scripts/plexil-setup.sh` (plexilc on PATH). Rebuilt 2026-09-26 (node id, E7).
+- Image `runfarm:22.04` carries gdb, Cyclone (unused) and tf2 from geometry2 9997e969 (F113). Host sysctl: socket
+  buffers 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
 - Development runs on `pro6000` (host astroeng, uid 1007). The dev machine (z890) syncs only through origin.
 
 ## Run farm (pro6000; heldout_design §11, F111, F112)
@@ -52,7 +49,7 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 
 ## Models (F111, F112)
 
-Reasoner, scene VLM and pick/press VLM: `DeepSeek-V4.1-Flash` at `https://llmapi.paratera.com/v1`, key = the first
+Reasoner `Qwen3.8-Max` (F123); scene VLM and pick/press VLM: `DeepSeek-V4.1-Flash` at `https://llmapi.paratera.com/v1`, key = the first
 `sk-` in `AGENT/VLM_provider.md` (gitignored). Do not switch back to DeepSeek's own API. One 640x480 view per request.
 Pick's region choice answers in 10-115 s (median 61 s); pick/press allow 300 s per view.
 

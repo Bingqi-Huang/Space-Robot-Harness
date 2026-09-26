@@ -5878,3 +5878,23 @@ hanging item blocks the arm). The occupier stays upright on habitat_stand/slot_0
 scored). No success reported, nothing stacked: the same clean failure as before the change (F115), so a baseline still
 ends "detected -> escalated" on L2-B. B5 stands; step 9 is not rerun (its places are not on an occupied support, and
 the withdrawal is the stroke every place already made, now straight).
+
+## F139 -- Freeze (step 11): tag freeze-1; what was checked before it (2026-09-26)
+
+Step 10 closed 6/6 (F138, C5). The freeze work order (todo "Freeze"), in order:
+1. PLEXIL adapter rebuilt into the live `ros/install` (pinned CPU container, `PLEXIL_HOME`); the library prints the issuing
+   node id (F133, E7); `offline_check.py` 0 failed. Recompiling rewrote the library `.plx` files' `FileName` attribute
+   only (F137); reverted, the locked files are unchanged.
+2. Shared-layer changes since step 9 touch every method (F138: place withdrawal by the base, a short lift not a
+   failure). B5 is the only checklist line whose evidence they could change (the baselines' L2-B path): rechecked live,
+   still a clean failure (F138). B1 (every action form executed) is unaffected: resume43d placed with the new stroke.
+3. `evaluation.freeze_audit` (report `artifacts/eval/freeze_audit/2026-09-26.md`): every Ours hunk since step 10's
+   start traces to F117/F118/F123/F124/F125 or F138's Fix 1 (5344ec6, `holds: null`); cb7f9d0 removed the held-out run
+   name from verification.py's comment (F137's open item); no held-out word in model-facing text beyond F137's
+   generic hits; baselines: only the shared fixes recorded at F114/F115 since the lock.
+4. Campaign jobs: `experiments/launch/lunar_base_d0/jobs/exp1_campaign.txt`, 51 runs from §14 (Ours x3 per held-out
+   instance first, Ours x1 per covered instance, PLEXIL and EUROPA x1 per instance), default raw-data bag (R1).
+   Gateway measured at 18:42 before the start: Qwen3.8-Max 12-19 s, DeepSeek-V4.1-Flash 4 s per short request
+   (daytime level; F118's night was 170-330 s per step).
+Open at the freeze (unchanged): R2 PARTIAL (baselines' per-call record only in capability_server.log), C8/G2/G3
+deferred past Experiment I (user).
