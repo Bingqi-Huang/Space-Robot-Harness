@@ -1,47 +1,45 @@
 # TODO
 
 Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 work order, §14 instances).
-`docs/preflight_checklist.md` is the acceptance list.
+`docs/preregistration.md` fixes metrics, failure taxonomy, exclusion and statistics.
 
 ## Done (see docs/research_findings.md)
 
-- F108-F116: site, scenarios, protocol, evaluator, baseline lock, run farm, step 7-9 (covered live 18/21, shared fixes).
-- F117-F125: step 10 with DeepSeek (4/6), model comparison, reasoner = Qwen3.8-Max, texts in `prompts/ours/`,
-  request kinds.
-- F130-F137: ablations deferred (user), scan_label built, rows -> tables, PLEXIL node id, video + swimlane,
-  retry-budget sensitivity, freeze tooling.
-- F138: step 10 closed 6/6 with Qwen3.8-Max (L2-B: r3 + resume43d); place withdrawal by the base; a short lift after
-  it is not a failure (openral 971f2ea); B5 rechecked live (clean failure). C5 closed.
-- F139: freeze (step 11): PLEXIL adapter rebuilt (offline 0 failed), freeze audit clean, tag `freeze-1`.
+- F108-F125: site, scenarios, protocol, evaluator, baseline lock, run farm, steps 7-10, Qwen3.8-Max, prompts/ours,
+  request kinds. F130-F137: ablations deferred, scan_label, rows->tables, PLEXIL node id, video/swimlane, retry
+  budget, freeze tools. F138: step 10 6/6. F139: freeze `freeze-1` (pushed).
+- **F140: Experiment I done** (`artifacts/runs/exp1`, 51 scored runs): Ours covered 7/7, held-out 17/18; PLEXIL 6/7,
+  0/6; EUROPA 7/7, 0/6. Tables `artifacts/eval/exp1/tables.md`, failures + categories `failures.md`, place offsets,
+  trace completeness; swimlanes (L4, L2-B x 3 methods) and Ours videos (L4, L2-B) in `artifacts/figures/exp1/`.
 
-## Campaign (step 12) -- running
+## Decisions for the user (from F140)
 
-- [ ] Experiment I: `experiments/launch/lunar_base_d0/jobs/exp1_campaign.txt` (51 runs) -> `artifacts/runs/exp1/`
-      in tmux `exp1` (farm_queue.sh, 6 GPUs). Order: Ours held-out x3, Ours covered, PLEXIL, EUROPA.
-      Watch: `artifacts/runs/exp1/queue.log` (one start/end line per run with CHECK_EXIT).
-      Night gateway: if Qwen steps slow to minutes, note the affected runs (model_io.jsonl wall times) and tell the
-      user; slowness is not an outage (preregistration §3), do not rerun on your own.
-- [x] Retry-budget sensitivity on the frozen artifacts: same table as F136 (F139).
-- [ ] After the campaign: `evaluation/rows.py` -> `tables.py` on `artifacts/runs/exp1`; failure taxonomy per failed
-      run (preregistration §2); swimlanes + one video per method on a held-out instance.
-- [x] Pushed 2026-09-26 20:20: all three repos + `freeze-1` tags.
-- Then: ablations (§5.7, method decided by the user), scan_label registration + Experiment II, re-authoring cost.
+- [ ] Shared-layer issues found in the campaign (not fixed; a post-freeze shared fix reruns the affected campaign):
+      bess_stand set-down bias (+8-10 cm along, all methods); base-withdrawal drag (2-65 mm); Nav2 in-place reversals
+      shaking a carried item loose (Ours L2-B r2); dock_to_pose ignoring the costmap (Ours drove into the habitat);
+      the PLEXIL adapter losing a first command result (2/27 baseline runs, category 8).
+- [ ] Class-2 definition: one drop counted twice after a push; an upright item off the scored footprint read as a
+      drop. Keep as computed or redefine (recompute from raw data, no rerun).
+- [ ] §5.7 ablations: how to measure (F130: natural runs likely null; fault injection + replay proposed).
+- [ ] PLEXIL retry budget N=1,2,5: argument only, or a derived plan variant (F136).
+
+## Next work (after the decisions)
+
+- [ ] Experiment II (H2): G2 hidden cases + G3 validation suite (built hidden from the extension author), register
+      `scan_label`, extension timing (`engineering_worklog.py`, `artifact_delta.py`).
+- [ ] Re-authoring cost per held-out case for both baselines (heldout_design §8; feeds H2).
+- [ ] Baseline videos: `plexil_mission_video.py` / `europa_mission_video.py` need a frames mode like Ours' (F135).
+- [ ] Swimlane label overlap (press/press, place/stow) before the paper figure.
+- [ ] Paper: results section from `tables.md` + `failures.md`; limitations (one engineer, category-level L2-B
+      precedent, AMCL bias, fixed 300 s ground decision, Ours' post-mission inspection tours lengthen covered runs).
 
 ## Clean-up (user 2026-09-26: keep for now)
 
-- `artifacts/runs/step10_final` (stopped, incomplete) can be deleted; `step10_qwen/l2b_r3_resume_src` keep.
-- Worktree `.worktree/prefreeze` + its branch (merged at c6e677d) can go.
-
-## Paper drafting (parallel)
-
-- Intro, related work, problem setting, method: writable now. Limitations: F138 "not fixed" + earlier ones (one
-  engineer, look-alike masses, category-level L2-B precedent, AMCL bias, fixed 300 s ground decision, L2-B's step-10
-  solve spans a resume).
+- `artifacts/runs/step10_final`, `.worktree/prefreeze` + branch.
 
 ## Rules (user)
 
 - Simplified Chinese replies, plain words, conclusion first. Decide defaults yourself; ask only design questions.
 - Only fix the current blocker; offline check first, one decisive live test; never rerun what already passed.
-- Frozen: no change to any method artifact or shared skill during the campaign; a post-freeze shared fix reruns the
-  affected campaign from the start (preregistration §3) -- the user decides.
+- Frozen at `freeze-1`: no change to a method artifact or shared skill without the user; campaign runs are scored.
 - Contacts from truth + layout; never navigate on truth; one simulation per GPU; kill only own containers.
