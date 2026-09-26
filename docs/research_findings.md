@@ -5869,3 +5869,12 @@ null`; the model backed off, asked the front camera twice, saw the container on 
 21.812, z 0.551), tilt 0.3 deg, on habitat_stand/slot_0; the return container on return_stand/slot_0; RESULT delivered,
 parked_and_stowed, success; CHECK_EXIT 0. **L2-B solved -> step 10: 6 of 6 held-out instances solved live with
 Qwen3.8-Max** (L2-B across r3 + a resume from its own snapshot; development runs, the campaign reruns all). C5 closed.
+**B5 after the base withdrawal** (the baselines' L2-B path; `artifacts/runs/check3/b5_habitat_occupied`, scripted chain
+`look_habitat_occupied.json`, no method): pick the consumables container, dock at the occupied habitat stand, place x3.
+Attempt 1 fails at settle, "the item came away with the tool" (7546 points between the fingers): lowered onto the
+occupier (stall 3 mm above the seat height), released, the base withdrew 0.301 m and the handle head rode out on the
+open fingers (truth: container 0.38 m off the stand centre, z 0.775, tilt 4 deg). Attempts 2-3 fail at `over` (the
+hanging item blocks the arm). The occupier stays upright on habitat_stand/slot_0, pushed 5.9 cm (class 3 collateral,
+scored). No success reported, nothing stacked: the same clean failure as before the change (F115), so a baseline still
+ends "detected -> escalated" on L2-B. B5 stands; step 9 is not rerun (its places are not on an occupied support, and
+the withdrawal is the stroke every place already made, now straight).
