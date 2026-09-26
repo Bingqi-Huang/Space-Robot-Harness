@@ -7,7 +7,9 @@ Arguments are taken and checked as the boundary does: a JSON object, or the posi
   --tripped UNIT       the unit's breaker (any of the site's serviced units) starts tripped (power_status); a
                        successful press on its panel closes it
   --no-hold            a reset does not hold: the unit reads tripped again at the next power_status query after
-                       the press (what a held-out L2-A/L3 unit looks like to a covered plan)
+                       the press (what a held-out L2-A unit looks like to a covered plan: OVERTEMP after 30 s)
+  --no-close           a reset does not take: the unit reads tripped already at the first power_status query after
+                       the press (a held-out L3/L4 unit: its self-test trips it 3 s after the reset, before press returns)
 The manifest's inventory is the scene's authored one (every item on its authored support, serviceable), as the
 covered scenarios publish it. Mission control is stood in for too: every request on /space/operator/request is answered
 at once with the protocol's HOLD reply (experiments/operator_console/console.py), so an escalation ends the run.
@@ -50,9 +52,9 @@ def feature_pose(name, standoff):
 
 
 class SimBoundary(Node):
-    def __init__(self, fail, tripped, hold):
+    def __init__(self, fail, tripped, hold, close):
         super().__init__("europa_sim_boundary")
-        self.fail, self.hold = fail, hold
+        self.fail, self.hold, self.close = fail, hold, close
         self.breaker = {u: "tripped" if u in tripped else "closed" for u in IX["units"]}
         self.pending_trip = set()
         self.calls = Counter()
@@ -95,7 +97,7 @@ class SimBoundary(Node):
         elif cap == "press" and ok:
             self.posture = "ready"  # press reaches into the panel and does not fold back afterward on its own
             unit = args["feature"].split("_panel")[0]
-            self.breaker[unit] = "closed"
+            self.breaker[unit] = "closed" if self.close else "tripped"
             if not self.hold:
                 self.pending_trip.add(unit)
         r = ExecuteCapability.Result()
@@ -134,6 +136,7 @@ if __name__ == "__main__":
     ap.add_argument("--fail", action="append", default=[])
     ap.add_argument("--tripped", action="append", default=[])
     ap.add_argument("--no-hold", action="store_true")
+    ap.add_argument("--no-close", action="store_true")
     a = ap.parse_args()
     fail = {}
     for f in a.fail:
@@ -141,5 +144,5 @@ if __name__ == "__main__":
         fail[(cap, int(n))] = how[0] if how else "stay"
     rclpy.init()
     ex = MultiThreadedExecutor()
-    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold))
+    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold, not a.no_close))
     ex.spin()

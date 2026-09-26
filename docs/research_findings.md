@@ -5784,3 +5784,35 @@ H1 -> DONE, H3 -> DONE. Changed: `experiments/video/{mission_video,track_from_ba
 europa_timeline_from_logs,plexil_mission_video,europa_mission_video}.py`, new `swimlane.py`. Outputs:
 `artifacts/figures/video/ours_qwen_l4_pdu1.{mp4,track.json}`, `artifacts/figures/swimlane/{ours_qwen_l4_pdu1,
 plexil_a_bess,europa_a_bess}.{pdf,png}` (+ the two baselines' `.timeline.json`).
+
+## F136 -- Retry-budget sensitivity: EUROPA escalates at every N; PLEXIL's N is not a parameter of the locked plans (2026-09-26, offline)
+
+Workorder item 5 (authoring_spec "After the freeze"). `baselines/scripts/retry_budget_sensitivity.py` runs both
+baselines offline on the six held-out instances of heldout_design §14 and writes `artifacts/eval/retry_budget/`
+(`results.md`, `rows.jsonl`, per-run logs). **Where N lives.** EUROPA: `attempts` in `baselines/europa/config/host_config.json`
+(host.py `ATTEMPTS`: the same call failing, or a reached restore relapsing, that often ends planning); the script sets
+it in the host process per run, no file changed. PLEXIL: nowhere -- every `Try` is three unrolled identical legs
+(MissionA_Covered Reset1-3; DriveAndDock Nav/Dock1-3; PickItem Ready/Pick1-3; PlaceItem Place1-3; StowAndReturn
+Stow/Return1-3) and the escalation texts say "3 times"; no plan variable, interface-config entry, adapter setting or
+harness option changes it. Any other N is a different plan, so only N = 3 was run (user decision below).
+**The held-out states as the stand-ins show them**, from the site physics and one recorded press (a press returns
+~20 s of sim time after its contact, `step10_r1/ours_l3_bess`): L2-A reads closed after the press and tripped at the
+next read (OVERTEMP 30 s after the reset); L3/L4 read tripped after every press (self-test 3 s); L2-B every place onto
+the occupied stand fails. PLEXIL runs under plexiltest against a world that answers each command the plan issues;
+EUROPA runs the real host -> HostLink -> universalExec -> adapter chain over `sim_boundary.py`, which gained
+`--no-close` (a press that does not close the breaker, for L3/L4; `--no-hold` stays for L2-A).
+**Result.** All 30 runs end "detected -> escalated", none solved, none other. EUROPA, N = 1/2/3/5: 3/4/5/7 calls
+(0/1/2/4 retries) on the four reset cases, 7/8/9/11 on L2-B -- the outcome never changes, only the number of
+repeats before the request. PLEXIL at N = 3: L2-A 5 calls, 0 retries (the reset reads closed, the relapse is caught by
+the final check at the dock, so the budget is never used); L3 x2 and L4 5 calls, 2 retries (three presses); L2-B 9
+calls, 2 retries (three places). Since every held-out failure is persistent (heldout_design §1 rule 4), PLEXIL's
+outcome cannot depend on N either, but that is an argument, not a run.
+**Limits.** The stand-ins report the relapse at once (live, EUROPA would stow and start home before seeing it, then
+drive back), model occupancy only as a failed place (live, the item may come away on the open fingers, F115, which
+could end EUROPA's planning after one place instead of N), report every trip as OVERCURRENT to EUROPA (no decision
+reads the cause) and publish the authored manifest (L2-B's record puts the return container on the habitat stand; the
+domain has no support capacity, so the plan is the same). The container must run with `docker run --init`: without it
+the 14th sequential EUROPA chain's host hung once before its first query; with it 24/24 ran through.
+**Open (user):** PLEXIL N = 1, 2, 5 needs either a generated variant of the plans (a temporary copy keeping the first
+N legs of every Try, locked files untouched but the run is on a derived plan), or the analytical statement above in
+the paper, or a lock change that makes N a plan variable.
