@@ -5,6 +5,9 @@ method-specific artifacts by recording and tagging their git commits"). Run this
 checklist by hand against `openral_ext.run_manifest.freeze.list_method_artifacts`'s
 output for each method, before `plan_freeze(..., dry_run=False)` is ever called.
 No tag exists yet -- this file records what to check, not a result.
+`python3 -m evaluation.freeze_audit` prints the material for the per-artifact checks below (diffs against step
+10's starting point with the findings that record them, held-out words, the baselines against the lock);
+`python3 -m evaluation.freeze_tag <tag> [--tag]` writes the freeze manifest and tags all three repos.
 
 ## Per artifact, before tagging
 

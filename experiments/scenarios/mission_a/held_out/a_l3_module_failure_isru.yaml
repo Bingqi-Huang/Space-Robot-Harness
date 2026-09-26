@@ -7,6 +7,7 @@ manifest_version: 1
 scenario_id: mission_a/held_out/a_l3_module_failure_isru
 mission_family: mission_a
 coverage: held_out
+level: L3  # docs/heldout_design.md §2 novelty ladder, §14 row
 
 mission_brief: >
   ISRU plant reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if

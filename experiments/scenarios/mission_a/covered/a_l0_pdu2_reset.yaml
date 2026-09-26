@@ -8,6 +8,7 @@ manifest_version: 1
 scenario_id: mission_a/covered/a_l0_pdu2_reset
 mission_family: mission_a
 coverage: covered
+level: L0  # docs/heldout_design.md §2 novelty ladder, §14 row
 
 # Exact wording every method receives (task.py TaskCfg.mission_brief(), UNIT_NAMES[reported] substituted;
 # UNIT_NAMES comes from assets/lunar_base/scene/layout.yaml `units.<id>.name`).

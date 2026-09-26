@@ -1,9 +1,10 @@
 """One normalized run row -- execution_plan.md §13.2 "Required output", §14.
 
-Reads only what a run directory already has on disk (`check.log`, `ours/events.jsonl`,
-`operator/events.jsonl` when the operator console was attached) -- no hand-edited CSV,
-no simulation, no ROS. A field is `None` when the source data does not exist yet
-(e.g. no interaction events were ever logged in current dev runs) -- never guessed.
+Reads only what a run directory already has on disk (`check.log`, `run_manifest*.yaml`, `ours/events.jsonl`,
+`operator/events.jsonl` when the operator console was attached, `capability_server.log`) -- no hand-edited CSV,
+no simulation, no ROS. A field is `None` when the source data does not exist yet (e.g. no interaction events were ever
+logged in current dev runs) -- never guessed. `python3 -m evaluation.rows --out <dir> <run_dir>...` writes one JSON row
+per run.
 
 One field is an explicit DRAFT hook per the task, not a final rule:
   - `preplanned_transition_fraction`: three draft categories (human_preauthored /
@@ -22,6 +23,7 @@ or when it was attached but a needed pose was never resolved -- never a fabricat
 """
 from __future__ import annotations
 
+import argparse
 import json
 import re
 from pathlib import Path
@@ -49,14 +51,15 @@ _CHECK_EXIT_RE = re.compile(r"^CHECK_EXIT (-?\d+)\s*$")
 class NormalizedRunRow(BaseModel):
     model_config = ConfigDict(extra="allow")  # method-specific diagnostic fields vary; core fields below are fixed
 
-    run_id: str
-    method: Literal["ours", "plexil", "europa_plexil", "generic_openral"]
+    run_id: str  # <batch>/<run dir>: one instance is run under the same directory name in several batches
+    method: Literal["ours", "plexil", "europa_plexil", "generic_openral"]  # the run manifest's own `method`
     scenario_id: str | None  # best-effort match against experiments/scenarios/**/*.yaml scenario_id
     mission_family: str | None
     coverage: Literal["covered", "held_out"] | None
+    level: str | None  # the matched manifest's novelty level (docs/heldout_design.md §2)
 
     # §14.1 Mission accomplishment
-    autonomous_mission_success: bool | None  # None: no MISSION verdict line found (infra failure, not scored)
+    autonomous_mission_success: bool | None  # None: no RESULT line, the run never reached its end (infra, not scored)
     failure_reason: str | None
     completed_subobjectives: list[str] | None
 
@@ -96,6 +99,13 @@ class NormalizedRunRow(BaseModel):
     step_count: int
     trace_complete: bool  # every tool_proposed step has a guard_decision and (execution_started or local_tool) after it
 
+    # Physical layer, per leg (docs/heldout_design.md §9, preregistration §2 category 4): every call the shared capability
+    # boundary completed, whoever made it (`capability_server.log`). A failed call is the capability's -- its skill's own
+    # failure_kind (ExecuteRskill's FAILURE_*), the stage the skill records as failed (None when the skill kept no record)
+    # and reason -- not the method's.
+    capability_calls: dict[str, int]
+    failed_calls: list[dict[str, Any]]
+
 
 def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     if not path.is_file():
@@ -112,23 +122,17 @@ def _read_jsonl(path: Path) -> list[dict[str, Any]]:
     return out
 
 
-def _check_log_mission(check_log: Path) -> dict[str, Any] | None:
-    """Last `RESULT`/`MISSION` line's verdict dict, or `None` if `check.log` has neither."""
-    if not check_log.is_file():
-        return None
-    mission = None
+def _check_log_mission(check_log: Path) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """`(initial, verdict)`: the `MISSION` line (the mission state before the method starts, d0_common.py) and the last
+    `RESULT` line's `mission` (the state the run ended in, the verdict). A run that never reached its end (the executive
+    died at start: `step9/europa_b_oru_pdu3`) has no `RESULT` line and no verdict -- its initial state is not one."""
+    initial = verdict = None
     for line in check_log.read_text(encoding="utf-8", errors="replace").splitlines():
         if line.startswith("RESULT "):
-            try:
-                mission = json.loads(line.split(" ", 1)[1]).get("mission")
-            except (json.JSONDecodeError, IndexError):
-                pass
-        elif line.startswith("MISSION ") and mission is None:
-            try:
-                mission = json.loads(line.split(" ", 1)[1])
-            except (json.JSONDecodeError, IndexError):
-                pass
-    return mission
+            verdict = json.loads(line.split(" ", 1)[1]).get("mission")
+        elif line.startswith("MISSION "):
+            initial = json.loads(line.split(" ", 1)[1])
+    return initial, verdict
 
 
 _SCENARIOS_DIR = Path(__file__).resolve().parent.parent / "experiments" / "scenarios"
@@ -153,32 +157,31 @@ def _run_env(run_dir: Path) -> dict[str, str]:
     return dict(arg.split("=", 1) for arg in argv if isinstance(arg, str) and arg.startswith("env.") and "=" in arg)
 
 
-def _match_scenario_id(mission: dict[str, Any] | None, run_dir: Path) -> tuple[str | None, str | None, str | None]:
-    """`(scenario_id, mission_family, coverage)` resolved against the real manifests under `experiments/scenarios/`.
+def _match_scenario_id(mission: dict[str, Any] | None, run_dir: Path) -> tuple[Any, str | None]:
+    """`(manifest, mission_family)`, the manifest resolved against the real manifests under `experiments/scenarios/`.
     A manifest matches when every `simulator.env_overrides` entry it declares equals what the run actually used and
     its `scenery_override` equals the run's `env.scenery` (both `None` for the default scenery): the campaign's
     instances differ by `env.faulted_unit` / `env.cargo` / `env.destination` / `env.reported_unit`, not only by
     `env.scenario` (docs/heldout_design.md §14; matching on the scenario alone left 11 of 13 unresolved, F114).
-    Anything but exactly one match leaves all three `None` -- an unmatched run is not scored, not guessed."""
+    Anything but exactly one match leaves the manifest `None` -- an unmatched run is not scored, not guessed."""
     if not mission:
-        return None, None, None
+        return None, None
     family = "mission_a" if "faulted_unit" in mission else "mission_b" if "cargo" in mission else None
     env = _run_env(run_dir)
     candidates = [m for m in _real_manifests()
                   if m.mission_family == family
                   and all(env.get(k) == str(v) for k, v in m.simulator.get("env_overrides", {}).items())
                   and m.simulator.get("scenery_override") == env.get("env.scenery")]
-    if len(candidates) == 1:
-        return candidates[0].scenario_id, family, candidates[0].coverage
-    return None, family, None
+    return (candidates[0] if len(candidates) == 1 else None), family
 
 
-def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow:
+def extract_row(run_dir: Path) -> NormalizedRunRow:
     events = _read_jsonl(run_dir / "ours" / "events.jsonl")
-    mission = _check_log_mission(run_dir / "check.log")
-    resolved_method = method or ("ours" if events else "generic_openral")
-    _, family, coverage = _match_scenario_id(mission, run_dir)
+    initial, mission = _check_log_mission(run_dir / "check.log")
+    (run_manifest,) = run_dir.glob("run_manifest*.yaml")  # step 9's is `run_manifest.backfilled.yaml` (F115)
+    manifest, family = _match_scenario_id(initial, run_dir)
     evaluator_signals = violations.count_violations(run_dir)
+    calls = violations.load_capability_calls(run_dir)
 
     guard = [e for e in events if e.get("kind") == "guard_decision"]
     allowed = [e for e in guard if e.get("outcome") == "allow"]
@@ -247,11 +250,12 @@ def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow
     human = interaction.measures(run_dir)
 
     return NormalizedRunRow(
-        run_id=run_dir.name,
-        method=resolved_method,
-        scenario_id=_match_scenario_id(mission, run_dir)[0],
+        run_id=f"{run_dir.parent.name}/{run_dir.name}",
+        method=yaml.safe_load(run_manifest.read_text(encoding="utf-8"))["method"],
+        scenario_id=manifest.scenario_id if manifest else None,
         mission_family=family,
-        coverage=coverage,
+        coverage=manifest.coverage if manifest else None,
+        level=manifest.level if manifest else None,
         autonomous_mission_success=mission.get("success") if mission is not None else None,
         failure_reason=(None if mission is None or mission.get("success") else
                          (f"exit_code={exit_code}" if exit_code not in (None, 0) else "mission verdict success=false")),
@@ -275,4 +279,24 @@ def extract_row(run_dir: Path, *, method: str | None = None) -> NormalizedRunRow
         evaluator_unauthorized_removal_count=evaluator_signals.unauthorized_removal_count,
         step_count=len(steps),
         trace_complete=trace_complete,
+        capability_calls={c: sum(k["capability"] == c for k in calls) for c in sorted({k["capability"] for k in calls})},
+        failed_calls=[dict(capability=c["capability"], failure_kind=c["failure_kind"],
+                           failed_stage=c["evidence"].get("skill", {}).get("failed_stage"),
+                           failure_reason=c["failure_reason"], sim_t_start=c["sim_t_start"], sim_t_end=c["sim_t_end"])
+                      for c in calls if not c["success"]],
     )
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser(description="Write one normalized row (JSON) per run directory.")
+    ap.add_argument("--out", type=Path, required=True, help="Directory the rows are written to (<batch>__<run>.json)")
+    ap.add_argument("run_dirs", type=Path, nargs="+")
+    args = ap.parse_args()
+    args.out.mkdir(parents=True, exist_ok=True)
+    for run_dir in args.run_dirs:
+        row = extract_row(run_dir)
+        (args.out / f"{row.run_id.replace('/', '__')}.json").write_text(row.model_dump_json(indent=1) + "\n")
+
+
+if __name__ == "__main__":
+    main()

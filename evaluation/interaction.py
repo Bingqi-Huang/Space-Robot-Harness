@@ -4,7 +4,9 @@ Independence), Steinfeld et al. HRI 2006 (intervention response time), Olsen & G
 Identical for every method: read from mission control's own log (`<run_dir>/operator/events.jsonl`,
 experiments/operator_console/console.py) and the shared capability boundary's call windows (`capability_server.log`,
 mission time `sim_t_start`/`sim_t_end`). Mission time is the simulator clock throughout; the mission spans the first
-capability call's start to the last one's end.
+capability call's start to the later of the last one's end and the last exchange of a request with mission control: a
+method that stops and asks the ground after its last call is still in its mission while it waits (the baselines' escalations; ending the mission
+at the last call gave a ratio of 2.2 and no waiting at all, F132).
 """
 from __future__ import annotations
 
@@ -58,9 +60,13 @@ def measures(run_dir: Path) -> dict[str, Any]:
     starts = {e["interaction_id"]: e for e in ev if e["kind"] == "interaction_start"}
     ends = {e["interaction_id"]: e for e in ev if e["kind"] == "interaction_end"}
     delivered = {e["interaction_id"]: e["mission_t"] for e in ev if e["kind"] == "reply_delivered"}
-    queued = [e for e in ev if e["kind"] == "link_queued"]
+    # requests whose message or answer the link held (not the final report, which is no request); one never delivered to
+    # the ground has no interaction_start and is open from its queuing on
+    queued = [e for e in ev if e["kind"] == "link_queued" and e["type"] == "request_operator"]
     requests = [i for i, s in starts.items() if s["type"] == "request_operator"]
-    mission = (min(a for a, _ in calls), max(b for _, b in calls)) if calls else None
+    unsent = [q for q in queued if q["request_id"] not in {starts[i]["request_id"] for i in requests}]
+    exchanges = [e["mission_t"] for e in ev if e.get("interaction_id") in requests] + [q["mission_t"] for q in queued]
+    mission = (min(a for a, _ in calls), max([b for _, b in calls] + exchanges)) if calls else None
     elapsed = mission[1] - mission[0] if mission else None
 
     # each request's segments (Steinfeld et al. 2006): delivery to the ground, ground decision (notice + planning,
@@ -74,7 +80,7 @@ def measures(run_dir: Path) -> dict[str, Any]:
     # time with a request open: from sending it to its answer arriving (or the run's end when none arrived)
     end_t = mission[1] if mission else None
     open_windows = [(s["sent"], delivered.get(s["interaction_id"], end_t)) for s in segments if end_t is not None]
-    open_windows += [(q["mission_t"], end_t) for q in queued if end_t is not None]
+    open_windows += [(q["mission_t"], end_t) for q in unsent if end_t is not None]
     open_union = _merge([(max(a, mission[0]), min(b, mission[1])) for a, b in open_windows]) if mission else []
     open_s = sum(b - a for a, b in open_union) if mission else None
     # waiting idle: a request open and no capability executing

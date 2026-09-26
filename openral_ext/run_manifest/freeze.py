@@ -28,16 +28,22 @@ METHOD_ARTIFACTS: dict[str, list[str]] = {
         "configs/space_runtime.yaml",  # hard invariant/authority guard configuration
         "space_runtime/guard.py",  # the guard mechanism itself
         "space_runtime/verification.py",  # effect-verifier mapping
+        "space_runtime/facts.py",  # what the record keeps of each event (the fields the step text shows)
+        "space_runtime/tools.py",  # renders the contracts + prompts/ours/tools.yaml into the tool schemas
         "openral_ext/capability_server/contracts.yaml",  # generic capability contracts (shared boundary, but
         # this is the artifact PLEXIL/EUROPA also read through the same file -- listed once, not duplicated below)
     ],
     "plexil": [
         "baselines/plexil/plans/*.ple",
         "baselines/plexil/plans/*.plx",
+        "baselines/plexil/plans/lib/*.ple",  # the library both missions call (docs/baselines/plexil.md traceability)
+        "baselines/plexil/plans/lib/*.plx",
         "baselines/plexil/interface-config.xml",
+        "baselines/item_descriptions.json",  # the item table both baselines read (named in interface-config.xml)
     ],
     "europa_plexil": [
-        "baselines/europa/**",  # not built yet (todo.md item 1) -- listed for when it exists
+        "baselines/europa/**",
+        "baselines/item_descriptions.json",
     ],
 }
 

@@ -5,6 +5,7 @@ manifest_version: 1
 scenario_id: mission_b/covered/b_l1_consumables_habitat
 mission_family: mission_b
 coverage: covered
+level: L1  # docs/heldout_design.md §2 novelty ladder, §14 row
 
 mission_brief: >
   Deliver the consumables container staged at the landing-pad offload stand (slot 0 per the manifest) to the

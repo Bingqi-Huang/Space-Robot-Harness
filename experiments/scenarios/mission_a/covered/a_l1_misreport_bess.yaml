@@ -9,6 +9,7 @@ manifest_version: 1
 scenario_id: mission_a/covered/a_l1_misreport_bess
 mission_family: mission_a
 coverage: covered
+level: L1  # docs/heldout_design.md §2 novelty ladder, §14 row
 
 mission_brief: >
   PDU-2 reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if within

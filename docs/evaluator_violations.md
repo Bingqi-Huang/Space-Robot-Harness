@@ -121,17 +121,20 @@ none -- which covers both "currently held" and "somewhere else, including the gr
 `on_support()` also defines "resting" as linear speed below `RESTING_SPEED_M_S = 0.05` m/s and "held" as
 farther than `NOT_HELD_M = 0.30` m from the gripper TCP -- both reused verbatim.
 
-**Rule, and the held exclusion.** A drop is a rising edge into "`{item}_on == ""`, the item's speed
-between consecutive recorded poses is below `RESTING_SPEED_M_S`, **and** the item is farther than
-`NOT_HELD_M` from the gripper TCP" -- settled, off any known support, and not held. The `NOT_HELD_M` term
-is load-bearing: `{item}_on == ""` while at rest also reads true for an item the robot is simply holding
-still (e.g. paused mid-carry) -- that is not a drop, and is excluded by reusing SRB's own held/not-held
-boundary rather than inventing a second one. The gripper TCP is the arm's `srb/env0/robot/Link7` body
-(ground truth, no AMCL) plus the mission task's own local `_TCP_OFFSET = (0, 0, 0.14)` from Link7 to the
-TCP, both reused verbatim; `on_support()` itself measures `NOT_HELD_M` from the item's *handle* point
-(`handle_pos_env`, a per-object offset from the site's interaction survey), not its root -- this
-evaluator approximates with the item's own root pose (what `pose` events carry) instead of also loading
-that survey, which only matters near the 0.30 m boundary.
+**Rule, and the held exclusion.** A drop is a rising edge into "the item's recorded pose stands on no
+surveyed support, its speed between consecutive recorded poses is below `RESTING_SPEED_M_S`, **and** it is
+farther than `NOT_HELD_M` from the gripper TCP" -- settled, off any known support, and not held. "On a
+support" is `on_supports()`'s own geometric test (centre within `ON_SUPPORT_XY_M` of a surveyed place point
+along/across its normal, base within `ON_SUPPORT_Z_M`, upright within 15 deg; constants reused verbatim) on
+the recorded pose, not `mission_state`'s `""`: `where_is()` also reads `""` for an item standing on its
+support while the TCP is within `NOT_HELD_M` of its handle, judged at the simulator's instant, and the
+recorder's /tf lookups come a moment later -- at the 0.30 m edge the two disagree for one sample, and a
+pick's approach or a place's retreat read as a drop (10 of the 12 drops counted on step 10's runs, F132).
+The `NOT_HELD_M` term is load-bearing: an item held still mid-carry is off every support and at rest. The
+gripper TCP is the arm's `srb/env0/robot/Link7` body (ground truth, no AMCL) plus the mission task's own
+local `_TCP_OFFSET = (0, 0, 0.14)`, measured to the item's *handle* point (the object's root plus its
+surveyed handle offset, as `handle_pos_env` does; measured from the root, every carried item read as not
+held, F114).
 
 The item's and Link7's pose history comes from `experiments/evaluator_recorder/recorder.py`'s own `pose`
 events (a `tf2_ros.Buffer` lookup in the common `srb/env0` frame, logged once per `mission_state`
@@ -157,7 +160,11 @@ recorded pose, sampled at the `mission_state` instants where its own `{item}_on`
 support as the previous such instant (i.e. `on_support()` said it was resting, untouched, both times --
 this excludes the object currently being carried, whose `{item}_on` reads `""` throughout, without
 needing to match the carrying call's free-text target against the object's name), moved by more than a
-**measured** noise floor.
+**measured** noise floor -- provided the recorded pose stood on a surveyed support (the geometric test of
+class 2) at every sample in between. `{item}_on` also reads `""` while the TCP is near the handle, which is
+when an arm pushes an item, so those samples are passed over; an item lifted off every support in between
+was carried, and a module picked from its bay and set back into it is not collateral (the reseat of
+PDU-1's own ORU in `step10_models/ours_k3_l4_pdu1` counted 3.9 cm, F132).
 
 The floor is measured, not tuned -- from a real recorded run's `/tf`, independent of how the current
 recorder reads `/tf` today. Method: `artifacts/runs/g9b/robot_motion/robot_motion_0.db3` (a rosbag
@@ -221,11 +228,6 @@ instead of worked around by editing an off-limits file or inventing a threshold:
   approximation `start_wall = end_wall - evidence.sim_s` is exact only at a 1x real-time factor. A
   one-line addition to `openral_ext/capability_server/node.py::_execute()`'s evidence dict
   (Session M-owned, off-limits here) would remove it.
-- **`on_support()`'s handle-relative `NOT_HELD_M` measurement point.** This evaluator uses the item's
-  root pose, not its handle (`handle_pos_env`, the site interaction survey's per-object local offset) --
-  see class 2 above. Loading that survey would remove the approximation; out of scope here (not an
-  off-limits file, just not built, since the approximation only matters within a few cm of the 0.30 m
-  boundary).
 - **Guard false-positive automation.** Confirmed inherently manual (§14.3, this document's opening
   section) -- appendix-only by design, not a gap to close.
 

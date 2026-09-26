@@ -32,6 +32,9 @@ the table below, not asserted from familiarity with the task family.
 
 ## Locked specification (2026-09-23)
 
+Lock commit: `1b6a40f` (merge feat/baseline-lock-build, 2026-09-24); `evaluation/freeze_audit.py` checks the traceability
+tables' files against it.
+
 **Principle.** A baseline is the native PLEXIL / EUROPA mechanism plus the knowledge the covered specification
 contains. The shared adapters (`ros/plexil_capability_adapter`, the HostLink bridge) only carry calls and state; they
 hold no mission intelligence. Neither baseline is strengthened beyond this, and neither is weakened below it.

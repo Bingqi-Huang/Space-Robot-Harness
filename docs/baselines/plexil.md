@@ -90,7 +90,7 @@ target/part/item) -> `ToShelf` (DriveAndDock on `pdu_1_shelf/shelf`) -> `Place` 
 | `ToDepot`: `feature` | `depot_stand/slot_0` | site_knowledge, `R/artifacts/runs/g4a/ours/events.jsonl:3` (`points`) | (a) |
 | `ToShelf`: `feature` | `pdu_1_shelf/shelf` | site_knowledge, same event; mission brief names PDU-1 | (a) |
 | `Return`: `dock_x/y/yaw` | `(0.0, 0.0, 0.0)` | site_knowledge `dock`, same event; matches `MissionA_Covered`'s `ReturnToDock` | (a) |
-| `DriveAndDock`: `standoff_m` / `approach_m` defaults | `1.5` | `contracts.yaml` `navigate_to_feature.standoff_m` / `dock_at_feature.approach_m` documented defaults | (b) |
+| `DriveAndDock`: `standoff_m` / `approach_m` defaults | `1.2` (1.5 until F115's shared fix) | `contracts.yaml` `navigate_to_feature.standoff_m` / `dock_at_feature.approach_m` documented defaults | (b) |
 | `PickItem`/`StowAndReturn`: tolerance args | `0.08` | `contracts.yaml` `arm_ready.tolerance_rad` / `stow.tolerance_rad` documented default | (b) |
 | `Pick`: `target`, `part` | ORU / bail-neck description | Ours' own covered-instance calls, `R/artifacts/runs/g8d,e/ours/events.jsonl` (`tool_proposed` `pick`), read-only | (a) |
 | `Pick`: `support` | `depot_stand/slot_0` | same as `ToDepot`'s `feature`; caught by a live run failing at `find` without it (F104) | (a) |
@@ -219,7 +219,7 @@ Supersedes every earlier traceability table in this file.
 | Plan element | Fact encoded | Source | Rule |
 |---|---|---|---|
 | every call's `Try` (Nav, Dock, Ready, Pick, Place, Stow, Return) | at most 3 identical attempts, on the result's `success` only | authoring_spec tier 1 (budget = Ours' `reasoner.retry_cap_per_call: 3`) | (c) |
-| `DriveAndDock`: `standoff_m`, `approach_m` | 1.5, 1.5; dock at standoff 0 | `contracts.yaml` navigate_to_feature / dock_at_feature defaults | (b) |
+| `DriveAndDock`: `standoff_m`, `approach_m` | 1.2, 1.2 (1.5 until F115); dock at standoff 0 | `contracts.yaml` navigate_to_feature / dock_at_feature defaults | (b) |
 | `PickItem`/`StowAndReturn`: `tolerance_rad` | 0.08 | `contracts.yaml` arm_ready / stow default | (b) |
 | `PickItem`: `arm_ready` before `pick` | ordering | not required by `pick`'s contract ("the arm needs no preparation"); the procedure's own covered order, run live (F104). Weak trace: kept as pre-existing and harmless (main-session decision 2026-09-24) | (b) |
 | `PickItem`: `support` | the place frame the item stands on | `contracts.yaml` pick `support` | (b) |

@@ -18,15 +18,19 @@ For Ours: for every completed capability call (an execution_started/execution_fi
                                     agent's own set_task_status calls, not automatically after
                                     verification_finished -- not one-to-one with capability calls
 
-For PLEXIL/EUROPA: reads `evaluation/baselines/*normalize*` CommonEvents and reports, per
-execution_finished, whether a plan_node_id can be attributed to it (it cannot: normalize_plexil_
-check_log's own docstring says node transitions and capability-server events are only merged by
-sorting on wall-clock, never joined by id).
+For PLEXIL: the join key is the plan node id the adapter prints on every capability call
+(`[CapabilityAdapter] COMMAND <node_id> <capability> <args>`, plexil_capability_adapter, F133), on the
+same stdout as the executive's own Node:transition trace (`plexil_node_trace.log`). Per call: the node
+id, the node instance it resolves to (the latest `Transitioning <node_id> <address> ... to EXECUTING`
+before the call's line), and the boundary's own record of the call (`capability_server.log`'s CAPABILITY
+lines, the n-th adapter call = the n-th boundary call: one Command runs at a time; the capability names
+must agree). Runs before F133 print no node id and report 0 joined.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 
@@ -77,19 +81,32 @@ def check_ours(run_dir: Path) -> None:
     print(f"  (checked: any event JSON contains the literal 'evidence/' path substring: {has_evidence_path_ref})")
 
 
+_EXECUTING_RE = re.compile(r"Transitioning (\S+) (\S+) from \S+ to EXECUTING ")
+_ADAPTER_RE = re.compile(r"^\[CapabilityAdapter\] COMMAND ([^\s\[{]+) ([^\s\[{]+) ([\[{].*)$")
+
+
 def check_plexil(run_dir: Path) -> None:
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from evaluation.baselines.plexil_normalize import normalize_plexil_check_log
-    events = normalize_plexil_check_log(run_dir / "check.log")
-    node_events = [e for e in events if e.kind == "execution_started" and e.plan_node_id]
-    cap_events = [e for e in events if e.kind == "execution_finished" and e.capability]
-    print(f"  plan node transitions logged: {len(node_events)}")
-    print(f"  capability calls logged: {len(cap_events)}")
-    joined_by_id = any(getattr(e, "plan_node_id", None) and getattr(e, "capability", None) for e in events)
-    print(f"  any single event carries BOTH plan_node_id and capability (a real join key): {joined_by_id}")
-    print("  -> node<->capability attribution is by nearest-timestamp only, never an explicit id join "
-          "(confirmed against plexil_normalize.py's own docstring)")
+    from evaluation.baselines.plexil_normalize import normalize_capability_server_log
+    boundary = normalize_capability_server_log(run_dir / "capability_server.log")
+    executing, issued = {}, []  # node id -> address of its latest EXECUTING instance; (node, address, capability)
+    for line in (run_dir / "plexil_node_trace.log").read_text(errors="replace").splitlines():
+        m = _EXECUTING_RE.search(line)
+        if m:
+            executing[m.group(1)] = m.group(2)
+        m = _ADAPTER_RE.match(line)
+        if m:
+            issued.append((m.group(1), executing.get(m.group(1)), m.group(2)))
+    n_joined = 0
+    for i, call in enumerate(boundary):
+        node, address, cap = issued[i] if i < len(issued) else (None, None, None)
+        ok = bool(node and address and cap == call.capability)
+        n_joined += ok
+        print(f"    call {i}: {call.capability} success={call.success} <- plan node {node} ({address})"
+              f"{'' if ok else '  NOT JOINED'}")
+    print(f"  capability calls (boundary): {len(boundary)}, adapter calls with a node id: {len(issued)}, "
+          f"joined to an executing plan node by id: {n_joined}")
 
 
 def main() -> None:

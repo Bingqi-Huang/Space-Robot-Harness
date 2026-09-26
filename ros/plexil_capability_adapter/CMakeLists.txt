@@ -17,7 +17,8 @@ find_library(PLEXIL_UTILS PlexilUtils PATHS ${PLEXIL_HOME}/lib REQUIRED NO_DEFAU
 
 # The module name is what universalExec's DynamicLoader calls: libCapabilityAdapter.so, initCapabilityAdapter()
 add_library(CapabilityAdapter SHARED src/CapabilityAdapter.cc)
-target_include_directories(CapabilityAdapter PRIVATE ${PLEXIL_HOME}/include)
+# CommandImpl.hh (the issuing node's id, send()) is not an installed header: read from the source tree, same checkout
+target_include_directories(CapabilityAdapter PRIVATE ${PLEXIL_HOME}/include ${PLEXIL_HOME}/src/intfc ${PLEXIL_HOME}/src/expr)
 target_link_libraries(CapabilityAdapter ${PLEXIL_APP} ${PLEXIL_INTFC} ${PLEXIL_VALUE} ${PLEXIL_UTILS})
 ament_target_dependencies(CapabilityAdapter rclcpp rclcpp_action space_harness_msgs openral_msgs)
 

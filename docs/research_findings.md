@@ -5608,3 +5608,133 @@ them); the string is unchanged in the main checkout. When the capability is regi
 supplies the item height from the equipment catalogue (the check uses the ORU's).
 
 Offline recheck with Qwen3.8-Max on the reorganized texts (each script in its own container, all complete; `artifacts/reasoner_replay/f124/`): regression 30/30 without a FAIL (PASS 25, NEUTRAL 5; F123's partial: 22/8); L4 names the transfer in 7 of 9 calls, 3 authorization requests, no donor pick proposed (F120: 8/9, 1 pick + 1 request); L2-B 0 FAIL of 6 (3 escalate, 3 neutral; F123: 1 FAIL of 2). No break; the texts stand.
+
+## F132 -- Rows -> tables on every finished run; per-leg physical failures; one Ours run recomputed from its raw record (2026-09-26, offline)
+
+**E2.** `python3 -m evaluation.rows --out artifacts/eval/step9_10/rows <run_dir>...` then `python3 -m evaluation.tables`
+(-> `artifacts/eval/step9_10/tables.md`) on all 35 finished runs: step 9 (7 instances x PLEXIL / EUROPA / Ours) and step
+10's r1-r4, k3, models (14 Ours held-out development runs). 35/35 resolve to their §14 instance and level
+(`instances.txt`); `step9/europa_b_oru_pdu3` (executive died at start, F115) has no verdict and is excluded, not scored.
+The main table is method x level with Wilson intervals; per-instance k of n, violation, interaction and physical-failure
+tables render. Development numbers, pooled over three reasoner models: not findings. What broke, fixed:
+- the verdict fell back to check.log's `MISSION` line, which is the initial state: the dead EUROPA run scored as a
+  failure. Verdict from `RESULT` only; the initial state still resolves the instance.
+- every baseline run read as `generic_openral` (method guessed from `ours/`); now the run manifest's `method`.
+- `run_id` was the directory name: four step-10 runs are all `ours_l4_pdu1` and their rows overwrote each other; now
+  `<batch>/<run>`.
+- no level anywhere: `level` added to the 13 manifests (schema-checked) and the row.
+- class 2 (dropped item) read `mission_state`'s `""` as "off every support"; `where_is()` also says `""` for an item
+  standing on its support while the TCP is within 0.30 m of its handle, judged at the sim instant, and the recorder's
+  /tf poses come a moment later: at the edge one sample reads "not held, off support". 10 of 12 step-10 drops were a
+  pick's approach or a place's retreat (`before_after.txt`); now the site's own geometric on-support test on the
+  recorded pose: 2 left, both real falls (`step10_r1`, `step10_r2` L2-B).
+- class 3 compared an object with its previous resting instant across a carry: Kimi's reseat of PDU-1's own ORU
+  (`step10_models/ours_k3_l4_pdu1`) counted as 3.9 cm collateral. Now broken when the item leaves every support; the
+  three real ones stay (occupier pushed in both DeepSeek L2-B runs, EUROPA's dock turning the container).
+- interaction: the mission ended at the last call, so a baseline that escalated after it had HIR 2.20 / 1.34 and no
+  waiting; queued final reports opened "request" windows past the end (negative fractions on 4 runs, understated ones
+  on 4 more) and counted as queued requests. Now the mission runs to the last request exchange and only requests count: HIR 0.67 / 0.56, open
+  0.69 / 0.58.
+Docs: `docs/evaluator_violations.md` classes 2-3 (the stale "root, not handle" caveat removed), `evaluation/README.md`.
+
+**B4.** The row carries every call the boundary completed per capability and each failed one (failure_kind, the
+skill's own `failed_stage`, reason, mission-time window); `tables.physical_failure_table`: 334 calls, 13 failed --
+arm_ready move 3 (PLEXIL battery), pick find 3 (EUROPA consumables), press locate 3, place settle 1 / release 1,
+release 2 (timeouts, no skill record). Every failure_kind is 3 (FAILURE_RUNTIME_ERROR), the two release timeouts too
+(the action defines 7, DEADLINE_MISSED): the stage, not the kind, tells failures apart. Boundary refusals (REJECTED,
+no work stand) return before the CAPABILITY line and are in no table.
+
+**R2** (`step10_models/ours_qwen_l4_pdu1`; `r2_recompute.py`, `r2_bag.py`, outputs beside them). With check.log,
+capability_server.log, report.md and scene_run.yaml withheld -- the verdict and the initial state from the evaluator's
+first/last `mission_state`, the instance from that state's own fields, the calls from Ours' execution_started/finished
+pairs -- 36 of 37 row fields equal the row, every violation class and interaction measure included; idle waiting 0.0918
+vs 0.0919 (the agent stamps a call's start 0.02 s before the boundary). 22 calls = 22, same outcome and reason; the
+boundary log's back-computed wall start (`end - sim_s`) is 10.7-334.6 s early at the ~0.2 sim rate, the events' is
+exact (no class 1/4 count changes on the 35 runs either way, `class1_sim_vs_wall.txt`). The bag alone gives the same
+5785 mission states (first and last identical), the verdict, the contact flag (0 edges) and the operator exchange; it
+has no capability topic. Missing from the raw record: (1) for PLEXIL and EUROPA runs the per-call record (sim window,
+failure_kind, failed stage, evidence) exists only in capability_server.log -- EUROPA's `events.jsonl` has wall times and
+reasons, PLEXIL's node trace neither -- so their class 1/4 windows, mission time and failure table need the derived log;
+(2) run_manifest.yaml's `exit_code`, `mission_verdict` and a baseline's `method` are copied from check.log after
+teardown (`openral_ext/run_manifest/backfill.py`), and its verdict for `europa_b_oru_pdu3` is the initial state
+(`success: false`, same MISSION fallback); (3) the reasoner model is in no manifest, only per step in model_io.jsonl;
+(4) `env.scenery` is only in scene_run.yaml (all 13 instances use the default).
+
+## F133 -- The PLEXIL adapter names the plan node on every capability call; the §14.6 join is by id, not by time (2026-09-26, offline)
+
+Checklist E7 left PLEXIL without a plan node <-> capability call join key: the adapter's `COMMAND` line followed the
+issuing node's transition on the same stdout, and the checker could only pair them by position or timestamp. The node
+id is available, though not through the public interface: `PLEXIL::Command` (Release 6.1.3, `0e7439fb`) exposes only
+`getCommand`/`getName` (the command name)/`getArgValues`/`isReturnExpected`, and `AdapterExecInterface` passes nothing
+more. The executive's one implementation, `CommandImpl` (final), is built by the XML parser as
+`new CommandImpl(node->getNodeId(), ...)` (`src/xml-parser/parseNode.cc:938`) and keeps that id as the name of its command
+handle variable (`m_ack`, `CommandHandleVariable::getName`). The adapter now prints it:
+`[CapabilityAdapter] COMMAND <node_id> <capability> <args>`, via `static_cast<CommandImpl *>(cmd)->getAck()->getName()`;
+`CommandImpl.hh` is not an installed header, so CMake adds `$PLEXIL_HOME/src/intfc` and `src/expr` (same checkout). No
+plan, library node or command was changed (authoring spec lock). Lookups have no node to name: a Lookup reaches the
+adapter as a `StateCacheEntry` (`LookupReceiver`) shared by every expression reading that state, so the adapter logs
+none; RequestOperator is not a capability call and is unchanged. `evaluation/trace_completeness_check.py --method plexil`
+now joins by that key: each boundary call (`capability_server.log`, n-th CAPABILITY = n-th adapter call, the names must
+agree) gets the node id and the node instance it resolves to (the node's latest `Transitioning <id> <address> ... to
+EXECUTING` in `plexil_node_trace.log`). Checked offline: the package rebuilt in a throwaway CPU container into a scratch
+prefix, universalExec ran Mission A covered (isru) against a stand-in boundary, and all 5 calls came back joined
+(Nav1, Dock1, Press1, Stow1, Return1); the plans' offline check stays 51/51 (`0 failed`). Runs before this change
+(step 9, verify12) print no node id and report 0 joined; the live `ros/install` still has the old library until the next
+rebuild, so the first run after it is the first with the key.
+
+## F137 -- Freeze tooling: every change to Ours since step 10's start traces to a finding except one file's reorganization; nothing the reasoner reads names a held-out situation; one stale baseline table row (2026-09-26, offline)
+
+Checklist F2/F3 (pre-freeze work order item 6). `evaluation/freeze_audit.py` diffs Ours' artifacts against step 10's
+starting point, `8361741`: HEAD when step10_r1 was launched (2026-09-24 23:24 +0800) and the `research_repo_revision`
+of all six of its run manifests; its Ours artifacts are identical to those of af1600d, the commit F116 is recorded in.
+The artifact list is `METHOD_ARTIFACTS["ours"]`, which now also includes `space_runtime/facts.py` and `tools.py`. PLEXIL's
+list now includes `plans/lib/` and the shared item table. For each hunk, the audit names the findings (F116 on) that
+mention the hunk's file and one of its code words, next to the commits git blame gives. It then greps the artifacts for
+§14's held-out words and checks the files cited in the baselines' traceability tables against the lock (`1b6a40f`, the
+merge of the lock build). The report is `artifacts/eval/freeze_audit/2026-09-26.md` (HEAD 548c19b; no uncommitted change
+under the artifacts).
+
+- **Changes.** 34 hunks in 9 files. `guard.py` and `contracts.yaml` have not changed since the start, and `playbook.md`
+  is gone (now `system.md`). 23 hunks share a code word with a finding: F117 (the place verifier's between-the-fingers
+  count, `IN_JAWS_MIN_POINTS`; time and link in the snapshot), F123 (Qwen3.8-Max, 600 s; the authority line) and F124
+  (the texts in `prompts/ours/`, JSON-line records, an anomaly's `kind`, no `source` sentences). F118's third fix
+  (decision time and approval mechanics, commit 2ed4298, no F number in its subject) sits in `context.py` hunks that
+  match F118 by file name only. No finding names `space_runtime/tools.py`, so its six hunks (934fd70) are recorded here.
+  They are F124's reorganization: the local tool texts, the EFFECT/QUERY prefixes, the rationale text and the reply to a
+  call-less answer move to `prompts/ours/tools.yaml`, and a `string[]` input type is added so that `decompose_mission`'s
+  subtasks keep their array schema. The schemas are otherwise the same (same required arguments). Five more hunks (three
+  in `facts.py`, one in `context.py`, one in `verification.py`) match by file name only. They are the field
+  restructuring and imports that F124 and F117 describe. None of the changes names a device, cause, object or order.
+- **Held-out words.** No model-facing text contains a scenario name, a held-out object (shutter, radiator, occupied,
+  return container, self-test, filter cartridge, donor, transfer) or a held-out unit id. The hits for a reader to check:
+  - `energized` (5): the one generic authority rule and its telemetry field (heldout_design §5.2), both in the starting
+    point.
+  - `isru`: the power_status contract's list of the site's units.
+  - `slot_0` and `spare ORU`: examples in two contracts (the covered Mission B source and cargo), in the starting point.
+  - `covers` and `filter`: false hits.
+  - A code comment in `verification.py` naming the run `step10_r1/ours_l2b_habitat` (F117's trace to the defect). The
+    model never reads it, but it is a held-out instance name inside an Ours artifact: the user decides whether to keep or
+    reword it.
+- **Baselines.** Every file the tables cite exists. Changes since the lock:
+  - The shared 1.5 m -> 1.2 m (F115, B6) in `MissionA/B_Covered.ple`, the EUROPA domain and `sim_boundary.py`.
+  - The EUROPA host listens before its boundary queries (F114).
+  - The library's `.plx` files differ only in the compiler's `FileName` attribute.
+
+  All of these are shared-infrastructure fixes under the lock's change control. One table row is stale: plexil.md's
+  library table still gives `DriveAndDock` `standoff_m`, `approach_m` = 1.5, 1.5, but both mission plans now pass 1.2.
+- **F3.** `evaluation/freeze_tag.py` records:
+  - the three repos' HEADs and their uncommitted paths;
+  - the run-farm image (`runfarm:22.04`, sha256:f102a954...);
+  - openral/.venv's 195 packages as its own Python 3.10 sees them (`uv pip freeze --target`, since the host's python3
+    is 3.12);
+  - each method's committed artifacts;
+  - the reasoner configuration (Qwen3.8-Max, thinking on, 600 s) and the VLMs' (DeepSeek-V4.1-Flash for the scene VLM
+    and pick/press, 300 s), with the arguments each client and request sends, read from the calling code. No request
+    sets a sampling parameter, so decoding is the gateway's default.
+
+  It runs dry by default. `--tag` writes `artifacts/freeze/<tag>.yaml` and tags all three repos, and refuses if any repo
+  is dirty. The dry run (`artifacts/freeze/freeze-1.dry_run.yaml`) found openral and SRB clean and the research repo
+  with 32 uncommitted paths (other work in progress), so a real tag would be refused now.
+- **Found on the way.** zxing-cpp (F131) had been installed into `openral/.venv/lib/python3.12` (uv on the host resolved
+  the venv's python to the host interpreter); replaced by the cp310 build under the venv's python3.10 and imported in the
+  run-farm image.

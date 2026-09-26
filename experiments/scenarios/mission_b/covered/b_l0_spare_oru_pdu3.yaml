@@ -6,6 +6,7 @@ manifest_version: 1
 scenario_id: mission_b/covered/b_l0_spare_oru_pdu3
 mission_family: mission_b
 coverage: covered
+level: L0  # docs/heldout_design.md §2 novelty ladder, §14 row
 
 # task.py mission_brief(): item/source from _CARGO["spare_oru"], destination name from _DESTINATION["pdu_3"][1]
 mission_brief: >

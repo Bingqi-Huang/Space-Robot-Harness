@@ -36,6 +36,7 @@ class ScenarioManifest(BaseModel):
     scenario_id: str
     mission_family: str
     coverage: Literal["covered", "held_out"]
+    level: Literal["L0", "L1", "L2-A", "L2-B", "L3", "L4"]  # docs/heldout_design.md §2; the main table's rows (§14)
     mission_brief: str
     simulator: dict[str, Any]
     required_capabilities: list[str]

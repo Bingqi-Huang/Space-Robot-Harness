@@ -1,7 +1,7 @@
 """Table generation from normalized rows -- execution_plan.md §13.2 "The main result table is
 generated directly from these rows", §15 (Wilson CI for rates, bootstrap for ratios, pairing by
 scenario seed). No hand-edited CSV: `main()` reads a directory of row JSON files (as written by
-`evaluation/rows.py::extract_row`) and prints a Markdown table.
+`evaluation/rows.py::extract_row`) and prints the Markdown tables.
 """
 from __future__ import annotations
 
@@ -13,7 +13,10 @@ from pathlib import Path
 
 from evaluation.rows import NormalizedRunRow
 
-__all__ = ["wilson_ci", "bootstrap_ci", "success_rate_table", "violation_table", "load_rows"]
+__all__ = ["wilson_ci", "bootstrap_ci", "success_rate_table", "instance_table", "violation_table", "interaction_table",
+           "physical_failure_table", "load_rows"]
+
+LEVELS = ("L0", "L1", "L2-A", "L2-B", "L3", "L4")  # docs/heldout_design.md §2, the order of the success-versus-level curve
 
 
 def wilson_ci(successes: int, n: int, *, z: float = 1.96) -> tuple[float, float, float]:
@@ -47,26 +50,41 @@ def load_rows(rows_dir: Path) -> list[NormalizedRunRow]:
 
 
 def success_rate_table(rows: list[NormalizedRunRow]) -> str:
-    """Markdown table: one line per (method, coverage), stratified per §15 ("stratification by
-    covered versus held_out and by mission family"). Rows with `autonomous_mission_success is None`
-    (no MISSION verdict -- an infrastructure failure, §15 "not counted as scientific failures") are
-    excluded from the denominator and reported separately."""
+    """Markdown table, the main result: one line per (method, level), the success-versus-level curve of preregistration
+    §4 (docs/heldout_design.md §14: L0/L1 covered, L2-L4 held-out). Rows with `autonomous_mission_success is None` (no
+    verdict -- an infrastructure failure, preregistration §3, not scored) are excluded from the denominator and listed."""
     groups: dict[tuple[str, str | None], list[NormalizedRunRow]] = {}
-    excluded = 0
+    excluded = []
     for r in rows:
         if r.autonomous_mission_success is None:
-            excluded += 1
+            excluded.append(r.run_id)
             continue
-        groups.setdefault((r.method, r.coverage), []).append(r)
-    lines = ["| method | coverage | n | successes | rate | 95% Wilson CI |", "|---|---|---|---|---|---|"]
-    for (method, coverage), grp in sorted(groups.items(), key=lambda kv: kv[0]):
+        groups.setdefault((r.method, r.level), []).append(r)
+    lines = ["| method | level | coverage | n | successes | rate | 95% Wilson CI |", "|---|---|---|---|---|---|---|"]
+    for (method, level), grp in sorted(groups.items(), key=lambda kv: (kv[0][0], LEVELS.index(kv[0][1]))):
         n = len(grp)
         succ = sum(1 for r in grp if r.autonomous_mission_success)
         p, lo, hi = wilson_ci(succ, n)
-        lines.append(f"| {method} | {coverage or '?'} | {n} | {succ} | {p:.2f} | [{lo:.2f}, {hi:.2f}] |")
+        lines.append(f"| {method} | {level} | {grp[0].coverage} | {n} | {succ} | {p:.2f} | [{lo:.2f}, {hi:.2f}] |")
     if excluded:
         lines.append("")
-        lines.append(f"({excluded} run(s) excluded: no MISSION verdict found -- infrastructure failure, not a scientific result)")
+        lines.append(f"({len(excluded)} run(s) excluded, no verdict -- infrastructure failure, not scored: {', '.join(excluded)})")
+    return "\n".join(lines)
+
+
+def instance_table(rows: list[NormalizedRunRow]) -> str:
+    """Markdown table: successes k of n per §14 instance and method (preregistration §4, paired by instance); `-` where a
+    method has no scored run of that instance."""
+    methods = sorted({r.method for r in rows})
+    scored = [r for r in rows if r.autonomous_mission_success is not None]
+    instances = sorted({(r.level, r.scenario_id) for r in scored}, key=lambda k: (LEVELS.index(k[0]), k[1]))
+    lines = ["| level | instance | " + " | ".join(methods) + " |", "|---|---|" + "---|" * len(methods)]
+    for level, sid in instances:
+        cells = []
+        for m in methods:
+            grp = [r for r in scored if r.method == m and r.scenario_id == sid]
+            cells.append(f"{sum(r.autonomous_mission_success for r in grp)}/{len(grp)}" if grp else "-")
+        lines.append(f"| {level} | {sid} | " + " | ".join(cells) + " |")
     return "\n".join(lines)
 
 
@@ -129,6 +147,33 @@ def interaction_table(rows: list[NormalizedRunRow]) -> str:
     return "\n".join(lines)
 
 
+def physical_failure_table(rows: list[NormalizedRunRow]) -> str:
+    """Markdown tables, the physical layer per leg (docs/heldout_design.md §9, preregistration §2 category 4): per
+    capability, the calls the shared boundary completed over all runs and how many failed, by failed stage; then every
+    failed call with its run, the skill's own failure_kind, stage and reason. Attributed to the capability, whichever
+    method made the call."""
+    calls: dict[str, int] = {}
+    for r in rows:
+        for c, n in r.capability_calls.items():
+            calls[c] = calls.get(c, 0) + n
+    failed = [(r, f) for r in rows for f in r.failed_calls]
+    lines = ["| capability | calls | failed | failed at stage |", "|---|---|---|---|"]
+    for c in sorted(calls):
+        stages: dict[str, int] = {}
+        for _, f in failed:
+            if f["capability"] == c:
+                stages[f["failed_stage"] or "-"] = stages.get(f["failed_stage"] or "-", 0) + 1
+        lines.append(f"| {c} | {calls[c]} | {sum(stages.values())} | "
+                     f"{', '.join(f'{k} {v}' for k, v in sorted(stages.items())) or '-'} |")
+    lines += ["", "| run | method | level | capability | mission time (s) | failure_kind | failed stage | reason |",
+              "|---|---|---|---|---|---|---|---|"]
+    for r, f in failed:
+        reason = f["failure_reason"].replace("|", "\\|")
+        lines.append(f"| {r.run_id} | {r.method} | {r.level} | {f['capability']} | {f['sim_t_start']:.1f}-{f['sim_t_end']:.1f} | "
+                     f"{f['failure_kind']} | {f['failed_stage'] or '-'} | {reason} |")
+    return "\n".join(lines)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--rows-dir", type=Path, required=True, help="Directory of *.json files written by rows.extract_row")
@@ -136,9 +181,13 @@ def main() -> None:
     rows = load_rows(args.rows_dir)
     print(success_rate_table(rows))
     print()
+    print(instance_table(rows))
+    print()
     print(violation_table(rows))
     print()
     print(interaction_table(rows))
+    print()
+    print(physical_failure_table(rows))
 
 
 if __name__ == "__main__":
