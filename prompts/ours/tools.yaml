@@ -12,6 +12,18 @@ rationale: "one sentence: why this call now"
 # what the harness says back when a reply contains no tool call
 reply_without_call: Respond with exactly one tool call now.
 
+# the result a local tool returns (the step's `result.detail`)
+results:
+  plan_written: plan written
+  task_split: active task split
+  task_split_refused: "cannot split {target!r}: not the active task, or split too deep"
+  task_marked: active task marked {status}
+  no_active_task: no active task in the plan
+  request_sent: sent to mission control; its answer will appear under MISSION CONTROL when the link delivers it
+  waited_answered: "waited {waited_s:.0f} s of mission time; {n} answer(s) arrived"
+  waited_nothing: "waited {waited_s:.0f} s of mission time; no answer arrived"
+  suppressed: "suppressed: {reason} (identical call repeated)"
+
 # the harness-local tools: the working plan and the two operator channels
 local:
   decompose_mission:

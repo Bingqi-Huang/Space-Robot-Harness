@@ -47,7 +47,7 @@ from space_runtime.context import HarnessRenderer, system_text
 from space_runtime.facts import FactStore
 from space_runtime.guard import Guard
 from space_runtime.report import write_report
-from space_runtime.tools import DECOMPOSE, REPLY_TOPIC, REPORT_TOPIC, REQUEST_TOPIC, SET_TASK_STATUS, WAIT, HarnessToolClient
+from space_runtime.tools import DECOMPOSE, REPLY_TOPIC, REPORT_TOPIC, REQUEST_TOPIC, SET_TASK_STATUS, TEXTS, WAIT, HarnessToolClient
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
@@ -189,18 +189,18 @@ class Agent:
                 self.report_pub.publish(PromptStamped(text=call.text))
                 self.event("operator_report", text=call.text)  # sets facts["terminal"]: the run ends here
                 return
-            request_id, kind = uuid.uuid4().hex[:12], json.loads(call.metadata_json)["kind"]
+            request_id, request_kind = uuid.uuid4().hex[:12], json.loads(call.metadata_json)["kind"]
             # the request's kind (the published protocol answers by it) and the calls the guard is holding for approval
             # travel with the request as structured fields: mission control reads those, never the text, and grants (or
             # not) exactly those (capability, target) pairs
             pending = [{"capability": p["capability"], "target": p["target"], "reason": p["reason"]}
                        for p in self.store.facts["pending_approvals"]]
             self.request_pub.publish(PromptStamped(text=call.text, metadata_json=json.dumps(
-                {"request_id": request_id, "kind": kind, "pending_approvals": pending})))
-            self.event("operator_request_sent", request_id=request_id, kind=kind, text=call.text, pending_approvals=pending)
+                {"request_id": request_id, "kind": request_kind, "pending_approvals": pending})))
+            self.event("operator_request_sent", request_id=request_id, request_kind=request_kind, text=call.text,
+                       pending_approvals=pending)
             self.open_requests.add(request_id)
-            self.event("local_tool", success=True, detail="sent to mission control; its answer will appear under "
-                                                          "OPERATOR EXCHANGES when the link delivers it")
+            self.event("local_tool", success=True, detail=TEXTS["results"]["request_sent"])
             return  # the exchange itself is not terminal and does not block: the next step continues
         name, args = call.rskill_id, json.loads(call.goal_params_json or "{}")
         if name == DECOMPOSE:
@@ -213,11 +213,11 @@ class Agent:
                 fresh = MissionState(subtasks).to_state_dict()["tasks"]
                 for i, t in enumerate(fresh):
                     t["task_id"] = f"t{len(closed) + i + 1}"
-                ok, detail, ledger = True, "plan written", MissionState.from_state_dict({"tasks": closed + fresh})
+                ok, detail, ledger = True, TEXTS["results"]["plan_written"], MissionState.from_state_dict({"tasks": closed + fresh})
             else:
                 active = ledger.active() if ledger else None
                 ok = active is not None and active.task_id == target and ledger.subdivide_active(subtasks) is not None
-                detail = "active task split" if ok else f"cannot split {target!r}: not the active task, or split too deep"
+                detail = TEXTS["results"]["task_split"] if ok else TEXTS["results"]["task_split_refused"].format(target=target)
             self.event("local_tool", success=ok, detail=detail)
             if ok:
                 self.event("ledger_changed", ledger=ledger.to_state_dict())
@@ -228,15 +228,16 @@ class Agent:
             while not self.operator_replies.qsize() and self.sim_t - t0 < float(args["max_wait_s"]):
                 time.sleep(0.2)
             n = self.take_operator_replies()
-            self.event("local_tool", success=n > 0, detail=f"waited {self.sim_t - t0:.0f} s of mission time; "
-                                                           + (f"{n} answer(s) arrived" if n else "no answer arrived"))
+            self.event("local_tool", success=n > 0, detail=TEXTS["results"]["waited_answered" if n else "waited_nothing"].format(
+                waited_s=self.sim_t - t0, n=n))
             return
         if name == SET_TASK_STATUS:
             ledger = self.ledger()
             ok = ledger is not None and ledger.active() is not None
             if ok:
                 (ledger.complete_active if args["status"] == "done" else ledger.abandon_active)(args["note"])
-            self.event("local_tool", success=ok, detail=f"active task marked {args['status']}" if ok else "no active task in the plan")
+            self.event("local_tool", success=ok, detail=TEXTS["results"]["task_marked"].format(status=args["status"]) if ok
+                       else TEXTS["results"]["no_active_task"])
             if ok:
                 self.event("ledger_changed", ledger=ledger.to_state_dict())
             return
@@ -304,7 +305,7 @@ class Agent:
             if res.tool_call is None:
                 raw = self.client.last_raw or {}
                 self.event("reasoner_step_failed", tool=raw.get("name", "?"), args=raw.get("arguments", ""), llm_s=llm_s,
-                           detail=str(res.error) if res.error else f"suppressed: {res.suppressed_reason} (identical call repeated)")
+                           detail=str(res.error) if res.error else TEXTS["results"]["suppressed"].format(reason=res.suppressed_reason))
                 continue
             self.node.get_logger().info(f"step {step} ({llm_s}s): {res.tool_call.model_dump_json()[:300]}")
             self.dispatch(res.tool_call)

@@ -19,7 +19,7 @@ def write_report(store, path) -> None:
         lines += [f"## Agent {'report' if r['kind'] == 'operator_report' else 'request to mission control'} (record #{r['seq']})", r["text"], ""]
     ops = [e for e in ev if e["kind"] in ("operator_request_sent", "operator_answered")]
     lines += ["", "## Operator exchanges during the run",
-              *([f"- #{e['seq']} request ({e.get('kind')}): {e['text']}" if e["kind"] == "operator_request_sent"
+              *([f"- #{e['seq']} request ({e.get('request_kind')}): {e['text']}" if e["kind"] == "operator_request_sent"
                  else f"- #{e['seq']} answer ({e.get('authority_level') or 'n/a'}): {e['text']}" for e in ops] or ["(none)"])]
     lines += ["## Executed capabilities (boundary results)", "| # | sim t | capability | args | success | failure |", "|---|---|---|---|---|---|"]
     lines += [f"| {e['seq']} | {e['sim_t']} | {e['capability']} | `{json.dumps(e['args'])}` | {e['success']} | {e['failure_reason'][:80]} |" for e in calls]
