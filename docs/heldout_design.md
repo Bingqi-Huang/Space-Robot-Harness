@@ -110,12 +110,14 @@ decoded by the actual decoder (§6).
 
 - **Capability** (shared low-level implementation, built before Exp II but *not registered* in any method's
   artifacts until the timed extension starts): one whole operation at a surveyed support the rover is docked at -- raise
-  the wrist camera to its own scan view (0.45 m from the item's column foot, along the approach, 70 deg below the
-  horizontal; reachable at every §14 stand), decode Data Matrix (zxing-cpp, the frame upscaled 2x first) on the real
+  the wrist camera to its own scan view (0.36 m from the item's column foot, along the approach, 67 deg below the
+  horizontal: the view that read labels in check2, measured from its bag; the 0.45 m / 70 deg first written here has no
+  arm configuration at the depot stand, F131), decode Data Matrix (zxing-cpp, the frame upscaled 2x first) on the real
   rendered frame, return serials + evidence frame. Decided 2026-09-24 after pick's own view read 1 of 42 labels (the
   column and the palm cover the lid there): labels are flat data plates on the lid beside the handle (40 x 56 mm,
   2.5 mm modules). Offline: every ORU reads in that view (the Exp II cases are all ORUs); the battery module's domed
   lid gives no flat seat and its plates do not read -- it is not an Exp II item. Demo overlay: wrist picture-in-picture, symbol boxed, S/N vs. record ✓/✗.
+  Built (F131): `openral_ext/scan_label.py`, unregistered; development check `scan_label_check.py`.
 - **Why it is a genuine new capability**: identical ORUs differ only by serial; the VLM cannot decode a Data Matrix.
 - **Extension spec** revealed after the Exp I freeze: "inventory records can be wrong; a label scanner is now
   available". Visible validation case: scan and confirm the depot spare. Hidden held-out cases (≤3 candidate

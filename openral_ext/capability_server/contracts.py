@@ -19,7 +19,9 @@ def item_catalogue(record: dict) -> dict:
     source = Path(record["usd"]).with_suffix(".json")
     data = json.loads(source.read_text())
     result = {"size_m": data["size_m"], "mass_kg": data["mass_kg"],
-              "catalogue_source": str(source.relative_to(HERE.parents[1]))}
+              # from the SRB checkout down: the scene export records main's absolute asset paths, which a git worktree
+              # of this repo also reads, so a path relative to this repo's root does not exist there
+              "catalogue_source": str(Path(*source.parts[source.parts.index("space_robotics_bench"):]))}
     handle = data.get("handle")
     if handle:
         result["handle_height_above_base_m"] = round(handle["xyz"][2], 3)
