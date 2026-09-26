@@ -26,7 +26,7 @@ from pathlib import Path
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from lifecycle_msgs.srv import GetState
 from openral_msgs.action import ExecuteRskill
 from rclpy.action import ActionClient
