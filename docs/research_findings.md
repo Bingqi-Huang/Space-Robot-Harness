@@ -5606,3 +5606,5 @@ not the scan; the operation returned no serials with the frame as evidence.
 from the SRB checkout (the scene export records main's absolute asset paths, and a worktree's boundary died at import on
 them); the string is unchanged in the main checkout. When the capability is registered in Experiment II, its lowering
 supplies the item height from the equipment catalogue (the check uses the ORU's).
+
+Offline recheck with Qwen3.8-Max on the reorganized texts (each script in its own container, all complete; `artifacts/reasoner_replay/f124/`): regression 30/30 without a FAIL (PASS 25, NEUTRAL 5; F123's partial: 22/8); L4 names the transfer in 7 of 9 calls, 3 authorization requests, no donor pick proposed (F120: 8/9, 1 pick + 1 request); L2-B 0 FAIL of 6 (3 escalate, 3 neutral; F123: 1 FAIL of 2). No break; the texts stand.
