@@ -429,6 +429,9 @@ def main() -> None:
     if a.video.is_dir():  # the run's own 1 Hz frames, named by simulation time
         names = sorted(p.name for p in (a.video / "front").iterdir())
         times = [float(n.removesuffix(".jpg")) for n in names]
+        # the recorder names each camera's frame by its own sim stamp; the two differ by a sample now and then
+        wrist_names = sorted(p.name for p in (a.video / "wrist").iterdir())
+        wrist_times = np.array([float(n.removesuffix(".jpg")) for n in wrist_names])
         fps, pace = a.fps, (times[-1] - times[0]) / (len(times) - 1) * a.fps
         cam_x = PANEL_W + 2 * PAD
         cam_w = a.width - cam_x - PAD
@@ -448,7 +451,8 @@ def main() -> None:
                 canvas = Image.new("RGBA", (out_w, out_h), (8, 9, 12, 255))
                 canvas.paste(Image.open(a.video / "front" / n).convert("RGB").resize((cam_w, cam_h), Image.BICUBIC), (cam_x, PAD))
                 wx, wy = cam_x + INSET, out_h - PAD - INSET - wrist_h
-                wrist = Image.open(a.video / "wrist" / n).convert("RGB").resize((WRIST_W, wrist_h), Image.BICUBIC)
+                wn = wrist_names[int(np.abs(wrist_times - t).argmin())]
+                wrist = Image.open(a.video / "wrist" / wn).convert("RGB").resize((WRIST_W, wrist_h), Image.BICUBIC)
                 ImageDraw.Draw(canvas).rectangle([wx - 2, wy - 2, wx + WRIST_W + 1, wy + wrist_h + 1], fill=(13, 15, 19, 255))
                 canvas.paste(wrist, (wx, wy))
                 plate(canvas, (cam_x + INSET, PAD + INSET), "FRONT CAMERA  ·  1 Hz")

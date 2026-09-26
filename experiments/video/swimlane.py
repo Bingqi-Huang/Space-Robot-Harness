@@ -151,7 +151,8 @@ def main(run_dir: str, stem: str) -> None:
     ax.grid(axis="x", color="#e1e0d9", lw=0.5, zorder=0)
     v = manifest["mission_verdict"]
     n_req = sum(e["kind"] == "interaction_start" and e["type"] == "request_operator" for e in ops)
-    fig.suptitle(f"{METHOD[method]} \u2014 {manifest['run_id']}\n{v['scenario']}, faulted unit {v['faulted_unit']}, "
+    what = f"faulted unit {v['faulted_unit']}" if "faulted_unit" in v else f"{v['cargo']} to {v['destination']}"
+    fig.suptitle(f"{METHOD[method]} \u2014 {manifest['run_id']}\n{v['scenario']}, {what}, "
                  f"{'success' if v['success'] else 'failure'}; {len(cs)} capability calls, {n_req} operator request(s)",
                  x=0.01, ha="left", fontsize=7.5, color=INK, linespacing=1.4)
     key = [Patch(color=BLUE, label="call succeeded"), Patch(color=RED, label="call failed"),

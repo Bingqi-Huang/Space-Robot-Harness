@@ -52,3 +52,7 @@ europa_l2b_habitat D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_b_check.py 
 europa_l3_bess D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_a_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_module_failure D0_ENV='env.faulted_unit=bess'
 europa_l3_isru D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_a_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_module_failure D0_ENV='env.faulted_unit=isru'
 europa_l4_pdu1 D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_a_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_cannibalize D0_ENV='env.faulted_unit=pdu_1'
+# rerun (category 8, preregistration §3): plexil_b_oru_pdu3's executive never received its first navigate result (DDS; capability_server.log 00:54:20), stopped at 02:45
+plexil_b_oru_pdu3_rerun D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_b_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=covered D0_ENV='env.cargo=spare_oru env.destination=pdu_3'
+# rerun (category 8): europa_l3_isru's executive never received its first navigate result (capability_server.log 03:27:56), stopped at 04:05
+europa_l3_isru_rerun D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_a_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_module_failure D0_ENV='env.faulted_unit=isru'
