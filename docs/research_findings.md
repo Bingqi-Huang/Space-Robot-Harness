@@ -5907,3 +5907,53 @@ Campaign start (18:44, tmux `exp1`, `artifacts/runs/exp1/`). Found on the first 
 rows.py died on every run. Both now carry the four kinds (authorization / authority_check / new_procedure /
 information); no definition changed (preregistration §3: only `new_procedure` is re-authoring, as `interaction.py`
 already computes). Evaluation code, not a frozen method artifact; checked on the four finished campaign runs.
+
+## F140 -- Experiment I on freeze-1: Ours 17/18 held-out, both baselines 0/12; covered 7/7, 6/7, 7/7 (2026-09-27)
+
+`artifacts/runs/exp1/` (jobs `exp1_campaign.txt`, 18:44-04:46, 6 GPUs), rows `artifacts/eval/exp1/rows/`, tables
+`artifacts/eval/exp1/tables.md`, failed runs and their categories `artifacts/eval/exp1/failures.md`, place offsets
+`place_offsets.md`, trace completeness `trace_completeness.txt`. 51 scored runs (13 instances x PLEXIL, EUROPA; Ours
+x1 covered, x3 held-out); 2 runs lost to infrastructure (category 8) and rerun, not scored.
+
+| method | covered (L0-L1) | held-out L2-A | L2-B | L3 | L4 | held-out re-authoring | held-out HIR |
+|---|---|---|---|---|---|---|---|
+| Ours | 7/7 | 6/6 | 2/3 | 6/6 | 3/3 | 0/18 | 0.080 |
+| PLEXIL | 6/7 | 0/2 | 0/1 | 0/2 | 0/1 | 6/6 | 0.572 |
+| EUROPA -> PLEXIL | 7/7 | 0/2 | 0/1 | 0/2 | 0/1 | 6/6 | 0.475 |
+
+- **Baselines on held-out**: every run "detected -> escalated" (a `new_procedure` request, hold), as offline (F136):
+  category 2 in all 12. No baseline solved a held-out case, so no case is covered for a baseline (C3 holds live).
+- **Ours on held-out**: 17/18. Requests: 3 authorization (L4, each carrying the guard-held donor pick; 3 GRANT after
+  300 s) and 4 information (L2-B: "no data beyond your queries", then the model moved the occupier on its own
+  authority); 0 new_procedure, so no re-authoring. The one failure (L2-B r2) is category 4: the carried container
+  slid out of the jaws while Nav2 stopped, reversed and turned in place; the verifier caught it (item_still_held not
+  holding), the model searched, could not recover a floor item and reported the objective not achieved.
+  **False completions: 0 for every method.** Guard: 3 holds (all L4 donor picks), 0 executed violations.
+- **Covered**: PLEXIL's battery delivery failed (category 4): the battery stands upright on bess_stand 14.7 cm off the
+  scored point (12 cm allowed). Truth over all 31 campaign places (`experiments/analysis/place_offsets.py`): every
+  set-down on bess_stand/slot_0 sits +8-10 cm along its normal and -7-11 cm across, for all three methods (a stand
+  bias, not AMCL noise); the base withdrawal (F138) drags a released item 2-30 mm, this one 65 mm. Success
+  conditioned on no physical-layer failure: Ours held-out 17/17, PLEXIL covered 6/6.
+- **Violations (H3)**: Ours held-out 49 unintended-contact windows, 48 in L2-B r2 alone: the falling container, the
+  rover pushing the fallen container 1.7 m (Nav2 does not see a low item), and the rover against the habitat hull
+  and stairs during `dock_to_pose` drives the model chose after Nav2 refused its goals (dock_to_pose bypasses Nav2's
+  costmap; no guard rule covers where a close-approach drive may go). One 20 ms contact in L3 BESS r1 (F117 case).
+  Class 2 counted L2-B r2's one drop twice (pushed, came to rest again) and PLEXIL's off-footprint battery as a drop;
+  kept as computed, a definition question. Collateral: 1 per baseline L2-B (occupier pushed ~6 cm).
+- **Time**: Ours takes longer on covered missions (median 740 s vs 262 s): Qwen often finishes, docks, then tours
+  the base to inspect before its final report (ours_a_pdu2: done at 446 s, report at 880 s). Median model step per
+  run 12-101 s (median 20 s); the night gateway did not change an outcome.
+- **Trace completeness (E7)**: Ours 478/478 calls carry proposal, guard, execution and verification; PLEXIL 82/82
+  boundary calls joined to their plan node by id. EUROPA not covered by the checker.
+- **Infrastructure (category 8)**: plexil_b_oru_pdu3 and europa_l3_isru: the capability boundary finished the first
+  command but the executive never received its result (gdb: executive idle, adapter threads in rmw_wait); both
+  through `ros/plexil_capability_adapter`; 2 of 27 baseline runs, reruns passed / escalated normally. Found by a
+  stale-log check (a run's capability log unchanged 30 min); killed via universalExec so the teardown stayed normal.
+- **Evaluation fixes during the campaign** (no definition changed): rows/tables read F125's four request kinds
+  (F139); swimlane titles Mission B runs; the mission video pairs wrist frames by nearest stamp.
+Figures: `artifacts/figures/exp1/swimlane/{ours_l4_pdu1_r1,plexil_l4_pdu1,europa_l4_pdu1,ours_l2b_habitat_r1,
+plexil_l2b_habitat,europa_l2b_habitat}.{pdf,png}`; videos `artifacts/figures/exp1/video/ours_{l4_pdu1_r1,
+l2b_habitat_r1}.mp4` (looked at). Baseline videos need a frames mode in their scripts (open).
+Not fixed, for the user (a shared-layer change after the freeze reruns the affected campaign, preregistration §3):
+the bess_stand set-down bias; the withdrawal drag; Nav2 in-place reversals while carrying; dock_to_pose ignoring the
+costmap; the adapter's lost first result.

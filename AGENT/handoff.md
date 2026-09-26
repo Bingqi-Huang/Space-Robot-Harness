@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-26 19:00 (frozen at `freeze-1`; Experiment I campaign running).
+Updated 2026-09-27 05:00 (Experiment I done on `freeze-1`, F140; decisions for the user in todo.md).
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
 **`docs/preregistration.md`** (metrics, taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md`
@@ -12,8 +12,13 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 - **Frozen: tag `freeze-1`** in research `main`, openral `master` (971f2ea), SRB `main` (2b5e2a3); manifest
   `artifacts/freeze/freeze-1.yaml` (F139). Nothing a method or a shared skill runs may change during the campaign.
   Pushed with the tags (2026-09-26). Worktree `.worktree/prefreeze` idle (merged; can go).
-- **Campaign** (step 12): `experiments/launch/lunar_base_d0/jobs/exp1_campaign.txt` (51 runs) -> `artifacts/runs/exp1/`,
-  tmux `exp1`, `queue.log` there. These runs are scored; development runs (step 9/10, checks) never are.
+- **Experiment I done** (F140): `artifacts/runs/exp1/` (51 scored + 2 category-8 reruns), `artifacts/eval/exp1/`
+  (rows, tables.md, failures.md, place_offsets, trace completeness), `artifacts/figures/exp1/`. Rows exclude the two
+  category-8 runs (plexil_b_oru_pdu3, europa_l3_isru). Development runs (step 9/10, checks) are never scored.
+- farm_queue reads the jobs file at every claim: a rerun appended late is only claimed if a worker is still alive and
+  `.next` points at it (workers that found the queue empty advance `.next` and exit).
+- A baseline run can hang on a lost first command result (F140): watch each run's capability_server.log age; kill
+  universalExec inside the container (SIGKILL; rclcpp takes SIGTERM) so the check tears down normally.
 - **Reasoner Qwen3.8-Max** (configs/space_runtime.yaml, 600 s), VLM DeepSeek-V4.1-Flash, paratera gateway.
 - **What the reasoner reads** (F124): `prompts/ours/system.md`, `prompts/ours/step.md`, `prompts/ours/tools.yaml`;
   `space_runtime/context.py` only fills them.
