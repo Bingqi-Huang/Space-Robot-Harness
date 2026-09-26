@@ -42,7 +42,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | C5 | Exp I held-out | Ours solves the six held-out instances with generic changes only | step 10 | STOPPED 2026-09-25 at the three-round limit: 4/6 (L2-A x2, L3 x2); L2-B and L4 unsolved on the model's own reasoning after three generic harness fixes (F117, F118) -- user to decide |
 | C6 | Exp I | Ours' step budget (`max_steps` 80) fits the longest held-out case | from the first L3 run | DONE 2026-09-25: L3 BESS 45, L3 ISRU 44, L2-A 29/42 steps (F117) |
 | C7 | fairness | Same mission goal to all three (brief / formal goal equivalence per instance) | read the three inputs per §14 instance | DONE 2026-09-24: no method told the true unit; Mission B item/source/destination identical for all three |
-| C8 | §5.7 ablation table (H3) | Ours' four ablation variants exist as frozen configuration switches: without authoritative facts (the agent's own claims advance state), without internal effect verification (skill success flags trusted), without the invariant/authority guard, without dynamic context reconstruction (plain accumulated history); no variant adds or removes mission knowledge | switches in space_runtime + config; offline check per variant on a recorded run; one live smoke per variant | BLOCKED 2026-09-25 (F130): recorded runs suggest three of the four variants would show no difference in natural runs; how §5.7 is measured is the user's decision |
+| C8 | §5.7 ablation table (H3) | Ours' four ablation variants exist as frozen configuration switches: without authoritative facts (the agent's own claims advance state), without internal effect verification (skill success flags trusted), without the invariant/authority guard, without dynamic context reconstruction (plain accumulated history); no variant adds or removes mission knowledge | switches in space_runtime + config; offline check per variant on a recorded run; one live smoke per variant | DEFERRED 2026-09-26 (user): how §5.7 is measured is decided when the ablations are due (after Experiment I); F130's reading stands. Not part of Experiment I's freeze |
 
 ## D. Operator protocol and space context
 
@@ -77,8 +77,8 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
 | G1 | Exp II | `scan_label` shared implementation, unregistered | build + decode on A1 renders | DONE 2026-09-25 (F131): `openral_ext/scan_label.py`, in no method's artifacts; offline both F115 Isaac photos decode; live (`pf/scan_label_2`, six supports): view reached 6/6, every plate in the frame decoded (3/3), no false reading, empty bay empty; the two no-reads were the rover's docked pose estimate 5-7 cm off sideways (bag truth), plate out of the frame |
-| G2 | Exp II held-out | Hidden cases (spare recorded at the depot but in another PDU's tray/shelf; two ORUs with swapped records) boot and are physically solvable | configs + A2-style check + label decode at each candidate location | TODO |
-| G3 | Exp II | Visible validation suite (build, wiring, one nominal case, trace completeness) | write | TODO |
+| G2 | Exp II held-out | Hidden cases (spare recorded at the depot but in another PDU's tray/shelf; two ORUs with swapped records) boot and are physically solvable | configs + A2-style check + label decode at each candidate location | DEFERRED 2026-09-26: built before Experiment II starts (after Experiment I), hidden from the extension author; not part of Experiment I's freeze |
+| G3 | Exp II | Visible validation suite (build, wiring, one nominal case, trace completeness) | write | DEFERRED 2026-09-26: with G2, before Experiment II |
 | G4 | Exp II | Timer and artifact-delta tools | `engineering_worklog.py`, `artifact_delta.py` | DONE 2026-09-24: both work (scratch clone with dummy tags) |
 
 ## R. Raw data (user rule 2026-09-24: evaluation criteria will change while writing; never re-simulate for it)

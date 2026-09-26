@@ -131,7 +131,7 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
             limit = st["fx"] * cfg["place"]["settle_moved_mm"] / 1000.0 / depth if n else float("nan")
             still = n >= cfg["hold"]["min_pixels"] and flow < limit
             # still and clear is not enough: an item caught on the open fingers hangs still from the retreated tool
-            # (step10_r1/ours_l2b_habitat: "item_placed HOLDS" with the container on the fingers, dropped at the stow).
+            # (research repo F117: "item_placed HOLDS" with the item on the fingers, dropped at the stow).
             # The settle frame's own depth, counted inside the fingers' grip space; absent when the skill stopped first.
             between = (in_jaws(SimpleNamespace(depth=np.load(st["before_depth"]), K=np.array(st["K"])), np.array(st["T_tool_cam"]))
                        if "T_tool_cam" in st else None)

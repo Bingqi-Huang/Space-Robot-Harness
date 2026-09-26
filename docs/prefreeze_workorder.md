@@ -80,6 +80,9 @@ baselines; authoring_spec "After the freeze") -- script ready and run once now, 
    EUROPA: 6 held-out instances x N = 1/2/3/5 all detected -> escalated, only the number of repeats changes. PLEXIL's N is
    plan structure (every Try expanded three times), not a parameter: N = 3 only, 6/6 escalated; N != 3 waits for the
    user (derived plan / argument / change the lock). Rerun on the frozen artifacts.
+   DECIDED 2026-09-26: PLEXIL N != 3 by argument, no derived plan: every held-out fault persists (L2-A re-trips 30 s after
+   the reset, L3/L4 at the reset, L2-B's place fails every time), so repeating the same call cannot change the outcome;
+   EUROPA's N = 1/2/3/5 table is the empirical support. The locked plans stay untouched.
 
 **6. Freeze tooling -- F2, F3.** A freeze-audit script: lists every Ours artifact (`prompts/ours/`, contract texts,
 guard config, verifier, context builder) and diffs it against the step-10 starting point (F116's audit), each change
