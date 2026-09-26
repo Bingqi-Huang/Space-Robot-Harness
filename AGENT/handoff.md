@@ -19,7 +19,8 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
   plans the relocation 4/6, the live model places onto the occupier. Live (F122): Qwen3.8-Max solves L4, Kimi-K3
   solves L2-B. **Reasoner is now Qwen3.8-Max (F123, user).** Every text the reasoner reads is in
   `prompts/ours/` (F124; system.md = standing text incl. authority, link, site; step.md = the record template; tools.yaml);
-  `space_runtime/context.py` only fills them. Next: Qwen on the six held-out states. Session B (pre-freeze infra) works in
+  `space_runtime/context.py` only fills them. Next: Qwen on the six held-out states. Session B's branch merged 2026-09-26 (F130 ablations blocked for the user,
+  F131 scan_label; zxing-cpp installed in openral/.venv); B continues in `.worktree/prefreeze` after rebasing on main. Session B (pre-freeze infra) works in
   `.worktree/prefreeze` (docs/prefreeze_workorder.md, findings F130+, GPUs 4-5).
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old
