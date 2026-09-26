@@ -1,30 +1,42 @@
-"""Wall-clock -> simulation-clock lookup from a run's own closed bag's `/clock` topic. Shared by
-`plexil_timeline_from_logs.py` and `europa_timeline_from_logs.py`: both baselines log on the wall clock
-(`d0_common.py`'s `t = time.time() - T0` convention every D0 evaluator script uses is sim-relative only for Ours;
-PLEXIL's node trace and EUROPA host's `events.jsonl` are both plain `time.time()`), but the video plays sim time,
-the same clock the mini-map's track (`track_from_bag.py`) is already on. Needs the ROS-sourced python (`rosbag2_py`).
+"""Wall-clock -> simulation-clock lookup from a run's own evaluator record (`<run>/evaluator/events.jsonl`). Shared by
+`plexil_timeline_from_logs.py`, `europa_timeline_from_logs.py` and `swimlane.py`: both baselines log on the wall
+clock (PLEXIL's node trace and EUROPA host's `events.jsonl` are plain `time.time()`), but videos and figures play
+mission time -- the simulator clock (`space_context/link.py`), which Ours' `events.jsonl` and the operator console
+already carry. The evaluator recorder stamps every pose it records with both clocks, which makes the table.
+
+The run's bag cannot give this: the recorder runs on the simulator clock, so a message's receive time in the bag is
+itself simulation time (every step-9/10 bag starts at 0.02 s since the epoch).
+
+Also here, because it is the other half of reading mission time: the Earth link profile a run ran under.
 """
 import bisect
+import json
+import subprocess
 from pathlib import Path
 
-import rosbag2_py
-from rclpy.serialization import deserialize_message
-from rosidl_runtime_py.utilities import get_message
+import yaml
+
+REPO = Path(__file__).resolve().parents[2]
 
 
-def wall_to_sim(bag: Path):
-    """A monotone (wall_s, sim_s) table from the bag's own `/clock`, for linear lookup without a numpy dependency."""
-    reader = rosbag2_py.SequentialReader()
-    reader.open(rosbag2_py.StorageOptions(uri=str(bag), storage_id="sqlite3"), rosbag2_py.ConverterOptions("", ""))
-    types = {t.name: t.type for t in reader.get_all_topics_and_types()}
-    reader.set_filter(rosbag2_py.StorageFilter(topics=["/clock"]))
-    msg_t = get_message(types["/clock"])
-    wall, sim = [], []
-    while reader.has_next():
-        _, data, recv_ns = reader.read_next()
-        msg = deserialize_message(data, msg_t)
-        wall.append(recv_ns / 1e9)
-        sim.append(msg.clock.sec + msg.clock.nanosec * 1e-9)
+def manifest(run: Path) -> dict:
+    """The run's manifest (`run_manifest.yaml`, or the step-9 `run_manifest.backfilled.yaml`)."""
+    return yaml.safe_load(next(run.glob("run_manifest*.yaml")).read_text())
+
+
+def earth_profile(run: Path) -> dict:
+    """The Earth link profile the run ran under: `space_context/profiles/earth_link.json` at the research-repo revision
+    its manifest names (Earth set 2700 s after the start until F116, 925 s since)."""
+    rev = manifest(run)["research_repo_revision"]
+    return json.loads(subprocess.run(["git", "-C", str(REPO), "show", f"{rev}:space_context/profiles/earth_link.json"],
+                                     capture_output=True, text=True, check=True).stdout)
+
+
+def wall_to_sim(run: Path):
+    """A monotone (wall_s, sim_s) table from the evaluator's own stamps, for linear lookup without numpy."""
+    pairs = [(e["wall_t"], e["sim_t"]) for e in map(json.loads, (run / "evaluator" / "events.jsonl").read_text().splitlines())
+             if e["sim_t"] is not None]
+    wall, sim = [w for w, _ in pairs], [s for _, s in pairs]
 
     def convert(w: float) -> float:
         i = bisect.bisect_left(wall, w)

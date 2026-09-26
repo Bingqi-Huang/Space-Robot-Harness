@@ -1,15 +1,20 @@
-"""The mission as it ran: the robot-following view, the harness's state, and what the remote models said.
+"""The mission as it ran: the robot's cameras, the harness's state, and what the remote models said.
 
-    openral/.venv/bin/python experiments/video/mission_video.py <follow.mp4> <run>/ours/events.jsonl <out.mp4> \
-        [--times <follow.mp4.times>] [--track <track.json>] [--title "..."] [--from-sim 0 --to-sim 1e9]
+    openral/.venv/bin/python experiments/video/mission_video.py <follow.mp4 | run/frames> <run>/ours/events.jsonl <out.mp4> \
+        [--times <follow.mp4.times>] [--track <track.json>] [--title "..."] [--fps 6] [--from-sim 0 --to-sim 1e9]
 
-Layout: the follow camera fills the frame; a card top-left carries the clock, the mission, the agent's plan with the
-current step marked, what it is doing now and why, and the harness's last verdicts; a card bottom-right holds a plan
-view of the site with the rover on it.
+Two sources. A live-rendered follow video (`D0_VIDEO`, with its `.times`) fills the frame. Or, from the raw record of
+any finished run with no rerun, the run's own 1 Hz camera frames (`<run>/frames/{front,wrist}/<sim_t>.jpg`, the
+evaluator recorder's): the front camera fills the right of the frame with the wrist camera inset, one recorded frame
+per video frame at `--fps`. Either way a card on the left carries the clock and the Earth link, the mission, the
+agent's plan with the current step marked, what it is doing now and why, the model's own words, and the harness's
+last verdicts; a plan view of the site bottom-right has the rover, its path, the route Nav2 is following and the
+item in its jaws.
 
-Every panel line is read from the run's own record (`events.jsonl`, the same simulation clock as the video's
-`.times`), so the video states what the run states. The mini-map's poses come from the evaluator track
-(`track_from_bag.py`), for drawing only.
+Every panel line is read from the run's own record (`events.jsonl`, the same simulation clock as the video's `.times`
+and the frames' names), so the video states what the run states. The mini-map's poses and plans come from the bag
+(`track_from_bag.py`), for drawing only; its labelled places are the units the run's own calls went to. The Earth
+link is the profile the run ran under (`sim_clock.earth_profile`).
 """
 import argparse
 import bisect
@@ -17,6 +22,7 @@ import json
 import math
 import re
 import subprocess
+import sys
 import textwrap
 from pathlib import Path
 
@@ -24,10 +30,13 @@ import cv2
 import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sim_clock import earth_profile  # noqa: E402
+
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_M = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-PANEL_W, PAD, MAP_W, OUT_W = 420, 24, 300, 1600  # OUT_W is the default; --width overrides it
+PANEL_W, PAD, MAP_W, OUT_W, WRIST_W, INSET = 420, 24, 300, 1600, 400, 14  # OUT_W is the default; --width overrides it
 #: The panel and the map are fixed pixel sizes, so a wider output gives them proportionally less of the frame
 #: and the follow camera proportionally more. Record the follow camera at the width you compose at: scaling it
 #: up is the only thing here that costs picture quality, and rendering it larger costs almost nothing -- the
@@ -86,6 +95,8 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
         elif k == "reasoner_step_failed":
             state["thinking"] = None
             note("the model's answer was not a usable call", "bad")
+        elif k == "guard_decision" and e.get("outcome") == "approval_required":
+            note(f"{e['tool']} held for mission control's approval", "plain", e.get("reason", ""))
         elif k == "guard_decision" and e.get("outcome") != "allow":
             note(f"refused — {e.get('reason', '')}", "bad")
         elif k == "execution_feedback":
@@ -114,6 +125,10 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
             state["plan_since"] = e["sim_t"]  # a long line rests when it first appears, then scrolls
         elif k in ("operator_report", "operator_request"):
             note("reported to mission control", "good")
+        elif k == "operator_request_sent":
+            note("asked mission control", "plain", e["text"])
+        elif k == "operator_answered":
+            note(f"mission control: {e['outcome']}", "good" if e["outcome"] == "grant" else "bad", e["text"])
         else:
             continue
         times.append(e["sim_t"])
@@ -121,13 +136,12 @@ def timeline(events: list[dict]) -> tuple[list[float], list[dict]]:
     return times, states
 
 
-PLACES = {"depot_stand/slot_0": "depot", "pdu_1_shelf/shelf": "PDU-1 shelf"}
-
-
 class Map:
-    """A plan view of the site: surveyed structures, the rover's path, where it is now, and the carried item."""
+    """A plan view of the site: surveyed structures, the rover's path, the route Nav2 is following, where the rover is
+    now, and the item in its jaws."""
 
-    def __init__(self, structures: Path, size: int, track: list[dict], points: dict | None = None, font=None):
+    def __init__(self, structures: Path, size: int, track: list[dict], points: dict | None = None, font=None,
+                 plans: list[dict] | None = None):
         self.size = size
         self.boxes = json.loads(structures.read_text())["structures"]
         # Fit the map to what the mission uses -- everywhere the rover goes and everywhere it works -- rather than
@@ -174,6 +188,8 @@ class Map:
         ImageDraw.Draw(self.mask).rounded_rectangle([0, 0, size - 1, size - 1], radius=16, fill=255)
         self.track = track
         self.t = [s["t"] for s in track]
+        self.plans = plans or []
+        self.plan_t = [p["t"] for p in self.plans]
 
     def px(self, xy) -> np.ndarray:
         rel = (np.array(xy) - self.lo) / (self.hi - self.lo)
@@ -182,6 +198,9 @@ class Map:
     def frame(self, sim_t: float) -> Image.Image:
         img = self.base.copy()
         d = ImageDraw.Draw(img)
+        k = bisect.bisect_right(self.plan_t, sim_t) - 1
+        if k >= 0 and sim_t - self.plan_t[k] < 2.0:  # Nav2 replans ~2.4 times a second while it drives; older is done
+            d.line([tuple(self.px(xy)) for xy in self.plans[k]["xy"]], fill=(236, 238, 242, 170), width=1)
         i = min(bisect.bisect_left(self.t, sim_t), len(self.track) - 1)
         path = [tuple(self.px(s["robot"][:2])) for s in self.track[:i + 1]]
         if len(path) > 1:
@@ -192,10 +211,9 @@ class Map:
         side = np.array([-nose[1], nose[0]]) * 0.6
         d.polygon([tuple(p + np.array([nose[0], -nose[1]])), tuple(p - np.array([nose[0], -nose[1]]) + np.array([side[0], -side[1]])),
                    tuple(p - np.array([nose[0], -nose[1]]) - np.array([side[0], -side[1]]))], fill=(*AMBER, 255))
-        if s.get("item"):
-            q = self.px(s["item"][:2])
-            held = float(np.linalg.norm(np.array(s["item"][:2]) - np.array(s["robot"][:2]))) < 1.2  # riding with the rover
-            d.ellipse([q[0] - 4, q[1] - 4, q[0] + 4, q[1] + 4], fill=(*GREEN, 255) if held else (*RED, 255))
+        if s.get("held"):
+            q = self.px(s["held"]["xyz"][:2])
+            d.ellipse([q[0] - 4, q[1] - 4, q[0] + 4, q[1] + 4], fill=(*GREEN, 255))
         img.putalpha(ImageChops.multiply(img.getchannel("A"), self.mask))
         return img
 
@@ -254,11 +272,12 @@ def elide(text: str, font, width: int) -> str:
     return (out + "…") if out else text[:1] + "…"
 
 
-def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") -> Image.Image:
+def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "", link: str = "", pace: float = 1.0) -> Image.Image:
     """One card, read top to bottom in the order a viewer needs it: the clock and the robot's state, the mission
     it was given, its own plan with the current step marked, what it is doing now and why, and the harness's
     last four verdicts. One accent (amber) for now, green and red for verdicts, three greys for everything else.
-    The card is as tall as its content; nothing wraps past two lines and nothing is cut mid-word."""
+    The card is as tall as its content; nothing wraps past two lines and nothing is cut mid-word. `pace` is simulated
+    seconds per video second: scrolling and the thinking dots run on the video's clock, not the mission's."""
     small, body, head, mono, capf = fonts
     x0, inner = 20, PANEL_W - 40
     ops: list[tuple] = []  # ("text", y, x, text, font, colour) | ("strip", y, x, image) | ("rule", y) | ("bar", y0, y1)
@@ -282,6 +301,8 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
         w = body.getlength(moving_now)
         ops.append(("text", y + head.size - body.size - 3, x0 + inner - w, moving_now, body, DIM))
     y += head.size + 10
+    if link:
+        text(link, small, FAINT, gap=6)
     ops.append(("rule", y))
     y += 12
 
@@ -297,7 +318,7 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
             glyph, here = LEDGER.get(status, ("·", False))
             colour = INK if here else (FAINT if status == "done" else DIM)
             ops.append(("text", y, x0, glyph, body, colour))
-            ops.append(("strip", y, x0 + 24, marquee(plain(task), body, inner - 24, body.size + 6, colour, sim_t - state.get("plan_since", 0.0))))
+            ops.append(("strip", y, x0 + 24, marquee(plain(task), body, inner - 24, body.size + 6, colour, (sim_t - state.get("plan_since", 0.0)) / pace)))
             y += body.size + 6
         y += 10
 
@@ -322,12 +343,12 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
     caption("model")
     if state.get("thinking") is not None:
         waited = (sim_t - state["thinking"]) * state.get("wall_per_sim", 1.0)
-        dots = "·" * (1 + int(sim_t * 3) % 3)
+        dots = "·" * (1 + int(sim_t / pace * 3) % 3)
         text(f"thinking {dots:<3}", body, AMBER, gap=3)
         text(f"{max(waited, 0):.0f} s waiting on the model", small, FAINT, gap=3)
     elif state.get("reply") or state.get("reasoning"):
         if state.get("reply"):
-            said = wrap(state["reply"], 56)
+            said = wrap(state["reply"], 48)  # body size: 56 characters ran past the card
             for i, t in enumerate(said[:2]):
                 text(t + ("…" if i == 1 and len(said) > 2 else ""), body, DIM, gap=4)
         if state.get("reasoning"):
@@ -371,7 +392,7 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("video", type=Path)
+    ap.add_argument("video", type=Path, help="a follow-camera video, or a run's frames/ directory")
     ap.add_argument("events", type=Path)
     ap.add_argument("out", type=Path)
     ap.add_argument("--times", type=Path, default=None)
@@ -383,56 +404,91 @@ def main() -> None:
     ap.add_argument("--title", default="Space Robotics Agent Harness — Mission B")
     ap.add_argument("--from-sim", type=float, default=-1e9)
     ap.add_argument("--to-sim", type=float, default=1e9)
+    ap.add_argument("--fps", type=float, default=6.0, help="frames mode: recorded frames per video second")
     ap.add_argument("--width", type=int, default=OUT_W, help="composed output width; record the follow camera at it")
     a = ap.parse_args()
 
-    cap = cv2.VideoCapture(str(a.video))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    times_path = a.times or Path(f"{a.video}.times")
-    times = [float(x) for x in times_path.read_text().split()] if times_path.exists() else []
-    if len(times) < n:  # a video without its own clock: the mission's own span, spread over the frames
-        events0 = [json.loads(line) for line in a.events.read_text().splitlines()]
-        t0, t1 = events0[0]["sim_t"], events0[-1]["sim_t"]
-        times = [t0 + (t1 - t0) * i / max(n - 1, 1) for i in range(n)]
-        print(f"no {times_path.name}: assuming the video spans sim {t0:.0f}-{t1:.0f} s")
-
     events = [json.loads(line) for line in a.events.read_text().splitlines()]
     stamps, states = timeline(events)
-    track = json.loads(a.track.read_text())["track"] if a.track else []
-    places = {}
-    if a.points.exists():
-        ix = json.loads(a.points.read_text())["points"]
-        places = {k: ix[k] for k, _ in PLACES.items() if k in ix}
-        places = {k: {**v, "label": PLACES[k]} for k, v in places.items()}
+    track_json = json.loads(a.track.read_text()) if a.track else {"track": [], "plans": []}
+    track = track_json["track"]
+    # the places the run's own calls went to, one label per unit (a unit's panel, bay and shelf sit a metre apart)
+    ix = json.loads(a.points.read_text())["points"]
+    groups: dict[str, list] = {}
+    for e in events:
+        if e["kind"] == "execution_started" and (f := e["args"].get("feature") or e["args"].get("support")):
+            groups.setdefault(ix[f]["asset"], []).append(ix[f]["xyz"])
+    places = {k: {"xyz": list(np.mean(v, axis=0)), "label": plain(k).upper()} for k, v in groups.items()}
+    los = earth_profile(a.events.parent.parent)["los_after_start_s"]
     track_t = [s["t"] for s in track]
     # one scale: a caption, a line of text, the thing happening now, and the clock
     fonts = (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 14), ImageFont.truetype(FONT_B, 26),
              ImageFont.truetype(FONT_M, 13), ImageFont.truetype(FONT_B, 14))
-    site = Map(a.structures, MAP_W, track, places, font=fonts[0]) if track and a.structures.exists() else None
+    site = Map(a.structures, MAP_W, track, places, font=fonts[0], plans=track_json["plans"]) if track else None
 
-    scale = a.width / w
-    out_w, out_h = a.width, int(round(h * scale / 2) * 2)
+    if a.video.is_dir():  # the run's own 1 Hz frames, named by simulation time
+        names = sorted(p.name for p in (a.video / "front").iterdir())
+        times = [float(n.removesuffix(".jpg")) for n in names]
+        fps, pace = a.fps, (times[-1] - times[0]) / (len(times) - 1) * a.fps
+        cam_x = PANEL_W + 2 * PAD
+        cam_w = a.width - cam_x - PAD
+        cam_h = cam_w * 3 // 4
+        out_w, out_h = a.width, cam_h + 2 * PAD
+        wrist_h = WRIST_W * 3 // 4
+        map_xy = (out_w - PAD - INSET - MAP_W, out_h - PAD - INSET - MAP_W)
+
+        def plate(img: Image.Image, xy: tuple[int, int], label: str) -> None:
+            d = ImageDraw.Draw(img)
+            wide = fonts[4].getlength(label)
+            d.rounded_rectangle([xy[0], xy[1], xy[0] + wide + 16, xy[1] + 24], radius=6, fill=(13, 15, 19, 210))
+            d.text((xy[0] + 8, xy[1] + 4), label, font=fonts[4], fill=DIM)
+
+        def frames():
+            for n, t in zip(names, times):
+                canvas = Image.new("RGBA", (out_w, out_h), (8, 9, 12, 255))
+                canvas.paste(Image.open(a.video / "front" / n).convert("RGB").resize((cam_w, cam_h), Image.BICUBIC), (cam_x, PAD))
+                wx, wy = cam_x + INSET, out_h - PAD - INSET - wrist_h
+                wrist = Image.open(a.video / "wrist" / n).convert("RGB").resize((WRIST_W, wrist_h), Image.BICUBIC)
+                ImageDraw.Draw(canvas).rectangle([wx - 2, wy - 2, wx + WRIST_W + 1, wy + wrist_h + 1], fill=(13, 15, 19, 255))
+                canvas.paste(wrist, (wx, wy))
+                plate(canvas, (cam_x + INSET, PAD + INSET), "FRONT CAMERA  ·  1 Hz")
+                plate(canvas, (wx + 8, wy + 8), "WRIST CAMERA")
+                yield t, canvas
+    else:
+        cap = cv2.VideoCapture(str(a.video))
+        fps, pace = cap.get(cv2.CAP_PROP_FPS), 1.0
+        w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        times_path = a.times or Path(f"{a.video}.times")
+        times = [float(x) for x in times_path.read_text().split()] if times_path.exists() else []
+        if len(times) < n:  # a video without its own clock: the mission's own span, spread over the frames
+            t0, t1 = events[0]["sim_t"], events[-1]["sim_t"]
+            times = [t0 + (t1 - t0) * i / max(n - 1, 1) for i in range(n)]
+            print(f"no {times_path.name}: assuming the video spans sim {t0:.0f}-{t1:.0f} s")
+        out_w, out_h = a.width, int(round(h * a.width / w / 2) * 2)
+        map_xy = (out_w - MAP_W - PAD, out_h - MAP_W - PAD)
+
+        def frames():
+            for i in range(n):
+                ok, frame = cap.read()
+                if not ok:
+                    break
+                yield times[min(i, len(times) - 1)], Image.fromarray(cv2.cvtColor(
+                    cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_CUBIC), cv2.COLOR_BGR2RGB)).convert("RGBA")
+
     tmp = a.out.with_suffix(".raw.mp4")
     writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), fps, (out_w, out_h))
     written = 0
-    for i in range(n):
-        ok, frame = cap.read()
-        if not ok:
-            break
-        sim_t = times[min(i, len(times) - 1)]
+    for sim_t, canvas in frames():
         if not (a.from_sim <= sim_t <= a.to_sim):
             continue
-        canvas = Image.fromarray(cv2.cvtColor(cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_CUBIC),
-                                              cv2.COLOR_BGR2RGB)).convert("RGBA")
         j = max(bisect.bisect_right(stamps, sim_t) - 1, 0)
-        canvas.alpha_composite(panel(states[j], sim_t, a.title, fonts, moving(track, track_t, sim_t)), (PAD, PAD))
+        link = f"Earth up  ·  sets in {los - sim_t:.0f} s" if sim_t < los else "Earth below the horizon  ·  link down"
+        canvas.alpha_composite(panel(states[j], sim_t, a.title, fonts, moving(track, track_t, sim_t), link, pace), (PAD, PAD))
         if site is not None:
-            canvas.alpha_composite(site.frame(sim_t), (out_w - MAP_W - PAD, out_h - MAP_W - PAD))
+            canvas.alpha_composite(site.frame(sim_t), map_xy)
         writer.write(cv2.cvtColor(np.array(canvas.convert("RGB")), cv2.COLOR_RGB2BGR))
         written += 1
-    cap.release()
     writer.release()
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(tmp), "-c:v", "libx264", "-crf", "20",
                     "-pix_fmt", "yuv420p", str(a.out)], check=True)

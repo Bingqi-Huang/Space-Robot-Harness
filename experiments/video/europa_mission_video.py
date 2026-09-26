@@ -204,9 +204,9 @@ def main() -> None:
     ap.add_argument("--times", type=Path, default=None)
     ap.add_argument("--track", type=Path, default=None)
     ap.add_argument("--points", type=Path,
-                    default=Path("space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json"))
+                    default=Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json")
     ap.add_argument("--structures", type=Path,
-                    default=Path("space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/site_structures.json"))
+                    default=Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/site_structures.json")
     ap.add_argument("--title", default="EUROPA→PLEXIL Baseline — Mission B")
     ap.add_argument("--mission", default=DEFAULT_MISSION)
     ap.add_argument("--from-sim", type=float, default=-1e9)
@@ -228,14 +228,12 @@ def main() -> None:
 
     stamps, states = europa_timeline(events, a.mission)
     track = json.loads(a.track.read_text())["track"] if a.track else []
-    places = {}
-    if a.points.exists():
-        ix = json.loads(a.points.read_text())["points"]
-        places = {k: {**ix[k], "label": PLACES[k]} for k in PLACES if k in ix}
+    ix = json.loads(a.points.read_text())["points"]
+    places = {k: {**ix[k], "label": PLACES[k]} for k in PLACES}
     track_t = [s["t"] for s in track]
     fonts = (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 14), ImageFont.truetype(FONT_B, 26),
              ImageFont.truetype(FONT_M, 13), ImageFont.truetype(FONT_B, 14))
-    site = Map(a.structures, MAP_W, track, places, font=fonts[0]) if track and a.structures.exists() else None
+    site = Map(a.structures, MAP_W, track, places, font=fonts[0]) if track else None
 
     scale = a.width / w
     out_w, out_h = a.width, int(round(h * scale / 2) * 2)

@@ -2,15 +2,14 @@
 reading of the logs, not the evaluation-schema normalizer -- same split as `mission_video.py`'s own `timeline()`,
 which is deliberately not `space_runtime`'s fact reducer).
 
-    /usr/bin/python3.10 experiments/video/plexil_timeline_from_logs.py <run dir> <out.json>
+    openral/.venv/bin/python experiments/video/plexil_timeline_from_logs.py <run dir> <out.json>
 
 PLEXIL has no `events.jsonl`: `universalExec`'s own node-transition trace (`plexil_node_trace.log`,
-`baselines/plexil/Debug.cfg`'s `Node:transition`) and the capability boundary's own call trace
-(`capability_server.log`'s `"CAPABILITY {...}"` lines, the same log `evaluation/baselines/plexil_normalize.py`
-reads) are both stamped on the wall clock, not the simulation clock the video plays on -- unlike Ours,
-whose `events.jsonl` already carries `sim_t`. This script is the one place that resolves it: a wall->sim
-lookup table built from the run's own closed bag's `/clock` topic (the same bag `track_from_bag.py` reads for
-the mini-map), the same way a video's `.times` file resolves frame index to sim time.
+`baselines/plexil/Debug.cfg`'s `Node:transition`) is stamped on the wall clock, not the simulation clock the video
+plays on -- unlike Ours, whose `events.jsonl` already carries `sim_t`. `sim_clock.wall_to_sim` resolves it from the
+run's own evaluator record (every pose stamped with both clocks). The capability boundary's own call trace
+(`capability_server.log`'s `"CAPABILITY {...}"` lines, the same log `evaluation/baselines/plexil_normalize.py` reads)
+carries each call's `sim_t_start`/`sim_t_end` itself.
 
 Node-level granularity kept: the plan's five top-level Sequence children (ToSource, Pick, ToDestination, Place, Return --
 `baselines/plexil/plans/MissionB_Covered.ple`) and the four reusable library calls they invoke (DriveAndDock,
@@ -54,24 +53,22 @@ def parse_node_trace(trace_log: Path, to_sim, top: list[str] = TOP) -> list[dict
     return events
 
 
-def parse_capability_log(log: Path, to_sim) -> list[dict]:
+def parse_capability_log(log: Path) -> list[dict]:
     events = []
     for line in log.read_text(errors="replace").splitlines():
         m = _CAP_LOG_RE.match(line)
         if not m:
             continue
-        wall, data = float(m.group(1)), json.loads(m.group(2))
-        end = to_sim(wall)
-        start = end - float((data.get("evidence") or {}).get("sim_s") or 0.0)
-        events.append({"kind": "capability", "sim_t_start": start, "sim_t_end": end, "capability": data.get("capability"),
-                       "args": data.get("args"), "success": data.get("success"), "failure_reason": data.get("failure_reason")})
+        data = json.loads(m.group(2))
+        events.append({"kind": "capability", "sim_t_start": data["sim_t_start"], "sim_t_end": data["sim_t_end"],
+                       "capability": data.get("capability"), "args": data.get("args"), "success": data.get("success"),
+                       "failure_reason": data.get("failure_reason")})
     return events
 
 
 def main(run_dir: str, out: str, top: list[str] = TOP) -> None:
     run = Path(run_dir)
-    to_sim = wall_to_sim(run / "bag")
-    events = parse_node_trace(run / "plexil_node_trace.log", to_sim, top) + parse_capability_log(run / "capability_server.log", to_sim)
+    events = parse_node_trace(run / "plexil_node_trace.log", wall_to_sim(run), top) + parse_capability_log(run / "capability_server.log")
     events.sort(key=lambda e: e.get("sim_t", e.get("sim_t_start", 0.0)))
     Path(out).write_text(json.dumps({"run": run_dir, "events": events}))
     print(f"{len(events)} events -> {out}")

@@ -5738,3 +5738,49 @@ under the artifacts).
 - **Found on the way.** zxing-cpp (F131) had been installed into `openral/.venv/lib/python3.12` (uv on the host resolved
   the venv's python to the host interpreter); replaced by the cp310 build under the venv's python3.10 and imported in the
   run-farm image.
+
+## F135 -- H1 and H3: a mission video and a swimlane per method, rendered from the raw record alone (2026-09-26)
+
+**H1 (video).** `experiments/video/mission_video.py` now takes a run's own `frames/` directory as its source (the
+evaluator recorder's 1 Hz front + wrist JPEGs, named by simulation time) as well as a live-rendered follow video: front
+camera on the right, wrist camera inset, the existing card on the left (clock, Earth link, mission, the agent's ledger,
+the call it proposed with its own rationale, the model's reply and reasoning, the harness's verdicts), mini-map
+bottom-right. No rerun and no live render. `track_from_bag.py` now records the item in the jaws (any tracked `lb_*`
+item within 0.55 m of the gripper links' midpoint; a held ORU sits 0.47-0.50 m from it through the whole carry, any
+other item >= 0.68 m) and Nav2's `/plan`, which the mini-map draws while it is fresh (< 2 s). The map's labelled places
+are the units the run's own calls went to, not a hard-coded Mission B list. The silent mini-map drop: the baseline
+video scripts still had relative default paths (`mission_video.py`'s had been fixed in F114), and all three dropped
+the map or its places without a word when a path did not exist; defaults are now absolute and a missing file raises.
+The record card now also shows guard holds ("held for mission control's approval", not "refused"), the request sent,
+and mission control's answer; the model's reply wraps at 48 characters (56 ran past the card). Output `artifacts/figures/video/ours_qwen_l4_pdu1.mp4` (Qwen3.8-Max L4, F122): 1113
+frames at 6 fps, 186 s for 1157 s of mission time; stills at 71, 420, 791, 995 and 1155 s checked by eye.
+
+**H3 (swimlane).** `experiments/video/swimlane.py` (matplotlib), one figure per run, x = mission time (simulator
+clock), lanes deliberation / navigation / manipulation / observation queries / operator exchanges / guard holds.
+Calls come from the capability boundary's log for every method (the windows `evaluation/interaction.py` measures);
+operator exchanges from `operator/events.jsonl`; reasoner steps, queries and guard holds from Ours' `events.jsonl`;
+EUROPA's solves from its host log. The Earth window is the profile at the research-repo revision in the run's
+manifest -- the one the run ran under. The `*_timeline_from_logs.py` scripts already read `bag/`; their real defect was
+the clock: they mapped wall to simulation time with the bag's `/clock` receive times, but the recorder runs on the
+simulator clock (every step-9/10 bag starts at 0.02 s), so every wall-stamped event landed at the run's end. The table
+now comes from the evaluator record (every pose carries both clocks); PLEXIL's calls use their own `sim_t_start/end`.
+Checked: EUROPA's press dispatch maps to 121.3 s, the boundary logged 121.28 s.
+
+**What they show.** *Ours, L4:* 51 reasoner steps (344 s of mission time in deliberation; model wall time median
+22.6 s, max 216.9 s at the step that proposed the donor pick), 22 calls, none failed (navigation 357 s, manipulation
+373 s). The guard held the pick from PDU-3's bay at 213.1 s; the authorization request was sent at 226.5 s, reached the
+ground at 230.8 s, mission control decided GRANT after 300 s (530.8 s), the answer arrived at 535.1 s and the agent
+read it at 537.7 s: a 325 s hold, during which the agent took the failed ORU out of PDU-1's bay and set it on the
+shelf. The donor pick ran at 674-749 s, the place into PDU-1's bay at 863-932 s, straddling Earth-set at 925 s; the
+reset press (974-1012 s), the return and dock (to 1141 s) ran with Earth down, and the final report at 1156 s was
+queued by the link. Longest stretch with no request open 606 s; idle waiting 9 % of the mission. *PLEXIL / EUROPA,
+covered A-BESS (step 9):* 5 calls each (drive, dock, press, stow, drive back), 277 s / 270 s, EUROPA with three
+solves (9.5, 161.8, 162.7 s); no queries, no operator exchange, no guard. **Caveat:** both step-9 runs ran under the
+pre-F116 profile (Earth-set 2700 s), and they end long before either Earth-set, so their figures show Earth visible
+throughout; a like-for-like comparison needs baseline runs of the same held-out instance under the 925 s profile (the
+campaign).
+
+H1 -> DONE, H3 -> DONE. Changed: `experiments/video/{mission_video,track_from_bag,sim_clock,plexil_timeline_from_logs,
+europa_timeline_from_logs,plexil_mission_video,europa_mission_video}.py`, new `swimlane.py`. Outputs:
+`artifacts/figures/video/ours_qwen_l4_pdu1.{mp4,track.json}`, `artifacts/figures/swimlane/{ours_qwen_l4_pdu1,
+plexil_a_bess,europa_a_bess}.{pdf,png}` (+ the two baselines' `.timeline.json`).
