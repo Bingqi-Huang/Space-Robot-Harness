@@ -53,7 +53,8 @@ def _scene_run(run_dir: Path) -> dict[str, Any]:
 
 
 def _check_log_tail(run_dir: Path) -> tuple[int | None, dict[str, Any] | None]:
-    """`(exit_code, last mission verdict dict)` from `check.log`, or `(None, None)` if absent."""
+    """`(exit_code, the RESULT line's mission verdict dict)` from `check.log`, or `(None, None)` if absent. The `MISSION`
+    line is the state before the method starts, not a verdict: a run that never reached its end has none (F132)."""
     p = run_dir / "check.log"
     if not p.is_file():
         return None, None
@@ -63,12 +64,9 @@ def _check_log_tail(run_dir: Path) -> tuple[int | None, dict[str, Any] | None]:
         if m:
             exit_code = int(m.group(1))
             continue
-        if line.startswith("RESULT ") or line.startswith("MISSION "):
-            try:
-                body = json.loads(line.split(" ", 1)[1])
-            except (json.JSONDecodeError, IndexError):
-                continue
-            mission = body.get("mission", body) if line.startswith("RESULT ") else body
+        if line.startswith("RESULT "):
+            body = json.loads(line.split(" ", 1)[1])
+            mission = body.get("mission", body)
     return exit_code, mission
 
 
