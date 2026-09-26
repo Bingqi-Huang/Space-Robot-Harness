@@ -13,13 +13,19 @@ a link status, not an answer and not an interaction. Mission time is the simulat
 The protocol (scripted, published before the runs, identical for every method; the default mode):
   - every request is answered `DECISION_TIME_S` of mission time after it arrives (§8: 300 s, "minute-scale"
     operational decisions, VIPER ops; the value is ours);
-  - a request carrying calls held for approval (Ours' guard, `pending_approvals`) is decided by the flight-rule table
-    (14 CFR 1214.403: decisions planned in advance): GRANT removal of a module from a unit whose load is
-    non-critical while a crew-critical unit is down, per the units' downlinked telemetry; otherwise DENY with a reason
-    code. ALFUS level: assign tactical goals.
-  - any other request -- an escalation, "no procedure applies" -- is answered "hold in a safe state, a new procedure
-    is in work": nothing is uplinked during the run (historical new-procedure times are hours to days), recorded as
-    ground re-authoring required. ALFUS level: assign mission tasks.
+  - a request states its kind in its metadata (`kind`; a request without one is an escalation, which is all the
+    baselines' plans and domain send). The ground reads the kind and the held calls, never the text (2026-09-26, F125):
+      authorization   -- carrying calls held for approval (Ours' guard, `pending_approvals`): decided by the
+                         flight-rule table (14 CFR 1214.403: decisions planned in advance): GRANT removal of a module
+                         from a unit whose load is non-critical while a crew-critical unit is down, per the units'
+                         downlinked telemetry; otherwise DENY with a reason code. ALFUS level: assign tactical goals.
+                         Carrying no held call: answered that an authorization covers one held call (no level).
+      authority_check -- "is this within my authority?": the published rule restated -- everything the flight rules
+                         do not reserve is the vehicle's; what they reserve, and how an authorization is had (no level).
+      new_procedure   -- an escalation, "no procedure applies": "hold in a safe state, a new procedure is in work";
+                         nothing is uplinked during the run (historical new-procedure times are hours to days),
+                         recorded as ground re-authoring required. ALFUS level: assign mission tasks.
+      information     -- the ground holds no data beyond what the vehicle's own queries return (no level).
   - a report is acknowledged; it is not an intervention (no ALFUS level).
 `--manual` replaces the scripted decisions with a person at the console (demonstration runs only, never statistics):
 an answer starting "GRANT:" grants the held calls.
@@ -46,7 +52,14 @@ IX = json.loads((Path(__file__).resolve().parents[2] / "space_robotics_bench/ass
 REQUEST_TOPIC = "/space/operator/request"
 REPORT_TOPIC = "/space/operator/report"
 REPLY_TOPIC = "/space/operator/reply"
+REQUEST_KINDS = ("authorization", "authority_check", "new_procedure", "information")
 HOLD = "ACK. Hold in a safe state. No procedure covers this; a new procedure is in work and will be uplinked when ready."
+NOTHING_HELD = ("No call is held for approval, so there is nothing to authorize. An authorization covers one call on one "
+                "target: propose the call, the guard holds it, and an authorization request sent while it is held carries it.")
+AUTHORITY = ("Flight rules: every operation the rules do not reserve is within the vehicle's own authority and needs no "
+             "request. Reserved for mission control's authorization: removing a module from an energized unit's bay "
+             "(14 CFR 1214.403). An authorization covers one held call, sent with the request.")
+INFORMATION = "Mission control holds no data beyond the telemetry, manifest and site survey the vehicle's own queries return."
 
 
 class OperatorEventLog:
@@ -68,10 +81,16 @@ class OperatorEventLog:
         return ev
 
 
-def decide(pending: list[dict], telemetry: dict) -> tuple[str, list[dict], str, str]:
-    """The flight-rule table: (answer text, grants, ALFUS level, outcome code) for a request."""
-    if not pending:
+def decide(kind: str, pending: list[dict], telemetry: dict) -> tuple[str, list[dict], str | None, str]:
+    """The scripted answer: (text, grants, ALFUS level, outcome code) for a request of this kind."""
+    if kind == "new_procedure":
         return HOLD, [], "mission_task", "hold_reauthoring_required"
+    if kind == "authority_check":
+        return AUTHORITY, [], None, "authority_stated"
+    if kind == "information":
+        return INFORMATION, [], None, "information"
+    if not pending:
+        return NOTHING_HELD, [], None, "nothing_held"
     units = telemetry["units"]
     crew_critical_down = [u for u, t in units.items() if t["criticality"] == "crew-critical" and t["breaker"] == "tripped"]
     grants, lines = [], []
@@ -107,12 +126,13 @@ def run_cli(run_dir: Path, *, decision_time_s: float, manual: bool) -> None:
         while clock["t"] < t:
             time.sleep(0.05)
 
-    def queued(request_id, why: str, kind: str, pending: list) -> None:
+    def queued(request_id, why: str, kind: str, request_kind: str | None, pending: list) -> None:
         st = link.state(clock["t"])
         # the request stays open; an escalation ("no procedure applies") that never reaches the ground still leaves the
         # mission needing a new procedure -- the same outcome as the HOLD answer it would have got
         log.append("link_queued", request_id=request_id, why=why, reopens_in_s=st["reopens_in_s"], type=kind,
-                   pending_approvals=pending, ground_reauthoring_required=kind == "request_operator" and not pending)
+                   request_kind=request_kind, pending_approvals=pending,
+                   ground_reauthoring_required=request_kind == "new_procedure")
         reply_pub.publish(PromptStamped(text=f"[link] not delivered: {why}; queued for the next Earth pass in "
                                              f"{st['reopens_in_s']:.0f} s", metadata_json=json.dumps(
             {"request_id": request_id, "link_status": "queued", "grants": [], **st})))
@@ -120,29 +140,31 @@ def run_cli(run_dir: Path, *, decision_time_s: float, manual: bool) -> None:
     def exchange(topic: str, kind: str, msg) -> None:
         meta = json.loads(msg.metadata_json or "{}")
         request_id, pending = meta.get("request_id"), meta.get("pending_approvals", [])
+        # a request without a kind is an escalation: the baselines' plans and domain know no other request
+        request_kind = (meta.get("kind") or "new_procedure") if kind == "request_operator" else None
         sent = clock["t"]
         if not link.state(sent)["earth_visible"]:
-            return queued(request_id, "Earth is below the horizon", kind, pending)
+            return queued(request_id, "Earth is below the horizon", kind, request_kind, pending)
         wait_until(link.delivery_time(sent))
         iid = uuid.uuid4().hex[:12]
-        log.append("interaction_start", interaction_id=iid, type=kind, source_topic=topic, request_id=request_id,
-                   sent_mission_t=round(sent, 3), text=msg.text, pending_approvals=pending)
+        log.append("interaction_start", interaction_id=iid, type=kind, request_kind=request_kind, source_topic=topic,
+                   request_id=request_id, sent_mission_t=round(sent, 3), text=msg.text, pending_approvals=pending)
         if kind == "report_to_operator":
             text, grants, level, outcome = "Report received.", [], None, "ack_report"
         elif manual:
             held = "".join(f"\n  held for approval: {p['capability']} on {p['target']} ({p['reason']})" for p in pending)
-            print(f"\n[{kind} at mission t={clock['t']:.0f} s] {msg.text}{held}\n> ", end="", flush=True)
+            print(f"\n[{kind} ({request_kind}) at mission t={clock['t']:.0f} s] {msg.text}{held}\n> ", end="", flush=True)
             text = input()
             grants = [{"capability": p["capability"], "target": p["target"]} for p in pending] if text.startswith("GRANT:") else []
             text = text.removeprefix("GRANT:").strip()
             level, outcome = ("tactical_goal", "grant" if grants else "deny") if pending else ("mission_task", "manual")
         else:
             wait_until(clock["t"] + decision_time_s)
-            text, grants, level, outcome = decide(pending, telemetry)
+            text, grants, level, outcome = decide(request_kind, pending, telemetry)
         log.append("interaction_end", interaction_id=iid, authority_level=level, outcome=outcome, text=text, grants=grants,
                    ground_reauthoring_required=outcome == "hold_reauthoring_required")
         if not link.state(clock["t"])["earth_visible"]:
-            return queued(request_id, "Earth set before mission control's answer was sent", kind, pending)
+            return queued(request_id, "Earth set before mission control's answer was sent", kind, request_kind, pending)
         wait_until(link.delivery_time(clock["t"]))
         log.append("reply_delivered", interaction_id=iid, request_id=request_id)
         reply_pub.publish(PromptStamped(text=text, metadata_json=json.dumps({

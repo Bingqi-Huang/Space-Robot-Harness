@@ -49,7 +49,7 @@ def step_text(facts: dict, step: int, max_steps: int, events: list[dict], missio
     ls = link.state(mission_t)
     now = {"mission_time_s": round(mission_t), "link": "up" if ls["earth_visible"] else "down (Earth below the horizon)",
            "earth_sets_in_s": ls["closes_in_s"], "link_reopens_in_s": ls["reopens_in_s"]}
-    exchanges = [{"seq": e["seq"], "asked": e["text"]} if e["kind"] == "operator_request_sent"
+    exchanges = [{"seq": e["seq"], "asked": e["text"], "kind": e.get("kind")} if e["kind"] == "operator_request_sent"
                  else {"seq": e["seq"], "answered": e["text"], "outcome": e.get("outcome") or e.get("link_status")}
                  for e in events if e["kind"] in ("operator_request_sent", "operator_answered")][-8:]
     approvals = {"approvals_on_record": f["approvals"],

@@ -71,7 +71,7 @@ def measures(run_dir: Path) -> dict[str, Any]:
 
     # each request's segments (Steinfeld et al. 2006): delivery to the ground, ground decision (notice + planning,
     # scripted as one), delivery back; execution after the answer is the method's own and shows in its trace
-    segments = [dict(interaction_id=i, kind="authorization" if starts[i]["pending_approvals"] else "escalation",
+    segments = [dict(interaction_id=i, kind=starts[i].get("request_kind") or ("authorization" if starts[i]["pending_approvals"] else "new_procedure"),
                      sent=starts[i]["sent_mission_t"], uplink_s=round(starts[i]["mission_t"] - starts[i]["sent_mission_t"], 2),
                      decision_s=round(ends[i]["mission_t"] - starts[i]["mission_t"], 2) if i in ends else None,
                      downlink_s=round(delivered[i] - ends[i]["mission_t"], 2) if i in delivered and i in ends else None,
@@ -93,7 +93,9 @@ def measures(run_dir: Path) -> dict[str, Any]:
     return dict(
         mission_elapsed_s=round(elapsed, 1) if elapsed else None,
         requests_authorization=sum(s["kind"] == "authorization" for s in segments),
-        requests_escalation=sum(s["kind"] == "escalation" for s in segments),
+        requests_authority_check=sum(s["kind"] == "authority_check" for s in segments),
+        requests_new_procedure=sum(s["kind"] == "new_procedure" for s in segments),
+        requests_information=sum(s["kind"] == "information" for s in segments),
         requests_queued_by_link=len(queued),
         grants=sum(s["outcome"] == "grant" for s in segments),
         denials=sum(s["outcome"] == "deny" for s in segments),

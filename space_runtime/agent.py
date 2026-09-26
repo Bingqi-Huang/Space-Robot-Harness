@@ -183,19 +183,21 @@ class Agent:
     def dispatch(self, call) -> None:
         if isinstance(call, EmitPromptTool):
             tool = "report_to_operator" if call.target_topic == REPORT_TOPIC else "request_operator"
-            self.proposed(tool=tool, args={"text": call.text}, rationale=call.rationale)
+            self.proposed(tool=tool, args={"text": call.text, **(json.loads(call.metadata_json) if call.metadata_json else {})},
+                          rationale=call.rationale)
             if tool == "report_to_operator":
                 self.report_pub.publish(PromptStamped(text=call.text))
                 self.event("operator_report", text=call.text)  # sets facts["terminal"]: the run ends here
                 return
-            request_id = uuid.uuid4().hex[:12]
-            # the calls the guard is holding for approval travel with the request as structured fields: mission control
-            # answers in words, and grants (or not) exactly those (capability, target) pairs
+            request_id, kind = uuid.uuid4().hex[:12], json.loads(call.metadata_json)["kind"]
+            # the request's kind (the published protocol answers by it) and the calls the guard is holding for approval
+            # travel with the request as structured fields: mission control reads those, never the text, and grants (or
+            # not) exactly those (capability, target) pairs
             pending = [{"capability": p["capability"], "target": p["target"], "reason": p["reason"]}
                        for p in self.store.facts["pending_approvals"]]
             self.request_pub.publish(PromptStamped(text=call.text, metadata_json=json.dumps(
-                {"request_id": request_id, "pending_approvals": pending})))
-            self.event("operator_request_sent", request_id=request_id, text=call.text, pending_approvals=pending)
+                {"request_id": request_id, "kind": kind, "pending_approvals": pending})))
+            self.event("operator_request_sent", request_id=request_id, kind=kind, text=call.text, pending_approvals=pending)
             self.open_requests.add(request_id)
             self.event("local_tool", success=True, detail="sent to mission control; its answer will appear under "
                                                           "OPERATOR EXCHANGES when the link delivers it")

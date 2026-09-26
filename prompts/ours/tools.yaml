@@ -37,10 +37,16 @@ local:
       text: [string, true, ""]
   request_operator:
     description: >-
-      OPERATOR. Send mission control a request for a decision, approval or information you cannot obtain yourself. It
-      crosses the Direct-with-Earth link (delay and visibility: space_context); the answer arrives later and appears
-      under MISSION CONTROL. Meanwhile you may carry on with other work.
+      OPERATOR. Send mission control a request. It crosses the Direct-with-Earth link (delay and visibility: space_context);
+      the answer arrives later and appears under MISSION CONTROL, and meanwhile you may carry on with other work.
+      Mission control answers by the request's kind and the calls the guard is holding, never by the text:
+      authorization -- decides the held calls by its flight rules (propose the call first, so that the guard holds it;
+      a request holding nothing is answered as such); authority_check -- restates the published rules on what is yours
+      and what is reserved; new_procedure -- for a case no procedure covers: hold in a safe state, a new procedure takes
+      hours to days and does not arrive during this mission; information -- what mission control knows beyond your own
+      queries.
     inputs:
+      kind: ["string(authorization|authority_check|new_procedure|information)", true, "what the request asks for"]
       text: [string, true, ""]
   wait_for_mission_control:
     description: >-

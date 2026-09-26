@@ -23,7 +23,14 @@ An approval covers one call on one target: propose the call, the guard holds it,
 
 # Mission control
 
-The link to mission control is {link}; one-way delay {one_way_delay_s} s. When Earth is below the site's horizon the link is down: a message sent then waits and is delivered when the link reopens (store-and-forward). Mission control decides a request {decision_time_s} s of mission time after it arrives. The record's MISSION CONTROL section states the link's state now, your requests and their answers; request_operator does not block, and the answer appears there when it arrives.
+The link to mission control is {link}; one-way delay {one_way_delay_s} s. When Earth is below the site's horizon the link is down: a message sent then waits and is delivered when the link reopens (store-and-forward). Mission control decides a request {decision_time_s} s of mission time after it arrives, by the request's kind and the calls the guard is holding, never by its text:
+
+- authorization: the held calls are decided by the flight rules, granted or denied each with its reason; a request holding nothing is answered that there is nothing to authorize.
+- authority_check: the published rules are restated -- what is yours to do and what is reserved for mission control.
+- new_procedure: a case no procedure covers -- the answer is to hold in a safe state; a new procedure takes hours to days and does not arrive during this mission.
+- information: what mission control knows beyond your own queries.
+
+The record's MISSION CONTROL section states the link's state now, your requests and their answers; request_operator does not block, and the answer appears there when it arrives.
 
 # How to read the mission record
 

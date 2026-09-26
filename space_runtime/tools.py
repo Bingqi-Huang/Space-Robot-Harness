@@ -91,9 +91,11 @@ def decode(name: str, args: dict):
             return ExecuteRskillTool(rskill_id=DECOMPOSE, goal_params_json=json.dumps(args), rationale=rationale)
         if name == "wait_for_mission_control":
             return ExecuteRskillTool(rskill_id=WAIT, goal_params_json=json.dumps(args), rationale=rationale)
-        if name in ("report_to_operator", "request_operator"):
-            return EmitPromptTool(target_topic=REPORT_TOPIC if name == "report_to_operator" else REQUEST_TOPIC,
-                                  text=args["text"], rationale=rationale)
+        if name == "report_to_operator":
+            return EmitPromptTool(target_topic=REPORT_TOPIC, text=args["text"], rationale=rationale)
+        if name == "request_operator":
+            return EmitPromptTool(target_topic=REQUEST_TOPIC, text=args["text"], metadata_json=json.dumps({"kind": args["kind"]}),
+                                  rationale=rationale)
     except (ValidationError, KeyError, TypeError) as exc:
         raise ROSReasonerInvalidPlan(f"tool {name!r}: invalid arguments: {exc}") from exc
     raise ROSReasonerInvalidPlan(f"no tool named {name!r}")
