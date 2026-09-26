@@ -5898,3 +5898,7 @@ Step 10 closed 6/6 (F138, C5). The freeze work order (todo "Freeze"), in order:
    (daytime level; F118's night was 170-330 s per step).
 Open at the freeze (unchanged): R2 PARTIAL (baselines' per-call record only in capability_server.log), C8/G2/G3
 deferred past Experiment I (user).
+Retry-budget sensitivity on the frozen artifacts (freeze step 4; `artifacts/eval/retry_budget/`, docker `--init`):
+the table equals F136's, 30/30 "detected -> escalated". One chain (EUROPA L2-B, N=5) first died at its first dispatch
+(universalExec closed the HostLink, the stand-in boundary logged nothing: offline infrastructure) and was rerun alone:
+11 calls, 4 retries, escalated.

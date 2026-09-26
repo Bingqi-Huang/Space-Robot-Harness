@@ -21,8 +21,7 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
       Watch: `artifacts/runs/exp1/queue.log` (one start/end line per run with CHECK_EXIT).
       Night gateway: if Qwen steps slow to minutes, note the affected runs (model_io.jsonl wall times) and tell the
       user; slowness is not an outage (preregistration §3), do not rerun on your own.
-- [ ] Retry-budget sensitivity on the frozen artifacts: `baselines/scripts/retry_budget_sensitivity.py` (docker
-      `--init`, pinned CPUs 30,31,62,63) -> compare with F136.
+- [x] Retry-budget sensitivity on the frozen artifacts: same table as F136 (F139).
 - [ ] After the campaign: `evaluation/rows.py` -> `tables.py` on `artifacts/runs/exp1`; failure taxonomy per failed
       run (preregistration §2); swimlanes + one video per method on a held-out instance.
 - [ ] Push: research main, openral master (971f2ea) and the `freeze-1` tags are local -- ask the user.
