@@ -5859,3 +5859,13 @@ and 0.30 m away; a lift that ends short is clearance, not a failed place).
 Also: the snapshot restore had lost its PoseWithCovarianceStamped import (d0_common, 259a578).
 Not fixed, recorded: dock "no progress" at 6 mm / 1.7 deg (two runs); AMCL bias 5-13 cm vs truth; arm pushing the rover
 during a stalled place (L3 BESS r1: 14 deg); pick's yaw fixed to the declared one.
+Fix 3 (shared place skill, openral 971f2ea): after the base withdrawal, a lift that ends short is recorded
+(`retreat.lift_short`) and the settle judges the place; the item is already released and 0.30 m from the fingers, so
+the lift is clearance, not part of the place. **resume43d** (same snapshot, before step 43; GPU 0): re-pick, dock at
+habitat_stand/slot_0, place success (base withdrew 0.301 m; the lift this time ended 1.47 cm from its goal, inside the
+1.5 cm tolerance, so Fix 3's branch was not exercised), settle "not judged: nothing in view" -> item_placed `holds:
+null`; the model backed off, asked the front camera twice, saw the container on the stand, stowed and docked; report
+"MISSION COMPLETE", no false claim (the null and the camera check are stated). Evaluator truth: container at (4.061,
+21.812, z 0.551), tilt 0.3 deg, on habitat_stand/slot_0; the return container on return_stand/slot_0; RESULT delivered,
+parked_and_stowed, success; CHECK_EXIT 0. **L2-B solved -> step 10: 6 of 6 held-out instances solved live with
+Qwen3.8-Max** (L2-B across r3 + a resume from its own snapshot; development runs, the campaign reruns all). C5 closed.
