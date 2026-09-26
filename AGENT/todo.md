@@ -18,11 +18,13 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
 
 ## Step 10 -- closing
 
-- [ ] **L2-B verification** `artifacts/runs/step10_qwen/ours_q_l2b_resume43c` (resume before the re-pick, base
-      withdrawal). Accept: the container stays on habitat_stand/slot_0 upright (evaluator truth, z 0.55, tilt ~0),
-      item_placed holds true or null (never a false "holds" with the item elsewhere), no drag in the wrist frames.
-      If it passes: L2-B solved -> 6/6 -> close C5 in the checklist (cite F138), step 10 done.
-      If the base withdrawal fails: record, do NOT invent a new retreat; report to the user.
+- [ ] **L2-B: one place-skill detail left** (F138). resume43c: the base withdrawal works (container upright on the
+      stand, truth), but the tool's 0.25 m lift after it stalls 2.4 cm short, so place reports "failed at retreat" and
+      item_placed does not hold. Fix in openral `procedural_place.py` (no run live): once the base has withdrawn the
+      fingers 0.30 m from the released item, a lift that ends short is not a failed place -- record it and go on to
+      settle. Then resume again from `l2b_r3_resume_src` before step 43 (one run, GPU 0). Accept: container upright on
+      habitat_stand/slot_0 (evaluator truth z 0.55, tilt ~0), item_placed true or null, mission reported delivered.
+      Then L2-B solved -> 6/6 -> close C5 (cite F138) -> step 10 done.
 - [ ] Clean up after closing: tmux/containers none; `artifacts/runs/step10_final` (stopped, incomplete) can be deleted
       with the user's OK; `artifacts/runs/step10_qwen/l2b_r3_resume_src` is a derived resume source (keep).
 

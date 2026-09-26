@@ -5851,7 +5851,11 @@ along the release direction, odometry-measured, arm held), then the tool goes up
 solved along the straight line had no IK 8-11 cm along (with and without collision avoidance, resume43/43b) -- the
 place posture leaves joint4 at its stop in every recorded place (known, not changed). Verified from the r3 snapshot
 before the re-pick (`OURS_RESUME_FROM=l2b_r3_resume_src OURS_RESUME_BEFORE_STEP=43`; the record's one item_placed
-event recomputed by the fixed verifier): see resume43c below.
+event recomputed by the fixed verifier): resume43c (17:21): the base withdrew 0.302 m straight, the container stays upright on
+habitat_stand/slot_0 (truth 4.006, 21.819, z 0.55, tilt 0) -- the drag is gone. The tool's lift after it (0.25 m
+up, local servo) stalled 2.4 cm short with no joint at a stop, so the place still reports failure (stage retreat) and
+item_placed does not hold, though the item is where it should be. Open: that lift leg (the item is already released
+and 0.30 m away; a lift that ends short is clearance, not a failed place).
 Also: the snapshot restore had lost its PoseWithCovarianceStamped import (d0_common, 259a578).
 Not fixed, recorded: dock "no progress" at 6 mm / 1.7 deg (two runs); AMCL bias 5-13 cm vs truth; arm pushing the rover
 during a stalled place (L3 BESS r1: 14 deg); pick's yaw fixed to the declared one.

@@ -20,8 +20,9 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 - **Mission control** (F125, console.py): answers by request kind + held calls; only `new_procedure` = re-authoring.
 - **Step 10 status** (F138, `artifacts/runs/step10_qwen/queue.log` lists every run): solved L2-A PDU-1, L2-A BESS,
   L3 ISRU, L3 BESS (r3), L4 (r2, r4). L2-B: strategy solved (r3), place dragged the container off the stand -> two
-  fixes (verifier `holds: null` when the item is not seen; place retreat driven by the base). Verification run
-  `ours_q_l2b_resume43c` (resume before the re-pick): read its result first (todo.md has the acceptance).
+  fixes (verifier `holds: null` when the item is not seen; place retreat driven by the base). resume43c: the base
+  withdrawal works (container upright on the stand), the lift after it stalls 2.4 cm short -> place still reports a
+  failure. One small fix left (todo.md), then one resume run, then close C5.
 - Freeze tooling ready: `evaluation/freeze_audit.py`, `evaluation/freeze_tag.py` (F137). Eval: `evaluation/rows.py`
   -> `tables.py` (F132). Figures: `experiments/video/swimlane.py`, `mission_video.py` (F135).
 - Resume from a snapshot (every Ours run saves `snapshots/before_step_<n>.pt`): `OURS_RESUME_FROM=<run dir>
