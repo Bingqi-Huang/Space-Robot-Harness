@@ -11,7 +11,7 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
 
 - **Frozen: tag `freeze-1`** in research `main`, openral `master` (971f2ea), SRB `main` (2b5e2a3); manifest
   `artifacts/freeze/freeze-1.yaml` (F139). Nothing a method or a shared skill runs may change during the campaign.
-  Local commits + tags not pushed yet (ask the user). Worktree `.worktree/prefreeze` idle (merged; can go).
+  Pushed with the tags (2026-09-26). Worktree `.worktree/prefreeze` idle (merged; can go).
 - **Campaign** (step 12): `experiments/launch/lunar_base_d0/jobs/exp1_campaign.txt` (51 runs) -> `artifacts/runs/exp1/`,
   tmux `exp1`, `queue.log` there. These runs are scored; development runs (step 9/10, checks) never are.
 - **Reasoner Qwen3.8-Max** (configs/space_runtime.yaml, 600 s), VLM DeepSeek-V4.1-Flash, paratera gateway.

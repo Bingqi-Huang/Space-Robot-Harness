@@ -24,10 +24,10 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
 - [x] Retry-budget sensitivity on the frozen artifacts: same table as F136 (F139).
 - [ ] After the campaign: `evaluation/rows.py` -> `tables.py` on `artifacts/runs/exp1`; failure taxonomy per failed
       run (preregistration §2); swimlanes + one video per method on a held-out instance.
-- [ ] Push: research main, openral master (971f2ea) and the `freeze-1` tags are local -- ask the user.
+- [x] Pushed 2026-09-26 20:20: all three repos + `freeze-1` tags.
 - Then: ablations (§5.7, method decided by the user), scan_label registration + Experiment II, re-authoring cost.
 
-## Clean-up (ask the user)
+## Clean-up (user 2026-09-26: keep for now)
 
 - `artifacts/runs/step10_final` (stopped, incomplete) can be deleted; `step10_qwen/l2b_r3_resume_src` keep.
 - Worktree `.worktree/prefreeze` + its branch (merged at c6e677d) can go.

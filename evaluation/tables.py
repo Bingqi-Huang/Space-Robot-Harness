@@ -126,8 +126,8 @@ def interaction_table(rows: list[NormalizedRunRow]) -> str:
     for r in rows:
         groups.setdefault((r.method, r.coverage), []).append(r)
     lines = [
-        "| method | coverage | n | human intervention ratio | authorization req. | escalations | grants/denials | highest ALFUS level | ground re-authoring | idle waiting | longest autonomous stretch (s) |",
-        "|---|---|---|---|---|---|---|---|---|---|---|",
+        "| method | coverage | n | human intervention ratio | requests: authorization / authority check / new procedure / information | grants/denials | highest ALFUS level | ground re-authoring | idle waiting | longest autonomous stretch (s) |",
+        "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for (method, coverage), grp in sorted(groups.items(), key=lambda kv: kv[0]):
         timed = [r for r in grp if r.mission_elapsed_s]
@@ -137,9 +137,10 @@ def interaction_table(rows: list[NormalizedRunRow]) -> str:
             return f"{sum(v) / len(v):.3f}" if v else "-"
 
         levels = [r.highest_interaction_level for r in grp if r.highest_interaction_level]
+        kinds = " / ".join(str(sum(getattr(r, f"requests_{k}") for r in grp))
+                           for k in ("authorization", "authority_check", "new_procedure", "information"))
         lines.append(
-            f"| {method} | {coverage or '?'} | {len(grp)} | {mean('human_intervention_ratio')} | "
-            f"{sum(r.requests_authorization for r in grp)} | {sum(r.requests_escalation for r in grp)} | "
+            f"| {method} | {coverage or '?'} | {len(grp)} | {mean('human_intervention_ratio')} | {kinds} | "
             f"{sum(r.grants for r in grp)}/{sum(r.denials for r in grp)} | "
             f"{max(levels, key=ALFUS_ORDER.index) if levels else '-'} | {sum(r.ground_reauthoring_required for r in grp)} | "
             f"{mean('idle_waiting_fraction')} | {mean('longest_autonomous_stretch_s')} |"

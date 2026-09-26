@@ -70,8 +70,10 @@ class NormalizedRunRow(BaseModel):
     preplanned_transition_fraction: float | None  # DRAFT hook -- see module docstring
     interaction_authority_levels: list[str]  # ALFUS levels mission control acted at, most autonomous first
     highest_interaction_level: str | None
-    requests_authorization: int
-    requests_escalation: int
+    requests_authorization: int  # request kinds (heldout_design §8, F125); only new_procedure is re-authoring
+    requests_authority_check: int
+    requests_new_procedure: int
+    requests_information: int
     requests_queued_by_link: int
     grants: int
     denials: int
@@ -264,7 +266,8 @@ def extract_row(run_dir: Path) -> NormalizedRunRow:
         ground_reauthoring_required=human["ground_reauthoring_required"],
         preplanned_transition_fraction=None,  # DRAFT -- see module docstring
         interaction_authority_levels=human["interaction_levels"],
-        **{k: human[k] for k in ("highest_interaction_level", "requests_authorization", "requests_escalation",
+        **{k: human[k] for k in ("highest_interaction_level", "requests_authorization", "requests_authority_check",
+                                 "requests_new_procedure", "requests_information",
                                  "requests_queued_by_link", "grants", "denials", "open_request_fraction",
                                  "idle_waiting_fraction", "longest_autonomous_stretch_s", "mission_elapsed_s",
                                  "request_segments")},

@@ -5902,3 +5902,8 @@ Retry-budget sensitivity on the frozen artifacts (freeze step 4; `artifacts/eval
 the table equals F136's, 30/30 "detected -> escalated". One chain (EUROPA L2-B, N=5) first died at its first dispatch
 (universalExec closed the HostLink, the stand-in boundary logged nothing: offline infrastructure) and was rerun alone:
 11 calls, 4 retries, escalated.
+Campaign start (18:44, tmux `exp1`, `artifacts/runs/exp1/`). Found on the first finished runs: `evaluation/rows.py` and
+`tables.py` still read `requests_escalation`, which F125 replaced by one count per request kind in `interaction.py`;
+rows.py died on every run. Both now carry the four kinds (authorization / authority_check / new_procedure /
+information); no definition changed (preregistration §3: only `new_procedure` is re-authoring, as `interaction.py`
+already computes). Evaluation code, not a frozen method artifact; checked on the four finished campaign runs.
