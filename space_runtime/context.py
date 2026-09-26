@@ -24,7 +24,8 @@ def _j(v) -> str:
 
 
 def _lines(records: list[dict], empty: str = "(none)") -> str:
-    return "\n".join(_j({k: v for k, v in r.items() if v not in (None, "", [], {})}) for r in records) or empty
+    # empty fields are left out, except a verdict: `holds` null (not established) is a fact of its own
+    return "\n".join(_j({k: v for k, v in r.items() if v not in (None, "", [], {}) or k == "holds"}) for r in records) or empty
 
 
 def system_text(facts: dict, rules: list[dict]) -> str:

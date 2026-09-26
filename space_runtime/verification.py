@@ -136,9 +136,16 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
             between = (in_jaws(SimpleNamespace(depth=np.load(st["before_depth"]), K=np.array(st["K"])), np.array(st["T_tool_cam"]))
                        if "T_tool_cam" in st else None)
             m.update(tool_clear_of_release_m=round(clear, 3), image_flow_px=round(flow, 2), item_still=bool(still),
-                     points_between_open_fingers=between)
+                     points_between_open_fingers=between, item_in_settle_view=st.get("near_pixels") != 0)
             m["holds"] = (state == "open" and clear >= cfg["place"]["min_clear_m"] and bool(still)
                           and between is not None and between < IN_JAWS_MIN_POINTS)
+            # The settle frame shows nothing of the item (the skill's own count of what is in front of its camera beyond
+            # the gripper is zero: a stand seen against the sky from the retreated tool): whether the item rests on the
+            # support is not established either way -- not a verdict for the item, not one against it (F138: a container
+            # dragged off a stand's edge by the retreat, "item_placed HOLDS" from the fingers' own pixels, delivery
+            # reported). The facts go to the model, which decides whether to look.
+            if m["holds"] and not m["item_in_settle_view"]:
+                m["holds"] = None
         else:
             m["holds"] = False
         out.append(m)

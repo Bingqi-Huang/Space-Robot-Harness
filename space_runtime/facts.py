@@ -129,6 +129,8 @@ def apply(f: dict, ev: dict) -> None:
                 f["objects"][name] = {"state": "unknown", **basis, "camera_saw": ev.get("seen"), "jaw_rad": ev["jaw_rad"],
                                       "read_twice_record_and_jaw_say_held": ev.get("record_and_jaw_expect_held")}
         if ev["effect"] == "item_placed":
+            # not established (holds None): let go at the support, not seen resting there -- the item is out of the jaws
+            # and its place is unknown until something shows it
             held = [name for name, o in f["objects"].items() if o["state"] == "in_gripper"]
             for name in held:
                 f["objects"][name] = ({"state": f"on {ev['support']}", **basis} if ev["holds"] else
