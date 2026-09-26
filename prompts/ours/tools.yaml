@@ -1,0 +1,50 @@
+# What Ours' reasoner reads about its tools, beside the capability contracts (openral_ext/capability_server/contracts.yaml,
+# rendered with the same schema: {description, inputs: {name: [type, required, description]}}).
+
+# prefixed to every capability's contract description, by group
+group:
+  effects: EFFECT (acts on the robot; runs to completion before your next step)
+  queries: QUERY (read-only)
+
+# the argument every tool takes besides its own
+rationale: "one sentence: why this call now"
+
+# what the harness says back when a reply contains no tool call
+reply_without_call: Respond with exactly one tool call now.
+
+# the harness-local tools: the working plan and the two operator channels
+local:
+  decompose_mission:
+    description: >-
+      WORKING PLAN. Write your ordered task list. Empty target_task_id replaces every open task (closed tasks stay as
+      history); target_task_id = the active task's id splits that task in place into finer subtasks. The plan is yours
+      to revise whenever the evidence changes; it is not a record of what happened.
+    inputs:
+      subtasks: ["string[]", true, ""]
+      target_task_id: [string, false, "empty = whole plan; else the active task's id"]
+  set_task_status:
+    description: >-
+      WORKING PLAN. Close the active task of your plan: done (you judge it achieved from the evidence) or abandoned (it
+      cannot or need not be achieved); the next task becomes active.
+    inputs:
+      status: ["string(done|abandoned)", true, ""]
+      note: [string, true, ""]
+  report_to_operator:
+    description: >-
+      OPERATOR. Send mission control your final report and end the autonomous run: what was observed, what was done,
+      which effects were verified, what remains unresolved. Use it when the mission is complete or cannot be completed.
+    inputs:
+      text: [string, true, ""]
+  request_operator:
+    description: >-
+      OPERATOR. Send mission control a request for a decision, approval or information you cannot obtain yourself. It
+      crosses the Direct-with-Earth link (delay and visibility: space_context); the answer arrives later and appears
+      under MISSION CONTROL. Meanwhile you may carry on with other work.
+    inputs:
+      text: [string, true, ""]
+  wait_for_mission_control:
+    description: >-
+      OPERATOR. Hold the robot still until mission control's answer to an open request arrives, or until max_wait_s of
+      mission time has passed, whichever is first.
+    inputs:
+      max_wait_s: [number, true, "the longest to wait, s of mission time"]

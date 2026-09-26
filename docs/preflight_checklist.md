@@ -69,7 +69,7 @@ Status: DONE (evidence) / FAIL / TODO / VERIFY (exists, not yet checked against 
 | # | Needed by | Check | How | Status |
 |---|---|---|---|---|
 | F1 | every run | Run manifest (revisions, model config, capability registry, seeds) written by every run | `openral_ext/run_manifest` wired into run_d0? | DONE 2026-09-24: run_d0.sh writes run_manifest.yaml + capability_registry.json after teardown; step 9 backfilled; first live check in check1 |
-| F2 | fairness | Freeze audit: no situation-specific hint in any Ours artifact; baselines match the lock | audit script + read | STARTED 2026-09-24: step 10's starting point read (playbook, tools, contracts, guard, config): no situation hint; observe's example "whether a place is occupied" (matches L2-B) removed. Step 10's changes are audited against this point at the freeze |
+| F2 | fairness | Freeze audit: no situation-specific hint in any Ours artifact; baselines match the lock | audit script + read | STARTED 2026-09-24: step 10's starting point read (playbook, tools, contracts, guard, config): no situation hint; observe's example "whether a place is occupied" (matches L2-B) removed. Step 10's changes are audited against this point at the freeze. 2026-09-26: every text the reasoner reads now lives in `prompts/ours/` (F124); the audit reads that directory |
 | F3 | reproducibility | Image, repos tagged; model id and decoding config recorded | tags + manifest | TODO (step 11) |
 
 ## G. Experiment II

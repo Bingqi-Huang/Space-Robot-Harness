@@ -38,7 +38,7 @@ authority level and timestamps. Neither event kind is in `space_runtime/facts.py
 `report_to_operator` now actually publishes on `/space/operator/report` (previously: local event
 only, confirmed by reading the code) and still ends the run via the existing `operator_report`
 event/`facts["terminal"]`. `space_runtime/context.py`'s `render()` takes the raw event list
-alongside `facts` and renders an `## OPERATOR EXCHANGES` section straight off
+alongside `facts` and renders them in the `## MISSION CONTROL` section straight off
 `operator_request_sent`/`operator_answered` events (facts.py is untouched, per the constraint
 below) -- mission-generic, no decision logic about what the answer means.
 `space_runtime/report.py`'s mission report gets the same exchanges under "Operator exchanges
@@ -100,7 +100,7 @@ per-capability interpretation belongs in a normalizer).
   only -- `RequestOperator`'s own path never calls the boundary). Confirmed: the loop blocks, the
   console's reply resolves it, `operator_answered` lands in `events.jsonl`,
   `facts["terminal"]` stays `None`, and the answer appears in the next `HarnessRenderer.render()`
-  output under `## OPERATOR EXCHANGES`. A follow-up `report_to_operator` dispatch then set
+  output under `## MISSION CONTROL`. A follow-up `report_to_operator` dispatch then set
   `facts["terminal"]["kind"] == "operator_report"` and the console logged both interactions
   (`type: request_operator` then `type: report_to_operator`).
 - **PLEXIL**: `baselines/plexil/plans/smoke/RequestOperatorSmoke.plx` (compiled with `plexilc -c`)

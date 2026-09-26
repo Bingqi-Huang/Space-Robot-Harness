@@ -63,6 +63,7 @@ verification:
 
 # ---- reasoner -----------------------------------------------------------------------------------------------------
 reasoner:
+  prompts: prompts/ours  # every text the model reads: system.md (standing), step.md (per-step template), tools.yaml
   model: Qwen3.8-Max  # user decision 2026-09-25 (F119-F122); DeepSeek-V4.1-Flash before
   endpoint: https://llmapi.paratera.com/v1
   api_key_env: SPACE_REASONER_API_KEY  # the paratera gateway (AGENT/VLM_provider.md, first key); the scene VLM runs there too

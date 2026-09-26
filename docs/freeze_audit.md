@@ -8,7 +8,7 @@ No tag exists yet -- this file records what to check, not a result.
 
 ## Per artifact, before tagging
 
-- [ ] **No scenario-specific solution hint.** For Ours: `space_runtime/playbook.md`,
+- [ ] **No scenario-specific solution hint.** For Ours: `prompts/ours/` (every text the reasoner reads), `space_runtime/context.py`,
       `configs/space_runtime.yaml` (guard rules), `space_runtime/guard.py`,
       `space_runtime/verification.py`, and `openral_ext/capability_server/contracts.yaml`
       contain no string naming a held-out scenario's object, PDU id, or fix sequence

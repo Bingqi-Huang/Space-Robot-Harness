@@ -1,11 +1,14 @@
-"""Dynamic context construction (execution_plan §4.5, §9.5): the snapshot the agent reads each step.
+"""Dynamic context construction (execution_plan §4.5, §9.5): what the reasoner reads, filled from the record.
 
-Selects and formats facts from the authoritative record -- mission intent, site knowledge, robot state, verified
-effects, observations, unresolved anomalies, availability/FDIR/authority, the agent's own working plan, the recent
-tool steps and any operator request/answer exchange. It never chooses or suggests the next action. Rebuilt from the
-record every step, so a restarted or switched reasoner sees exactly what the previous one would have.
+Every word the model reads is in `prompts/ours/` (the standing text `system.md`, the per-step template `step.md`);
+this module only selects facts from the authoritative record and fills the templates, one JSON record per line. The
+standing text is filled once per reasoner session (the authority exceptions from the contracts and the guard
+configuration, the link's constants, the surveyed site); the step message is rebuilt from the record every step, so a
+restarted or switched reasoner sees exactly what the previous one would have. Nothing here chooses or suggests the
+next action.
 """
 import json
+from pathlib import Path
 
 from openral_reasoner.context import ContextRenderer
 
@@ -13,118 +16,69 @@ from openral_ext.capability_server.contracts import CONTRACTS
 from experiments.operator_console.console import DECISION_TIME_S
 from space_context import link
 
+PROMPTS = Path(__file__).resolve().parents[1] / "prompts/ours"
+
 
 def _j(v) -> str:
     return json.dumps(v, separators=(",", ":"))
 
 
-def render(facts: dict, step: int, max_steps: int, events: list[dict] | None = None, authority_rules: list[dict] | None = None,
-           mission_t: float = 0.0) -> str:
+def _lines(records: list[dict], empty: str = "(none)") -> str:
+    return "\n".join(_j({k: v for k, v in r.items() if v not in (None, "", [], {})}) for r in records) or empty
+
+
+def system_text(facts: dict, rules: list[dict]) -> str:
+    """The standing text of a reasoner session: rules, the authority model read off the contracts and the guard
+    configuration (never written per mission), the link's constants, the surveyed site."""
+    exceptions = [f"- {k} ({c['authority_class'].replace('_', ' ')})" for k, c in sorted(CONTRACTS["effects"].items())
+                  if c["authority_class"] != "routine"]
+    exceptions += [f"- {', '.join(r['applies_to'])} on a {r['target_role']} whose unit reports {_j(r['when_unit'])}: "
+                   f"{r['outcome'].replace('_', ' ')} -- {r['why']}" for r in rules]
+    site, ls = facts["site"], link.state(0.0)
+    return (PROMPTS / "system.md").read_text().format(
+        authority_exceptions="\n".join(exceptions) or "(none)",
+        link=ls["link"], one_way_delay_s=ls["one_way_delay_s"], decision_time_s=f"{DECISION_TIME_S:.0f}",
+        site_frame=site["frame"], site_point_types=_j(site["point_types"]),
+        site_points=_lines([{"point": name, **p} for name, p in site["points"].items()]),
+        site_view_poses=_lines([{"view_pose": name, **v} for name, v in site["view_poses"].items()]),
+        site_dock=_j(site["dock"]), equipment_catalogue=_j(site.get("equipment_catalogue")))
+
+
+def step_text(facts: dict, step: int, max_steps: int, events: list[dict], mission_t: float) -> str:
     f = facts
-    out = [f"## MISSION (from mission control)\n{f['mission']['text']}",
-           f"## STEP\n{step} of the mission step budget {max_steps}"]
-    site = f["site"]
-    lines = [f"frame {site['frame']}; point types: " + "; ".join(f"{k} = {v}" for k, v in site["point_types"].items())]
-    lines += [f"- {name}: {p['type']} on {p['equipment']} at {_j(p['xyz'])}, normal {_j(p['normal'])}" for name, p in site["points"].items()]
-    lines += [f"- view pose {name}: x={v['x']} y={v['y']} yaw={v['yaw']} (looks at {_j(v['looks_at'])})" for name, v in site["view_poses"].items()]
-    lines.append(f"- rover dock: {_j(site['dock'])}")
-    out.append("## SITE (surveyed, fixed infrastructure)\n" + "\n".join(lines))
-    if site.get("equipment_catalogue"):
-        out.append("## EQUIPMENT CATALOGUE (documented prior knowledge; not current observations)\n"
-                   + _j(site["equipment_catalogue"]))
-    r = f["robot"]
-    out.append("## ROBOT STATE (latest robot-observable evidence)\n"
-               f"base estimate: {_j(r['base']) if r['base'] else 'not yet read'}\n"
-               f"tool centre point: {_j(r['tcp']) if r['tcp'] else 'not yet read'}\n"
-               f"arm: {_j(r['arm']) if r['arm'] else 'not yet read'}")
-    eff = [f"- [{e['seq']}] after {e['capability']}: {e['effect']} {'HOLDS' if e['holds'] else 'DOES NOT HOLD'} "
-           f"({_j({k: v for k, v in e.items() if k not in ('seq', 'capability', 'effect', 'holds')})})" for e in f["verified_effects"][-12:]]
-    out.append("## VERIFIED EFFECTS (independent verification of what physically happened; latest last)\n" + ("\n".join(eff) or "(none yet)"))
-    obs = [f"- [{o['seq']}] {o['query']}{_j(o['args']) if o['args'] else ''} -> {_j(o['value'])}" for o in f["observations"][-8:] if o["query"] != "site_map"]
-    out.append("## OBSERVATIONS (query answers; latest last)\n" + ("\n".join(obs) or "(none yet)"))
-    objs = [f"- {name}: {o['state']} (record #{o['seq']}, {o['by']})" for name, o in f["objects"].items()]
-    out.append("## MOVABLE ITEMS (changed only by verified effects)\n" + ("\n".join(objs) or "(no verified manipulation yet)"))
-    tries = [f"- [{a['seq']}] {a['operation']}{_j(a['args'])} -> {'success' if a['success'] else 'failed'} at stage {a['stage']}"
-             + (f": {a['why']}" if a["why"] else "") + (f"; tries {_j(a['tries'])}" if a.get("tries") else "")
-             + (f"; base estimate {_j(a['base_pose'])}" if a.get("base_pose") else "")
-             + (f"; skill measurements {_j(a['measurements'])}" if a.get("measurements") else "")
-             + (f"; RECONCILIATION interface fit vs equipment catalogue {_j(a['reconciliation'])}" if a.get("reconciliation") else "")
-             + (f"; execution conditions {_j(a['execution_conditions'])}" if a.get("execution_conditions") else "")
-             + (f"; the vision model saw {_j(a['vision_model_saw'])}" if a.get("vision_model_saw") else "") for a in f["attempts"][-10:]]
-    out.append("## MANIPULATION ATTEMPTS (operations on items, latest last)\n" + ("\n".join(tries) or "(none yet)"))
-    anomalies = [f"- [{a['seq']}] {a['capability']}: {a['reason']}" for a in f["anomalies"]]
-    out.append("## UNRESOLVED ANOMALIES\n" + ("\n".join(anomalies) or "(none)"))
-    # request_operator's requests and mission control's asynchronous answers, read straight off the record (no decision
-    # logic here about what an answer means); a request with no answer yet is still open
-    ops = [e for e in (events or []) if e["kind"] in ("operator_request_sent", "operator_answered")]
-    if ops:
-        lines = [f"- [{e['seq']}] you asked mission control: {e['text']}" if e["kind"] == "operator_request_sent"
-                 else f"- [{e['seq']}] mission control answered ({e.get('outcome') or e.get('link_status')}): {e['text']}"
-                 for e in ops[-8:]]
-        out.append("## OPERATOR EXCHANGES (your requests and mission control's answers, latest last)\n" + "\n".join(lines))
-    if len(f["reasoner_history"]) > 1:
-        out.append("## REASONER CONTINUITY\nthis record was continued by another reasoner session: "
-                   + " -> ".join(f"{r['model']} (from record #{r['seq']})" for r in f["reasoner_history"]))
-    # the operating context every step (research_content §3.4.3, §4.5): mission time and the Earth link are facts of the
-    # run, not answers to a question the agent has to think of asking (l4_pdu1, step 10 round 1: never asked, never knew)
     ls = link.state(mission_t)
-    status = [f"mission time: {mission_t:.0f} s since the mission started",
-              f"link to mission control ({ls['link']}): " + (
-                  f"up; Earth sets below the site's horizon in {ls['closes_in_s']:.0f} s; one-way delay {ls['one_way_delay_s']} s"
-                  if ls["earth_visible"] else
-                  f"down (Earth below the horizon); it reopens in {ls['reopens_in_s']:.0f} s; a message sent now waits for it"),
-              # the published ground protocol (docs/heldout_design.md §8), a fact of the operator channel like its delay
-              f"mission control decides a request {DECISION_TIME_S:.0f} s of mission time after it arrives",
-              f"unavailable capabilities: {_j(f['unavailable']) if f['unavailable'] else 'none'}",
-              f"active faults: {_j({k: v for k, v in f['fdir'].items() if v['active']}) or 'none'}",
-              authority(f, authority_rules)]
-    out.append("## OPERATING STATUS\n" + "\n".join(status))
-    ledger = f["ledger"]
-    if ledger:
-        plan = [f"- {t['task_id']} [{t['status']}] {t['text']}" + (f" -- {t['last_verdict']}" if t["last_verdict"] else "") for t in ledger["tasks"]]
-        out.append("## YOUR WORKING PLAN (yours to revise; not a record of what happened)\n" + "\n".join(plan))
-    else:
-        out.append("## YOUR WORKING PLAN\n(no plan written yet)")
-    steps = []
-    for s in f["recent"]:
-        line = f"- [{s['seq']}] {s['tool']}{_j(s['args'])}"
-        if "guard" in s and s["guard"]["outcome"] != "allow":
-            line += f" -> GUARD {s['guard']['outcome'].upper()}: {s['guard']['reason']}"
-        if "result" in s:
-            line += f" -> {_j(s['result'])}"
-        steps.append(line)
-    out.append("## RECENT STEPS (oldest first)\n" + ("\n".join(steps) or "(none yet)"))
-    return "\n\n".join(out)
-
-
-def authority(f: dict, rules: list[dict] | None) -> str:
-    """The authority model as one statement: acting is the default; what needs mission control's approval (a contract's
-    authority class, or a guard rule on what a call acts on) is the listed exception, with how such an approval is had.
-    Read off the contracts and the guard configuration, never written per mission (step10 L2-B, L4: a model that asked
-    permission for what no rule restricts, another that asked in prose with nothing held)."""
-    classed = {k: c["authority_class"] for k, c in CONTRACTS["effects"].items() if c["authority_class"] != "routine"}
-    exceptions = [f"{k} ({cls.replace('_', ' ')})" for k, cls in sorted(classed.items())]
-    exceptions += [f"{', '.join(r['applies_to'])} on a {r['target_role']} whose unit reports {_j(r['when_unit'])} -- "
-                   f"{r['why']}" for r in rules or []]
-    line = "authority: every capability call is yours to decide and make on your own"
-    if exceptions:
-        line += ("; the exceptions need mission control's approval first: " + "; ".join(exceptions)
-                 + ". An approval covers one call on one target: propose the call, the guard holds it, and a "
-                   "request_operator sent while it is held carries it to mission control")
-    if f["approvals"]:
-        line += f"; approvals on record: {_j(f['approvals'])}"
-    if f["pending_approvals"]:
-        line += (f"; held now for approval (a request_operator carries them): "
-                 f"{_j([{k: p[k] for k in ('capability', 'target')} for p in f['pending_approvals']])}")
-    return line
+    now = {"mission_time_s": round(mission_t), "link": "up" if ls["earth_visible"] else "down (Earth below the horizon)",
+           "earth_sets_in_s": ls["closes_in_s"], "link_reopens_in_s": ls["reopens_in_s"]}
+    exchanges = [{"seq": e["seq"], "asked": e["text"]} if e["kind"] == "operator_request_sent"
+                 else {"seq": e["seq"], "answered": e["text"], "outcome": e.get("outcome") or e.get("link_status")}
+                 for e in events if e["kind"] in ("operator_request_sent", "operator_answered")][-8:]
+    approvals = {"approvals_on_record": f["approvals"],
+                 "held_for_approval": [{k: p[k] for k in ("capability", "target")} for p in f["pending_approvals"]]}
+    step_line = [{"step": step, "of_budget": max_steps}]
+    if len(f["reasoner_history"]) > 1:
+        step_line.append({"continued_by_another_reasoner": f["reasoner_history"]})
+    recent = [{"seq": s["seq"], "tool": s["tool"], "args": s["args"],
+               "guard": s["guard"] if "guard" in s and s["guard"]["outcome"] != "allow" else None,
+               "result": s.get("result")} for s in f["recent"]]
+    return (PROMPTS / "step.md").read_text().format(
+        mission=f["mission"]["text"], step=_lines(step_line), robot=_j(f["robot"]),
+        verified_effects=_lines(f["verified_effects"][-12:]),
+        observations=_lines([o for o in f["observations"] if o["query"] != "site_map"][-8:]),
+        objects=_lines([{"item": name, **o} for name, o in f["objects"].items()], "(no verified manipulation yet)"),
+        attempts=_lines(f["attempts"][-10:]), anomalies=_lines(f["anomalies"]),
+        mission_control=_lines([now, *exchanges, approvals]),
+        status=_j({"unavailable_capabilities": f["unavailable"], "active_faults": {k: v for k, v in f["fdir"].items() if v["active"]}}),
+        plan=_lines([{k: t[k] for k in ("task_id", "status", "text", "last_verdict")} for t in f["ledger"]["tasks"]] if f["ledger"] else [],
+                    "(no plan written yet)"),
+        recent=_lines(recent))
 
 
 class HarnessRenderer(ContextRenderer):
     """OpenRAL's renderer slot filled with the harness context (ReasonerCore calls `render` each tick)."""
 
-    def __init__(self, store, max_steps: int, authority_rules: list[dict], clock):
+    def __init__(self, store, max_steps: int, clock):
         super().__init__()
-        self.store, self.max_steps, self.step, self.authority_rules, self.clock = store, max_steps, 0, authority_rules, clock
+        self.store, self.max_steps, self.step, self.clock = store, max_steps, 0, clock
 
     def render(self, *, world_state=None) -> str:
-        return render(self.store.facts, self.step, self.max_steps, self.store.events, self.authority_rules, self.clock())
+        return step_text(self.store.facts, self.step, self.max_steps, self.store.events, self.clock())

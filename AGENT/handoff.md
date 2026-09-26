@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-24 night (step 9, its live checks and the 1.5 m blocker done, F115; next: step 10). Read `AGENT/research_content.md` and
+Updated 2026-09-26 (F124 texts in prompts/ours; next: Qwen held-out runs). Read `AGENT/research_content.md` and
 `AGENT/execution_plan.md` first, then **`docs/heldout_design.md`** (the current plan; §14 = the campaign instances), **`docs/baselines/authoring_spec.md`**
 (the locked baseline specification), then `AGENT/todo.md`, then `docs/research_findings.md` F108-F115.
 Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
@@ -17,8 +17,9 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
   unsolved on the model's reasoning after three generic fixes (place verifier; time/link/decision time/approval
   mechanics in the snapshot). L4 round 4 by day (51 s/step): still no transfer idea. L2-B offline (F119): Kimi-K3
   plans the relocation 4/6, the live model places onto the occupier. Live (F122): Qwen3.8-Max solves L4, Kimi-K3
-  solves L2-B. **Reasoner is now Qwen3.8-Max (F123, user).** Next: model-facing texts into files
-  (docs/prompt_text_design.md), then Qwen on the six held-out states. Session B (pre-freeze infra) works in
+  solves L2-B. **Reasoner is now Qwen3.8-Max (F123, user).** Every text the reasoner reads is in
+  `prompts/ours/` (F124; system.md = standing text incl. authority, link, site; step.md = the record template; tools.yaml);
+  `space_runtime/context.py` only fills them. Next: Qwen on the six held-out states. Session B (pre-freeze infra) works in
   `.worktree/prefreeze` (docs/prefreeze_workorder.md, findings F130+, GPUs 4-5).
 - PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil` in the container.
 - Image `runfarm:22.04` now carries gdb, Cyclone (unused) and tf2 rebuilt from geometry2 9997e969 (F113); the old

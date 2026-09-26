@@ -20,9 +20,9 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 from openai import OpenAI  # noqa: E402
 
-from space_runtime.context import render  # noqa: E402
+from space_runtime.context import step_text, system_text  # noqa: E402
 from space_runtime.facts import apply, empty_facts  # noqa: E402
-from space_runtime.tools import capability_tools, local_tools  # noqa: E402
+from space_runtime.tools import tool_schemas  # noqa: E402
 
 RUNS = REPO / "artifacts/runs"
 GATEWAY = "https://llmapi.paratera.com/v1"
@@ -95,7 +95,7 @@ POINTS = [
 
 
 def cut(record: str, before: int):
-    facts, n, image = empty_facts(), 0, None
+    facts, n, image, events, t = empty_facts(), 0, None, [], 0.0
     for line in (RUNS / record / "ours/events.jsonl").read_text().splitlines():
         ev = json.loads(line)
         if ev["kind"] in ("tool_proposed", "reasoner_step_failed"):
@@ -103,10 +103,12 @@ def cut(record: str, before: int):
             if n >= before:
                 break
         apply(facts, ev)
+        events.append(ev)
+        t = ev.get("sim_t") or t
         v = ev.get("value") if ev["kind"] == "query_answered" else None
         if isinstance(v, dict) and v.get("camera") == "wrist" and v.get("image"):
             image = v["image"]
-    return render(facts, before, 80), image
+    return system_text(facts, []), step_text(facts, before, 80, events, t), image
 
 
 def call(model: str, context: str, image: str | None, tools: list, system: str) -> dict:
@@ -137,14 +139,13 @@ def main():
     ap.add_argument("--out", type=Path, default=REPO / "artifacts/reasoner_replay")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
-    tools = capability_tools() + local_tools()
-    system = (REPO / "space_runtime/playbook.md").read_text()
+    tools = tool_schemas()
     jobs = [(m, p, k) for m in a.models.split(",") for p in POINTS for k in range(a.repeats)]
     contexts = {p[0]: cut(p[1], p[2]) for p in POINTS}
 
     def run(job):
         m, (name, _, _, slot, rubric), k = job
-        ctx, image = contexts[name]
+        system, ctx, image = contexts[name]
         r = call(m, ctx, image, tools, system)
         ok, why = rubric(r["tool"], r["args"], slot) if r["tool"] else (False, r.get("note", "no tool call"))
         row = dict(model=m, point=name, repeat=k, ok=ok, why=why, **r)

@@ -27,6 +27,8 @@ import json
 import time
 from pathlib import Path
 
+import yaml
+
 from openral_core import EmitPromptTool, ExecuteRskillTool
 from openral_core.exceptions import ROSPlanningError, ROSReasonerInvalidPlan
 from pydantic import ValidationError
@@ -41,7 +43,7 @@ REPLY_TOPIC = "/space/operator/reply"  # console -> requester: the operator's an
 SET_TASK_STATUS = "local/set_task_status"
 DECOMPOSE = "local/decompose_mission"
 WAIT = "local/wait_for_mission_control"
-RATIONALE = {"type": "string", "description": "one sentence: why this call now"}
+TEXTS = yaml.safe_load((Path(__file__).resolve().parents[1] / "prompts/ours/tools.yaml").read_text())
 
 
 def _json_type(spec: str) -> dict:
@@ -50,56 +52,26 @@ def _json_type(spec: str) -> dict:
     if spec.startswith("number["):
         n = int(spec[7:-1])
         return {"type": "array", "items": {"type": "number"}, "minItems": n, "maxItems": n}
+    if spec == "string[]":
+        return {"type": "array", "items": {"type": "string"}, "minItems": 1}
     if spec.startswith("string("):
         return {"type": "string", "enum": spec[7:-1].split("|")}
     return {"type": "string"}
 
 
-def _function(name: str, description: str, properties: dict, required: list[str]) -> dict:
+def _function(name: str, description: str, inputs: dict) -> dict:
+    props = {k: {**_json_type(t), **({"description": d} if d else {})} for k, (t, _, d) in inputs.items()}
+    props["rationale"] = {"type": "string", "description": TEXTS["rationale"]}
     return {"type": "function", "function": {"name": name, "description": description, "parameters": {
-        "type": "object", "properties": {**properties, "rationale": RATIONALE}, "required": required}}}
+        "type": "object", "properties": props, "required": [k for k, (_, req, _) in inputs.items() if req]}}}
 
 
-def capability_tools() -> list[dict]:
-    tools = []
-    for group, tag in (("effects", "EFFECT (acts on the robot; runs to completion before your next step)"),
-                       ("queries", "QUERY (read-only)")):
-        for name, c in CONTRACTS[group].items():
-            if c.get("engineering"):  # stage-level capabilities are not mission tools (plan v4 granularity rule)
-                continue
-            inputs = c.get("inputs") or {}
-            props = {k: {**_json_type(t), "description": d} for k, (t, _, d) in inputs.items()}
-            tools.append(_function(name, f"{tag}. {' '.join(c['description'].split())}", props,
-                                   [k for k, (_, req, _) in inputs.items() if req]))
-    return tools
-
-
-def local_tools() -> list[dict]:
-    return [
-        _function("decompose_mission", (
-            "WORKING PLAN. Write your ordered task list. Empty target_task_id replaces every open task (closed tasks "
-            "stay as history); target_task_id = the active task's id splits that task in place into finer subtasks. "
-            "The plan is yours to revise whenever the evidence changes; it is not a record of what happened."),
-            {"subtasks": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-             "target_task_id": {"type": "string", "description": "empty = whole plan; else the active task's id"}}, ["subtasks"]),
-        _function("set_task_status", (
-            "WORKING PLAN. Close the active task of your plan: done (you judge it achieved from the evidence) or "
-            "abandoned (it cannot or need not be achieved); the next task becomes active."),
-            {"status": {"type": "string", "enum": ["done", "abandoned"]}, "note": {"type": "string"}}, ["status", "note"]),
-        _function("report_to_operator", (
-            "OPERATOR. Send mission control your final report and end the autonomous run: what was observed, what was "
-            "done, which effects were verified, what remains unresolved. Use it when the mission is complete or "
-            "cannot be completed."), {"text": {"type": "string"}}, ["text"]),
-        _function("request_operator", (
-            "OPERATOR. Send mission control a request for a decision, approval or information you cannot obtain "
-            "yourself. It crosses the Direct-with-Earth link (delay and visibility: space_context); the answer arrives "
-            "later and appears under OPERATOR EXCHANGES. Meanwhile you may carry on with other work."),
-            {"text": {"type": "string"}}, ["text"]),
-        _function("wait_for_mission_control", (
-            "OPERATOR. Hold the robot still until mission control's answer to an open request arrives, or until "
-            "max_wait_s of mission time has passed, whichever is first."),
-            {"max_wait_s": {"type": "number", "description": "the longest to wait, s of mission time"}}, ["max_wait_s"]),
-    ]
+def tool_schemas() -> list[dict]:
+    """The palette: every mission-level capability contract, then the harness-local tools (prompts/ours/tools.yaml)."""
+    tools = [_function(name, f"{TEXTS['group'][group]}. {' '.join(c['description'].split())}", c.get("inputs") or {})
+             for group in ("effects", "queries") for name, c in CONTRACTS[group].items()
+             if not c.get("engineering")]  # stage-level capabilities are not mission tools (plan v4 granularity rule)
+    return tools + [_function(name, " ".join(c["description"].split()), c["inputs"]) for name, c in TEXTS["local"].items()]
 
 
 def decode(name: str, args: dict):
@@ -138,7 +110,7 @@ class HarnessToolClient:
         from openai import OpenAI
 
         self.model_id, self.base_url = model_id, base_url
-        self.tools = capability_tools() + local_tools()
+        self.tools = tool_schemas()
         self.sdk = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout_s)
         self.extra = {} if thinking else {"extra_body": {"thinking": {"type": "disabled"}}}
         self.last_prompt_tokens = None
@@ -179,7 +151,7 @@ class HarnessToolClient:
             resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto", **self.extra)
             if not resp.choices[0].message.tool_calls:
                 messages += [{"role": "assistant", "content": resp.choices[0].message.content or ""},
-                             {"role": "user", "content": "Respond with exactly one tool call now."}]
+                             {"role": "user", "content": TEXTS["reply_without_call"]}]
                 resp = self.sdk.chat.completions.create(model=self.model_id, messages=messages, tools=self.tools, tool_choice="auto", **self.extra)
         except Exception as exc:  # reason: provider SDK boundary -> typed planning error for ReasonerCore
             raise ROSPlanningError(f"LLM call failed: {exc}") from exc

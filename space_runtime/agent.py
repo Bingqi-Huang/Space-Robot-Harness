@@ -43,7 +43,7 @@ from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
 
 from openral_ext.capability_server.contracts import CONTRACTS
-from space_runtime.context import HarnessRenderer
+from space_runtime.context import HarnessRenderer, system_text
 from space_runtime.facts import FactStore
 from space_runtime.guard import Guard
 from space_runtime.report import write_report
@@ -98,9 +98,7 @@ class Agent:
         self.guard = Guard(cfg["guard"])
         self.client = HarnessToolClient(model_id=model, base_url=rc["endpoint"], api_key=os.environ[rc.get("api_key_env", "SPACE_LLM_API_KEY")],
                                         timeout_s=rc["timeout_s"], thinking=rc["thinking"], run_dir=run_dir)
-        self.core = ReasonerCore(client=self.client, retry_cap_per_kind=rc["retry_cap_per_call"],
-                                 system_prompt=(REPO / "space_runtime/playbook.md").read_text())
-        self.renderer = HarnessRenderer(self.store, self.max_steps, self.guard.target_authority, lambda: self.sim_t)
+        self.renderer = HarnessRenderer(self.store, self.max_steps, lambda: self.sim_t)
         self.palette = ToolPalette(execute_rskill_ids=frozenset([*(k for k, c in CONTRACTS["effects"].items() if not c.get("engineering")),
                                                                  *(k for k, c in CONTRACTS["queries"].items() if not c.get("engineering")),
                                                                  SET_TASK_STATUS, DECOMPOSE, WAIT]))
@@ -281,6 +279,9 @@ class Agent:
         site = self.query("site_map", {})
         if site["success"]:
             self.event("site_knowledge", site=site["value"])
+        # the standing text of this reasoner session (prompts/ours/system.md): rules, authority, link, the surveyed site
+        self.core = ReasonerCore(client=self.client, retry_cap_per_kind=self.cfg["reasoner"]["retry_cap_per_call"],
+                                 system_prompt=system_text(f, self.guard.target_authority))
         step = sum(ev["kind"] in ("tool_proposed", "reasoner_step_failed") for ev in self.store.events)
         while f["terminal"] is None:
             if step >= self.max_steps:

@@ -19,10 +19,10 @@ REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
 from openai import OpenAI  # noqa: E402
 
-from space_runtime.context import render  # noqa: E402
+from space_runtime.context import step_text, system_text  # noqa: E402
 from space_runtime.facts import apply, empty_facts  # noqa: E402
 from space_runtime.guard import Guard  # noqa: E402
-from space_runtime.tools import capability_tools, local_tools  # noqa: E402
+from space_runtime.tools import tool_schemas  # noqa: E402
 
 RUNS = REPO / "artifacts/runs"
 GATEWAY = "https://llmapi.paratera.com/v1"
@@ -66,7 +66,7 @@ def cut(record: str, before: int):
         events.append(ev)
         t = ev.get("sim_t") or t
     rules = Guard(yaml.safe_load((REPO / "configs/space_runtime.yaml").read_text())["guard"]).target_authority
-    return render(facts, before, 80, events, rules, t)
+    return system_text(facts, rules), step_text(facts, before, 80, events, t)
 
 
 def call(model: str, context: str, tools: list, system: str) -> dict:
@@ -100,12 +100,13 @@ def main():
     ap.add_argument("--out", type=Path, default=REPO / "artifacts/reasoner_replay/model_regression")
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
-    tools, system = capability_tools() + local_tools(), (REPO / "space_runtime/playbook.md").read_text()
+    tools = tool_schemas()
     contexts = {p: cut(r, i) for p, (r, i, _, _) in POINTS.items()}
 
     def run(job):
         m, p, k = job
-        r = call(m, contexts[p], tools, system)
+        system, context = contexts[p]
+        r = call(m, context, tools, system)
         row = dict(model=m, point=p, repeat=k, verdict=judge(p, r["tool"], r["args"]), **r)
         with (a.out / "results.jsonl").open("a") as fh:
             fh.write(json.dumps(row) + "\n")

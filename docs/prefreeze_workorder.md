@@ -77,7 +77,7 @@ variant on a covered instance (4 runs, GPUs 4-5) after the code is final. The ru
 **5. Offline analyses due at the freeze.** Retry-budget sensitivity (N = 1, 2, 3, 5 on every held-out state, both
 baselines; authoring_spec "After the freeze") -- script ready and run once now, rerun on the frozen artifacts.
 
-**6. Freeze tooling -- F2, F3.** A freeze-audit script: lists every Ours artifact (playbook, tool and contract texts,
+**6. Freeze tooling -- F2, F3.** A freeze-audit script: lists every Ours artifact (`prompts/ours/`, contract texts,
 guard config, verifier, context builder) and diffs it against the step-10 starting point (F116's audit), each change
 with its F-number; checks the baselines against the lock's traceability tables. F3: tag script for all three repos + the
 run-farm image digest + model id / decoding config into the manifests. Run at the freeze, not before.

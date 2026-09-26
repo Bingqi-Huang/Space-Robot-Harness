@@ -20,7 +20,7 @@ def empty_facts() -> dict:
         "robot": {"base": None, "tcp": None, "arm": None},  # latest robot-observable state
         "verified_effects": [],  # {"seq", "capability", "effect", "holds", ...}
         "observations": [],  # {"seq", "query", "args", "value"}
-        "anomalies": [],  # unresolved failures/denials: {"seq", "capability", "reason"}
+        "anomalies": [],  # unresolved failures/denials: {"seq", "capability", "kind", ...its own fields}
         "unavailable": {},  # capability -> reason
         "fdir": {},  # fault name -> {"active", "detail"}
         "approvals": [],  # operator approvals on record: {"capability", "target"} (target None = the whole capability)
@@ -30,7 +30,7 @@ def empty_facts() -> dict:
         "recent": [],  # last RECENT tool steps: proposal, guard outcome, result
         "reasoner": None,  # {"model", "endpoint"} currently attached
         "reasoner_history": [],  # every attach: {"seq", "model", "endpoint"}
-        "objects": {},  # movable item (as the mission agent named it) -> {"state": in_gripper|on <support>|unknown, "seq", "by"}
+        "objects": {},  # movable item (as the mission agent named it) -> {"state": in_gripper|on <support>|unknown, + the verified effect that set it}
         "attempts": [],  # manipulation operations and their outcomes: {"seq", "operation", "args", "success", "stage", "why", "saw"}
         "active_execution": None,  # {"seq", "capability", "args"} between execution_started and _finished
         "reports": [],  # operator-facing reports/requests the agent emitted
@@ -83,15 +83,14 @@ def apply(f: dict, ev: dict) -> None:
         f["reasoner_history"].append({"seq": ev["seq"], "model": ev["model"], "endpoint": ev["endpoint"]})
         if f["active_execution"] is not None:  # the previous reasoner stopped while an effect was running
             a = f["active_execution"]
-            f["anomalies"].append({"seq": ev["seq"], "capability": a["capability"],
-                                   "reason": f"was executing (record #{a['seq']}) when the previous reasoner stopped; its outcome was never recorded"})
+            f["anomalies"].append({"seq": ev["seq"], "capability": a["capability"], "kind": "outcome_unrecorded", "started_seq": a["seq"]})
             f["active_execution"] = None
     elif k == "tool_proposed":
         f["recent"].append({"seq": ev["seq"], "tool": ev["tool"], "args": ev["args"], "rationale": ev["rationale"]})
     elif k == "guard_decision":
         f["recent"][-1]["guard"] = {"outcome": ev["outcome"], "reason": ev["reason"]}
         if ev["outcome"] != "allow":
-            f["anomalies"].append({"seq": ev["seq"], "capability": ev["tool"], "reason": f"guard {ev['outcome']}: {ev['reason']}"})
+            f["anomalies"].append({"seq": ev["seq"], "capability": ev["tool"], "kind": f"guard_{ev['outcome']}", "reason": ev["reason"]})
     elif k == "execution_started":
         f["active_execution"] = {"seq": ev["seq"], "capability": ev["capability"], "args": ev["args"]}
     elif k == "execution_finished":
@@ -104,10 +103,7 @@ def apply(f: dict, ev: dict) -> None:
             # A disagreement between sources is an anomaly naming them (plan v4 §5), not a detail inside the attempt
             for r in f["attempts"][-1].get("reconciliation", []):
                 if r["interface_agreement"] < 0.5:
-                    f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": (
-                        f"source disagreement: the equipment catalogue's lifting interface, fitted where the vision model "
-                        f"placed the item, agreed with the wrist depth image over only {r['interface_agreement']:.0%} of its "
-                        f"surface (mean residual {r['residual_m'] * 1000:.1f} mm over {r['points']} pixels)")})
+                    f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "kind": "source_disagreement", **r})
         f["robot"].update({key: evd[src] for key, src in (("base", "base_pose"), ("tcp", "tcp_pose"), ("arm", "arm")) if isinstance(evd.get(src), dict)})
         # a capability that now succeeds resolves its own earlier failures
         f["anomalies"] = [a for a in f["anomalies"] if not (ev["success"] and a["capability"] == ev["capability"])]
@@ -115,35 +111,29 @@ def apply(f: dict, ev: dict) -> None:
             # a remote service that did not answer is an outage of the stack, not an outcome of the robot's work: the
             # anomaly says so, so the record separates "the method failed here" from "the gateway was down"
             dep = (evd.get("skill") or {}).get("dependency_unavailable")
-            f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "reason": ev["failure_reason"],
+            f["anomalies"].append({"seq": ev["seq"], "capability": ev["capability"], "kind": "failed", "reason": ev["failure_reason"],
                                    **({"service_outage": dep} if dep else {})})
     elif k == "effect_verified":
         f["verified_effects"].append({key: ev[key] for key in ev if key not in ("kind", "wall_t")})
         # object facts change only on verified evidence
+        basis = {"seq": ev["seq"], "effect": ev["effect"], "holds": ev["holds"], "after": ev["capability"]}
         if ev["effect"] == "item_held":
             if ev["holds"]:
-                f["objects"][ev["target"]] = {"state": "in_gripper", "seq": ev["seq"], "by": "verified item_held"}
+                f["objects"][ev["target"]] = {"state": "in_gripper", **basis}
             elif f["objects"].get(ev["target"], {}).get("state") == "in_gripper" or ev["jaw"] == "holding_object":
-                f["objects"][ev["target"]] = {"state": "unknown", "seq": ev["seq"], "by": "item_held did not verify"}
+                f["objects"][ev["target"]] = {"state": "unknown", **basis}
         if ev["effect"] == "item_still_held" and not ev["holds"]:
             # Failed confirmation invalidates the held fact; it does not prove the item fell or the jaws are empty.
-            # Preserve the observation so the agent can resolve the uncertainty.
-            seen = f" -- the gripper's camera shows {ev['seen']}" if ev.get("seen") else ""
-            if ev.get("record_and_jaw_expect_held"):
-                seen += (f" (read twice, the second time with the facts about what a held handle looks like; the pick "
-                         f"record and the jaw angle still say held)")
+            # What the camera showed and how it was read stay with the item so the agent can resolve the uncertainty.
             for name in ev["items"]:
-                f["objects"][name] = {"state": "unknown", "seq": ev["seq"],
-                                      "by": f"holding not confirmed after {ev['capability']}{seen} (jaw {ev['jaw_rad']} rad)"}
+                f["objects"][name] = {"state": "unknown", **basis, "camera_saw": ev.get("seen"), "jaw_rad": ev["jaw_rad"],
+                                      "read_twice_record_and_jaw_say_held": ev.get("record_and_jaw_expect_held")}
         if ev["effect"] == "item_placed":
             held = [name for name, o in f["objects"].items() if o["state"] == "in_gripper"]
             for name in held:
-                f["objects"][name] = ({"state": f"on {ev['support']}", "seq": ev["seq"], "by": "verified item_placed"} if ev["holds"]
-                                      else {"state": "unknown", "seq": ev["seq"],
-                                            "by": "item_placed did not verify" + (
-                                                f": the jaws let go with the tool {ev['let_go_above_expected_m'] * 100:+.0f} cm from where the support "
-                                                f"should take the item, and the skill stopped at {ev.get('skill_stopped_at')}"
-                                                if ev.get("let_go_above_expected_m") is not None else "")})
+                f["objects"][name] = ({"state": f"on {ev['support']}", **basis} if ev["holds"] else
+                                      {"state": "unknown", **basis, "let_go_above_expected_m": ev.get("let_go_above_expected_m"),
+                                       "skill_stopped_at": ev.get("skill_stopped_at")})
     elif k == "query_answered":
         f["recent"][-1]["result"] = {"success": ev["success"], "value": ev["value"], "failure_reason": ev["failure_reason"]}
         if ev["success"]:

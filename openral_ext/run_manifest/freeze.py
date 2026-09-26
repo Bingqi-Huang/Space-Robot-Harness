@@ -23,7 +23,8 @@ __all__ = ["METHOD_ARTIFACTS", "list_method_artifacts", "plan_freeze", "FreezeTa
 # Paths are relative to repo_root; a bare filename glob matches only that file.
 METHOD_ARTIFACTS: dict[str, list[str]] = {
     "ours": [
-        "space_runtime/playbook.md",  # generic prompt/playbook
+        "prompts/ours/*",  # every text the reasoner reads: standing text, step template, local tool texts
+        "space_runtime/context.py",  # fills them from the record
         "configs/space_runtime.yaml",  # hard invariant/authority guard configuration
         "space_runtime/guard.py",  # the guard mechanism itself
         "space_runtime/verification.py",  # effect-verifier mapping

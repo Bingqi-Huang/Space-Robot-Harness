@@ -69,10 +69,7 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
                     "first_reading": seen.get("first_reading"), "second_reading": seen.get("second_reading"),
                     "record_and_jaw_expect_held": seen.get("record_and_jaw_expect_held"),
                     "jaw_rad": look["jaw_rad"], "image": seen["image"],
-                    "jaw": "closed_empty" if shut else "open_or_holding",
-                    "source": "the gripper's own camera read by the vision model against the pick record and the jaw "
-                              "encoder, read again with context when they disagree; refused by the jaw encoder when the "
-                              "fingers are shut on nothing"})
+                    "jaw": "closed_empty" if shut else "open_or_holding"})
     if capability in BASE_NAV | BASE_DOCK and isinstance(evidence.get("base_pose"), dict):
         band = cfg["base"]["navigate" if capability in BASE_NAV else "dock"]
         b = evidence["base_pose"]
@@ -80,35 +77,32 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         dyaw = abs((b["yaw"] - goal["yaw"] + math.pi) % (2 * math.pi) - math.pi)
         out.append(dict(effect="base_at_commanded_pose", holds=d <= band["position_m"] and dyaw <= band["yaw_rad"],
                         position_error_m=round(d, 3), yaw_error_rad=round(dyaw, 3), band=band,
-                        source="rover localization estimate (AMCL) vs commanded goal",
                         **({"stand_advice": evidence["stand_advice"]} if evidence.get("stand_advice") else {})))
     if capability in TCP and isinstance(evidence.get("tcp_pose"), dict):
         tol = args.get("tolerance_m", TCP_DEFAULT_TOL[capability]) * cfg["tcp"]["tolerance_factor"]
         if capability.startswith("plan_"):
             tol += cfg["tcp"]["plan_execution_m"]
         d = math.dist(evidence["tcp_pose"]["position"], goal["position"])
-        out.append(dict(effect="tool_at_commanded_position", holds=d <= tol, position_error_m=round(d, 4), band_m=round(tol, 4),
-                        source="arm forward kinematics vs commanded TCP target (rover frame)"))
+        out.append(dict(effect="tool_at_commanded_position", holds=d <= tol, position_error_m=round(d, 4), band_m=round(tol, 4)))
     if capability == "approach_target" and "target_rover" in evidence and isinstance(evidence.get("tcp_pose"), dict):
         standoff = args.get("standoff_m", 0.10)
         d = math.dist(evidence["tcp_pose"]["position"], evidence["target_rover"])
         out.append(dict(effect="tool_at_standoff_from_seen_target", holds=abs(d - standoff) <= cfg["tcp"]["approach_band_m"],
-                        tool_to_target_m=round(d, 4), standoff_m=standoff, source="arm kinematics vs wrist-camera triangulated target"))
+                        tool_to_target_m=round(d, 4), standoff_m=standoff))
     arm = evidence.get("arm")
     if capability in ("grasp", "release") and isinstance(arm, dict):
         state = jaw_state(arm["jaw_rad"], cfg)
         want = {"grasp": ("holding_object", "closed_empty"), "release": ("open",)}[capability]
-        out.append(dict(effect=f"jaws_{state}", holds=state in want, jaw_rad=arm["jaw_rad"], source="gripper jaw encoder"))
+        out.append(dict(effect=f"jaws_{state}", holds=state in want, jaw_rad=arm["jaw_rad"]))
     if capability in ("arm_ready", "stow") and isinstance(arm, dict):
         want = {"arm_ready": "ready", "stow": "stowed"}[capability]
-        out.append(dict(effect=f"arm_{want}", holds=arm["posture"] == want, posture=arm["posture"], source="arm joint encoders"))
+        out.append(dict(effect=f"arm_{want}", holds=arm["posture"] == want, posture=arm["posture"]))
     if capability == "pick" and isinstance(arm, dict):
         # held = jaws stopped on something + the item rose with the gripper during the lift (its image stayed put while a
         # left-behind item would have shifted by the lift's image displacement)
         hc = (evidence.get("skill") or {}).get("hold_check")
         state = jaw_state(arm["jaw_rad"], cfg)
-        m = dict(effect="item_held", target=args["target"], jaw_rad=arm["jaw_rad"], jaw=state,
-                 source="jaw encoder + wrist images before/after the lift (flow recomputed here) + arm kinematics")
+        m = dict(effect="item_held", target=args["target"], jaw_rad=arm["jaw_rad"], jaw=state)
         if hc:
             near_m = float(hc.get("self_depth_m", 0.0)) + cfg["hold"]["beyond_gripper_m"] if hc.get("self_depth_m") else cfg["hold"]["near_m"]
             flow, depth, n = image_motion(hc["before"], hc["after"], hc["before_depth"], near_m, hc.get("gripper_mask"))
@@ -123,9 +117,7 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         sk = evidence.get("skill") or {}
         st, contact = sk.get("settle"), sk.get("contact")
         state = jaw_state(arm["jaw_rad"], cfg)
-        m = dict(effect="item_placed", support=args["support"], jaw=state, jaw_rad=arm["jaw_rad"],
-                 source="jaw encoder + arm kinematics (tool clear of the release point) + wrist images and depth after the retreat "
-                        "(flow and the points between the open fingers recomputed here)")
+        m = dict(effect="item_placed", support=args["support"], jaw=state, jaw_rad=arm["jaw_rad"])
         # What the skill got as far as, kept whether or not it finished: a skill that let go and then stopped in its retreat
         # (gc1) leaves the model asking a camera whether the item is there, when the record says where it was let go
         if contact:
@@ -158,9 +150,7 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         # 0.82 rad and the tool a hand's width off the button, and the check that only looked at depth passed both.
         sk = evidence.get("skill") or {}
         contact, target = sk.get("contact"), sk.get("target_rover")
-        m = dict(effect="pressed", target=args.get("target"),
-                 source="arm kinematics and the jaw encoder against the button the wrist depth fitted (jaws closed, on the button, "
-                        "past its tip, and back off it)")
+        m = dict(effect="pressed", target=args.get("target"))
         if contact and target and isinstance(evidence.get("tcp_pose"), dict) and "off_axis_m" in contact:
             past, off, jaw = float(contact.get("past_face_m", 0.0)), float(contact["off_axis_m"]), float(contact["jaw_rad"])
             back = math.dist(evidence["tcp_pose"]["position"], contact["tcp"])
