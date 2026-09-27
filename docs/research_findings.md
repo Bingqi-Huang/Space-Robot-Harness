@@ -6028,3 +6028,11 @@ down near the habitat stand's front edge the withdrawal drew it 9.2 cm and off t
 (b) that pick's wrist left no IK within 3.5 cm of the stand's point in the carry orientation, so the place stepped the
 item 11.5 cm off it. Fix (openral 5e1538c): the jaws come to rest before the withdrawal; at each step off the support
 the tool may first turn about the vertical (0, +-15, +-30, +-45 deg).
+**Correction (same day): there is no withdrawal drag.** The place-offset analysis took the set-down as the first sample
+near the support's height; a carried item swings +-7 cm (period ~2.9 s, barely damped) through the whole 20 s lowering,
+so that sample was a swing extreme and the "drag" was the swing. Taking touchdown as the first sample at the item's final
+resting height: 30 of 31 campaign places move 0-9 mm after touchdown; the exception is plexil_b_bat_bess (4.5 cm), the
+battery half-seated on the stand's front edge. Round 1's corridor container touched down at +12.9 cm and never moved --
+it was set down there because the place stepped 11.5 cm off an unreachable point (fixed, the turn). The jaw-at-rest
+wait stays (the fingers should not be on the neck when the base pulls away) but has no measured effect. What decides
+where an item lands: the step off the support, the swing phase at touchdown, and the localization.

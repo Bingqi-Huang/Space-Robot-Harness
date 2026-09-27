@@ -2,8 +2,8 @@
 
 For each successful `place` call in capability_server.log: the carried item is the tracked object that moved most during
 the call; its offset from the support's surveyed point along the support's outward normal and across it, (1) when it
-first came to rest at the support's height (the set-down, before the release and the base withdrawal) and (2) at the
-call's end (after the withdrawal and the lift); the difference is what the withdrawal dragged. The site's on-support
+first reached its final resting height (touchdown, before the release and the base withdrawal) and (2) at the
+call's end (after the withdrawal and the lift); the difference is what moved the item after it touched down. The site's on-support
 test allows 0.12 m along and 0.18 m across (SRB site.py ON_SUPPORT_XY_M).
 
     python3 experiments/analysis/place_offsets.py artifacts/runs/exp1 > artifacts/eval/exp1/place_offsets.md
@@ -54,7 +54,10 @@ def main() -> None:
             item = max(tracks, key=lambda k: abs(tracks[k][-1]["x"] - tracks[k][0]["x"]) + abs(tracks[k][-1]["y"] - tracks[k][0]["y"])
                        + abs(tracks[k][-1]["z"] - tracks[k][0]["z"]))
             tr = tracks[item]
-            down = next((p for p in tr if abs(p["z"] - point["xyz"][2]) < 0.03), tr[-1])
+            # touchdown: the first sample at the item's final resting height. A hanging item swings +-7 cm through the
+            # whole lowering (vf2_north_corridor), so "near the support's height" picked a swing extreme and read the
+            # swing as drag (F141 correction)
+            down = next((p for p in tr if abs(p["z"] - tr[-1]["z"]) < 0.005), tr[-1])
             a0, c0 = offset(down, point)
             a1, c1 = offset(tr[-1], point)
             inside = abs(a1) < ALONG_MAX and abs(c1) < ACROSS_MAX
