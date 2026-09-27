@@ -6036,3 +6036,11 @@ battery half-seated on the stand's front edge. Round 1's corridor container touc
 it was set down there because the place stepped 11.5 cm off an unreachable point (fixed, the turn). The jaw-at-rest
 wait stays (the fingers should not be on the neck when the base pulls away) but has no measured effect. What decides
 where an item lands: the step off the support, the swing phase at touchdown, and the localization.
+**7. The wrist camera stood on its side when stowed** (user). SRB mounts the camera on Link7 looking along the tool
+axis (world convention, rpy 0/-72/90); at the stow posture the tool points aft, level, and joint7 = pi put the image's
+up direction sideways. Stow joint7 pi -> pi/2 (boundary STOW, openral `_eye_in_hand.STOW`, SRB `_STOW` and the spawn
+posture in `lunarbot.py`, the self-model check): same tool position and axis, image upright; fingers open sideways.
+Press views are fully specified (camera above the tool axis, IK from READY) and pick starts from READY, so neither
+changes. Live check (`artifacts/runs/verify_stow/plexil_a_pdu2`): Link7 rolled as computed, dock/press/stow/return
+all first attempt, `parked_and_stowed` true, success. Experiment I restarted from the beginning with it
+(`artifacts/runs/exp1b`, 14:49; the six runs begun before it are in `exp1b_aborted`, not scored).
