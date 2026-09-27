@@ -5958,7 +5958,7 @@ Not fixed, for the user (a shared-layer change after the freeze reruns the affec
 the bess_stand set-down bias; the withdrawal drag; Nav2 in-place reversals while carrying; dock_to_pose ignoring the
 costmap; the adapter's lost first result.
 
-## F141 -- The shared-layer defects of Experiment I, traced to their causes: an unmapped wall, a localization that stops at a dock, a dock that plans nothing, a lost first result (2026-09-27, in progress)
+## F141 -- The shared-layer defects of Experiment I, traced to their causes: an unmapped wall, a localization that stops at a dock, a dock that plans nothing, a lost first result (2026-09-27)
 
 User decision after F140: fix every shared-layer defect, then rerun Experiment I. Branch `feat/shared-fixes` (research,
 openral, SRB). Offline first, from the recorded runs (bags, evaluator truth, capability evidence); no rerun to diagnose.
@@ -5977,7 +5977,12 @@ live parameters) reproduces the live drift (1.44 / 1.81 / 4.9 m at 380 / 400 / 4
 AMCL parameter fixes it (beam skipping is ignored by the likelihood_field model; range caps 2-6 m make it worse, 7-12
 m; z_hit/z_rand 0.5/0.5 best, still 1.4 m). Across all 51 runs: one catastrophic drift (this one), elsewhere median
 6-9 cm with 0.2-0.5 m transients on in-place turns. Fix: the survey also covers the base's free ground on a 2.5 m grid
-(1258 poses, 729 new, 12 in that corridor).
+(1258 poses, 729 new, 12 in that corridor). Re-surveyed (SRB cfb2d1f, 62 min): the north face has 564 cells; 43.7k occupied cells
+(was 16.1k): 4.2k new ones on structure faces, the rest static terrain -- the road cuts on the west, a rise north of
+the base -- seen from many poses (drawn and looked at); the clearance at every work pose, staging point and road sample
+(944 points) is what it was on the old map. AMCL replay: L2-B r2's first 450 s max 0.46 m (was 7.09), at 380 s 0.23 m
+(was 1.44), on the same recorded drive; three other whole runs median 4.6-5.9 cm (was 5.2-5.3), p90 11-17 cm. The dock
+check re-validated on the new map: 0 of 144 clean docks refused.
 **2. A dock ends before the localization has caught up (the bess_stand bias, the 65 mm drag).** europa_b_bat_bess: AMCL
 3 cm off while driving, 16-19 cm after the in-place turn at the approach point (wheel scrub), converging while the dock
 backs in and still (-7.6, -8.7) cm when it stops -- exactly where every bess_stand set-down landed (+8-10 cm along,
@@ -6002,3 +6007,8 @@ jumping pose (item 1); handle position in the tool frame from truth: steady for 
 along the finger faces in 0.4 s during an in-place turn after four reversals. Per carry in the campaign: max tilt 5-21
 deg, 28.5 deg only in that one (4 reversals). No carry-mode change made; checked live after the map fix (reversals and
 tilt on the north-corridor carry).
+**6. Third-person video** (user: the main view follows the robot). `experiments/video/replay_render.py` poses the
+scene in Isaac from a run's bag (/tf: every robot link and item; lamps and covers from the evaluator's mission state),
+never steps physics, and renders a smoothed follow camera; `mission_video.py` composes follow view, mission card
+(left), mini-map (bottom-right) and front + wrist insets, for all three methods from their raw records. Six videos in
+`artifacts/figures/exp1/video/` (L4 and L2-B x 3 methods), looked at; ~0.64 s per frame to render.
