@@ -1,0 +1,3 @@
+# exp1b: the two runs invalidated by shared-layer defects found in the batch, rerun on their fixes (F142): Ours L2-B r2 (the place turned the staged item; openral fix/place-step-first), PLEXIL L2-B (goal response lost; adapter b15d286). Scored in exp1b in place of the invalid ones (moved to exp1b_aborted).
+ours_l2b_habitat_r2 D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=heldout_destination_occupied D0_ENV='env.cargo=consumables_container env.destination=habitat'
+plexil_l2b_habitat D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_b_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=heldout_destination_occupied D0_ENV='env.cargo=consumables_container env.destination=habitat'
