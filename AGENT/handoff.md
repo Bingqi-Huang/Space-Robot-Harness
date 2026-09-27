@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-27 05:00 (Experiment I done on `freeze-1`, F140; decisions for the user in todo.md).
+Updated 2026-09-27 14:30 (shared layer fixed, F141; Experiment I rerunning as exp1b; branch feat/shared-fixes).
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
 **`docs/preregistration.md`** (metrics, taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md`

@@ -12,16 +12,17 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
   0/6; EUROPA 7/7, 0/6. Tables `artifacts/eval/exp1/tables.md`, failures + categories `failures.md`, place offsets,
   trace completeness; swimlanes (L4, L2-B x 3 methods) and Ours videos (L4, L2-B) in `artifacts/figures/exp1/`.
 
-## Decisions for the user (from F140)
+## Now (2026-09-27): Experiment I rerun on the fixed shared layer (F141)
 
-- [ ] Shared-layer issues found in the campaign (not fixed; a post-freeze shared fix reruns the affected campaign):
-      bess_stand set-down bias (+8-10 cm along, all methods); base-withdrawal drag (2-65 mm); Nav2 in-place reversals
-      shaking a carried item loose (Ours L2-B r2); dock_to_pose ignoring the costmap (Ours drove into the habitat);
-      the PLEXIL adapter losing a first command result (2/27 baseline runs, category 8).
-- [ ] Class-2 definition: one drop counted twice after a push; an upright item off the scored footprint read as a
-      drop. Keep as computed or redefine (recompute from raw data, no rerun).
-- [ ] §5.7 ablations: how to measure (F130: natural runs likely null; fault injection + replay proposed).
-- [ ] PLEXIL retry budget N=1,2,5: argument only, or a derived plan variant (F136).
+- [ ] `artifacts/runs/exp1b/` (jobs `exp1b_campaign.txt`, 51 runs, started 14:22 on GPUs 0-4; GPU 5 joins via
+      `farm_join.sh` when the textured video render ends). User: no freeze audit/tag (memory). Branch
+      `feat/shared-fixes` in research/openral/SRB -- merge to main after the rerun.
+- [ ] Then rows -> tables -> failures (preregistration §2) on exp1b; compare with exp1 (F140); findings F142.
+- [ ] Videos: textures now at /mnt/SharedData/Research/lunarbot_textures/textures, mounted only into the replay render
+      container (runs keep the untextured robot, as exp1); recompose the six videos after the render.
+- Still for the user: class-2 definition (one drop counted twice), §5.7 ablation method, PLEXIL N=1/2/5.
+- Known limits (F141): localization ~5 cm at bess_stand (map precision), 0.3-1.3 m transients round the habitat row's
+  east end; carried items swing +-7 cm while lowered (touchdown phase decides the set-down point).
 
 ## Next work (after the decisions)
 
