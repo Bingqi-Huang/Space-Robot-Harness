@@ -23,6 +23,13 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
       `openral/.worktrees/place-step-first`): turn-0 steps up to 5 cm first, turns only past that -- a pure reordering,
       so every place that chose no turn is unchanged (all 25 Ours runs so far: only r2 turned). When the batch ends:
       merge it into feat/shared-fixes, list every exp1b place with turned_deg != 0, rerun exactly those runs.
+- [ ] exp1b plexil_l2b_habitat hung after its first call (stopped 22:25, invalid): the boundary's log says "failed to
+      send response (timeout)" for the *goal* response -- the same line is in exp1 europa_l3_isru and plexil_b_oru_pdu3,
+      so F141 item 4 (a lost get_result) was the wrong diagnosis; correct it in F142. Adapter rewritten on the action's
+      raw send_goal/get_result services with its own goal id, polling get_result every 10 s, resending the goal on
+      STATUS_UNKNOWN (source changed, NOT built into ros/install while runs are live; compiled to scratch; offline:
+      lost goal response -> completes). When the batch ends: colcon build, rerun plexil_l2b_habitat.
+      Ours' own client (space_runtime/agent.py execute) has the same exposure, never hit (0 in 50 Ours runs): recorded only.
 - [ ] Then rows -> tables -> failures (preregistration §2) on exp1b; compare with exp1 (F140); findings F142.
 - [ ] Videos: textures now at /mnt/SharedData/Research/lunarbot_textures/textures, mounted only into the replay render
       container (runs keep the untextured robot, as exp1); recompose the six videos after the render.
