@@ -98,3 +98,65 @@ def clear_distance(point_xy, normal, ignore: tuple[str, ...] = (), step_m: float
             return round(d, 3)
         d += step_m
     return float(span_m[1])
+
+
+#: the surveyed occupancy map Nav2 localizes and plans on, in the map frame
+NAV_MAP = SITE / "nav_map"
+#: live lidar returns farther than this are not used to check a drive: the 2D slice meets rising regolith a few metres
+#: out, which is ground, not an obstacle (research repo F141)
+SCAN_CHECK_RANGE_M = 3.0
+
+
+@lru_cache(maxsize=1)
+def nav_map_occupied() -> np.ndarray:
+    """Centres (x, y) in the map frame of the surveyed map's occupied cells."""
+    import yaml
+    from PIL import Image
+
+    meta = yaml.safe_load((NAV_MAP / "map.yaml").read_text())
+    img = np.array(Image.open(NAV_MAP / meta["image"]))
+    res, (ox, oy) = float(meta["resolution"]), meta["origin"][:2]
+    rows, cols = np.nonzero(img <= 255 * (1.0 - float(meta["occupied_thresh"])))
+    return np.stack([ox + (cols + 0.5) * res, oy + (img.shape[0] - 1 - rows + 0.5) * res], axis=1)
+
+
+def dock_path(start, goal, approach_m: float, corridor_m: float = 0.35, step_m: float = 0.05) -> list[tuple[float, float, float]]:
+    """The poses (x, y, yaw) the dock servo (`procedural_move_base_to_pose`) drives the base through from `start` to
+    `goal`: inside the goal's corridor straight in at the goal heading, otherwise to the corridor entry `approach_m` in
+    front of the goal, turning to the goal heading on the way, then straight in."""
+    (x, y, yaw), (tx, ty, tyaw) = start, goal
+    d = np.array([math.cos(tyaw), math.sin(tyaw)])
+    rel = np.array([x - tx, y - ty])
+    along, lat = float(rel @ d), float(d[0] * rel[1] - d[1] * rel[0])
+    entry = np.array([tx, ty]) + d * approach_m
+    legs = [] if abs(lat) < corridor_m and -0.1 < along < approach_m + 1.0 else [((x, y, yaw), (entry[0], entry[1], tyaw))]
+    legs.append((legs[-1][1] if legs else (x, y, tyaw), (tx, ty, tyaw)))
+    poses = []
+    for (ax, ay, ayaw), (bx, by, byaw) in legs:
+        n = max(1, int(math.hypot(bx - ax, by - ay) / step_m))
+        dyaw = (byaw - ayaw + math.pi) % (2 * math.pi) - math.pi
+        poses += [(ax + (bx - ax) * k / n, ay + (by - ay) * k / n, ayaw + dyaw * k / n) for k in range(n + 1)]
+    return poses
+
+
+def swept_hits(poses, points: np.ndarray, inset_m: float = 0.05) -> np.ndarray:
+    """The points (same frame as the poses) that the rover's footprint covers anywhere along `poses` and not already
+    where it stands at the first: what the rover stands next to now is not in its way (docked, the hull is a few
+    centimetres from the surveyed cells of what it works at). The footprint is taken `inset_m` in from its edges, one
+    cell of the surveyed map: a cell grazed by a corner is the map's quantization, not a structure in the way (a sideways
+    move off PDU-1's shelf clipped two cells of the next housing and touched nothing, ours_l4_pdu1_r2)."""
+    if len(points) == 0:
+        return points
+    lo, hi = FOOTPRINT.min(axis=0) + inset_m, FOOTPRINT.max(axis=0) - inset_m
+    xs = np.array([p[:2] for p in poses])
+    near = points[np.linalg.norm(points[:, None, :] - xs[None, :, :], axis=2).min(axis=1) < 1.0] if len(points) < 20000 else \
+        points[(points[:, 0] > xs[:, 0].min() - 1) & (points[:, 0] < xs[:, 0].max() + 1) & (points[:, 1] > xs[:, 1].min() - 1) & (points[:, 1] < xs[:, 1].max() + 1)]
+    hit = np.zeros(len(near), bool)
+    under = None
+    for x, y, yaw in poses:
+        c, s = math.cos(yaw), math.sin(yaw)
+        q = (near - [x, y]) @ np.array([[c, -s], [s, c]])  # into the rover frame at that pose
+        inside = (q[:, 0] >= lo[0]) & (q[:, 0] <= hi[0]) & (q[:, 1] >= lo[1]) & (q[:, 1] <= hi[1])
+        under = inside if under is None else under
+        hit |= inside
+    return near[hit & ~under]

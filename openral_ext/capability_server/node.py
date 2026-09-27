@@ -41,7 +41,7 @@ from moveit_msgs.srv import GetPositionIK, GetStateValidity
 from openral_msgs.action import ExecuteRskill
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # the research repo: space_context
-from workspace.footprint import DOCK_ERROR_M, clear_distance  # noqa: E402
+from workspace.footprint import DOCK_ERROR_M, SCAN_CHECK_RANGE_M, clear_distance, dock_path, nav_map_occupied, swept_hits  # noqa: E402
 from workspace.reach import reach_map  # noqa: E402
 
 #: the nearest the pick skill stands its tool off the slot before closing in (its own manifest): the near end of
@@ -72,7 +72,7 @@ from rclpy.parameter import Parameter
 from rclpy.time import Time
 from rosgraph_msgs.msg import Clock
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy, qos_profile_sensor_data
-from sensor_msgs.msg import CameraInfo, Image, JointState
+from sensor_msgs.msg import CameraInfo, Image, JointState, LaserScan
 from std_msgs.msg import String
 from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
@@ -168,6 +168,15 @@ VLM_LOCATE_ASKS, VLM_LOCATE_MIN_FOUND = 3, 2  # concurrent localisation asks; ho
 DEPTH_WINDOW_PX = 3  # half-width of the depth patch around the located pixel (median of the valid depths)
 ARM_WORKING_RADIUS_M = 0.61  # RealMan RM-75 datasheet (docs/lunar_bot_rm75_spec.md)
 ARM_JOINT_LIMITS_RAD = (3.107, 2.269, 3.107, 2.356, 3.107, 2.234, 6.283)  # same datasheet, joint1..7
+#: the dock path check takes the footprint this far in from its edges: two cells of the surveyed map, which grazing a
+#: corner is (144 campaign docks, none touching anything, none refused; F141)
+DOCK_PATH_INSET_M = 0.10
+#: fewer lidar returns than this in a dock's way are not an obstacle: one return inside the swept footprint came up at
+#: 4 of 147 campaign docks, each next to the structure the rover docked at and touching nothing; what the rover drove
+#: into had 9-103 (F141)
+DOCK_PATH_MIN_RETURNS = 3
+#: no-motion updates AMCL makes after a dock before the boundary reads where the rover stands (settle_localization)
+LOC_SETTLE_UPDATES = 10
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
 # the jaw bands come from the skills' own definition (openral_rskill._eye_in_hand): the boundary and the skills must
@@ -377,6 +386,9 @@ class CapabilityServer(Node):
         self.create_subscription(String, "/srb/env0/power_telemetry", lambda m: setattr(self, "_power", json.loads(m.data)), 10,
                                  callback_group=cb)
         self.create_subscription(JointState, "/srb/env0/robot/joint_states", self._on_joints, 10, callback_group=cb)
+        self.scan = None  # the lidar's latest 2D slice, as the costmaps take it (the carried item's returns dropped)
+        self.create_subscription(LaserScan, "/openral/nav2/scan", lambda m: setattr(self, "scan", m), qos_profile_sensor_data,
+                                 callback_group=cb)
         self.create_subscription(Clock, "/clock", lambda m: setattr(self, "sim_t", m.clock.sec + m.clock.nanosec * 1e-9), 10, callback_group=cb)
         self.images = {}
         for cam in ("front", "wrist"):
@@ -400,6 +412,15 @@ class CapabilityServer(Node):
         self._smoother_get = self.create_client(GetParameters, "/velocity_smoother/get_parameters", callback_group=cb)
         self._drive_limits: dict | None = None  # what the smoother was last set to (see drive_limits)
         self._docked_at: str | None = None  # the feature the rover last docked at, until the base moves again
+        from std_srvs.srv import Empty  # noqa: E402
+        from geometry_msgs.msg import PoseWithCovarianceStamped  # noqa: E402
+
+        self._nomotion = self.create_client(Empty, "/request_nomotion_update", callback_group=cb)
+        self._amcl_updates = 0  # how many estimates AMCL has published: one per filter update
+        self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose",
+                                 lambda _m: setattr(self, "_amcl_updates", self._amcl_updates + 1),
+                                 QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
+                                            durability=DurabilityPolicy.TRANSIENT_LOCAL), callback_group=cb)
         self._free_limits: dict | None = None  # the smoother's launch limits, read before the first change
         from openai import OpenAI
         # the gateway answers one view in 10-115 s with six runs at once (F112): 300 s, as pick and press allow (F114)
@@ -1044,6 +1065,12 @@ class CapabilityServer(Node):
             # param an rSkill does not declare is an error, not a spare field (a nav2 action goal has no such field)
             if contract.get("records_evidence"):
                 params["evidence_dir"] = str(self.evidence_dir)
+            if g.capability in ("dock_at_feature", "dock_to_pose"):
+                blocked = self.dock_path_blocked(params)
+                if blocked:
+                    handle.succeed()
+                    res.success, res.failure_kind, res.failure_reason = False, REJECTED, blocked
+                    return res
             undock = None
             if g.capability in ("navigate_to_pose", "navigate_to_feature") and self._docked_at:
                 # A docked rover leaves the way it came in: straight back out along the feature's axis to the approach
@@ -1056,6 +1083,13 @@ class CapabilityServer(Node):
                                        lower("dock_to_pose", dict(x=x, y=y, yaw=yaw, approach_m=0.0)), 120.0)
             r = undock if undock is not None and not undock.success else self.dispatch(handle, contract["lowers_to"], params, deadline)
             evidence = {"rskill": contract["lowers_to"], "goal": goal_summary(params)}
+            if r.success and g.capability in ("dock_at_feature", "dock_to_pose"):
+                evidence["localization_settled"] = settled = self.settle_localization(handle, params)
+                if not settled.get("redocked", {"success": True})["success"]:
+                    r.success, r.failure_kind = False, 3
+                    r.failure_reason = ("the dock ended, and once the localization had caught up it showed the rover "
+                                        f"{settled['off_goal_m'] * 100:.0f} cm / {math.degrees(settled['off_goal_rad']):.1f} deg "
+                                        f"off the goal; closing that failed: {settled['redocked']['reason']}")
             if undock is not None:
                 evidence["undocked_from"] = {"feature": self._docked_at, "success": bool(undock.success)}
             if self._stand_advice:
@@ -1102,6 +1136,74 @@ class CapabilityServer(Node):
                                                                sim_t_start=round(sim0, 2), sim_t_end=round(self.sim_t, 2),
                                                                evidence=evidence)))
         return res
+
+    def dock_path_blocked(self, params: dict) -> str:
+        """Why the straight drive a dock makes would put the rover into something, or "" when it would not.
+
+        The dock servo drives straight to its corridor entry and straight in; it does not plan and it assumes the way is
+        free, which is this boundary's to decide (procedural_move_base_to_pose). Two checks, each on the footprint swept
+        along that path: the surveyed map, through the rover's localization, and what the lidar sees now within
+        SCAN_CHECK_RANGE_M, in the rover's own frame -- the path relative to where the rover stands does not depend on
+        where it believes it is. The second is the one that holds when the localization is wrong: in ours_l2b_habitat_r2
+        (research repo F141) AMCL was 7 m off, every drive was clear on the map, and the rover drove into the habitat
+        module's hull and stairs."""
+        b = self.base_pose()
+        (gx, gy), gyaw = params["position"], params["yaw"]
+        path = dock_path((b["x"], b["y"], b["yaw"]), (gx, gy, gyaw), float(params.get("approach_m", 1.2)))
+        mapped = swept_hits(path, nav_map_occupied(), DOCK_PATH_INSET_M)
+        if len(mapped):
+            near = mapped[np.argmin(np.linalg.norm(mapped - [b["x"], b["y"]], axis=1))]
+            return (f"the dock drives straight to ({gx:.2f}, {gy:.2f}) and would put the rover's hull into the surveyed "
+                    f"site at ({near[0]:.2f}, {near[1]:.2f}), {np.linalg.norm(near - [b['x'], b['y']]):.1f} m from where it "
+                    "stands; a dock plans nothing around anything -- navigate near the pose first")
+        m = self.scan
+        if m is not None:
+            rg = np.array(m.ranges)
+            a = m.angle_min + np.arange(len(rg)) * m.angle_increment
+            v = np.isfinite(rg) & (rg > m.range_min) & (rg <= SCAN_CHECK_RANGE_M)
+            pts = np.c_[rg[v] * np.cos(a[v]), rg[v] * np.sin(a[v])]
+            c, s = math.cos(b["yaw"]), math.sin(b["yaw"])
+            rel = [(c * (x - b["x"]) + s * (y - b["y"]), -s * (x - b["x"]) + c * (y - b["y"]), yaw - b["yaw"]) for x, y, yaw in path]
+            seen = swept_hits(rel, pts, DOCK_PATH_INSET_M)
+            if len(seen) >= DOCK_PATH_MIN_RETURNS:
+                near = seen[np.argmin(np.linalg.norm(seen, axis=1))]
+                return (f"the dock drives straight to ({gx:.2f}, {gy:.2f}) and the lidar sees {len(seen)} returns in the way, "
+                        f"the nearest {np.linalg.norm(near):.1f} m from the rover ({near[0]:+.1f} m ahead, {near[1]:+.1f} m "
+                        "left); a dock plans nothing around anything -- navigate near the pose first")
+        return ""
+
+    def settle_localization(self, handle, params: dict) -> dict:
+        """After a dock: let the localization catch up with where the rover stands, then close what it reveals.
+
+        AMCL updates only after the base has moved 0.1 m or turned 0.1 rad, and a dock ends slow and short. A turn in
+        place just before it (the rover squaring up at the approach point) scrubs the wheels, the odometry is off by
+        10-19 cm, and the filter was still pulling back when the dock stopped: at bess_stand every dock ended 8-13 cm
+        from where the rover believed it was, and every item set down there landed that far off the surveyed point
+        (research repo F140, AMCL vs truth in europa_b_bat_bess's bag). Standing still, AMCL's own no-motion update
+        weighs the current scan again; after a few the estimate is the scan's, and a dock that it shows short is
+        finished with the same servo, straight in along the goal axis."""
+        from std_srvs.srv import Empty  # noqa: E402
+
+        before = self.base_pose()
+        for _ in range(LOC_SETTLE_UPDATES):
+            n = self._amcl_updates
+            answer(self._nomotion.call_async(Empty.Request()), "AMCL's no-motion update")
+            t0 = time.time()
+            while self._amcl_updates == n:  # the update runs on the next scan
+                if time.time() - t0 > 120.0:
+                    raise RuntimeError("AMCL published no estimate for 120 s after a no-motion update")
+                time.sleep(0.05)
+        after = self.base_pose()
+        gx, gy = params["position"]
+        off_m = math.hypot(gx - after["x"], gy - after["y"])
+        off_rad = abs((params["yaw"] - after["yaw"] + math.pi) % (2 * math.pi) - math.pi)
+        rec = {"amcl_updates": LOC_SETTLE_UPDATES, "belief_before": before, "belief_after": after,
+               "shift_m": round(math.hypot(after["x"] - before["x"], after["y"] - before["y"]), 3),
+               "off_goal_m": round(off_m, 3), "off_goal_rad": round(off_rad, 3)}
+        if off_m > float(params.get("xy_tolerance_m", 0.03)) or off_rad > float(params.get("yaw_tolerance_rad", 0.03)):
+            r = self.dispatch(handle, "OpenRAL/rskill-procedural-mobile_base-move_base_to_pose", {**params, "approach_m": 0.0}, 120.0)
+            rec["redocked"] = {"success": bool(r.success), "reason": r.failure_reason, "belief": self.base_pose()}
+        return rec
 
     def dispatch(self, handle, rskill_id: str, params: dict, deadline: float):
         """One ExecuteRskill goal through the OpenRAL runner, waited for; feedback keeps the caller informed."""
