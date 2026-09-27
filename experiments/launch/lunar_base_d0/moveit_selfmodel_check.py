@@ -23,7 +23,7 @@ from sensor_msgs.msg import JointState
 from shape_msgs.msg import SolidPrimitive
 
 ARM = [f"joint{i}" for i in range(1, 8)]
-POSES = dict(zero=[0.0] * 7, stow=[0.0, 0.40, 0.0, -0.70, 0.0, -1.27, 3.14159265], ready=[0.0, -1.0, 0.0, -1.4, 0.0, 1.2, 0.0])
+POSES = dict(zero=[0.0] * 7, stow=[0.0, 0.40, 0.0, -0.70, 0.0, -1.27, 1.57079633], ready=[0.0, -1.0, 0.0, -1.4, 0.0, 1.2, 0.0])
 MOUNT = np.array([-0.4475, 0.0, 0.727])
 
 

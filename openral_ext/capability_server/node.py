@@ -95,7 +95,7 @@ READY = [0.0, 0.1, 0.0, -1.1, 0.0, -1.1, math.pi]
 #: robot's own URDF: tool 1.089 m behind the rover origin at 0.951 m, look 0.0 deg from level, 180 deg from
 #: forward, elbow bent 80 deg. It replaces a pose that folded the arm up over the deck looking forward and
 #: 21 deg above the horizon (F89).
-STOW = [0.0, 0.40, 0.0, -0.70, 0.0, -1.27, 3.14159265]
+STOW = [0.0, 0.40, 0.0, -0.70, 0.0, -1.27, 1.57079633]  # wrist rolled so the wrist camera stands level, looking aft (F141)
 ARM_JOINTS = [f"joint{i}" for i in range(1, 8)]
 # what each interaction-point type is, as the site's equipment documentation states it
 POINT_TYPES = {
