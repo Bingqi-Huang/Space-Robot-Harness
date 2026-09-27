@@ -1,0 +1,68 @@
+[
+ [
+  "navigate_to_feature",
+  {
+   "feature": "landing_stand/slot_0",
+   "standoff_m": 1.2
+  }
+ ],
+ [
+  "dock_at_feature",
+  {
+   "feature": "landing_stand/slot_0",
+   "standoff_m": 0.0
+  }
+ ],
+ [
+  "pick",
+  {
+   "target": "the consumables container, a white and grey supply case",
+   "part": "the slot on the narrow neck between the transverse head above and the collar below",
+   "item": "consumables container",
+   "support": "landing_stand/slot_0",
+   "grasp_height_m": 1.0169
+  }
+ ],
+ [
+  "navigate_to_pose",
+  {
+   "x": 4.0,
+   "y": 24.2,
+   "yaw": -1.5708
+  }
+ ],
+ [
+  "navigate_to_feature",
+  {
+   "feature": "habitat_stand/slot_0",
+   "standoff_m": 1.2
+  }
+ ],
+ [
+  "dock_at_feature",
+  {
+   "feature": "habitat_stand/slot_0",
+   "standoff_m": 0.0
+  }
+ ],
+ [
+  "place",
+  {
+   "support": "habitat_stand/slot_0",
+   "item": "consumables container",
+   "release_constraint": "below_overhang"
+  }
+ ],
+ [
+  "stow",
+  {}
+ ],
+ [
+  "navigate_to_pose",
+  {
+   "x": 0.0,
+   "y": 0.0,
+   "yaw": 0.0
+  }
+ ]
+]

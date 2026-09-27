@@ -5957,3 +5957,48 @@ l2b_habitat_r1}.mp4` (looked at). Baseline videos need a frames mode in their sc
 Not fixed, for the user (a shared-layer change after the freeze reruns the affected campaign, preregistration §3):
 the bess_stand set-down bias; the withdrawal drag; Nav2 in-place reversals while carrying; dock_to_pose ignoring the
 costmap; the adapter's lost first result.
+
+## F141 -- The shared-layer defects of Experiment I, traced to their causes: an unmapped wall, a localization that stops at a dock, a dock that plans nothing, a lost first result (2026-09-27, in progress)
+
+User decision after F140: fix every shared-layer defect, then rerun Experiment I. Branch `feat/shared-fixes` (research,
+openral, SRB). Offline first, from the recorded runs (bags, evaluator truth, capability evidence); no rerun to diagnose.
+
+**1. The habitat row's north face is not in the map (root of ours_l2b_habitat_r2).** AMCL vs truth from the bag: 0.03 m
+until 328 s, then a steady drift to 1.8 m (lateral) and -4 deg while the rover carried the container east along the
+corridor north of the habitat row (y 30.4); after the drop, 4-7 m and 30-50 deg. Every later failure followed from that
+belief: Nav2 refused goals as unreachable, the model's `dock_to_pose` drives went into the hull and stairs (the drive at
+1437 s was clear on the map in the rover's 7 m-wrong belief). The scan at the true pose, drawn over the map: the wall
+the lidar sees 0.9 m away has no map cells at all (0 occupied cells in y 29.2-29.8 along x -14..14; the south face has
+560) -- the survey (`srb_nav_map_survey.py`) placed the rover only on roads, routes and work poses, none in that
+corridor, while Nav2 plans across any free cell. The rest of the 2D slice there is ground returns (terrain rising into
+the 0.05-0.6 m band) that fit nothing; AMCL's own likelihood field scores a pose 1.3 m south / -4 deg higher (2.09)
+than the truth (0.72). Offline AMCL replay of the bag (map_server + nav2_amcl on the recorded /scan and odometry, the
+live parameters) reproduces the live drift (1.44 / 1.81 / 4.9 m at 380 / 400 / 440 s vs 1.37 / 1.83 / 5.9 live); no
+AMCL parameter fixes it (beam skipping is ignored by the likelihood_field model; range caps 2-6 m make it worse, 7-12
+m; z_hit/z_rand 0.5/0.5 best, still 1.4 m). Across all 51 runs: one catastrophic drift (this one), elsewhere median
+6-9 cm with 0.2-0.5 m transients on in-place turns. Fix: the survey also covers the base's free ground on a 2.5 m grid
+(1258 poses, 729 new, 12 in that corridor).
+**2. A dock ends before the localization has caught up (the bess_stand bias, the 65 mm drag).** europa_b_bat_bess: AMCL
+3 cm off while driving, 16-19 cm after the in-place turn at the approach point (wheel scrub), converging while the dock
+backs in and still (-7.6, -8.7) cm when it stops -- exactly where every bess_stand set-down landed (+8-10 cm along,
+-7-11 across, all methods). AMCL updates only every 0.1 m / 0.1 rad. Not the survey point, not the item (asset
+check). plexil_b_bat_bess: set down 8.5 cm toward the stand's front edge, stalled 1 cm above the seat (the only one of
+31 places above +7 mm), half on the edge; the base withdrawal (along the same normal) then drew it 6.5 cm off the
+scored footprint. Routine withdrawal drag 2-30 mm; no arm rise after release in any place (0.0-0.1 cm). Fix: after a
+dock the boundary asks AMCL for 10 no-motion updates and, if the settled belief is off the dock goal by more than the
+servo's tolerance (3 cm / 0.03 rad), closes it with the same servo straight in (recorded as `localization_settled`).
+**3. A dock drives straight and nothing checks the way.** `procedural_move_base_to_pose` assumes the corridor free,
+"the caller's decision"; the boundary never decided. Fix: before `dock_to_pose` / `dock_at_feature` the boundary sweeps
+the footprint (10 cm in: two map cells) along the servo's path against the surveyed map (belief) and against the lidar
+returns within 3 m in the rover's own frame (>= 3 returns), and refuses with the facts. Offline over the 147 campaign
+docks: 0 of 144 clean docks refused, all four drives made on the lost localization refused (1437 s only by the scan).
+**4. The PLEXIL adapter loses a run's first result (the two category-8 hangs).** The adapter relied on rclcpp_action's
+one automatic get_result request, sent at goal acceptance, before the boundary's result service can have matched it on
+a run's first command. Fix: a second get_result request 5 s after acceptance, one ack from whichever answer comes
+first. Offline, EUROPA chain against a stand-in boundary that drops the first get_result: fixed adapter completes,
+pre-fix adapter hangs (timeout, one call).
+**5. The carried container slid out during Nav2's reversals** (L2-B r2): the reversals were MPPI chasing a drifting and
+jumping pose (item 1); handle position in the tool frame from truth: steady for 170 s of normal driving, then 20 cm out
+along the finger faces in 0.4 s during an in-place turn after four reversals. Per carry in the campaign: max tilt 5-21
+deg, 28.5 deg only in that one (4 reversals). No carry-mode change made; checked live after the map fix (reversals and
+tilt on the north-corridor carry).
