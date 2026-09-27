@@ -1,11 +1,16 @@
-"""PLEXIL as it ran: the same follow-camera-plus-cards layout `mission_video.py` uses for Ours, content adapted to
-what PLEXIL actually has instead of copied from it.
+"""PLEXIL as it ran: the same layout `mission_video.py` composes for Ours (`compose()`: the replayed third-person view,
+the robot's front and wrist cameras, the site plan), with a card adapted to what PLEXIL actually has instead of copied
+from it.
 
-    openral/.venv/bin/python experiments/video/plexil_mission_video.py <follow.mp4> <run>/plexil_timeline.json <out.mp4> \
-        [--times <follow.mp4.times>] [--track <track.json>] [--title "..."] [--mission "..."] [--from-sim 0 --to-sim 1e9]
+    openral/.venv/bin/python experiments/video/plexil_mission_video.py <replay dir | follow.mp4> <run>/plexil_timeline.json \
+        <out.mp4> [--run <run>] [--track <track.json>] [--title "..."] [--mission "..."] [--top A,B,...] [--from-sim 0 --to-sim 1e9]
 
 `<run>/plexil_timeline.json` comes from `plexil_timeline_from_logs.py` (needs the ROS-sourced Python for
 `rosbag2_py`; this script needs only `cv2`/`PIL`/`numpy`, same split as `track_from_bag.py` / `mission_video.py`).
+
+The mission is the brief the simulator published (`mission_brief`, from the run's bag) unless `--mission` says
+otherwise; `--top` names the plan's top-level steps when it is not Mission B's (Mission A's `MissionA_Covered.ple`:
+Identify,ToUnit,Reset,Return,FinalCheck), the same list `plexil_timeline_from_logs.py` was given.
 
 What stays identical to Ours' video, on purpose -- these are properties of the robot/run, not of the method: the
 header clock and motion line, the mini-map (same `Map` class, same evaluator track), the colour rule (one accent
@@ -28,17 +33,13 @@ import json
 import sys
 from pathlib import Path
 
-import cv2
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from mission_video import (AMBER, DIM, FAINT, FONT, FONT_B, FONT_M, GREEN, INK, MAP_W, OUT_W, PAD, PANEL_W, RED,
-                            LEDGER, Map, elide, moving, plain, wrap)
+from mission_video import (AMBER, DIM, FAINT, GREEN, INK, PANEL_W, RED, LEDGER, compose, elide, load_fonts,
+                            mission_brief, places_from_calls, plain, video_args, wrap)
 
 TOP = ["ToSource", "Pick", "ToDestination", "Place", "Return"]
-DEFAULT_MISSION = ("Deliver the spare ORU staged on the depot stand to the spares shelf of PDU-1, then return the "
-                    "rover to the dock with the arm stowed.")
 
 
 def plexil_timeline(events: list[dict], mission: str, top: list[str] = TOP) -> tuple[list[float], list[dict]]:
@@ -166,77 +167,22 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "") ->
     return img
 
 
-PLACES = {"depot_stand/slot_0": "depot", "pdu_1_shelf/shelf": "PDU-1 shelf", "pdu_2_panel/press": "PDU-2 panel"}
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("video", type=Path)
-    ap.add_argument("timeline", type=Path)
-    ap.add_argument("out", type=Path)
-    ap.add_argument("--times", type=Path, default=None)
-    ap.add_argument("--track", type=Path, default=None)
-    ap.add_argument("--points", type=Path,
-                    default=Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json")
-    ap.add_argument("--structures", type=Path,
-                    default=Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/site_structures.json")
-    ap.add_argument("--title", default="PLEXIL Baseline — Mission B")
-    ap.add_argument("--mission", default=DEFAULT_MISSION)
+    video_args(ap, "<run>/plexil_timeline.json (plexil_timeline_from_logs.py)", "PLEXIL Baseline")
+    ap.add_argument("--mission", default=None, help="default: the brief the simulator published (the run's bag)")
     ap.add_argument("--top", default=",".join(TOP), help="comma-separated top-level node names, for a plan shape other than Mission B's")
-    ap.add_argument("--from-sim", type=float, default=-1e9)
-    ap.add_argument("--to-sim", type=float, default=1e9)
-    ap.add_argument("--width", type=int, default=OUT_W)
     a = ap.parse_args()
+    a.run = a.run or a.record.parent
+    events = json.loads(a.record.read_text())["events"]
+    stamps, states = plexil_timeline(events, a.mission or mission_brief(a.run), a.top.split(","))
+    places = places_from_calls([e["args"] for e in events if e["kind"] == "capability"], json.loads(a.points.read_text())["points"])
+    fonts = load_fonts()
 
-    cap = cv2.VideoCapture(str(a.video))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    times_path = a.times or Path(f"{a.video}.times")
-    times = [float(x) for x in times_path.read_text().split()] if times_path.exists() else []
-    events = json.loads(a.timeline.read_text())["events"]
-    if len(times) < n:
-        t0 = min(e.get("sim_t", e.get("sim_t_start", 0.0)) for e in events)
-        t1 = max(e.get("sim_t", e.get("sim_t_end", 0.0)) for e in events)
-        times = [t0 + (t1 - t0) * i / max(n - 1, 1) for i in range(n)]
-        print(f"no {times_path.name}: assuming the video spans sim {t0:.0f}-{t1:.0f} s")
+    def panel_at(sim_t: float, moving_now: str, pace: float) -> Image.Image:
+        return panel(states[max(bisect.bisect_right(stamps, sim_t) - 1, 0)], sim_t, a.title, fonts, moving_now)
 
-    stamps, states = plexil_timeline(events, a.mission, a.top.split(","))
-    track = json.loads(a.track.read_text())["track"] if a.track else []
-    ix = json.loads(a.points.read_text())["points"]
-    places = {k: {**ix[k], "label": PLACES[k]} for k in PLACES}
-    track_t = [s["t"] for s in track]
-    fonts = (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 14), ImageFont.truetype(FONT_B, 26),
-             ImageFont.truetype(FONT_M, 13), ImageFont.truetype(FONT_B, 14))
-    site = Map(a.structures, MAP_W, track, places, font=fonts[0]) if track else None
-
-    scale = a.width / w
-    out_w, out_h = a.width, int(round(h * scale / 2) * 2)
-    tmp = a.out.with_suffix(".raw.mp4")
-    writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), fps, (out_w, out_h))
-    written = 0
-    for i in range(n):
-        ok, frame = cap.read()
-        if not ok:
-            break
-        sim_t = times[min(i, len(times) - 1)]
-        if not (a.from_sim <= sim_t <= a.to_sim):
-            continue
-        canvas = Image.fromarray(cv2.cvtColor(cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_CUBIC),
-                                              cv2.COLOR_BGR2RGB)).convert("RGBA")
-        j = max(bisect.bisect_right(stamps, sim_t) - 1, 0)
-        canvas.alpha_composite(panel(states[j], sim_t, a.title, fonts, moving(track, track_t, sim_t)), (PAD, PAD))
-        if site is not None:
-            canvas.alpha_composite(site.frame(sim_t), (out_w - MAP_W - PAD, out_h - MAP_W - PAD))
-        writer.write(cv2.cvtColor(np.array(canvas.convert("RGB")), cv2.COLOR_RGB2BGR))
-        written += 1
-    cap.release()
-    writer.release()
-    import subprocess
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(tmp), "-c:v", "libx264", "-crf", "20",
-                    "-pix_fmt", "yuv420p", str(a.out)], check=True)
-    tmp.unlink()
-    print(f"wrote {a.out}: {written} frames, {written / fps:.0f} s, {len(states)} states, mini-map: {site is not None}")
+    compose(a, panel_at, places)
 
 
 if __name__ == "__main__":

@@ -1,26 +1,33 @@
-"""The mission as it ran: the robot's cameras, the harness's state, and what the remote models said.
+"""The mission as it ran: a third-person view of the robot, its own cameras, the harness's state, and what the remote
+models said.
 
-    openral/.venv/bin/python experiments/video/mission_video.py <follow.mp4 | run/frames> <run>/ours/events.jsonl <out.mp4> \
-        [--times <follow.mp4.times>] [--track <track.json>] [--title "..."] [--fps 6] [--from-sim 0 --to-sim 1e9]
+    openral/.venv/bin/python experiments/video/mission_video.py <replay dir | follow.mp4> <run>/ours/events.jsonl <out.mp4> \
+        [--run <run>] [--track <track.json>] [--title "..."] [--fps 6] [--from-sim 0 --to-sim 1e9] [--times <follow.mp4.times>]
 
-Two sources. A live-rendered follow video (`D0_VIDEO`, with its `.times`) fills the frame. Or, from the raw record of
-any finished run with no rerun, the run's own 1 Hz camera frames (`<run>/frames/{front,wrist}/<sim_t>.jpg`, the
-evaluator recorder's): the front camera fills the right of the frame with the wrist camera inset, one recorded frame
-per video frame at `--fps`. Either way a card on the left carries the clock and the Earth link, the mission, the
-agent's plan with the current step marked, what it is doing now and why, the model's own words, and the harness's
-last verdicts; a plan view of the site bottom-right has the rover, its path, the route Nav2 is following and the
-item in its jaws.
+The main view is a camera following the robot from outside. Runs record no such view, so it is replayed after the
+fact from the run's own bag (`replay_render.py`: every body and item posed from /tf, rendered with RTX, one PNG per
+simulated second named by sim time); a live follow video (`D0_VIDEO`, with its `.times`) serves the same place for a
+run that streamed one. The robot's own cameras sit top-right as two insets, the run's 1 Hz front and wrist frames
+(`<run>/frames/{front,wrist}/<sim_t>.jpg`, the evaluator recorder's), each the one nearest the video frame's sim time
+(the two cameras' stamps differ by a sample now and then). A card on the left carries the clock and the Earth link,
+the mission, the agent's plan with the current step marked, what it is doing now and why, the model's own words, and
+the harness's last verdicts; a plan view of the site bottom-right has the rover, its path, the route Nav2 is following
+and the item in its jaws.
 
-Every panel line is read from the run's own record (`events.jsonl`, the same simulation clock as the video's `.times`
-and the frames' names), so the video states what the run states. The mini-map's poses and plans come from the bag
+Every panel line is read from the run's own record (`events.jsonl`, the same simulation clock as the replay's and the
+frames' names), so the video states what the run states. The mini-map's poses and plans come from the bag
 (`track_from_bag.py`), for drawing only; its labelled places are the units the run's own calls went to. The Earth
 link is the profile the run ran under (`sim_clock.earth_profile`).
+
+The layout, the insets, the mini-map and the frame loop are `compose()`, shared with the baselines' videos
+(`plexil_mission_video.py`, `europa_mission_video.py`): each method brings only its own card.
 """
 import argparse
 import bisect
 import json
 import math
 import re
+import sqlite3
 import subprocess
 import sys
 import textwrap
@@ -31,16 +38,15 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFont
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sim_clock import earth_profile  # noqa: E402
+from sim_clock import REPO, earth_profile  # noqa: E402
 
 FONT = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 FONT_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 FONT_M = "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf"
-PANEL_W, PAD, MAP_W, OUT_W, WRIST_W, INSET = 420, 24, 300, 1600, 400, 14  # OUT_W is the default; --width overrides it
-#: The panel and the map are fixed pixel sizes, so a wider output gives them proportionally less of the frame
-#: and the follow camera proportionally more. Record the follow camera at the width you compose at: scaling it
-#: up is the only thing here that costs picture quality, and rendering it larger costs almost nothing -- the
-#: sim ran at 0.324x real time with a 960x540 stream against 0.353x with none at all (gb1 against ga8).
+PANEL_W, PAD, MAP_W, OUT_W, CAM_W = 420, 24, 300, 1600, 320  # OUT_W is the default; --width overrides it
+#: The panel, the insets and the map are fixed pixel sizes, so a wider output gives them proportionally less of the
+#: frame and the main view proportionally more. Render the main view at the width you compose at (`replay_render.py
+#: --res`): scaling it up is the only thing here that costs picture quality.
 
 #: One accent, two verdicts, three greys. A panel that colours nine kinds of line has told the eye that nothing
 #: in particular is happening; the amber is the robot's own now, and green and red are the harness's verdict on
@@ -390,87 +396,79 @@ def panel(state: dict, sim_t: float, title: str, fonts, moving_now: str = "", li
     return img
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("video", type=Path, help="a follow-camera video, or a run's frames/ directory")
-    ap.add_argument("events", type=Path)
+
+
+def load_fonts() -> tuple:
+    """One scale: a caption, a line of text, the thing happening now, the clock, and the small caps of a label."""
+    return (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 14), ImageFont.truetype(FONT_B, 26),
+            ImageFont.truetype(FONT_M, 13), ImageFont.truetype(FONT_B, 14))
+
+
+def places_from_calls(calls: list[dict], ix: dict) -> dict:
+    """The places a run's own capability calls went to, one label per unit (a unit's panel, bay and shelf sit a metre
+    apart), from each call's `feature` or `support` argument."""
+    groups: dict[str, list] = {}
+    for args in calls:
+        if f := args.get("feature") or args.get("support"):
+            groups.setdefault(ix[f]["asset"], []).append(ix[f]["xyz"])
+    return {k: {"xyz": list(np.mean(v, axis=0)), "label": plain(k).upper()} for k, v in groups.items()}
+
+
+def mission_brief(run: Path) -> str:
+    """The brief as the simulator published it (`/srb/env0/mission_brief` in the bag, a std_msgs/String), for methods
+    whose own record does not carry the text."""
+    db = sqlite3.connect(next(run.glob("bag/*.db3")))
+    data = db.execute("select data from messages where topic_id=(select id from topics where name='/srb/env0/mission_brief') "
+                      "order by timestamp limit 1").fetchone()[0]
+    return data[8:8 + int.from_bytes(data[4:8], "little") - 1].decode()
+
+
+def video_args(ap: argparse.ArgumentParser, record_help: str, title: str) -> None:
+    """The command line all three methods' videos share: the main view, the method's own record, the output."""
+    ap.add_argument("video", type=Path, help="a replay_render.py frames directory, or a live follow-camera video")
+    ap.add_argument("record", type=Path, help=record_help)
     ap.add_argument("out", type=Path)
-    ap.add_argument("--times", type=Path, default=None)
+    ap.add_argument("--run", type=Path, default=None, help="the run directory (default: found from the record's path)")
+    ap.add_argument("--times", type=Path, default=None, help="a follow video's sim stamps (default <video>.times)")
     ap.add_argument("--track", type=Path, default=None)
-    ap.add_argument("--points", type=Path,
-                    default=Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json")
-    ap.add_argument("--structures", type=Path,
-                    default=Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/site_structures.json")
-    ap.add_argument("--title", default="Space Robotics Agent Harness — Mission B")
+    ap.add_argument("--points", type=Path, default=REPO / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json")
+    ap.add_argument("--structures", type=Path, default=REPO / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/site_structures.json")
+    ap.add_argument("--title", default=title)
     ap.add_argument("--from-sim", type=float, default=-1e9)
     ap.add_argument("--to-sim", type=float, default=1e9)
-    ap.add_argument("--fps", type=float, default=6.0, help="frames mode: recorded frames per video second")
-    ap.add_argument("--width", type=int, default=OUT_W, help="composed output width; record the follow camera at it")
-    a = ap.parse_args()
+    ap.add_argument("--fps", type=float, default=6.0, help="replay: rendered frames per video second")
+    ap.add_argument("--width", type=int, default=OUT_W, help="composed output width; render the main view at it")
 
-    events = [json.loads(line) for line in a.events.read_text().splitlines()]
-    stamps, states = timeline(events)
+
+def compose(a: argparse.Namespace, panel_at, places: dict) -> None:
+    """Write the video: the main view full-bleed, the method's card top-left (`panel_at(sim_t, moving_now, pace)`), the
+    front and wrist cameras stacked top-right, the site plan bottom-right. `pace` is simulated seconds per video
+    second, for anything on the card that moves on the video's clock."""
+    fonts = load_fonts()
     track_json = json.loads(a.track.read_text()) if a.track else {"track": [], "plans": []}
     track = track_json["track"]
-    # the places the run's own calls went to, one label per unit (a unit's panel, bay and shelf sit a metre apart)
-    ix = json.loads(a.points.read_text())["points"]
-    groups: dict[str, list] = {}
-    for e in events:
-        if e["kind"] == "execution_started" and (f := e["args"].get("feature") or e["args"].get("support")):
-            groups.setdefault(ix[f]["asset"], []).append(ix[f]["xyz"])
-    places = {k: {"xyz": list(np.mean(v, axis=0)), "label": plain(k).upper()} for k, v in groups.items()}
-    los = earth_profile(a.events.parent.parent)["los_after_start_s"]
     track_t = [s["t"] for s in track]
-    # one scale: a caption, a line of text, the thing happening now, and the clock
-    fonts = (ImageFont.truetype(FONT, 12), ImageFont.truetype(FONT, 14), ImageFont.truetype(FONT_B, 26),
-             ImageFont.truetype(FONT_M, 13), ImageFont.truetype(FONT_B, 14))
     site = Map(a.structures, MAP_W, track, places, font=fonts[0], plans=track_json["plans"]) if track else None
 
-    if a.video.is_dir():  # the run's own 1 Hz frames, named by simulation time
-        names = sorted(p.name for p in (a.video / "front").iterdir())
-        times = [float(n.removesuffix(".jpg")) for n in names]
-        # the recorder names each camera's frame by its own sim stamp; the two differ by a sample now and then
-        wrist_names = sorted(p.name for p in (a.video / "wrist").iterdir())
-        wrist_times = np.array([float(n.removesuffix(".jpg")) for n in wrist_names])
-        fps, pace = a.fps, (times[-1] - times[0]) / (len(times) - 1) * a.fps
-        cam_x = PANEL_W + 2 * PAD
-        cam_w = a.width - cam_x - PAD
-        cam_h = cam_w * 3 // 4
-        out_w, out_h = a.width, cam_h + 2 * PAD
-        wrist_h = WRIST_W * 3 // 4
-        map_xy = (out_w - PAD - INSET - MAP_W, out_h - PAD - INSET - MAP_W)
-
-        def plate(img: Image.Image, xy: tuple[int, int], label: str) -> None:
-            d = ImageDraw.Draw(img)
-            wide = fonts[4].getlength(label)
-            d.rounded_rectangle([xy[0], xy[1], xy[0] + wide + 16, xy[1] + 24], radius=6, fill=(13, 15, 19, 210))
-            d.text((xy[0] + 8, xy[1] + 4), label, font=fonts[4], fill=DIM)
+    if a.video.is_dir():  # replay_render.py's frames, one PNG per rendered sim instant, named by it
+        names = sorted(p.name for p in a.video.glob("*.png"))
+        times = [float(n.removesuffix(".png")) for n in names]
+        fps, pace = a.fps, (times[-1] - times[0]) / max(len(times) - 1, 1) * a.fps
+        w, h = Image.open(a.video / names[0]).size
+        out_w, out_h = a.width, int(round(h * a.width / w / 2) * 2)
+        label = "THIRD-PERSON VIEW  ·  replayed from the run's own record"
 
         def frames():
             for n, t in zip(names, times):
-                canvas = Image.new("RGBA", (out_w, out_h), (8, 9, 12, 255))
-                canvas.paste(Image.open(a.video / "front" / n).convert("RGB").resize((cam_w, cam_h), Image.BICUBIC), (cam_x, PAD))
-                wx, wy = cam_x + INSET, out_h - PAD - INSET - wrist_h
-                wn = wrist_names[int(np.abs(wrist_times - t).argmin())]
-                wrist = Image.open(a.video / "wrist" / wn).convert("RGB").resize((WRIST_W, wrist_h), Image.BICUBIC)
-                ImageDraw.Draw(canvas).rectangle([wx - 2, wy - 2, wx + WRIST_W + 1, wy + wrist_h + 1], fill=(13, 15, 19, 255))
-                canvas.paste(wrist, (wx, wy))
-                plate(canvas, (cam_x + INSET, PAD + INSET), "FRONT CAMERA  ·  1 Hz")
-                plate(canvas, (wx + 8, wy + 8), "WRIST CAMERA")
-                yield t, canvas
+                yield t, Image.open(a.video / n).convert("RGBA").resize((out_w, out_h), Image.BICUBIC)
     else:
         cap = cv2.VideoCapture(str(a.video))
         fps, pace = cap.get(cv2.CAP_PROP_FPS), 1.0
         w, h = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        times_path = a.times or Path(f"{a.video}.times")
-        times = [float(x) for x in times_path.read_text().split()] if times_path.exists() else []
-        if len(times) < n:  # a video without its own clock: the mission's own span, spread over the frames
-            t0, t1 = events[0]["sim_t"], events[-1]["sim_t"]
-            times = [t0 + (t1 - t0) * i / max(n - 1, 1) for i in range(n)]
-            print(f"no {times_path.name}: assuming the video spans sim {t0:.0f}-{t1:.0f} s")
+        times = [float(x) for x in (a.times or Path(f"{a.video}.times")).read_text().split()]
         out_w, out_h = a.width, int(round(h * a.width / w / 2) * 2)
-        map_xy = (out_w - MAP_W - PAD, out_h - MAP_W - PAD)
+        label = "FOLLOW CAMERA"
 
         def frames():
             for i in range(n):
@@ -480,15 +478,36 @@ def main() -> None:
                 yield times[min(i, len(times) - 1)], Image.fromarray(cv2.cvtColor(
                     cv2.resize(frame, (out_w, out_h), interpolation=cv2.INTER_CUBIC), cv2.COLOR_BGR2RGB)).convert("RGBA")
 
+    # the robot's own cameras, each frame named by its own sim stamp
+    cams = {}
+    for cam in ("front", "wrist"):
+        cam_names = sorted(p.name for p in (a.run / "frames" / cam).iterdir())
+        cams[cam] = (cam_names, np.array([float(n.removesuffix(".jpg")) for n in cam_names]))
+    cam_h = CAM_W * 3 // 4
+    cam_x = out_w - PAD - CAM_W
+    cam_xy = {"front": (cam_x, PAD), "wrist": (cam_x, PAD + cam_h + 12)}
+    map_xy = (out_w - PAD - MAP_W, out_h - PAD - MAP_W)
+
+    def plate(img: Image.Image, xy: tuple[int, int], text: str) -> None:
+        d = ImageDraw.Draw(img)
+        wide = fonts[4].getlength(text)
+        d.rounded_rectangle([xy[0], xy[1], xy[0] + wide + 16, xy[1] + 24], radius=6, fill=(13, 15, 19, 210))
+        d.text((xy[0] + 8, xy[1] + 4), text, font=fonts[4], fill=DIM)
+
     tmp = a.out.with_suffix(".raw.mp4")
     writer = cv2.VideoWriter(str(tmp), cv2.VideoWriter_fourcc(*"mp4v"), fps, (out_w, out_h))
     written = 0
     for sim_t, canvas in frames():
         if not (a.from_sim <= sim_t <= a.to_sim):
             continue
-        j = max(bisect.bisect_right(stamps, sim_t) - 1, 0)
-        link = f"Earth up  ·  sets in {los - sim_t:.0f} s" if sim_t < los else "Earth below the horizon  ·  link down"
-        canvas.alpha_composite(panel(states[j], sim_t, a.title, fonts, moving(track, track_t, sim_t), link, pace), (PAD, PAD))
+        plate(canvas, (PANEL_W + 2 * PAD, PAD), label)
+        for cam, (x, y) in cam_xy.items():
+            cam_names, cam_t = cams[cam]
+            img = Image.open(a.run / "frames" / cam / cam_names[int(np.abs(cam_t - sim_t).argmin())]).convert("RGB")
+            ImageDraw.Draw(canvas).rectangle([x - 2, y - 2, x + CAM_W + 1, y + cam_h + 1], fill=(13, 15, 19, 255))
+            canvas.paste(img.resize((CAM_W, cam_h), Image.BICUBIC), (x, y))
+            plate(canvas, (x + 8, y + 8), f"{cam.upper()} CAMERA")
+        canvas.alpha_composite(panel_at(sim_t, moving(track, track_t, sim_t), pace), (PAD, PAD))
         if site is not None:
             canvas.alpha_composite(site.frame(sim_t), map_xy)
         writer.write(cv2.cvtColor(np.array(canvas.convert("RGB")), cv2.COLOR_RGB2BGR))
@@ -497,7 +516,26 @@ def main() -> None:
     subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-i", str(tmp), "-c:v", "libx264", "-crf", "20",
                     "-pix_fmt", "yuv420p", str(a.out)], check=True)
     tmp.unlink()
-    print(f"wrote {a.out}: {written} frames, {written / fps:.0f} s, {len(states)} states, mini-map: {site is not None}")
+    print(f"wrote {a.out}: {written} frames, {written / fps:.0f} s, mini-map: {site is not None}")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    video_args(ap, "<run>/ours/events.jsonl", "Space Robotics Agent Harness — Mission B")
+    a = ap.parse_args()
+    a.run = a.run or a.record.parent.parent
+    events = [json.loads(line) for line in a.record.read_text().splitlines()]
+    stamps, states = timeline(events)
+    places = places_from_calls([e["args"] for e in events if e["kind"] == "execution_started"],
+                               json.loads(a.points.read_text())["points"])
+    los = earth_profile(a.run)["los_after_start_s"]
+    fonts = load_fonts()
+
+    def panel_at(sim_t: float, moving_now: str, pace: float) -> Image.Image:
+        link = f"Earth up  ·  sets in {los - sim_t:.0f} s" if sim_t < los else "Earth below the horizon  ·  link down"
+        return panel(states[max(bisect.bisect_right(stamps, sim_t) - 1, 0)], sim_t, a.title, fonts, moving_now, link, pace)
+
+    compose(a, panel_at, places)
 
 
 if __name__ == "__main__":
