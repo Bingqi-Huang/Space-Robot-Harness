@@ -58,6 +58,7 @@
 
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp_action/rclcpp_action.hpp>
+#include <action_msgs/msg/goal_status.hpp>
 #include <openral_msgs/msg/prompt_stamped.hpp>
 #include <space_harness_msgs/action/execute_capability.hpp>
 #include <space_harness_msgs/srv/query_capability.hpp>
@@ -71,6 +72,7 @@
 #include <thread>
 
 using ExecuteCapability = space_harness_msgs::action::ExecuteCapability;
+using GetResult = ExecuteCapability::Impl::GetResultService;
 using QueryCapability = space_harness_msgs::srv::QueryCapability;
 using PromptStamped = openral_msgs::msg::PromptStamped;
 namespace { char const *kRequestTopic = "/space/operator/request"; char const *kReplyTopic = "/space/operator/reply"; }
@@ -149,6 +151,7 @@ public:
     if (!rclcpp::ok()) rclcpp::init(0, nullptr);
     node_ = std::make_shared<rclcpp::Node>("plexil_capability_adapter");
     execute_ = rclcpp_action::create_client<ExecuteCapability>(node_, "/space/capability/execute");
+    result_ = node_->create_client<GetResult>("/space/capability/execute/_action/get_result");
     query_ = node_->create_client<QueryCapability>("/space/capability/query");
     request_pub_ = node_->create_publisher<PromptStamped>(kRequestTopic, 10);
     reply_sub_ = node_->create_subscription<PromptStamped>(
@@ -259,15 +262,10 @@ private:
     // finished, so the whole plan raced through all its nodes in under a second while the real capability calls were
     // still running (research repo: PLEXIL Mission B live run, 2026-09-22). The command stays EXECUTING, with no ack
     // and no known handle, until the terminal ack below actually arrives.
-    opts.goal_response_callback = [cmd, intf](auto handle) {
-      if (!handle) {
-        intf->handleCommandAck(cmd, PLEXIL::COMMAND_DENIED);
-        intf->notifyOfExternalEvent();
-      }
-    };
-    opts.result_callback = [this, cmd, intf, capability](
-                             rclcpp_action::ClientGoalHandle<ExecuteCapability>::WrappedResult const &wrapped) {
-      auto const &r = *wrapped.result;
+    // One terminal ack per command, from whichever of the two result requests below is answered first.
+    auto delivered = std::make_shared<std::atomic<bool>>(false);
+    auto deliver = [this, cmd, intf, capability, delivered](ExecuteCapability::Result const &r) {
+      if (delivered->exchange(true)) return;
       {
         std::lock_guard<std::mutex> lock(mutex_);
         last_result_ = "{\"capability\": \"" + json_escape(capability) + "\", \"success\": " +
@@ -278,6 +276,37 @@ private:
       intf->handleCommandReturn(cmd, PLEXIL::Value(static_cast<bool>(r.success)));
       intf->handleCommandAck(cmd, r.success ? PLEXIL::COMMAND_SUCCESS : PLEXIL::COMMAND_FAILED);
       intf->notifyOfExternalEvent();
+    };
+    // A second request for the accepted goal's result, a few seconds later. rclcpp_action asks for the result once,
+    // the moment the goal is accepted; on a run's first command that request can leave before the boundary's result
+    // service has matched this client, and DDS delivers it to no one: the boundary finished the goal with no request
+    // to answer and the command waited for ever (research repo F140: 2 of 27 baseline runs, each on its first
+    // command). The boundary keeps a goal's result and answers every request for it, so the second request can only
+    // duplicate an answer the first one also brings.
+    opts.goal_response_callback = [this, cmd, intf, deliver, delivered](auto handle) {
+      if (!handle) {
+        intf->handleCommandAck(cmd, PLEXIL::COMMAND_DENIED);
+        intf->notifyOfExternalEvent();
+        return;
+      }
+      auto id = handle->get_goal_id();
+      auto timer = std::make_shared<rclcpp::TimerBase::SharedPtr>();
+      *timer = node_->create_wall_timer(std::chrono::seconds(5), [this, id, deliver, delivered, timer]() {
+        (*timer)->cancel();
+        if (delivered->load()) return;
+        auto req = std::make_shared<GetResult::Request>();
+        req->goal_id.uuid = id;
+        result_->async_send_request(req, [deliver](rclcpp::Client<GetResult>::SharedFuture f) {
+          auto const res = f.get();
+          if (res->status == action_msgs::msg::GoalStatus::STATUS_SUCCEEDED ||
+              res->status == action_msgs::msg::GoalStatus::STATUS_ABORTED ||
+              res->status == action_msgs::msg::GoalStatus::STATUS_CANCELED)
+            deliver(res->result);
+        });
+      });
+    };
+    opts.result_callback = [deliver](rclcpp_action::ClientGoalHandle<ExecuteCapability>::WrappedResult const &wrapped) {
+      deliver(*wrapped.result);
     };
     execute_->async_send_goal(goal, opts);
   }
@@ -355,6 +384,7 @@ private:
   rclcpp::Node::SharedPtr node_;
   rclcpp_action::Client<ExecuteCapability>::SharedPtr execute_;
   rclcpp::Client<QueryCapability>::SharedPtr query_;
+  rclcpp::Client<GetResult>::SharedPtr result_;  // the action's own result service, for the second request in send()
   rclcpp::Publisher<PromptStamped>::SharedPtr request_pub_;
   rclcpp::Subscription<PromptStamped>::SharedPtr reply_sub_;
   std::unique_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;  // after rclcpp::init
