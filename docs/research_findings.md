@@ -6012,3 +6012,19 @@ scene in Isaac from a run's bag (/tf: every robot link and item; lamps and cover
 never steps physics, and renders a smoothed follow camera; `mission_video.py` composes follow view, mission card
 (left), mini-map (bottom-right) and front + wrist insets, for all three methods from their raw records. Six videos in
 `artifacts/figures/exp1/video/` (L4 and L2-B x 3 methods), looked at; ~0.64 s per frame to render.
+**Live checks, round 1** (`artifacts/runs/verify_f141/`, development runs). *Adapter:* both PLEXIL runs received their
+first result. *Map:* a goal of the old check chain, (4, 24.2) -- L2-B r2's belief on its wrong localization -- lies
+inside the habitat row and is now refused by Nav2 (the chain was corrected to the corridor itself, y 30.4). Carrying the
+container west to east along the corridor: tool-level localization error 0.28 m at the east end (1.8 m before), a
+transient 1.26 m round the row's east end (16.1, 30.9) that recovered before the habitat dock (recorded, not fixed);
+0-1 reversals, max tilt 20 deg, no drop. *Dock settle:* no-motion updates moved the estimate 1.7 cm at bess_stand and
+left it 9.6 cm from the truth at the tool; re-seeding the filter round its estimate (10 cm, 3 deg) first moved it 1.2 cm
+-- the scan's likelihood peak itself is 5-6 cm from the truth there (5 cm map cells): the localization's precision at
+that stand, kept as a limitation. A battery set-down there = the place's designed step off the support (2.5 cm, the
+stand's rear rail) + the battery hanging 2-3 cm out of line with the tool + ~5 cm localization; live +6.9..+10.5 cm,
+inside the 12 cm footprint. *Two place defects found live:* (a) `set_jaw` returns at 0.6 rad, still opening to 0.82:
+every withdrawal (campaign: jaw 0.61-0.67 at its start) began with the fingers on the neck; with the container set
+down near the habitat stand's front edge the withdrawal drew it 9.2 cm and off the footprint (vf_north_corridor2);
+(b) that pick's wrist left no IK within 3.5 cm of the stand's point in the carry orientation, so the place stepped the
+item 11.5 cm off it. Fix (openral 5e1538c): the jaws come to rest before the withdrawal; at each step off the support
+the tool may first turn about the vertical (0, +-15, +-30, +-45 deg).

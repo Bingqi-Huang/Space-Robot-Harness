@@ -1,0 +1,7 @@
+# F141 second round: every shared fix in (development runs, never scored)
+vf2_north_corridor D0_CAPABILITY_SERVER=1 D0_CHECK=scripted_chain_check.py CHAIN_JSON=/mnt/SharedData/Research/Space_Robot_Harness/experiments/launch/lunar_base_d0/chains/verify_north_corridor.json D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=covered D0_ENV='env.cargo=consumables_container env.destination=habitat'
+vf2_plexil_b_bat_bess D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_b_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=covered D0_ENV='env.cargo=bat_spare env.destination=bess'
+vf2_europa_b_cons_habitat D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_b_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=covered D0_ENV='env.cargo=consumables_container env.destination=habitat'
+vf2_ours_l2b_habitat D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=heldout_destination_occupied D0_ENV='env.cargo=consumables_container env.destination=habitat'
+vf2_ours_l3_bess D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_module_failure D0_ENV='env.faulted_unit=bess'
+vf2_ours_l4_pdu1 D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_cannibalize D0_ENV='env.faulted_unit=pdu_1'
