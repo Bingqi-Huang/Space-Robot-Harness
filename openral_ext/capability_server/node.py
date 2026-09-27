@@ -177,6 +177,8 @@ DOCK_PATH_INSET_M = 0.10
 DOCK_PATH_MIN_RETURNS = 3
 #: no-motion updates AMCL makes after a dock before the boundary reads where the rover stands (settle_localization)
 LOC_SETTLE_UPDATES = 10
+#: the spread AMCL's particles are re-seeded with round its own estimate before those updates (settle_localization)
+LOC_RESEED_XY_M, LOC_RESEED_YAW_RAD = 0.10, math.radians(3.0)
 REJECTED = 20  # failure_kind: refused at the boundary (unknown capability / arguments off-contract)
 JAW_JOINT = "eg2_joint1"
 # the jaw bands come from the skills' own definition (openral_rskill._eye_in_hand): the boundary and the skills must
@@ -416,6 +418,7 @@ class CapabilityServer(Node):
         from geometry_msgs.msg import PoseWithCovarianceStamped  # noqa: E402
 
         self._nomotion = self.create_client(Empty, "/request_nomotion_update", callback_group=cb)
+        self._reseed = self.create_publisher(PoseWithCovarianceStamped, "/initialpose", 10)
         self._amcl_updates = 0  # how many estimates AMCL has published: one per filter update
         self.create_subscription(PoseWithCovarianceStamped, "/amcl_pose",
                                  lambda _m: setattr(self, "_amcl_updates", self._amcl_updates + 1),
@@ -1181,10 +1184,32 @@ class CapabilityServer(Node):
         from where the rover believed it was, and every item set down there landed that far off the surveyed point
         (research repo F140, AMCL vs truth in europa_b_bat_bess's bag). Standing still, AMCL's own no-motion update
         weighs the current scan again; after a few the estimate is the scan's, and a dock that it shows short is
-        finished with the same servo, straight in along the goal axis."""
+        finished with the same servo, straight in along the goal axis.
+
+        The filter is first spread again round its own estimate (10 cm, 3 deg): a cloud that has already collapsed does
+        not move on no-motion updates -- live at bess_stand the estimate moved 1.7 cm and stayed 9.6 cm from the truth,
+        where the scan's likelihood peaks within 4.5 cm of it (offline replay of europa_b_bat_bess: 9 cm -> 3-4 cm)."""
         from std_srvs.srv import Empty  # noqa: E402
 
+        from geometry_msgs.msg import PoseWithCovarianceStamped  # noqa: E402
+
         before = self.base_pose()
+        seed = PoseWithCovarianceStamped()
+        seed.header.frame_id = "map"
+        seed.header.stamp = self.get_clock().now().to_msg()
+        seed.pose.pose.position.x, seed.pose.pose.position.y = before["x"], before["y"]
+        seed.pose.pose.orientation.z, seed.pose.pose.orientation.w = math.sin(before["yaw"] / 2), math.cos(before["yaw"] / 2)
+        cov = [0.0] * 36
+        cov[0] = cov[7] = LOC_RESEED_XY_M ** 2
+        cov[35] = LOC_RESEED_YAW_RAD ** 2
+        seed.pose.covariance = cov
+        n = self._amcl_updates
+        self._reseed.publish(seed)
+        t0 = time.time()
+        while self._amcl_updates == n:  # AMCL takes the new cloud on its next scan
+            if time.time() - t0 > 120.0:
+                raise RuntimeError("AMCL published no estimate for 120 s after a re-seed")
+            time.sleep(0.05)
         for _ in range(LOC_SETTLE_UPDATES):
             n = self._amcl_updates
             answer(self._nomotion.call_async(Empty.Request()), "AMCL's no-motion update")
@@ -1197,7 +1222,8 @@ class CapabilityServer(Node):
         gx, gy = params["position"]
         off_m = math.hypot(gx - after["x"], gy - after["y"])
         off_rad = abs((params["yaw"] - after["yaw"] + math.pi) % (2 * math.pi) - math.pi)
-        rec = {"amcl_updates": LOC_SETTLE_UPDATES, "belief_before": before, "belief_after": after,
+        rec = {"amcl_updates": LOC_SETTLE_UPDATES, "reseed_sigma": [LOC_RESEED_XY_M, LOC_RESEED_YAW_RAD],
+               "belief_before": before, "belief_after": after,
                "shift_m": round(math.hypot(after["x"] - before["x"], after["y"] - before["y"]), 3),
                "off_goal_m": round(off_m, 3), "off_goal_rad": round(off_rad, 3)}
         if off_m > float(params.get("xy_tolerance_m", 0.03)) or off_rad > float(params.get("yaw_tolerance_rad", 0.03)):
