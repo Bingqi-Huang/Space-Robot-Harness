@@ -17,6 +17,12 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
 - [ ] `artifacts/runs/exp1b/` (jobs `exp1b_campaign.txt`, 51 runs, started 14:22 on GPUs 0-4; GPU 5 joins via
       `farm_join.sh` when the textured video render ends). User: no freeze audit/tag (memory). Branch
       `feat/shared-fixes` in research/openral/SRB -- merge to main after the rerun.
+- [ ] Regression from openral 5e1538c (place turned the item before stepping off): ours_l2b_habitat_r2 staged the
+      container turned -15 deg, re-pick at the declared yaw agreed 37 % twice; run stopped 20:35 (invalid). Fix staged,
+      not applied while runs are live: openral branch `fix/place-step-first` (9338521, worktree
+      `openral/.worktrees/place-step-first`): turn-0 steps up to 5 cm first, turns only past that -- a pure reordering,
+      so every place that chose no turn is unchanged (all 25 Ours runs so far: only r2 turned). When the batch ends:
+      merge it into feat/shared-fixes, list every exp1b place with turned_deg != 0, rerun exactly those runs.
 - [ ] Then rows -> tables -> failures (preregistration §2) on exp1b; compare with exp1 (F140); findings F142.
 - [ ] Videos: textures now at /mnt/SharedData/Research/lunarbot_textures/textures, mounted only into the replay render
       container (runs keep the untextured robot, as exp1); recompose the six videos after the render.
