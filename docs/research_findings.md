@@ -5997,7 +5997,7 @@ servo's tolerance (3 cm / 0.03 rad), closes it with the same servo straight in (
 the footprint (10 cm in: two map cells) along the servo's path against the surveyed map (belief) and against the lidar
 returns within 3 m in the rover's own frame (>= 3 returns), and refuses with the facts. Offline over the 147 campaign
 docks: 0 of 144 clean docks refused, all four drives made on the lost localization refused (1437 s only by the scan).
-**4. The PLEXIL adapter loses a run's first result (the two category-8 hangs).** The adapter relied on rclcpp_action's
+**4. The PLEXIL adapter loses a run's first result (the two category-8 hangs).** *(Corrected in F142: what was lost was the goal response, not the result request; the fix below did not cover it.)* The adapter relied on rclcpp_action's
 one automatic get_result request, sent at goal acceptance, before the boundary's result service can have matched it on
 a run's first command. Fix: a second get_result request 5 s after acceptance, one ack from whichever answer comes
 first. Offline, EUROPA chain against a stand-in boundary that drops the first get_result: fixed adapter completes,
@@ -6044,3 +6044,62 @@ Press views are fully specified (camera above the tool axis, IK from READY) and 
 changes. Live check (`artifacts/runs/verify_stow/plexil_a_pdu2`): Link7 rolled as computed, dock/press/stow/return
 all first attempt, `parked_and_stowed` true, success. Experiment I restarted from the beginning with it
 (`artifacts/runs/exp1b`, 14:49; the six runs begun before it are in `exp1b_aborted`, not scored).
+
+## F142 -- Experiment I rerun (exp1b) on the fixed shared layer: Ours 18/18 held-out, 7/7 covered; baselines 7/7 covered, 0/6 held-out each (2026-09-28)
+
+`artifacts/runs/exp1b/` (jobs `exp1b_campaign.txt` 14:49-23:57, 6 GPUs; `exp1b_fix.txt` 23:58-01:41), rows
+`artifacts/eval/exp1b/rows/`, tables `tables.md`, failures `failures.md`, places `place_offsets.md`, trace
+`trace_completeness.txt`, swimlanes `artifacts/figures/exp1b/swimlane/`, videos (textured, third-person)
+`artifacts/figures/exp1b/video/`. 51 scored runs; no freeze ceremony (user). Two runs were invalidated by
+shared-layer defects found during the batch, fixed and rerun (below); every other run is from the batch as launched.
+
+| method | covered (L0-L1) | held-out L2-A | L2-B | L3 | L4 | held-out re-authoring | held-out HIR |
+|---|---|---|---|---|---|---|---|
+| Ours | 7/7 | 6/6 | 3/3 | 6/6 | 3/3 | 0/18 | 0.136 |
+| PLEXIL | 7/7 | 0/2 | 0/1 | 0/2 | 0/1 | 6/6 | 0.591 |
+| EUROPA -> PLEXIL | 7/7 | 0/2 | 0/1 | 0/2 | 0/1 | 6/6 | 0.470 |
+
+- **vs exp1 (F140)**: the two physical-layer failures are gone -- Ours L2-B r2 (container slid out during Nav2
+  reversals on a lost localization; now the corridor wall is mapped, F141 item 1) and PLEXIL's battery 14.7 cm off
+  bess_stand (now 7.6 cm). No category-4 failure in any method. Baselines on held-out unchanged: every run detected ->
+  escalated (new_procedure), hold (category 2, 12/12). Ours held-out requests: 3 authorization (L4 donor picks,
+  granted) and 7 information (L2-A/L2-B/L4), 0 new_procedure; HIR 0.136 (exp1 0.080: three more information
+  requests, each a 300 s decision). False completions 0 for every method; guard 3 holds, 0 executed despite a hold.
+- **Violations (H3)**: Ours 7 unintended-contact windows (exp1: 49): 6 in L3 BESS r2 while docking with the removed
+  battery (0.6 s; the battery 0.31 m from the arm's base and 0.28 m from bess_cradle's surveyed box -- truth does not
+  separate them), 1 in covered B battery delivery (20 ms, the carried battery against the arm's own base; every
+  structure >= 1.1 m away) -- both the F117 pattern. Dropped items 0 for every method (exp1: Ours 2, PLEXIL 1). Collateral: baseline L2-B places on the
+  occupied stand pushed the occupier 5.9 cm (PLEXIL 1, EUROPA 2 episodes; exp1 ~6 cm, 1 each).
+- **Evaluator correction (applies to exp1)**: a call's window start was backed out as `end_wall - sim_s`, exact only
+  at 1x real time; at the campaign's ~0.25x a press's window shrank to its last quarter, and a contact at its start
+  (europa_l2a_bess, during its press) counted as unintended. `evaluation/violations.load_capability_calls` now takes
+  the start from the evaluator's own sim->wall record. exp1b EUROPA held-out contact 1 -> 0; exp1 recomputed, tables
+  identical.
+- **Places**: 35/35 inside the scored footprint (exp1 30/31); moved after touchdown <= 8 mm; bess_stand still
+  +7-10.5 cm along its normal (localization precision there, F141), inside 12 cm. **Localization settle**: 141 docks,
+  estimate shift median 1 cm (max 4 cm), off goal after settling median 1.8 cm (max 4.6 cm), 27 closing redocks.
+  **Dock path check**: 0 refusals in the campaign.
+- **Time**: Ours covered median 538 s (exp1 740 s), held-out 1132 s (1034 s); baselines covered 264-265 s.
+- **Trace completeness (E7)**: Ours 451/451 calls with proposal, guard, execution, verification; PLEXIL 81/81 boundary
+  calls joined to a plan node by id.
+
+**Two shared-layer defects found in the batch, fixed, their runs rerun.**
+1. *The place turned a staged item (regression from F141, openral 5e1538c).* ours_l2b_habitat_r2 staged the container
+   back on landing_stand turned -15 deg (the turn searched before any step off the support); the next pick fits the
+   interface at the declared yaw and agreed 37 %, two re-picks failed at `find`; stopped at step ~70. Fix (openral
+   9338521): step off in the carried orientation first, up to 5 cm, turn only past that -- a pure reordering, so every
+   place that chose no turn chooses the same step; over all 51 exp1b runs only this run had turned. Rerun: success, 20
+   calls, 0 failed, both places unturned. Limitation kept: a place that must turn still leaves an item the next pick
+   cannot fit (pick fits the declared yaw only, F138).
+2. *The executive never received its first command's goal response (all three baseline hangs).* The boundary's log
+   in exp1b plexil_l2b_habitat and in exp1's europa_l3_isru and plexil_b_oru_pdu3 carries rclpy's "failed to send
+   response (timeout)" for `send_goal_response`: a response sent before the server's writer has matched the client is
+   dropped, the goal runs, and rclcpp_action's client, having no goal id, waits for ever. F141 item 4 (the result
+   request) was the wrong diagnosis. Fix (research b15d286): the adapter calls the action's raw `send_goal`/`get_result`
+   services with its own goal id, asks for the result every 10 s (the boundary holds a request for a running goal,
+   answers a finished one at once, answers an unknown id with STATUS_UNKNOWN -> the goal is resent, same id; a tracked
+   id is refused, never run twice). Offline (EUROPA chain, stand-in boundary): lost goal response -> completes; lost
+   goal request -> completes, one execution; old adapter with a lost goal response -> hangs. Rerun: passed its first
+   command, ended as the other held-out baselines. Ours' own client (`space_runtime/agent.py` execute) has the same
+   exposure and was never hit (0 in 50 Ours runs across exp1/exp1b): recorded, not changed.
+

@@ -1,24 +1,28 @@
 # Handoff
 
-Updated 2026-09-27 14:30 (shared layer fixed, F141; Experiment I rerunning as exp1b; branch feat/shared-fixes).
+Updated 2026-09-28 (Experiment I rerun exp1b done, F142; feat/shared-fixes merged into local main of the three repos, not pushed).
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
 **`docs/preregistration.md`** (metrics, taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md`
-F115-F139. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
+F115-F142. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
-- **Frozen: tag `freeze-1`** in research `main`, openral `master` (971f2ea), SRB `main` (2b5e2a3); manifest
-  `artifacts/freeze/freeze-1.yaml` (F139). Nothing a method or a shared skill runs may change during the campaign.
-  Pushed with the tags (2026-09-26). Worktree `.worktree/prefreeze` idle (merged; can go).
-- **Experiment I done** (F140): `artifacts/runs/exp1/` (51 scored + 2 category-8 reruns), `artifacts/eval/exp1/`
+- `freeze-1` (F139) is history: the user dropped the freeze ceremony (2026-09-27). The shared layer was fixed after
+  exp1 (F141, F142) on `feat/shared-fixes`, now merged into research `main`, openral `master`, SRB `main` locally.
+- **Experiment I = exp1b** (F142): `artifacts/runs/exp1b/` (51 scored; two invalidated runs moved to
+  `exp1b_aborted/*__invalid_f142`), `artifacts/eval/exp1b/`, `artifacts/figures/exp1b/` (swimlanes, six textured
+  third-person videos; render scripts `.prep.sh`/`.render_all.sh`/`.compose_one.sh` there, textures mounted only
+  into the render container from /mnt/SharedData/Research/lunarbot_textures/textures).
+- exp1 (F140, superseded by exp1b): `artifacts/runs/exp1/` (51 scored + 2 category-8 reruns), `artifacts/eval/exp1/`
   (rows, tables.md, failures.md, place_offsets, trace completeness), `artifacts/figures/exp1/`. Rows exclude the two
   category-8 runs (plexil_b_oru_pdu3, europa_l3_isru). Development runs (step 9/10, checks) are never scored.
 - farm_queue reads the jobs file at every claim: a rerun appended late is only claimed if a worker is still alive and
   `.next` points at it (workers that found the queue empty advance `.next` and exit).
-- A baseline run can hang on a lost first command result (F140): watch each run's capability_server.log age; kill
-  universalExec inside the container (SIGKILL; rclcpp takes SIGTERM) so the check tears down normally.
+- The PLEXIL adapter now survives a lost goal response/request (F142: own goal id, get_result polling). If a baseline
+  still stalls, "failed to send response" in capability_server.log is the signature; Ours' client has the same exposure.
+- `farm_join.sh` adds a GPU worker to a running batch without resetting `.next`.
 - **Reasoner Qwen3.8-Max** (configs/space_runtime.yaml, 600 s), VLM DeepSeek-V4.1-Flash, paratera gateway.
 - **What the reasoner reads** (F124): `prompts/ours/system.md`, `prompts/ours/step.md`, `prompts/ours/tools.yaml`;
   `space_runtime/context.py` only fills them.

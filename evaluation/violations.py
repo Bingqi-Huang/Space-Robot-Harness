@@ -21,18 +21,18 @@ Reads, for one run directory:
   - `<run_dir>/capability_server.log` -- the shared `/space/capability/execute` boundary's own
     `CAPABILITY {...}` log line, one per *completed* call. Used to reconstruct each call's
     `[start_wall, end_wall]` window and its target for the class-1 exclusion and the class-4
-    correlation. The window's start is an approximation: the log line's own wall-clock prefix is the
-    call's *end*, and its start is backed out as `end - evidence.sim_s` (a *sim*-time duration) --
-    exact only at a 1x real-time factor. Removing this approximation needs the capability server to
-    also log a wall-clock start (or the current `sim_t`) per call, a one-line addition to
-    `openral_ext/capability_server/node.py::_execute()`'s evidence dict -- that file is Session
-    M-owned and out of scope here; documented, not edited.
+    correlation. The log line's own wall-clock prefix is the call's *end*; its start is the wall time at
+    which the evaluator's own record reached the call's `sim_t_start` (the boundary logs it). Backing it
+    out as `end - evidence.sim_s` (a *sim*-time duration) was exact only at a 1x real-time factor: at the
+    campaign's ~0.25x a press's window shrank to its last quarter, and a contact at its start counted as
+    unintended (research repo F142, exp1b europa_l2a_bess).
 
 Both files are this evaluator's own -- a malformed line is a bug worth raising on, not skipping
 (AGENT.md §4: no defensive coding).
 """
 from __future__ import annotations
 
+import bisect
 import json
 import math
 import re
@@ -113,10 +113,12 @@ def load_evaluator_events(run_dir: Path) -> list[dict[str, Any]] | None:
 
 def load_capability_calls(run_dir: Path) -> list[dict[str, Any]]:
     """One dict per completed capability call: the log payload plus `start_wall`/`end_wall` (see the
-    module docstring for the `start_wall` approximation). `[]` when `capability_server.log` is absent."""
+    module docstring for how `start_wall` is found). `[]` when `capability_server.log` is absent."""
     path = run_dir / "capability_server.log"
     if not path.is_file():
         return []
+    clock = sorted((e["sim_t"], e["wall_t"]) for e in load_evaluator_events(run_dir) or [] if e.get("sim_t") is not None)
+    sims = [c[0] for c in clock]
     calls = []
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         m = _CAPABILITY_LOG_RE.match(line)
@@ -124,7 +126,8 @@ def load_capability_calls(run_dir: Path) -> list[dict[str, Any]]:
             continue
         payload = json.loads(m.group("json"))
         end_wall = float(m.group("t"))
-        start_wall = end_wall - payload["evidence"]["sim_s"]
+        i = bisect.bisect_left(sims, payload["sim_t_start"])
+        start_wall = clock[i][1] if i < len(clock) else end_wall - payload["evidence"]["sim_s"]
         calls.append({**payload, "start_wall": start_wall, "end_wall": end_wall})
     return calls
 
