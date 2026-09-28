@@ -19,32 +19,32 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
   videos (L4, L2-B x 3 methods) in `artifacts/figures/exp1b/`. Evaluator call-window fix recomputed exp1 (unchanged).
   exp1b supersedes exp1 for the paper; exp1 kept.
 
-## Now (2026-09-28): decisions before the next stage
+## Now (2026-09-28): Experiment II (H2), heldout_design §6, execution_plan §13.4
 
-- Done 2026-09-28 (F143): PLEXIL N=1/2/5 on derived plans (outcome never changes); class 2 = a fall (recomputed).
-- For the user (explained to them 2026-09-28, not yet answered):
-  1. §5.7 ablation method: A = natural runs (4 variants x one L3 x 2; F130 predicts null results) or B = fault
-     injection + counterfactual replay on recorded runs, live only where offline shows a difference (recommended).
-  2. Start Experiment II before the ablations? Proposed yes: the order in heldout_design §10 was only so ablations run
-     on the Experiment-I system; tag the exp1b state (`exp1b`) and run them from it later.
-  3. Who is the extension engineer for Experiment II? If Claude, the hidden cases (G2) must be built by a separate
-     session and kept from the extending session. One engineer: proposed order Ours first, baselines after (learning
-     carryover then favours the baselines -- conservative).
+User decisions 2026-09-28: Exp II before the ablations (Exp I state tagged `exp1b`, 3 repos); §5.7 ablations by
+method B (fault injection + offline counterfactual replay, live only where offline differs), later, from `exp1b`;
+extension engineer = Claude, one fresh session per method, Ours -> PLEXIL -> EUROPA; the hidden cases (G2) are built
+by the orchestrating session outside the repo and never shown to an extension session.
+
+- [x] Shared supply (F144, tag `exp2-base`): scan_label behind the boundary with no contract; zxing-cpp in the venv;
+      a second identical ORU (ORU-0272, recorded failed, landing_stand/slot_1); Mission B knobs name_serial /
+      placement / records; spec `docs/exp2/extension_spec.md`; G3 `experiments/exp2/g3_validate.py`; engineer
+      checkouts `experiments/exp2/make_worktree.sh`. V1 physical check passed.
+- [ ] G2 (hidden, orchestrating session only): built and physically checked; not described here.
+- [ ] Ours extension (fresh session, `.worktree/exp2-ours`, timer, G3 PASS, tag `exp2-ours`) -> merge -> hidden runs.
+- [ ] PLEXIL extension from the merged Ours state -> hidden runs; then EUROPA -> hidden runs.
+- [ ] Exp II table: ETVS, artifact delta (`artifact_delta.py`), validation iterations, modeling errors, hidden success.
 - Known limits (F141): localization ~5 cm at bess_stand (map precision), 0.3-1.3 m transients round the habitat row's
   east end; carried items swing +-7 cm while lowered (touchdown phase decides the set-down point).
 
-## Next work (after the decisions)
+## Next work (after Experiment II)
 
-- [ ] Experiment II (H2), heldout_design §6, execution_plan §13.4: zxing-cpp into the openral venv (F131: runs used
-      `artifacts/pydeps` on PYTHONPATH); G2 hidden cases (spare recorded at the depot but in another PDU's tray/shelf;
-      two ORUs with swapped records) + G3 visible validation suite, built hidden from the extension author; then per
-      method: reveal the spec, timer + `engineering_worklog.jsonl`, register `scan_label`, diff (`artifact_delta.py`),
-      validation passes, then run the hidden cases.
-- [ ] §5.7 ablations (after the user picks the method), from the `exp1b` tag.
+- [ ] §5.7 ablations, method B, from the `exp1b` tag.
 - [ ] Re-authoring cost per held-out case for both baselines (heldout_design §8; feeds H2).
 - [ ] Swimlane label overlap (press/press, place/stow) before the paper figure.
 - [ ] Paper: results section from `tables.md` + `failures.md`; limitations (one engineer, category-level L2-B
-      precedent, AMCL bias, fixed 300 s ground decision, Ours' post-mission inspection tours lengthen covered runs).
+      precedent, AMCL bias, fixed 300 s ground decision, Ours' post-mission inspection tours lengthen covered runs;
+      Exp II: extension engineers are Claude sessions, the held-out categories were in heldout_design §6).
 
 ## Clean-up (user 2026-09-26: keep for now)
 

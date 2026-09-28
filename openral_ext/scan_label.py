@@ -4,10 +4,11 @@ docs/heldout_design.md §6. Identical ORUs differ only by serial; every carried 
 beside the handle column (NASA-STD-6002: a Data Matrix of 2.5 mm modules plus the S/N in text, 40 x 56 mm). The vision
 model cannot decode a Data Matrix; this reads it.
 
-Shared low-level implementation, built before Experiment II and NOT registered with any method: no entry in
-`openral_ext/capability_server/contracts.yaml` (so neither Ours' palette nor the PLEXIL adapter can reach it), no
-PLEXIL Command, no EUROPA activity. Making it usable at mission level is the timed work of Experiment II
-(research_content §5.6); until then only the development check calls it
+Shared low-level implementation, built before Experiment II and NOT registered with any method. The capability boundary
+carries it (`capability_server/node.py` `scan_label`, arguments `support` and `item`), but there is no entry in
+`openral_ext/capability_server/contracts.yaml`, so the boundary refuses the call and neither Ours' palette nor the PLEXIL
+adapter can reach it; no PLEXIL Command, no EUROPA activity. Making it usable at mission level is the timed work of
+Experiment II (research_content §5.6, docs/exp2/extension_spec.md); until then only the development check calls it
 (`experiments/launch/lunar_base_d0/scan_label_check.py`).
 
 One whole operation, with the rover docked at the support:
@@ -26,8 +27,7 @@ One view, one look. Reading no label is a result, not a failure -- an empty supp
 both come back with no serials and the frame as evidence; what to do about it is the calling method's decision. The
 operation fails only when the view cannot be taken, and says why.
 
-The robot is reached through `io`, which the caller supplies (the development check today; the capability boundary once
-a method registers the capability):
+The robot is reached through `io`, which the caller supplies (the capability boundary; the development check):
     io.tf(target, source) -> 4x4               transform from the robot's TF
     io.ik(p, R, seed) -> list[float] | None    collision-checked IK of the tool centre point in chassis_base_link
     io.arm_q() -> list[float]                  the seven arm joints now

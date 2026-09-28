@@ -40,7 +40,7 @@ def _read_jsonl(path: Path) -> list[dict]:
     return [json.loads(l) for l in path.read_text(errors="replace").splitlines() if l.strip()]
 
 
-def check_ours(run_dir: Path) -> None:
+def check_ours(run_dir: Path) -> tuple[int, int]:
     events = _read_jsonl(run_dir / "ours" / "events.jsonl")
     has_version_field = any("version" in k.lower() for e in events for k in e)
     print(f"  mission-state version field present anywhere in schema: {has_version_field}")
@@ -79,13 +79,14 @@ def check_ours(run_dir: Path) -> None:
           f"'evidence/' path string appears in events.jsonl)")
     has_evidence_path_ref = any("evidence/" in json.dumps(e) for e in events)
     print(f"  (checked: any event JSON contains the literal 'evidence/' path substring: {has_evidence_path_ref})")
+    return n_calls, n_complete
 
 
 _EXECUTING_RE = re.compile(r"Transitioning (\S+) (\S+) from \S+ to EXECUTING ")
 _ADAPTER_RE = re.compile(r"^\[CapabilityAdapter\] COMMAND ([^\s\[{]+) ([^\s\[{]+) ([\[{].*)$")
 
 
-def check_plexil(run_dir: Path) -> None:
+def check_plexil(run_dir: Path) -> tuple[int, int]:
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from evaluation.baselines.plexil_normalize import normalize_capability_server_log
@@ -107,6 +108,7 @@ def check_plexil(run_dir: Path) -> None:
               f"{'' if ok else '  NOT JOINED'}")
     print(f"  capability calls (boundary): {len(boundary)}, adapter calls with a node id: {len(issued)}, "
           f"joined to an executing plan node by id: {n_joined}")
+    return len(boundary), n_joined
 
 
 def main() -> None:

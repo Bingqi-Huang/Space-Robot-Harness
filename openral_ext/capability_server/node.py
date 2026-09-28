@@ -187,6 +187,7 @@ from openral_rskill._eye_in_hand import JAW_EMPTY_MAX_RAD, JAW_OPEN_MIN_RAD, JOI
 from openral_rskill.grasp_perception import GripperGeometry  # noqa: E402
 from openral_rskill.procedural_pick import tool_rotation as look_rotation  # noqa: E402
 from openral_rskill.procedural_press import facing  # noqa: E402
+from scan_label import scan  # noqa: E402  (openral_ext/, on the path above)
 #: how high above a support the tool works: the item is held by its handle, so the tool never goes to the shelf itself
 ITEM_HANDLE_M = max(o["handle"]["xyz"][2] for o in IX["objects"].values() if o.get("handle"))
 #: how far past a button's tip the tool goes for it to actuate: what the catalogue declares for the buttons on the site
@@ -824,6 +825,57 @@ class CapabilityServer(Node):
     class NoStand(Exception):
         """There is no place to park where the rover is clear of the site and the arm reaches the work."""
 
+    def scan_label(self, a: dict, handle) -> tuple[bool, str, dict]:
+        """Experiment II's shared capability (research repo docs/heldout_design.md §6, F131): read the serial data plates
+        of the item at a surveyed support the rover is docked at -- `openral_ext/scan_label.py`, reached through this
+        boundary's own robot paths: collision-checked IK, the posture skill's planned moves, the wrist camera. `item` is the
+        catalogued kind expected there; its height puts the view on its lid. The serials read come back in the evidence;
+        reading none is a result, not a failure."""
+        node, sim_t = self, lambda: self.sim_t
+
+        class IO:
+            def tf(self, target, source):
+                p, R = node._tf(target, source)
+                T = np.eye(4)
+                T[:3, :3], T[:3, 3] = R, p
+                return T
+
+            def ik(self, p, R, seed):
+                return node.ik_solution(np.asarray(p, float), np.asarray(R, float), seed, collisions=True)
+
+            def arm_q(self):
+                return list(node.arm_q)
+
+            def move_joints(self, q):
+                r = node.dispatch(handle, CONTRACTS["effects"]["move_joints"]["lowers_to"],
+                                  {**lower("move_joints", {"joint_targets": [float(v) for v in q]}), "evidence_dir": str(node.evidence_dir)}, 120.0)
+                return bool(r.success), r.failure_reason
+
+            def fold(self):
+                r = node.dispatch(handle, CONTRACTS["effects"]["stow"]["lowers_to"], {**lower("stow", {}), "evidence_dir": str(node.evidence_dir)}, 120.0)
+                return bool(r.success), r.failure_reason
+
+            def wrist_frame(self, after):
+                while "wrist" not in node.images or "wrist" not in node.infos or (
+                        (m := node.images["wrist"]).header.stamp.sec + m.header.stamp.nanosec * 1e-9) <= after:
+                    time.sleep(0.05)
+                img = np.frombuffer(m.data, np.uint8).reshape(m.height, m.width, -1)
+                bgr = cv2.cvtColor(img, {"rgb8": cv2.COLOR_RGB2BGR, "rgba8": cv2.COLOR_RGBA2BGR, "bgra8": cv2.COLOR_BGRA2BGR}[m.encoding]) if m.encoding != "bgr8" else img
+                return bgr, np.array(node.infos["wrist"].k, float).reshape(3, 3), m.header.frame_id, m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
+
+            def now(self):
+                return sim_t()
+
+            def wait(self, s):
+                t0 = sim_t()
+                while sim_t() - t0 < s:
+                    time.sleep(0.05)
+
+        pt = IX["points"][a["support"]]
+        res = scan(IO(), a["support"], pt["xyz"], pt["normal"], CATALOGUE[a["item"]]["size_m"][2],
+                   self.evidence_dir / f"scan_label_{a['support'].replace('/', '_')}_{self.sim_t:010.2f}")
+        return res["success"], res["failure_reason"], {"scan": {"serials": res["serials"], "plates": res["plates"], **res["evidence"]}}
+
     def ik_reaches(self, p_base: np.ndarray, R: np.ndarray) -> bool:
         """Whether some arm configuration puts the tool at this pose in the rover's own frame. Kinematics only: what
         stands in the way when the robot is actually there is the planner's business, and the rover is not there yet."""
@@ -859,13 +911,14 @@ class CapabilityServer(Node):
                 except self.NoStand:
                     pass  # a fact about that feature, which whoever asks for it is told
 
-    def ik_solution(self, p_base: np.ndarray, R: np.ndarray, seed: list[float]) -> list[float] | None:
+    def ik_solution(self, p_base: np.ndarray, R: np.ndarray, seed: list[float], collisions: bool = False) -> list[float] | None:
         """One arm configuration for this tool pose in the rover frame, nearest `seed`, ignoring collisions. Any is enough: a
         skill's planned moves (the stand-off, the view, the carry-in check) take any collision-free configuration too, so a
-        stand listed here is one a skill can take; only a servo step from where the arm is keeps the working-branch rule."""
+        stand listed here is one a skill can take; only a servo step from where the arm is keeps the working-branch rule.
+        With `collisions`, MoveIt's collision-checked answer (the scan view's, which is gone to directly)."""
         req = GetPositionIK.Request()
         r = req.ik_request
-        r.group_name, r.ik_link_name, r.avoid_collisions = "rm_group", "tcp_frame", False
+        r.group_name, r.ik_link_name, r.avoid_collisions = "rm_group", "tcp_frame", collisions
         names = [f"joint{i}" for i in range(1, 8)]
         r.robot_state.joint_state.name, r.robot_state.joint_state.position, r.robot_state.is_diff = names, [float(v) for v in seed], True
         r.pose_stamped.header.frame_id = "chassis_base_link"
@@ -1042,7 +1095,7 @@ class CapabilityServer(Node):
         # method, so it is refused here and not in any one method's guard
         # how hard the base may be driven is decided by what the jaws hold, for every method and every base move
         drive = self.drive_limits(JAW_EMPTY_MAX_RAD < self.jaw < JAW_OPEN_MIN_RAD) if g.capability in BASE_MOVES else None
-        if g.capability in ("stow", "arm_ready") and JAW_EMPTY_MAX_RAD < self.jaw < JAW_OPEN_MIN_RAD:
+        if g.capability in ("stow", "arm_ready", "scan_label") and JAW_EMPTY_MAX_RAD < self.jaw < JAW_OPEN_MIN_RAD:
             handle.succeed()
             res.success, res.failure_kind = False, REJECTED
             res.failure_reason = (f"the jaws are holding something (jaw {self.jaw:.3f} rad): {g.capability} takes the arm "
@@ -1055,6 +1108,9 @@ class CapabilityServer(Node):
         sim0 = self.sim_t
         if g.capability == "approach_target":
             ok, reason, evidence = self.approach_target(args, handle)
+            r = ExecuteRskill.Result(success=ok, failure_kind=0 if ok else 3, failure_reason=reason)
+        elif g.capability == "scan_label":
+            ok, reason, evidence = self.scan_label(args, handle)
             r = ExecuteRskill.Result(success=ok, failure_kind=0 if ok else 3, failure_reason=reason)
         else:
             try:

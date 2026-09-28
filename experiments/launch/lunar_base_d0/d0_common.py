@@ -61,12 +61,14 @@ def mission_b_goal() -> str:
     """Mission B's formal goal for the baselines (research_content §5.3 rule 8; docs/baselines/authoring_spec.md): the
     brief's item by its equipment-catalogue name, where the manifest has it staged and the destination, as site place
     frames -- from the same task overrides the brief is made from (D0_ENV env.cargo / env.destination, the task's
-    defaults otherwise; lunar_base_mission_b/task.py). Both baselines read it from MISSION_GOAL."""
+    defaults otherwise; lunar_base_mission_b/task.py). Both baselines read it from MISSION_GOAL. When the brief names
+    the cargo by its serial (env.name_serial=true, Experiment II), so does the goal."""
     cfg = dict(kv.split("=", 1) for kv in os.environ.get("D0_ENV", "").split())
     cargo = IX["objects"][cfg.get("env.cargo", "spare_oru")]
     destination = {**{u: f"{u}_shelf/shelf" for u in ("pdu_1", "pdu_2", "pdu_3")},
                    "bess": "bess_stand/slot_0", "habitat": "habitat_stand/slot_0"}[cfg.get("env.destination", "pdu_1")]
-    return json.dumps(dict(item=cargo["item"], source=cargo["support"], destination=destination))
+    serial = {"serial": cargo["serial"]} if cfg.get("env.name_serial", "false").lower() == "true" else {}
+    return json.dumps(dict(item=cargo["item"], source=cargo["support"], destination=destination, **serial))
 
 rclpy.init()
 n = Node("d0_mission_b_check", parameter_overrides=[Parameter("use_sim_time", Parameter.Type.BOOL, True)])

@@ -1,7 +1,8 @@
 # Handoff
 
-Updated 2026-09-28 (Experiment I = exp1b done, F142; F143 retry budget + drop rule; main of all three repos pushed at
-F142, F143's commit local until the user says push). Next: the user's three decisions in `AGENT/todo.md` "Now".
+Updated 2026-09-28 (Experiment II set up, F144, tag `exp2-base`; Experiment I = exp1b, F142/F143, tag `exp1b`; nothing
+pushed since F142 -- pushing waits for the user). Next: the timed extensions, Ours -> PLEXIL -> EUROPA, each by a fresh
+session in its own `.worktree/exp2-<method>` (`AGENT/todo.md` "Now").
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
 **`docs/preregistration.md`** (metrics, taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md`
@@ -9,6 +10,13 @@ F115-F143. Goal: the Acta Astronautica paper. The model owns mission strategy; a
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
+
+- **Experiment II** (F144): spec `docs/exp2/extension_spec.md` (the only Exp II text an extension session reads);
+  validation `experiments/exp2/g3_validate.py` on V1 (jobs `experiments/exp2/jobs/`); timer
+  `evaluation/engineering_worklog.py` -> `experiments/exp2/worklog/<method>.jsonl`; delta `evaluation/artifact_delta.py`
+  from `exp2-base` (Ours) / the previous method's tag. Engineer checkouts: `experiments/exp2/make_worktree.sh <method>
+  <base>`; their runs launch from there, the main checkout runs the hidden cases. The hidden cases live outside the
+  repo and are kept from every extension session; do not describe them in tracked files until the last method is tagged.
 
 - `freeze-1` (F139) is history: the user dropped the freeze ceremony (2026-09-27). The shared layer was fixed after
   exp1 (F141, F142) on `feat/shared-fixes`, merged into research `main`, openral `master`, SRB `main` and pushed

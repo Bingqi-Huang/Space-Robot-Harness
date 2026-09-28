@@ -6125,3 +6125,45 @@ drop. `evaluation/violations.count_dropped_items`, `docs/evaluator_violations.md
 (preregistration §3: a redefinition is a recomputation, no rerun): exp1 Ours held-out 2 -> 1, PLEXIL covered 1 -> 0;
 exp1b unchanged (0).
 
+
+## F144 -- Experiment II set up: the shared scanner behind the boundary, a second identical ORU, three Mission B knobs, the visible validation suite (2026-09-28)
+
+User decisions 2026-09-28: Experiment II before the §5.7 ablations (the Experiment I state is tagged `exp1b` in all
+three repos; the ablations run from it later, method B: fault injection + offline counterfactual replay, live only
+where offline shows a difference); the extension engineer is Claude, one fresh session per method, order Ours ->
+PLEXIL -> EUROPA (one engineer: learning carries over to the baselines, the conservative direction); the held-out
+extension cases (G2) are built by this orchestrating session and kept outside the repository until the last method is
+tagged. Everything below is shared and supplied before any timer starts (research_content §5.6 step 3); tag
+`exp2-base`.
+
+- **scan_label reaches the boundary, unregistered.** `CapabilityServer.scan_label` (node.py) runs
+  `openral_ext/scan_label.py` through the boundary's own paths: MoveIt's collision-checked IK (`ik_solution(...,
+  collisions=True)`), the posture skill's planned `move_joints`, the wrist frame, `stow`. Arguments `support`, `item`
+  (the catalogued kind: its height puts the view on the lid); refused like `stow` while the jaws hold something; the
+  serials and each plate's distance from the aim come back as `evidence.scan`. There is no `contracts.yaml` entry, so
+  the boundary refuses the call and no method reaches it: writing the entry is Ours' timed work, and the baselines,
+  extended after Ours, call through it. zxing-cpp 3.1.1 is in the openral venv (it was only on PYTHONPATH, F131).
+- **A second ORU on site** (SRB): ORU-0272, an existing processed asset (same plates as ORU-0417, processed with it
+  2026-09-24), recorded failed -- removed from service, awaiting return shipment -- at `landing_stand/slot_1` (0.19 m
+  from the consumables container, the depot pair's gap). `status` is now an authored object field: the record
+  publishes it and the unit fails its self-test if installed (`SiteTask.unserviceable_modules`, Mission A unions it).
+  Only `interaction.json` was regenerated (`build_scene.py --interaction-only`; diffed: the object, its pick point and
+  work pose added, nothing else); dynamic objects are not in the lidar mesh or the nav map.
+- **Mission B knobs** (any scenario): `name_serial` (the brief names the cargo by serial; the baselines' formal goal
+  gains `serial`, `mission_b_goal()`), `placement` and `records` ("object:place_frame+..." strings: isaaclab's config
+  update refuses new keys in a dict, and Hydra reads a comma as a sweep). The evaluator already scores the object, so
+  delivering an identical unit with another serial fails.
+- **Visible validation suite (G3)** `experiments/exp2/g3_validate.py`: on one live run of the method on V1 (depot
+  spare ORU-0417, records correct, named by serial, to PDU-2's shelf): wiring (a contract; for Ours, not engineering),
+  the case, the evaluator's success, a scan at the depot that read ORU-0417, no drop and (Ours) no execution after a
+  guard denial, trace completeness (Ours all calls; PLEXIL all calls joined to a node; EUROPA not checked, as in
+  Experiment I). `trace_completeness_check.check_ours/check_plexil` now return their counts. On an Experiment I run it
+  fails as it should (no contract, not V1, no scan).
+- **Extension spec** `docs/exp2/extension_spec.md` (what every engineer reads), jobs `experiments/exp2/jobs/`, the
+  engineer's checkout `experiments/exp2/make_worktree.sh` (branch `exp2/<method>` in `.worktree/exp2-<method>`,
+  submodules as worktrees of the main checkout's own, the venv/install/kernels/key linked, ros/ built there), so the
+  main checkout stays the hidden runs'.
+- **Physical check of V1** (scripted chain through the boundary with a temporary engineering contract for scan_label,
+  never committed; `artifacts/runs/exp2_setup/g3_v1_physical`): success, every call at its first attempt, the scan read ORU-0417 at depot slot_0 in 5.5 s of mission time. G2 (hidden) was checked the same way and is recorded outside the repository until the last method is tagged. The first attempt of this batch died at
+  its first scan: the chain script reads the contracts when it starts, after the temporary entry had already been
+  taken back out (my ordering, not a defect); rerun with the entry held until the runs end.
