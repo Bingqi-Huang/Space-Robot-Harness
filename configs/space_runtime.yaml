@@ -60,6 +60,8 @@ verification:
     min_clear_m: 0.10
     near_m: 1.0
     settle_moved_mm: 3.0  # the item counts as still if the region moved less than this at its own depth
+  scan:  # labels_read: the wrist camera within this of the scan view it was sent to
+    view_m: 0.03  # the view was reached within 5 mm at six supports (research repo F131)
 
 # ---- reasoner -----------------------------------------------------------------------------------------------------
 reasoner:

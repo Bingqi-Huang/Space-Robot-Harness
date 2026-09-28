@@ -66,6 +66,7 @@ def step_text(facts: dict, step: int, max_steps: int, events: list[dict], missio
         verified_effects=_lines(f["verified_effects"][-12:]),
         observations=_lines([o for o in f["observations"] if o["query"] != "site_map"][-8:]),
         objects=_lines([{"item": name, **o} for name, o in f["objects"].items()], "(no verified manipulation yet)"),
+        labels=_lines([{"support": s, **r} for s, r in f["labels"].items()], "(no support scanned yet)"),
         attempts=_lines(f["attempts"][-10:]), anomalies=_lines(f["anomalies"]),
         mission_control=_lines([now, *exchanges, approvals]),
         status=_j({"unavailable_capabilities": f["unavailable"], "active_faults": {k: v for k, v in f["fdir"].items() if v["active"]}}),

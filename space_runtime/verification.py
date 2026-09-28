@@ -94,9 +94,22 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         state = jaw_state(arm["jaw_rad"], cfg)
         want = {"grasp": ("holding_object", "closed_empty"), "release": ("open",)}[capability]
         out.append(dict(effect=f"jaws_{state}", holds=state in want, jaw_rad=arm["jaw_rad"]))
-    if capability in ("arm_ready", "stow") and isinstance(arm, dict):
-        want = {"arm_ready": "ready", "stow": "stowed"}[capability]
+    if capability in ("arm_ready", "stow", "scan_label") and isinstance(arm, dict):
+        want = {"arm_ready": "ready", "stow": "stowed", "scan_label": "stowed"}[capability]  # a scan folds the arm after its view
         out.append(dict(effect=f"arm_{want}", holds=arm["posture"] == want, posture=arm["posture"]))
+    if capability == "scan_label":
+        # What one frame read, and whether it was taken from the view it was aimed for: the camera's pose from the arm's
+        # kinematics against the commanded view. Every plate decoded, nearest the aim point first (the item on the named
+        # support is the nearest; a neighbour's plate can be in the frame too), with the frame's size for the pixel
+        # distances. No plate is a reading too: an empty support, or no plate in the frame.
+        sc = evidence.get("scan") or {}
+        err = sc.get("view_error_m")
+        m = dict(effect="labels_read", support=args["support"], holds=err is not None and err <= cfg["scan"]["view_m"])
+        if sc.get("raw_image"):  # absent when no frame was taken (the view could not be reached, the call was refused)
+            plates = sorted(({"serial": p["serial"], "px_from_aim": p["px_from_aim"]} for p in sc["plates"]), key=lambda p: p["px_from_aim"])
+            m.update(view_error_m=err, plates_read=len(plates), plates=plates,
+                     frame_px=list(cv2.imread(sc["raw_image"]).shape[1::-1]), image=sc["image"])
+        out.append(m)
     if capability == "pick" and isinstance(arm, dict):
         # held = jaws stopped on something + the item rose with the gripper during the lift (its image stayed put while a
         # left-behind item would have shifted by the lift's image displacement)
