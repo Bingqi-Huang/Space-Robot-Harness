@@ -13,14 +13,15 @@ Experiment II (research_content §5.6, docs/exp2/extension_spec.md); until then 
 
 One whole operation, with the rover docked at the support:
 
-1. view -- the wrist camera goes to its one scan view: it looks at the point where the item's handle column meets its lid
-   (the support's surveyed point, raised by the catalogued item's height above it), from `SCAN_DISTANCE_M` out along
-   the support's normal (the side the rover docks on), `SCAN_ELEVATION_DEG` below the horizontal, image up pointing away
-   from the rover. The arm configuration is the robot's collision-checked inverse kinematics from the working seeds,
-   the one with the least posture cost (as the skills' planned moves choose, `_eye_in_hand.EyeInHandSkill.ik`); the path
-   to it is the posture skill's planned one, the same as `stow` and `arm_ready` take.
-2. read -- one wrist frame once the arm has stopped; zxing-cpp on the frame upscaled 2x (a module is about 3 px at this
-   view); every Data Matrix decoded, with its corners and how far it lies in the image from the aimed column foot.
+1. view -- the wrist camera goes to one scan view: it looks at the point where the item's handle column meets its lid
+   (the support's surveyed point, raised by the catalogued item's height above it), from a distance out along the
+   support's normal (the side the rover docks on) and an elevation below the horizontal (`SCAN_VIEWS`, the widest the
+   arm can take), image up pointing away from the rover. The arm configuration is the robot's collision-checked inverse
+   kinematics from the working seeds, the one with the least posture cost (as the skills' planned moves choose,
+   `_eye_in_hand.EyeInHandSkill.ik`); the path to it is the posture skill's planned one, the same as `stow` and
+   `arm_ready` take.
+2. read -- one wrist frame once the arm has stopped; zxing-cpp on the frame upscaled 2x (a module is 2-3 px at these
+   views); every Data Matrix decoded, with its corners and how far it lies in the image from the aimed column foot.
 3. fold -- the arm back to its travel posture. A fold that fails is reported beside the reading, not as a failed scan.
 
 One view, one look. Reading no label is a result, not a failure -- an empty support and a plate the view does not show
@@ -52,21 +53,26 @@ from openral_rskill._eye_in_hand import nearest_equivalent, posture_cost, workin
 #: read labels on the robot is `check2/look_battery_scan`'s (F115's Isaac photos, ORU-0417 and ORU-0211): its camera
 #: stood 0.356 m from the column foot at 67 deg below the horizontal (the bag's /tf). F115 wrote that view down as
 #: 0.45 m / 70 deg, which puts the camera 0.10 m higher and has no arm configuration at the depot stand
-#: (`artifacts/runs/pf/scan_label_1`, research repo F131). The measured view is the scan view.
-SCAN_DISTANCE_M = 0.36
-SCAN_ELEVATION_DEG = 67.0
-#: zxing-cpp reads the upscaled frame; at the view's native ~3 px per module it misses symbols it reads at 2x (F115)
+#: (`artifacts/runs/pf/scan_label_1`, research repo F131).
+#: That view is also too tight (research repo F145): an item's plates sit ~0.25 m beside its column and the frame is
+#: ~0.29 m wide either side of it at the lid, so the rover's pose error (~5 cm, F141) puts a plate half out of the frame
+#: (29 ORU plates read in Experiment II: 22-100 px from the edge, median 64; a plate cut at the edge was not read).
+#: Farther views widen that: the frames read at 0.36 m, shrunk to 0.7 x 0.55 of their size, still read every plate.
+#: The widest view the arm can take, as (distance from the column foot, m; elevation below the horizontal, deg); a
+#: lower elevation keeps the farther camera nearer the rover and the arm.
+SCAN_VIEWS = ((0.45, 55.0), (0.42, 60.0), (0.36, 67.0))
+#: zxing-cpp reads the upscaled frame; at the views' native 2-3 px per module it misses symbols it reads at 2x (F115)
 UPSCALE = 2
 #: how long the arm is left to stop swinging before the frame is taken (sim s)
 SETTLE_S = 1.0
 
 
-def scan_camera_pose(foot_base: np.ndarray, normal_base: np.ndarray, distance_m: float) -> np.ndarray:
-    """The wrist camera's optical frame (4x4 in chassis_base_link: x right, y down, z along the view) for the scan view
-    of a column foot from `distance_m`, with the support's outward normal (towards the rover)."""
+def scan_camera_pose(foot_base: np.ndarray, normal_base: np.ndarray, distance_m: float, elevation_deg: float) -> np.ndarray:
+    """The wrist camera's optical frame (4x4 in chassis_base_link: x right, y down, z along the view) for a scan view
+    of a column foot from `distance_m` at `elevation_deg`, with the support's outward normal (towards the rover)."""
     n = np.array([normal_base[0], normal_base[1], 0.0])
     n /= np.linalg.norm(n)
-    el = math.radians(SCAN_ELEVATION_DEG)
+    el = math.radians(elevation_deg)
     c = foot_base + distance_m * (math.cos(el) * n + math.sin(el) * np.array([0.0, 0.0, 1.0]))
     z = (foot_base - c) / np.linalg.norm(foot_base - c)
     y = n - np.dot(n, z) * z  # image down = towards the rover, so image up points away from it
@@ -98,19 +104,23 @@ def scan(io, support: str, support_xyz_map, support_normal_map, item_top_m: floa
 
     # the camera's pose follows from the tool's through the wrist mount
     _, _, frame_id, _ = io.wrist_frame(-1.0)
-    T_cam = scan_camera_pose(foot, normal, SCAN_DISTANCE_M)
-    T_tool = T_cam @ np.linalg.inv(io.tf("tcp_frame", frame_id))
-    ev["camera_base"] = [round(float(v), 3) for v in T_cam[:3, 3]]
-    # the arm configuration for that one pose, chosen as the skills' planned moves choose it
+    T_mount = np.linalg.inv(io.tf("tcp_frame", frame_id))
+    # the widest view with an arm configuration, chosen for it as the skills' planned moves choose one
     q_now, best = list(io.arm_q()), None
-    for seed in [q_now] + working_seeds():
-        sol = io.ik(T_tool[:3, 3], T_tool[:3, :3], seed)
-        if sol is None:
-            continue
-        sol = nearest_equivalent(sol, q_now)
-        key = (round(posture_cost(sol) / 0.05), max(abs(a - b) for a, b in zip(sol, q_now)))
-        if best is None or key < best[0]:
-            best = (key, sol)
+    for distance, elevation in SCAN_VIEWS:
+        T_cam = scan_camera_pose(foot, normal, distance, elevation)
+        T_tool = T_cam @ T_mount
+        for seed in [q_now] + working_seeds():
+            sol = io.ik(T_tool[:3, 3], T_tool[:3, :3], seed)
+            if sol is None:
+                continue
+            sol = nearest_equivalent(sol, q_now)
+            key = (round(posture_cost(sol) / 0.05), max(abs(a - b) for a, b in zip(sol, q_now)))
+            if best is None or key < best[0]:
+                best = (key, sol)
+        if best is not None:
+            ev.update(view={"distance_m": distance, "elevation_deg": elevation}, camera_base=[round(float(v), 3) for v in T_cam[:3, 3]])
+            break
     if best is None:
         return {"success": False, "failure_reason": f"the arm has no collision-free configuration for the scan view of {support} "
                                                     f"from where the rover stands", "serials": [], "plates": [], "evidence": ev}

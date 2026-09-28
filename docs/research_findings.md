@@ -6167,3 +6167,19 @@ tagged. Everything below is shared and supplied before any timer starts (researc
   never committed; `artifacts/runs/exp2_setup/g3_v1_physical`): success, every call at its first attempt, the scan read ORU-0417 at depot slot_0 in 5.5 s of mission time. G2 (hidden) was checked the same way and is recorded outside the repository until the last method is tagged. The first attempt of this batch died at
   its first scan: the chain script reads the contracts when it starts, after the temporary entry had already been
   taken back out (my ordering, not a defect); rerun with the entry held until the runs end.
+
+## F145 -- The shared scan's view was too tight: a plate ~6 cm from the frame edge; now the widest of three views the arm can take (2026-09-28)
+
+Found in Experiment II's held-out runs (all three extensions tagged by then): one EUROPA -> PLEXIL run scanned the
+support where the named unit stood and read nothing -- its plate was cut by the frame's left edge (view reached within
+6 mm; the rover's pose error, ~5 cm at a dock (F141), shifted the item ~6 cm in the image). Offline over every ORU
+plate read in Experiment II (29): all in the frame's left part, 22-100 px from the edge (median 64 px, ~6 cm at the
+lid): an item's plates sit ~0.25 m beside its column and the 0.36 m / 67 deg view is ~0.29 m wide either side of it.
+F131's two no-reads were the same thing. Shared fix (user 2026-09-28), `openral_ext/scan_label.py`: `SCAN_VIEWS` --
+the widest of 0.45 m / 55 deg, 0.42 m / 60 deg, 0.36 m / 67 deg with an arm configuration, still one view and one
+frame (the evidence names the view). Offline first: the 31 recorded frames with an ORU plate, shrunk to what a farther
+and more oblique camera sees (x 0.8 / y 0.71 for 0.45 m / 55 deg, down to 0.7 / 0.55), read every plate they read at
+full size. Live, one scripted chain in a held-out scene (7 supports: depot slots, landing slot, three PDU shelves,
+return stand): the 0.45 m view reachable at all 7, every reading right (empty stands empty, no neighbour's plate),
+plates 76-166 px from the edge. Main's ros/install rebuilt with PLEXIL's adapter Lookups. Only the run the defect
+decided is rerun (user rule): EUROPA -> PLEXIL H1.

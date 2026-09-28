@@ -112,7 +112,8 @@ decoded by the actual decoder (§6).
   artifacts until the timed extension starts): one whole operation at a surveyed support the rover is docked at -- raise
   the wrist camera to its own scan view (0.36 m from the item's column foot, along the approach, 67 deg below the
   horizontal: the view that read labels in check2, measured from its bag; the 0.45 m / 70 deg first written here has no
-  arm configuration at the depot stand, F131), decode Data Matrix (zxing-cpp, the frame upscaled 2x first) on the real
+  arm configuration at the depot stand, F131; F145: the widest of 0.45 m / 55 deg, 0.42 m / 60 deg, 0.36 m / 67 deg the arm can take -- the
+  0.36 m view left a plate ~6 cm from the frame edge), decode Data Matrix (zxing-cpp, the frame upscaled 2x first) on the real
   rendered frame, return serials + evidence frame. Decided 2026-09-24 after pick's own view read 1 of 42 labels (the
   column and the palm cover the lid there): labels are flat data plates on the lid beside the handle (40 x 56 mm,
   2.5 mm modules). Offline: every ORU reads in that view (the Exp II cases are all ORUs); the battery module's domed
