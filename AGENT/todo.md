@@ -22,17 +22,26 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
 ## Now (2026-09-28): decisions before the next stage
 
 - Done 2026-09-28 (F143): PLEXIL N=1/2/5 on derived plans (outcome never changes); class 2 = a fall (recomputed).
-- For the user: §5.7 ablation method (proposed: fault injection + counterfactual replay, F130); whether to start
-  Experiment II before the ablations (tag `exp1b` for them), and who plays the extension engineer.
+- For the user (explained to them 2026-09-28, not yet answered):
+  1. §5.7 ablation method: A = natural runs (4 variants x one L3 x 2; F130 predicts null results) or B = fault
+     injection + counterfactual replay on recorded runs, live only where offline shows a difference (recommended).
+  2. Start Experiment II before the ablations? Proposed yes: the order in heldout_design §10 was only so ablations run
+     on the Experiment-I system; tag the exp1b state (`exp1b`) and run them from it later.
+  3. Who is the extension engineer for Experiment II? If Claude, the hidden cases (G2) must be built by a separate
+     session and kept from the extending session. One engineer: proposed order Ours first, baselines after (learning
+     carryover then favours the baselines -- conservative).
 - Known limits (F141): localization ~5 cm at bess_stand (map precision), 0.3-1.3 m transients round the habitat row's
   east end; carried items swing +-7 cm while lowered (touchdown phase decides the set-down point).
 
 ## Next work (after the decisions)
 
-- [ ] Experiment II (H2): G2 hidden cases + G3 validation suite (built hidden from the extension author), register
-      `scan_label`, extension timing (`engineering_worklog.py`, `artifact_delta.py`).
+- [ ] Experiment II (H2), heldout_design §6, execution_plan §13.4: zxing-cpp into the openral venv (F131: runs used
+      `artifacts/pydeps` on PYTHONPATH); G2 hidden cases (spare recorded at the depot but in another PDU's tray/shelf;
+      two ORUs with swapped records) + G3 visible validation suite, built hidden from the extension author; then per
+      method: reveal the spec, timer + `engineering_worklog.jsonl`, register `scan_label`, diff (`artifact_delta.py`),
+      validation passes, then run the hidden cases.
+- [ ] §5.7 ablations (after the user picks the method), from the `exp1b` tag.
 - [ ] Re-authoring cost per held-out case for both baselines (heldout_design §8; feeds H2).
-- [ ] Baseline videos: `plexil_mission_video.py` / `europa_mission_video.py` need a frames mode like Ours' (F135).
 - [ ] Swimlane label overlap (press/press, place/stow) before the paper figure.
 - [ ] Paper: results section from `tables.md` + `failures.md`; limitations (one engineer, category-level L2-B
       precedent, AMCL bias, fixed 300 s ground decision, Ours' post-mission inspection tours lengthen covered runs).

@@ -1,16 +1,24 @@
 # Handoff
 
-Updated 2026-09-28 (Experiment I rerun exp1b done, F142; feat/shared-fixes merged into local main of the three repos, not pushed).
+Updated 2026-09-28 (Experiment I = exp1b done, F142; F143 retry budget + drop rule; main of all three repos pushed at
+F142, F143's commit local until the user says push). Next: the user's three decisions in `AGENT/todo.md` "Now".
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
 **`docs/preregistration.md`** (metrics, taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md`
-F115-F142. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
+F115-F143. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
 verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
 
 ## Heads
 
 - `freeze-1` (F139) is history: the user dropped the freeze ceremony (2026-09-27). The shared layer was fixed after
-  exp1 (F141, F142) on `feat/shared-fixes`, now merged into research `main`, openral `master`, SRB `main` locally.
+  exp1 (F141, F142) on `feat/shared-fixes`, merged into research `main`, openral `master`, SRB `main` and pushed
+  (research 8d90d63, openral 9338521, SRB 601588f). The `feat/shared-fixes` branches can go.
+- **F143**: `baselines/scripts/retry_budget_sensitivity.py` derives PLEXIL plans per N (derived(3) == locked plans);
+  48 offline runs, every held-out run escalates at every N (`artifacts/eval/retry_budget/results.md`). Class 2
+  (dropped item) = a fall, once per fall (`evaluation/violations.count_dropped_items`); exp1/exp1b rows recomputed.
+- Evaluator: a call's window starts at the evaluator's own sim->wall record of its `sim_t_start` (F142), not
+  `end - sim_s`. Recompute rows with `python3 -m evaluation.rows --out <dir> <run dirs>` then `evaluation.tables`
+  (system python3; exp1 rows exclude plexil_b_oru_pdu3 and europa_l3_isru).
 - **Experiment I = exp1b** (F142): `artifacts/runs/exp1b/` (51 scored; two invalidated runs moved to
   `exp1b_aborted/*__invalid_f142`), `artifacts/eval/exp1b/`, `artifacts/figures/exp1b/` (swimlanes, six textured
   third-person videos; render scripts `.prep.sh`/`.render_all.sh`/`.compose_one.sh` there, textures mounted only
