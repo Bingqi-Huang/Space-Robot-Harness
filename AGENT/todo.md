@@ -19,23 +19,16 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
   videos (L4, L2-B x 3 methods) in `artifacts/figures/exp1b/`. Evaluator call-window fix recomputed exp1 (unchanged).
   exp1b supersedes exp1 for the paper; exp1 kept.
 
-## Now (2026-09-28): Experiment II (H2), heldout_design §6, execution_plan §13.4
+## Now (2026-09-29): Experiment II done as plan A (F144-F146); one open decision
 
-User decisions 2026-09-28: Exp II before the ablations (Exp I state tagged `exp1b`, 3 repos); §5.7 ablations by
-method B (fault injection + offline counterfactual replay, live only where offline differs), later, from `exp1b`;
-extension engineer = Claude, one fresh session per method, Ours -> PLEXIL -> EUROPA; the hidden cases (G2) are built
-by the orchestrating session outside the repo and never shown to an extension session.
-
-- [x] Shared supply (F144, tag `exp2-base`): scan_label behind the boundary with no contract; zxing-cpp in the venv;
-      a second identical ORU (ORU-0272, recorded failed, landing_stand/slot_1); Mission B knobs name_serial /
-      placement / records; spec `docs/exp2/extension_spec.md`; G3 `experiments/exp2/g3_validate.py`; engineer
-      checkouts `experiments/exp2/make_worktree.sh`. V1 physical check passed.
-- [ ] G2 (hidden, orchestrating session only): built and physically checked; not described here.
-- [ ] Ours extension (fresh session, `.worktree/exp2-ours`, timer, G3 PASS, tag `exp2-ours`) -> merge -> hidden runs.
-- [ ] PLEXIL extension from the merged Ours state -> hidden runs; then EUROPA -> hidden runs.
-- [ ] Exp II table: ETVS, artifact delta (`artifact_delta.py`), validation iterations, modeling errors, hidden success.
-- Known limits (F141): localization ~5 cm at bess_stand (map precision), 0.3-1.3 m transients round the habitat row's
-  east end; carried items swing +-7 cm while lowered (touchdown phase decides the set-down point).
+- [x] Shared supply (F144, `exp2-base`), G2/G3, three timed extensions (tags `exp2-ours`, `exp2-plexil`,
+      `exp2-europa_plexil`), pre-extension controls 0/6, post-extension Ours 5/6, PLEXIL 2/2, EUROPA 2/2 (F146);
+      shared scan view widened (F145), EUROPA H1 rerun. Held-out cases now in `experiments/exp2/heldout/`; runs
+      `artifacts/runs/exp2/`; tables `python3 experiments/exp2/tables.py` -> `artifacts/eval/exp2/tables.md`.
+- [ ] User decision (asked 2026-09-28): Ours' H1 efficiency -- A: the scan reports whether something stands on the
+      support (shared fact), B: the step budget (80) redefined; which Ours reruns. Reported as a second round.
+- Not now (user): plan B (the user as engineer with Claude as assistant).
+- Known limits (F141): localization ~5 cm at bess_stand, 0.3-1.3 m transients round the habitat row's east end.
 
 ## Next work (after Experiment II)
 

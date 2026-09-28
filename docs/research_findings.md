@@ -6183,3 +6183,43 @@ full size. Live, one scripted chain in a held-out scene (7 supports: depot slots
 return stand): the 0.45 m view reachable at all 7, every reading right (empty stands empty, no neighbour's plate),
 plates 76-166 px from the edge. Main's ros/install rebuilt with PLEXIL's adapter Lookups. Only the run the defect
 decided is rerun (user rule): EUROPA -> PLEXIL H1.
+
+## F146 -- Experiment II (plan A: autonomous Claude engineers): every method made the scanner usable on its first validation run; Ours changed no procedure, the baselines wrote the search; after the extension Ours 5/6, PLEXIL 2/2, EUROPA 2/2; before it 0/6 (2026-09-28/29)
+
+Protocol as run (F144; user decisions 2026-09-28): each extension by a fresh Claude session that saw only
+`docs/exp2/extension_spec.md` and the validation suite (G3), timed with `evaluation/engineering_worklog.py`, in its own
+checkout, order Ours -> PLEXIL -> EUROPA, each from the previous one's merged state (the contract Ours wrote and the
+adapter Lookups PLEXIL added were reused: the conservative direction). The held-out cases were built by this session
+and kept outside the repository until the last tag; now in `experiments/exp2/heldout/` (H1: the named spare on
+PDU-1's shelf, ORU-0272 where the record puts the spare; H2: the two depot ORUs with each other's records).
+Tables: `python3 experiments/exp2/tables.py` -> `artifacts/eval/exp2/tables.md`; runs `artifacts/runs/exp2/`.
+
+| method | active (min) | of it waiting on own validation run | other work | G3 runs | method artifacts | before H1/H2 | after H1 | after H2 |
+|---|---|---|---|---|---|---|---|---|
+| Ours | 54.5 | 49.8 | 4.7 | 1 | 7 files +49/-3: contract, `labels_read` effect, LABELS READ section, 2 descriptions | 0/1, 0/1 | 2/3 | 3/3 |
+| PLEXIL | 46.3 | 35.4 | 10.8 | 1 | 4 files +89/-5 (+ adapter C++, offline tests, plexil.md +122/-3): CheckSerial, 13-support sweep, record-guided first pass, escalation | 0/1, 0/1 | 1/1 | 1/1 |
+| EUROPA -> PLEXIL | 53.4 | 32.5 | 20.8 | 1 | 3 files +144/-27 (+ europa.md): Plate timeline + scan activity, host belief update and candidate narrowing | 0/1, 0/1 | 1/1 (after F145) | 1/1 |
+
+- **What each had to write** (reviewed before each merge): Ours registered the capability (contract) and made its
+  reading a verified fact the model sees; nothing about when to scan or what to do with a wrong record. PLEXIL encoded
+  the procedure: check the named serial at the recorded source, then the record's other same-kind supports, then all
+  13 staging supports in a fixed order, else ask and hold. EUROPA modelled identity as state and a sensing activity in
+  NDDL and narrowed the candidate supports in the host's fact translation (a grey zone: belief narrowing in host code,
+  the choice left to the solver; stated in europa.md). Every change traces to the spec; no held-out place or serial.
+- **Time is dominated by waiting on the simulation**: the engineers' own work was 5 / 11 / 21 min, in the H2 order,
+  but a Claude engineer compresses coding time and the paper must say so (user 2026-09-28: a human-engineer round,
+  "plan B", not now).
+- **Before the extension (controls, exp2-base)**: 0/6; every method delivered the unit the record points to.
+  Ours' two reports claimed "MISSION COMPLETE -- ORU-0417 delivered" (false completions: its verifier confirms a
+  place, not an identity, and it trusted the record). rows.py's ledger rule does not see these (the report is the
+  plan's last task, still active while sent) and cannot separate a claim from an honest failure report without the
+  text (a looser rule flagged exp1's honest ours_l2b_habitat_r2); the Exp II table reads the reports instead.
+- **Ours on H1 is inefficient**: its two successes took 74 and 78 of 80 reasoner steps (15-17 scans, repeated scans
+  of a support whose item has no readable plate, PDU shelves last); the failure (r2) spent ~20 steps on a front-camera
+  answer that saw an item on an empty stand, ran out of steps heading to the right shelf, and reported the delivery
+  not done. PLEXIL's fixed sweep found the unit at its 6th scan. H2 (identity at one stand) took Ours 27-35 steps.
+- **Shared scan defect (F145)**: EUROPA's first H1 run read nothing where the unit stood (plate cut by the frame
+  edge); fixed for all methods, only that run rerun (success, 3 scans).
+- Open (user): how to handle Ours' H1 efficiency (a shared fact "something stands on the support", and/or the step
+  budget); any Ours change now is informed by the held-out runs and is reported as a second round, its work added to
+  Ours' extension cost.

@@ -1,0 +1,2 @@
+# EUROPA H1 rerun after F145 (shared scan view), launched from main 3684957 (EUROPA at exp2-europa_plexil), scored in place of post_europa_h1
+post_europa_h1_f145 D0_CHECK=d0_europa_mission_b_check.py D0_CAPABILITY_SERVER=1 D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=covered D0_ENV='env.cargo=spare_oru env.destination=pdu_3 env.name_serial=true env.placement=spare_oru:pdu_1_shelf/shelf+oru_returned:depot_stand/slot_0'
