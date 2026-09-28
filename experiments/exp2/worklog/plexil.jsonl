@@ -1,0 +1,5 @@
+{"kind": "session_start", "session_id": "c3f80fb1e5e1", "t": "2026-09-28T07:45:24.843046+00:00", "extension_id": "exp2_scan_label", "method": "plexil", "engineer": "claude-plexil-extension"}
+{"kind": "note", "session_id": "c3f80fb1e5e1", "t": "2026-09-28T07:54:00.336497+00:00", "text": "modeling/logic error (own work, found by reading the adapter code back before any live run): RecordAt's range-for iterated over a subobject of the temporary returned by json::parse (dangling reference, UB); fixed by keeping the parsed record in a local"}
+{"kind": "session_stop", "session_id": "c3f80fb1e5e1", "t": "2026-09-28T07:56:09.504602+00:00", "reason": "waiting for a free GPU: 0-2 (and 3-5) all hold other sessions' runs; plan, adapter and offline checks are ready for the V1 run"}
+{"kind": "session_start", "session_id": "71ccc897dce8", "t": "2026-09-28T08:02:12.613301+00:00", "extension_id": "exp2_scan_label", "method": "plexil", "engineer": "claude-plexil-extension"}
+{"kind": "session_stop", "session_id": "71ccc897dce8", "t": "2026-09-28T08:37:44.503746+00:00", "reason": "G3 PASS on the first validation run (artifacts/runs/exp2_val/plexil_1/plexil_v1)"}

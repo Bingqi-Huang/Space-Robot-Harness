@@ -254,3 +254,40 @@ Supersedes every earlier traceability table in this file.
 | `Return`: dock pose | (0, 0, 0) | `site_map` `dock` | (a) |
 
 No row cites a held-out run or scenario name.
+
+## Experiment II extension `exp2_scan_label` (2026-09-28; docs/exp2/extension_spec.md)
+
+The brief can name the cargo by its serial (`MISSION_GOAL.serial`); only that unit delivered is a success, and the
+record can be wrong (§1: an item can stand somewhere other than its recorded place; two items of one kind can have
+each other's records). With the extension spec added to the covered specification (rule (a)):
+
+- **Library** `CheckSerial(support, item, serial, where, ok)`: `scan_label` under the tier-1 `Try` (3 attempts), then
+  `where = support` when the serial of the item on it is the named one.
+- **`MissionB_Covered`**: after docking at the recorded source, `CheckSource`; when another serial (or none) is read
+  there, `Search` -- pass 1 over the staging supports the record gives to another item of the same kind, pass 2 over
+  every other staging support (`DriveAndDock` + `CheckSerial` each) -- and `Pick` where the serial was read. Read
+  nowhere: `NotFound` -> `RequestOperator` -> hold. No serial in the goal: `AsRecorded`, the covered procedure unchanged.
+- **Adapter** (data only): `ScanSerial()` (the serial of the plate nearest the view's aim in the last `scan_label`
+  result, UNKNOWN when none), `RecordAt(place, field)` (the inventory record's entry at a place, from `manifest`),
+  `MissionGoal` UNKNOWN for a field the goal does not have.
+- **Offline**: `offline_check.py` 57 cases pass (the 51 before + serial read at the source; scan failing 2x / 3x;
+  records exchanged -> found in pass 1; found in the pass-2 sweep; read nowhere -> escalate, hold). Through the real
+  adapter against `baselines/europa/sim_boundary.py` (no scan evidence there): pass 1 goes to `landing_stand/slot_1`,
+  the sweep covers the other 11 supports, then escalates and holds.
+
+### Traceability: the extension
+
+| Plan element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| `Goal`: `serial` | the unit the brief names; absent -> the covered procedure (`AsRecorded`) | extension_spec §2 (`mission_b_goal()` carries `serial` beside item/source/destination) | (a) |
+| `CheckSource` | the recorded source is checked by reading the plates before the pick | extension_spec §1 (the record is not an observation; only the serial tells identical units apart), §4 ("check the named serial by scanning") | (a) |
+| `CheckSerial`: `scan_label(support, item)` | docked at the support (standoff 0), jaws empty; `item` = the catalogue kind | `contracts.yaml` scan_label; extension_spec §3 | (b) |
+| `CheckSerial`: `Scan` `Try` | at most 3 identical attempts | authoring_spec tier 1 | (c) |
+| `CheckSerial`: `Here` (`ScanSerial`) | the item on the support is the one whose plate is nearest the aim; nothing read = not this unit | `contracts.yaml` scan_label ("the item on the named support is the nearest"; reading nothing is a result) | (b) |
+| `Search` pass 1 | first the staging supports the record gives to another item of the same kind (`RecordAt`) | extension_spec §1 ("two items of the same kind can have each other's records"); `manifest` | (a) |
+| `Search` pass 2 | then every other staging support | extension_spec §1 ("an item can stand somewhere other than its recorded place"), §4 ("look for the unit elsewhere") | (a) |
+| `Supports` | the 13 place frames on a stand or a spares shelf, in a round from the depot; unit bays/trays excluded (a unit installed there is in service, not a staged spare) | `interaction.json` points of type place (site survey); brief ("the spare ... staged at") | (a) |
+| `Pick`: `support` | where the named serial was read | extension_spec §2 (that unit is the cargo) | (a) |
+| `NotFound`, `Escalate` | read nowhere: `RequestOperator`, then hold | authoring_spec tier 1 ("hold in place and ask mission control") | (c) |
+
+No row cites a held-out run or scenario name.

@@ -16,12 +16,23 @@
 // header. Every capability call has at most 3 identical attempts (the library nodes' Try, tier 1); once a leg is out
 // of attempts no further capability call is issued, the plan asks mission control and the rover holds where it is.
 // The root is an UncheckedSequence so a failed leg does not abort the plan before that escalation.
+//
+// Experiment II (docs/exp2/extension_spec.md): the brief can name the unit by its serial (goal field `serial`), and
+// then only that unit delivered is a success. The record is a record, not an observation: an item can stand somewhere
+// other than its recorded place, and two items of one kind can have each other's records; items of one kind are
+// identical but for the serial on their data plates, which scan_label reads (lib/CheckSerial.ple). So the plan reads
+// the plates at the recorded source; when another serial (or none) is read there it looks for the unit elsewhere --
+// first at the supports the record gives to another item of the same kind, then at every other staging support --
+// and picks it where its serial is read. Found nowhere: ask mission control and hold. A brief without a serial runs
+// the covered procedure unchanged (the record's place is taken as is).
 
 LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
 LibraryAction PickItem(In String target, In String part, In String item, In String support, InOut Boolean ok);
 LibraryAction PlaceItem(In String support, In String release_constraint, In String item, InOut Boolean ok);
 LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
+LibraryAction CheckSerial(In String support, In String item, In String serial, InOut String where, InOut Boolean ok);
 String Lookup MissionGoal(String);
+String Lookup RecordAt(String, String);
 String Lookup ItemDescription(String, String);
 String Command RequestOperator(String);
 Command pprint(...);
@@ -31,33 +42,69 @@ MissionB_Covered: UncheckedSequence
   String Item = "";         // the equipment-catalogue name the capability contracts use
   String Source = "";
   String Destination = "";
+  String Serial;            // the unit's serial when the brief names it, UNKNOWN when it does not
+  String Where;             // the support the unit is picked from, UNKNOWN until the record or a scan says
   String Target = "";
   String Part = "";
   String Release = "";
   String Answer = "";
+  String Why = "a call failed 3 times.";
   Boolean ok = true;
+  // the site's staging supports (site survey place frames on a stand or a spares shelf; a unit's equipment bay is not
+  // one: what is installed there is in service, not staged), in a round from the depot
+  String Supports[13] = #("depot_stand/slot_0" "depot_stand/slot_1" "depot_spares_stand/slot_0" "return_stand/slot_0"
+                          "pdu_1_shelf/shelf" "pdu_2_shelf/shelf" "pdu_3_shelf/shelf" "bess_stand/slot_0"
+                          "habitat_stand/slot_0" "landing_stand/slot_0" "landing_stand/slot_1" "isru_stand/slot_0"
+                          "isru_return_stand/slot_0");
 
   Goal: Sequence
   {
     GetItem: { Item = Lookup(MissionGoal("item")); }
     GetSource: { Source = Lookup(MissionGoal("source")); }
     GetDestination: { Destination = Lookup(MissionGoal("destination")); }
+    GetSerial: { Serial = Lookup(MissionGoal("serial")); }
     GetTarget: { Target = Lookup(ItemDescription(Item, "target")); }
     GetPart: { Part = Lookup(ItemDescription(Item, "part")); }
     GetRelease: { Release = Lookup(ItemDescription(Item, "release_constraint")); }
   }
   ToSource:      { PreCondition ok; LibraryCall DriveAndDock(feature = Source, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
-  Pick:          { PreCondition ok; LibraryCall PickItem(target = Target, part = Part, item = Item, support = Source, ok = ok); }
+  AsRecorded:    { PreCondition !isKnown(Serial); Where = Source; }
+  CheckSource:   { PreCondition ok && isKnown(Serial); LibraryCall CheckSerial(support = Source, item = Item, serial = Serial, where = Where, ok = ok); }
+  Search:
+  {
+    PreCondition ok && isKnown(Serial) && !isKnown(Where);
+    // pass 1: the supports the record gives to another item of this kind; pass 2: every other staging support
+    for (Integer pass = 1; pass <= 2; pass + 1)
+    {
+      for (Integer i = 0; i < 13 && ok && !isKnown(Where); i + 1)
+      Visit: UncheckedSequence
+      {
+        String Kind;
+        GetKind: { Kind = Lookup(RecordAt(Supports[i], "item")); }
+        Go: { PreCondition Supports[i] != Source && (pass == 1) == (isKnown(Kind) && Kind == Item);
+              LibraryCall DriveAndDock(feature = Supports[i], standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+        Read: { PreCondition Go.outcome == SUCCESS;
+                LibraryCall CheckSerial(support = Supports[i], item = Item, serial = Serial, where = Where, ok = ok); }
+      }
+    }
+  }
+  NotFound:
+  {
+    PreCondition ok && !isKnown(Where);
+    Why = Serial + " was read neither at " + Source + " nor at any other staging support.";
+    ok = false;
+  }
+  Pick:          { PreCondition ok; LibraryCall PickItem(target = Target, part = Part, item = Item, support = Where, ok = ok); }
   ToDestination: { PreCondition ok; LibraryCall DriveAndDock(feature = Destination, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
   Place:         { PreCondition ok; LibraryCall PlaceItem(support = Destination, release_constraint = Release, item = Item, ok = ok); }
   Return:        { PreCondition ok; LibraryCall StowAndReturn(dock_x = 0.0, dock_y = 0.0, dock_yaw = 0.0, ok = ok); }
   Escalate:
   {
     if (!ok) {
-      Answer = RequestOperator("Delivering the " + Item + " from " + Source + " to " + Destination
-                               + ": a call failed 3 times. No procedure applies; holding, requesting instructions.");
+      Answer = RequestOperator("Delivering the " + Item + " from " + Source + " to " + Destination + ": " + Why
+                               + " No procedure applies; holding, requesting instructions.");
     }
     endif
   }
-  Done: { pprint("MissionB_Covered item:", Item, "from:", Source, "to:", Destination, "ok:", ok, "operator:", Answer); }
+  Done: { pprint("MissionB_Covered item:", Item, "from:", Where, "to:", Destination, "ok:", ok, "operator:", Answer); }
 }

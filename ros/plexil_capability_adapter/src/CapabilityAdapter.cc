@@ -25,13 +25,25 @@
 //        means, that is the plan library's.
 //   Lookup  MissionGoal(String field)                                -> String, one field of the launcher-supplied
 //                                                                       mission goal (env MISSION_GOAL, a JSON object,
-//                                                                       e.g. Mission B's {"item", "source", "destination"};
-//                                                                       baselines/europa/host.py reads the same variable)
+//                                                                       e.g. Mission B's {"item", "source", "destination"
+//                                                                       [, "serial"]}; UNKNOWN when the goal has no such
+//                                                                       field; baselines/europa/host.py reads the same
+//                                                                       variable)
 //   Lookup  ItemDescription(String item, String field)               -> String, one field of the baselines' shared item
 //                                                                       table (the file named by this adapter's
 //                                                                       ItemDescriptions attribute in interface-config.xml,
 //                                                                       baselines/item_descriptions.json), keyed by the
 //                                                                       item's equipment-catalogue name
+//   Lookup  RecordAt(String place, String field)                      -> String, one field (item, serial, status) of the
+//                                                                       inventory record's entry recorded at that place
+//                                                                       frame (the manifest query), UNKNOWN when the
+//                                                                       record puts no item there
+//   Lookup  ScanSerial()                                              -> String, the serial of the item on the support
+//                                                                       the last scan_label read: per its contract, the
+//                                                                       plate nearest the point the view was aimed at
+//                                                                       (evidence.scan.plates[*].px_from_aim); UNKNOWN
+//                                                                       when no plate was read or the last call was not
+//                                                                       a scan_label
 // Neither interprets what it carries: the goal is the launcher's, the table the baselines' own authored artifact.
 // No failure kind or stage is exposed as a typed Lookup (docs/baselines/authoring_spec.md, locked 2026-09-23: a plan
 // branch on them is tier 3, forbidden); LastCapabilityResult still carries the whole raw result.
@@ -214,7 +226,34 @@ public:
       [](PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr) {
         std::string field;
         state.parameter(0).getValue(field);
-        rcvr->update(nlohmann::json::parse(std::getenv("MISSION_GOAL"))[field].get<std::string>());
+        auto const goal = nlohmann::json::parse(std::getenv("MISSION_GOAL"));
+        if (goal.contains(field)) rcvr->update(goal[field].get<std::string>()); else rcvr->setUnknown();
+      });
+    config->registerLookupHandlerFunction(
+      "RecordAt",
+      [this](PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr) {
+        std::string place, field, value;
+        state.parameter(0).getValue(place);
+        state.parameter(1).getValue(field);
+        if (!query("manifest", "{}", value)) { rcvr->setUnknown(); return; }
+        auto const record = nlohmann::json::parse(value);
+        for (auto const &e : record["inventory"])
+          if (e["recorded_location"] == place) { rcvr->update(e[field].get<std::string>()); return; }
+        rcvr->setUnknown();
+      });
+    config->registerLookupHandlerFunction(
+      "ScanSerial",
+      [this](PLEXIL::State const &, PLEXIL::LookupReceiver *rcvr) {
+        nlohmann::json r;
+        {
+          std::lock_guard<std::mutex> lock(mutex_);
+          r = nlohmann::json::parse(last_result_);
+        }
+        nlohmann::json const *nearest = nullptr;
+        if (r.value("capability", "") == "scan_label")
+          for (auto const &p : r["evidence"]["scan"]["plates"])
+            if (!nearest || p["px_from_aim"].get<double>() < (*nearest)["px_from_aim"].get<double>()) nearest = &p;
+        if (nearest) rcvr->update((*nearest)["serial"].get<std::string>()); else rcvr->setUnknown();
       });
     config->registerLookupHandlerFunction(
       "ItemDescription",
