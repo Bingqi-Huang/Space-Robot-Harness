@@ -26,6 +26,14 @@ arm_ready and which unit to press are not goals at all -- pick/place/press's own
 to derive them, the same way the point of using EUROPA over a hand-sequenced plan is that a single high-level goal
 expands into the steps that satisfy it (nasa/europa's own Rover example: TakeSample(rock4) alone yields
 Go->Unstow->Place->TakeSample->PhoneHome).
+
+Experiment II (docs/exp2/extension_spec.md): a brief can name the cargo by its serial (MISSION_GOAL `serial`), and only
+that unit delivered is a success. The record is a record, not an observation, and items of one kind are identical but for
+the serial on their data plates. So such a brief's `delivered` is two goals: the named unit's plate read (the domain's
+scan_label, planned where the host believes the unit stands), then the unit on the destination. What a scan reads is a
+fact (facts_from_scan): the unit read is on that support; a unit believed there and not read is on one of the staging
+supports not read yet -- first those the record gives to another item of its kind, then any -- and the solver chooses
+which to look at. None left: no plan, mission control. A brief without a serial is planned as before.
 """
 import argparse
 import json
@@ -96,11 +104,15 @@ def instance(site, items, units):
     return lines, names
 
 
-def problem(model, site_lines, state, goals):
-    """state: {timeline: [predicate, {param: value}]}; goals: [(timeline, predicate, params, final)] in order."""
+def problem(model, site_lines, state, goals, features):
+    """state: {timeline: [predicate, {param: value}]}, a list value = one of these features (a belief, not an
+    observation: every other feature is excluded; none left is no plan); goals: [(timeline, predicate, params, final)]
+    in order."""
     out = [f'#include "{model.name}"', *site_lines, "LunarBot rover = new LunarBot();", "close();"]
     for k, (tl, (pred, params)) in enumerate(state.items()):
-        out += [f"fact({tl}.{pred} s{k});", f"eq(s{k}.start, 0);", *(f"eq(s{k}.{p}, {v});" for p, v in params.items())]
+        out += [f"fact({tl}.{pred} s{k});", f"eq(s{k}.start, 0);"]
+        for p, v in params.items():
+            out += [f"neq(s{k}.{p}, {f});" for f in features if f not in v] if isinstance(v, list) else [f"eq(s{k}.{p}, {v});"]
     for k, (tl, pred, params, final) in enumerate(goals):
         out += [f"goal({tl}.{pred} g{k});", f"leq(1, g{k}.start);", *(f"eq(g{k}.{p}, {v});" for p, v in params.items())]
         out += [f"eq(g{k}.end, {HORIZON});" if final else f"leq(g{k}.end, {HORIZON});"]
@@ -143,6 +155,13 @@ def capability_call(act, names, site, kinds):
     return cap, args
 
 
+def holds(state, g):
+    """A goal (timeline, predicate, params, final) holds in `state`: the predicate, with the goal's params (a goal can
+    leave a param open: the named unit's plate read, wherever)."""
+    s = state.get(g[0])
+    return s is not None and s[0] == g[1] and all(s[1].get(p) == v for p, v in g[2].items())
+
+
 def post_state(act):
     """The activity's planned post-state on each timeline it touches: its latest-starting slave there. A `met_by`
     condition slave (the state a transition starts FROM) comes back with no owner at all (PSToken::getOwner()
@@ -178,7 +197,7 @@ def facts_from_result(state, cap, args, res, site):
         if feature and math.dist((pose["x"], pose["y"]), site["points"][feature]["xyz"][:2]) < NEAR_M:
             return {**state, "rover.base": ["At", {"loc": f"{ident(feature)}_a"}]}, False
         return {**state, "rover.base": ["At", {"loc": "elsewhere"}]}, False
-    if cap in ("arm_ready", "stow", "pick", "place", "press"):
+    if cap in ("arm_ready", "stow", "pick", "place", "press", "scan_label"):
         arm = evd.get("arm")
         if arm is None:
             return state, False
@@ -193,6 +212,42 @@ def facts_from_result(state, cap, args, res, site):
     return state, False
 
 
+def read_serial(res):
+    """The serial of the item on the scanned support: of every plate read, the one nearest the point the view was aimed
+    at (scan_label contract); None when none was read."""
+    plates = res["evidence"]["scan"]["plates"]
+    return min(plates, key=lambda p: p["px_from_aim"])["serial"] if plates else None
+
+
+def elsewhere(serial, seen, record, kinds, staging):
+    """Where an item not read where the host believed it may stand (extension spec §1): a staging support whose plates
+    have not been read yet -- first those the record gives to another item of its kind (two items of one kind can have
+    each other's records), then any (an item can stand somewhere other than its recorded place)."""
+    unread = [p for p in staging if p not in seen]
+    exchanged = [p for p in unread if any(record[z] == p and kinds[z] == kinds[serial] for z in record if z != serial)]
+    return exchanged or unread
+
+
+def facts_from_scan(state, args, read, seen, record, kinds, staging):
+    """A successful scan_label as facts (extension spec §1-3): the unit read (`read`, a serial or None) is on the scanned
+    support, whatever the record says, and its plate is read there; any other unit the host believed there (the planned
+    one among them, when another serial or none was read) is `elsewhere`. It ends as planned when the planned unit was
+    read. `seen` already has this support."""
+    s = ident(args["support"])
+    new = dict(state)
+    if read != args["item"]:
+        new[f"{ident(args['item'])}.plate"] = ["Unread", {}]
+    if read in record:
+        new[f"{ident(read)}.loc"] = ["On", {"support": s}]
+        new[f"{ident(read)}.plate"] = ["Read", {"support": s}]
+    for z in record:
+        pred, params = new[f"{ident(z)}.loc"]
+        at = params.get("support")
+        if z != read and pred == "On" and (at == s or isinstance(at, list) and s in at):
+            new[f"{ident(z)}.loc"] = ["On", {"support": [ident(p) for p in elsewhere(z, seen, record, kinds, staging)]}]
+    return new, read == args["item"]
+
+
 def initial_state(pose, arm, site, items_at):
     at_dock = math.dist((pose["x"], pose["y"]), (site["dock"]["x"], site["dock"]["y"])) < 0.6
     state = {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}],
@@ -200,6 +255,7 @@ def initial_state(pose, arm, site, items_at):
              "rover.jaws": ["Empty", {}]}  # every covered instance starts with empty jaws; nothing here detects otherwise
     for item, support in items_at.items():
         state[f"{ident(item)}.loc"] = ["On", {"support": ident(support)}]
+        state[f"{ident(item)}.plate"] = ["Unread", {}]
     return state
 
 
@@ -212,13 +268,15 @@ def panels_from_telemetry(state, units, telemetry):
 
 def parse_goal(token, loc, units, delivery):
     """A `--goal`/`--final` token: `restored` (Mission A: every serviced unit's panel Restored, held to the horizon --
-    a restore that relapses is a failure), `delivered` (Mission B: `delivery` = (item serial, destination), the
-    launcher's goal), an arm posture (`stowed`/`ready`) or a base location (a feature stance name, `dock`). Returns
-    [(timeline, predicate, params, final)]."""
+    a restore that relapses is a failure), `delivered` (Mission B: `delivery` = (item serial, destination, whether the
+    brief names the serial), the launcher's goal; a named serial first has its plate read), an arm posture
+    (`stowed`/`ready`) or a base location (a feature stance name, `dock`). Returns [(timeline, predicate, params, final)]."""
     if token == "restored":
         return [(f"{ident(u)}.panel", "Restored", {}, True) for u in units]
     if token == "delivered":
-        return [(f"{ident(delivery[0])}.loc", "On", {"support": loc[delivery[1]]}, False)]
+        serial, destination, named = delivery
+        read = [(f"{ident(serial)}.plate", "Read", {}, False)] if named else []
+        return read + [(f"{ident(serial)}.loc", "On", {"support": loc[destination]}, False)]
     if token in ("stowed", "ready"):
         return [("rover.posture", token.capitalize(), {}, False)]
     return [("rover.base", "At", {"loc": loc[token]}, False)]
@@ -317,6 +375,10 @@ def main():
     inventory = query(node, client, "manifest")["inventory"]
     items_at = {r["serial"]: r["recorded_location"] for r in inventory}
     kinds = {r["serial"]: r["item"] for r in inventory}
+    # the supports a unit can be staged on: the site's place points that are not a unit's equipment bay (what is
+    # installed there is in service); `seen`: every one whose plates a scan read, and the serial read there (or None)
+    staging = [f for f, v in site["points"].items() if v["type"] == "place" and v.get("role") != "equipment_bay"]
+    features, seen = [ident(f) for f in site["points"]], {}
     # the serviced units are the ones reporting on the base network; each unit's panel reset is its `<unit>_panel/press`
     units = {u: f"{u}_panel/press" for u in query(node, client, "power_status")["units"]}
     site_lines, names = instance(site, items_at, units)
@@ -324,8 +386,8 @@ def main():
     delivery = None
     if "MISSION_GOAL" in os.environ:
         g = json.loads(os.environ["MISSION_GOAL"])
-        serial = next(r["serial"] for r in inventory if r["item"] == g["item"] and r["recorded_location"] == g["source"])
-        delivery = (serial, g["destination"])
+        serial = g.get("serial") or next(r["serial"] for r in inventory if r["item"] == g["item"] and r["recorded_location"] == g["source"])
+        delivery = (serial, g["destination"], "serial" in g)
     goals = [x for t in a.goal for x in parse_goal(t, loc, units, delivery)]
     if a.final:
         goals += [x[:3] + (True,) for x in parse_goal(a.final, loc, units, delivery)]
@@ -342,7 +404,7 @@ def main():
             if not g[0].endswith(".panel"):
                 continue
             key = json.dumps(g[:3])
-            if state.get(g[0]) == [g[1], g[2]]:
+            if holds(state, g):
                 reached.add(key)
             elif key in reached:
                 reached.discard(key)
@@ -354,7 +416,7 @@ def main():
                 failures = {}
                 continue
             break
-        if all(state.get(g[0]) == [g[1], g[2]] for g in goals):
+        if all(holds(state, g) for g in goals):
             log("done", state=state)
             break
         n_plan += 1
@@ -363,7 +425,7 @@ def main():
         # after which chained goals solve too) and kept as the baseline's locked behaviour. The goal *sequence*
         # semantics do not change: each solve still finds its own minimal path to the next unmet goal from
         # wherever the previous one left off, which is what the chain meant in the first place.
-        plan = solve(model, problem(model, site_lines, state, [next(g for g in goals if state.get(g[0]) != [g[1], g[2]])]), run_dir, n_plan)
+        plan = solve(model, problem(model, site_lines, state, [next(g for g in goals if not holds(state, g))], features), run_dir, n_plan)
         log("plan", n=n_plan, solved=plan["solved"], steps=plan["steps"],
             activities=[(x["type"], x["params"]) for x in plan["activities"]])
         if not plan["solved"]:
@@ -378,8 +440,13 @@ def main():
             sent = {**args, "item": kinds[args["item"]]} if "item" in args else args
             log("dispatch", capability=cap, args=sent)
             res = link.dispatch(cap, sent)
+            scanned = {}
             if res["success"]:
                 state, as_planned = {**state, **post_state(act)}, True
+                if cap == "scan_label":
+                    scanned = {"read": read_serial(res)}
+                    seen[args["support"]] = scanned["read"]
+                    state, as_planned = facts_from_scan(state, args, scanned["read"], seen, items_at, kinds, staging)
             else:
                 state, as_planned = facts_from_result(state, cap, args, res, site)
             # every panel fact is re-read from the unit's own telemetry: a press that "succeeded" on a unit still
@@ -387,12 +454,12 @@ def main():
             read = panels_from_telemetry(state, units, query(node, client, "power_status"))
             as_planned = as_planned and read == state
             state = read
-            reached |= {json.dumps(g[:3]) for g in goals if state.get(g[0]) == [g[1], g[2]]}
+            reached |= {json.dumps(g[:3]) for g in goals if holds(state, g)}
             # an intermediate goal, once reached, leaves the goal set; the final one must hold at the horizon
-            while goals and not goals[0][3] and state.get(goals[0][0]) == [goals[0][1], goals[0][2]]:
+            while goals and not goals[0][3] and holds(state, goals[0]):
                 goals.pop(0)
             log("result", capability=cap, success=res["success"], failure_kind=res["failure_kind"],
-                failure_reason=res["failure_reason"], state=state, as_planned=as_planned)
+                failure_reason=res["failure_reason"], state=state, as_planned=as_planned, **scanned)
             if not as_planned:
                 key = json.dumps([cap, args], sort_keys=True)
                 failures[key] = failures.get(key, 0) + 1

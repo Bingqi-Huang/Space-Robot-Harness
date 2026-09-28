@@ -266,3 +266,56 @@ now solve (132 steps, the full 9-activity plan each; valgrind clean on ORU -> PD
 | replan on a result off the plan; same call or relapse 3 times -> mission control, then hold | attempts = 3 | authoring_spec tier 1-2 | (c) |
 
 No row cites a held-out run or scenario name.
+
+## Experiment II extension `exp2_scan_label` (2026-09-28; docs/exp2/extension_spec.md)
+
+The brief can name the cargo by its serial (`MISSION_GOAL.serial`); only that unit delivered is a success, and the
+record can be wrong (§1: an item can stand somewhere other than its recorded place; two items of one kind can have
+each other's records; items of one kind are identical but for the serial on their data plates). With the extension
+spec added to the covered specification (rule (a)):
+
+- **Domain**: every `Item` gets a `Plate` timeline (`Unread` / `Read{support}`: its serial read where it stands) and
+  `LunarBot` the activity `scan_label(support, item)` -- docked at the support's work stance, jaws `Empty`, posture
+  `Stowed` at both ends, the item `On` the support; `Unread -> Read{support}`. Its item-location condition comes first
+  in the rule (below).
+- **Goal** (`host.py parse_goal`): a serial-naming brief's `delivered` is two goals, one per solve as before: the named
+  unit's plate `Read` (support left open), then the unit `On` the destination. The solver derives
+  navigate/dock/scan_label for the first from the scan's own conditions, where the host believes the unit stands. No
+  serial: the covered goal unchanged (no scan is planned).
+- **Facts from a scan** (`facts_from_scan`, the result translation): the serial of the plate nearest the view's aim is
+  the unit on the support (contract); that unit is `On` it with its plate `Read` there, whatever the record says; a
+  unit believed there and not read is on one of the staging supports not read yet -- first those the record gives to
+  another item of its kind, then any (`elsewhere`) -- a fact whose support is that set (`neq` every other feature) and
+  the solver picks which to look at. The scan ends off-plan unless the planned unit was read, and the host replans.
+  None left: the fact is inconsistent, no plan, mission control, hold.
+- **Staging supports**: the site map's `place` points that are not a unit's equipment bay (`role`).
+- **Unchanged**: one goal per solve, fresh database per replan, tier 1 (a failed scan is replanned; the same call
+  failing 3 times asks mission control), the relapse monitor, the HostLink bridge and the shared adapter (the scan is a
+  JSON call through `ExecuteCapability`; the host reads the raw result).
+- **Modeling error found offline**: with the base condition first in `scan_label`'s rule, from a work stance the solver
+  merged it with the rover's current `At` first, bound the support there and did not find the plan in 5000 steps; the
+  item-location condition first binds the support to where the unit is believed to be.
+- **Offline** (`run_offline_mission_b.sh`; `sim_boundary.py --at SERIAL=SUPPORT` puts a unit off its record, scans read
+  the unit on the support and a neighbouring slot's at a larger `px_from_aim`): V1 (records right) -> nav, dock,
+  scan (ORU-0417), arm_ready, pick, nav, dock, place, stow, return, done; records exchanged with ORU-0272 -> depot read
+  ORU-0272, landing_stand/slot_1 next, ORU-0417 read there, delivered from there; unit elsewhere -> the exchange
+  candidate, then the sweep, found on the 12th scan, delivered; scan failing 2x -> completes, 3x -> mission control,
+  hold; unit nowhere -> every staging support read, no plan, mission control, hold; no serial -> the covered plan, no scan.
+
+### Traceability: the extension
+
+| Domain element | Fact encoded | Source | Rule |
+|---|---|---|---|
+| goal `delivered` with `serial`: plate `Read` first | the unit the brief names is identified by its serial before it is delivered; no serial -> the covered goal | extension_spec §2 (`mission_b_goal()` carries `serial`; only that unit delivered succeeds), §1 (only the serial tells identical units apart) | (a) |
+| `Plate` (`Unread`/`Read{support}`), initial `Unread` | the record is not an observation: no item's serial has been read at start | extension_spec §1 | (a) |
+| `scan_label(support, item)`: base at `support.work`, jaws `Empty`, `item.loc.On{support}`, `Unread -> Read{support}` | docked at the support (standoff 0), jaws empty; reads the plates of the item there | `contracts.yaml` scan_label; extension_spec §3 | (b) |
+| `scan_label`: posture `Stowed` | the arm folds back to its travel posture | `contracts.yaml` scan_label | (b) |
+| `scan_label`: duration <= 300 s | | `contracts.yaml` `default_deadline_s` | (b) |
+| `read_serial` | the item on the support is the plate nearest the aim; nothing read = no unit read there | `contracts.yaml` scan_label | (b)/(c) |
+| `facts_from_scan`: the unit read is `On` the support, plate `Read` | an observation overrides the record | extension_spec §1 | (a) |
+| `elsewhere`, first set | a unit not read where believed: first the staging supports the record gives to another item of its kind | extension_spec §1 ("two items of the same kind can have each other's records"); `manifest` | (a) |
+| `elsewhere`, second set | then any staging support not read yet; none left -> no plan -> mission control | extension_spec §1 ("an item can stand somewhere other than its recorded place"), §4 ("look for the unit elsewhere"); authoring_spec tier 1 | (a)/(c) |
+| staging supports | `place` points without `role: equipment_bay` (a unit installed in a bay is in service, not staged) | `site_map` (`interaction.json`); brief ("the spare ... staged at") | (a) |
+| a scan not reading the planned unit ends off-plan | replan from the updated facts | authoring_spec tier 1 (replan from updated facts) | (c) |
+
+No row cites a held-out run or scenario name.
