@@ -8,6 +8,9 @@ difference in arguments shows up as a hung case.
   Mission A covered at every serviced unit (covered_misreport is the same run: the plan never reads the report);
   a reset that does not hold (3 presses, escalate, hold); a re-trip seen at the dock; no tripped unit;
   Mission B covered for every item x destination;
+  Mission B naming the unit by serial (Experiment II, docs/exp2/extension_spec.md): read at the source (V1); read
+  elsewhere after the record's same-kind supports (records exchanged) or after the sweep of the staging supports; read
+  nowhere (escalate, hold);
   at every call site of both plans: the call failing twice then succeeding (the 3rd attempt runs, the mission
   completes), and failing three times (escalate, hold).
 
@@ -31,6 +34,12 @@ CARGO = {"spare_oru": ("orbital replacement unit (ORU)", "depot_stand/slot_0"),
          "consumables_container": ("consumables container", "landing_stand/slot_0")}
 DESTINATION = {**{u: f"{u}_shelf/shelf" for u in UNITS[:3]}, "bess": "bess_stand/slot_0", "habitat": "habitat_stand/slot_0"}
 HOLD = " No procedure applies; holding, requesting instructions."
+# the plan's staging supports, in its order (MissionB_Covered.ple Supports), and the inventory record (interaction.json)
+SUPPORTS = ["depot_stand/slot_0", "depot_stand/slot_1", "depot_spares_stand/slot_0", "return_stand/slot_0",
+            "pdu_1_shelf/shelf", "pdu_2_shelf/shelf", "pdu_3_shelf/shelf", "bess_stand/slot_0", "habitat_stand/slot_0",
+            "landing_stand/slot_0", "landing_stand/slot_1", "isru_stand/slot_0", "isru_return_stand/slot_0"]
+IX = json.loads((HERE.parents[1] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json").read_text())
+RECORD = [("RecordAt", (o["support"], "item"), o["item"]) for o in IX["objects"].values()]
 
 
 def lit(v):
@@ -90,6 +99,26 @@ def mission_b(cargo, dest):
     return "MissionB_Covered", initial, calls, {c["label"].split(".")[0]: message for c in calls}
 
 
+def mission_b_serial(read_at, reads, serial="ORU-0417"):
+    """Spare ORU named by serial, to PDU-2's shelf. `reads`: the serial scan_label reads at each support the plan
+    scans, in order (None: no plate read); the unit is picked where the last one read is `serial`."""
+    item, src = CARGO["spare_oru"]
+    plan, initial, calls, esc = mission_b("spare_oru", "pdu_2")
+    initial += [("MissionGoal", ("serial",), serial), *RECORD]
+    d, dst = ITEMS[item], DESTINATION["pdu_2"]
+    look = []
+    for n, (at, r) in enumerate(zip(read_at, reads)):
+        if n:
+            look += [call("Search.Nav", "navigate_to_feature", at, 1.2), call("Search.Dock", "dock_at_feature", at, 0.0, 1.2)]
+        look.append(call("Check.Scan", "scan_label", at, item, before=[("ScanSerial", (), r)] if r else ()))
+    found = reads[-1] == serial
+    pick = [call("Pick.Ready", "arm_ready", 0.08), call("Pick.Pick", "pick", d["target"], d["part"], item, read_at[-1])]
+    calls = calls[:2] + look + (pick + calls[4:] if found else [])
+    esc["Check"] = esc["Search"] = esc["ToSource"]
+    return plan, initial, calls, esc, found, (f"Delivering the {item} from {src} to {dst}: {serial} was read neither at "
+                                              f"{src} nor at any other staging support." + HOLD)
+
+
 def failing(calls, escalation, label, n):
     """The call at `label` fails n times: after 2 the 3rd attempt succeeds; after 3 the plan escalates and holds."""
     k = next(i for i, c in enumerate(calls) if c["label"] == label)
@@ -117,6 +146,20 @@ def cases():
         for d in DESTINATION:
             plan, initial, calls, esc = mission_b(c, d)
             yield f"B covered {c} -> {d}", plan, initial, [(x, True) for x in calls], True
+    plan, initial, calls, esc, _, _ = mission_b_serial(["depot_stand/slot_0"], ["ORU-0417"])
+    yield "B serial read at the source (V1)", plan, initial, [(x, True) for x in calls], True
+    for n in (2, 3):
+        steps, ok = failing(calls, esc, "Check.Scan", n)
+        yield f"B serial Check.Scan fails {n}x", plan, initial, steps, ok
+    plan, initial, calls, esc, _, _ = mission_b_serial(["depot_stand/slot_0", "landing_stand/slot_1"], ["ORU-0272", "ORU-0417"])
+    yield "B serial: records exchanged (same-kind support first)", plan, initial, [(x, True) for x in calls], True
+    plan, initial, calls, esc, _, _ = mission_b_serial(
+        ["depot_stand/slot_0", "landing_stand/slot_1", "depot_stand/slot_1", "depot_spares_stand/slot_0"],
+        [None, "ORU-0272", "CRT-0112", "ORU-0417"])
+    yield "B serial: elsewhere (sweep)", plan, initial, [(x, True) for x in calls], True
+    order = ["depot_stand/slot_0", "landing_stand/slot_1"] + [x for x in SUPPORTS if x not in ("depot_stand/slot_0", "landing_stand/slot_1")]
+    plan, initial, calls, esc, _, why = mission_b_serial(order, ["ORU-0272"] * len(order))
+    yield "B serial read nowhere", plan, initial, [(x, True) for x in calls] + [("operator", why)], False
     for name, (plan, initial, calls, esc) in (("A", mission_a("isru")), ("B", mission_b("consumables_container", "habitat"))):
         for x in calls:
             for n in (2, 3):

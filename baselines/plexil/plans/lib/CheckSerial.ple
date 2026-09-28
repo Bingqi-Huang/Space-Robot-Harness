@@ -1,0 +1,36 @@
+// Reusable library node (Experiment II, docs/exp2/extension_spec.md §1-3): read the serial data plates of the item on a
+// support the rover is docked at (scan_label; the jaws are empty and the arm folds back to its travel posture after)
+// and say whether it is the unit with the given serial. Items of one kind are physically identical; the serial is
+// what tells them apart. Reading nothing is a result, not a failure: the call succeeds and no serial matches.
+//
+// Which plate is the item's: a neighbour's plate can be in the frame too, and the item on the named support is the one
+// whose plate is nearest the point the view was aimed at (scan_label contract) -- the adapter's Lookup ScanSerial
+// returns that plate's serial from the last scan_label result, UNKNOWN when none was read.
+//
+// Result comes back through `where` and `ok` (InOut); see lib/DriveAndDock.ple for why not node outcome.
+//
+// Failure handling: at most 3 identical attempts (Try; docs/baselines/authoring_spec.md tier 1); the call fails only
+// when the view cannot be taken.
+
+Boolean Command scan_label(String, String);
+String Lookup ScanSerial();
+
+CheckSerial:
+{
+  In String support;
+  In String item;       // the equipment-catalogue kind expected there; its catalogued height puts the view on its lid
+  In String serial;
+  InOut String where;   // set to `support` when the item on it carries `serial`, left as it was otherwise
+  InOut Boolean ok;
+  String Read;
+
+  Scan: Try
+  {
+    PreCondition ok;
+    Scan1: { EndCondition isKnown(ok); PostCondition ok; ok = scan_label(support, item); }
+    Scan2: { EndCondition isKnown(ok); PostCondition ok; ok = scan_label(support, item); }
+    Scan3: { EndCondition isKnown(ok); PostCondition ok; ok = scan_label(support, item); }
+  }
+  Compare: { Read = Lookup(ScanSerial()); }
+  Here: { if (isKnown(Read) && Read == serial) { where = support; } endif }
+}
