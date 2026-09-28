@@ -17,6 +17,12 @@ for sub in openral space_robotics_bench; do
   rmdir "$W/$sub"
   git -C "$R/$sub" worktree add --detach "$W/$sub" "$commit"
 done
+# git records some scripts without their exec bit (core.fileMode false): carry the main checkout's bits over
+for repo in . openral space_robotics_bench; do
+  git -C "$R/$repo" ls-files | while IFS= read -r f; do
+    if [ -x "$R/$repo/$f" ] && [ -f "$W/$repo/$f" ] && [ ! -x "$W/$repo/$f" ]; then chmod +x "$W/$repo/$f"; fi
+  done
+done
 # read-only at run time: openral's venv and ROS install (engineers do not change openral), the SPICE kernels, the key
 for p in openral/.venv openral/install openral/build space_context/kernels AGENT/VLM_provider.md; do ln -s "$R/$p" "$W/$p"; done
 # the links are not directories, so the repos' `build/`-style ignore patterns miss them: exclude them by name
