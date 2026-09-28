@@ -283,6 +283,27 @@ effects:
     records_evidence: true
     requires_remote_service: vision_language_model  # it finds the target by looking; a non-answer fails the call
 
+  scan_label:
+    description: >-
+      Read the serial data plates of the item standing on a surveyed support. Items of one kind are physically
+      identical; the serial on the data plates of their lid, beside the handle, is what tells them apart (a Data
+      Matrix code, which the vision model cannot read and this decodes). The rover must be docked at the support
+      (dock_at_feature on it, default stand-off) and the jaws empty. The wrist camera goes along a planned,
+      collision-checked path to one view of the lid next to the handle of an item of the named kind on that support,
+      one frame is taken, every Data Matrix in it is decoded, and the arm folds back to its travel (stowed) posture
+      (the result says so when it could not fold; the reading stands). It fails only when the view cannot be taken,
+      and says why. Reading nothing is a result, not a failure: the support is empty, or no plate is in the frame.
+      A neighbouring item's plate can be in the frame too: every plate read comes back with its serial and its
+      distance in the image from the point the view was aimed at, and the item on the named support is the nearest.
+      The frame is kept as evidence.
+    inputs:
+      support: [string, true, "the place frame the item stands on (e.g. depot_stand/slot_0), from site_map"]
+      item: [string, true, "the kind of item expected there, by its name in the equipment catalogue (e.g. orbital replacement unit (ORU)); its catalogued height puts the view on its lid"]
+    default_deadline_s: 300
+    authority_class: routine
+    lowers_to: OpenRAL/rskill-procedural-lunar_bot-posture
+    records_evidence: true
+
   release:
     description: Open the jaws fully.
     inputs: {}

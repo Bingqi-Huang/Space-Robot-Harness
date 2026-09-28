@@ -16,6 +16,9 @@
 ## MOVABLE ITEMS
 {objects}
 
+## LABELS READ
+{labels}
+
 ## MANIPULATION ATTEMPTS
 {attempts}
 
