@@ -21,8 +21,9 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
 
 ## Now (2026-09-28): decisions before the next stage
 
-- For the user: class-2 definition (exp1 counted one drop twice; exp1b had no drop), §5.7 ablation method, PLEXIL
-  N=1/2/5; push `main` of the three repos (merged locally 2026-09-28).
+- Done 2026-09-28 (F143): PLEXIL N=1/2/5 on derived plans (outcome never changes); class 2 = a fall (recomputed).
+- For the user: §5.7 ablation method (proposed: fault injection + counterfactual replay, F130); whether to start
+  Experiment II before the ablations (tag `exp1b` for them), and who plays the extension engineer.
 - Known limits (F141): localization ~5 cm at bess_stand (map precision), 0.3-1.3 m transients round the habitat row's
   east end; carried items swing +-7 cm while lowered (touchdown phase decides the set-down point).
 

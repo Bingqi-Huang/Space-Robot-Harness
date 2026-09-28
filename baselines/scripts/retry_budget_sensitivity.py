@@ -9,8 +9,11 @@ Where N lives (nothing here edits a plan, the domain or the host):
           process (host.ATTEMPTS = N before host.main()); the chain is run_offline_mission_{a,b}.sh's.
   PLEXIL  no parameter: every `Try` in the plans is unrolled into three identical legs (MissionA_Covered Reset1-3;
           lib/DriveAndDock Nav1-3, Dock1-3; lib/PickItem Ready1-3, Pick1-3; lib/PlaceItem Place1-3; lib/StowAndReturn
-          Stow1-3, Return1-3) and the escalation texts say "3 times". N = 3 is the locked plans as they are; any other N
-          is a different plan, so it is not run.
+          Stow1-3, Return1-3) and the escalation texts say "3 times". Any other N is a derived plan (user decision
+          2026-09-28, research repo F143): `derived()` keeps the first N legs of every Try, or adds legs 4..N as copies
+          of leg 2 (legs 2-3 are the retries, identical up to their labels), and says N in the escalation texts ("failed
+          N times", "after N attempts"); written and compiled under runs/plexil/plans_N<n>, the locked files untouched. derived(3) must
+          reproduce the locked plans character for character (checked before every run).
 
 Each held-out state as the offline stand-ins show it to a covered baseline (the physics: space_robotics_bench
 srb/tasks/mobile_manipulation/lunar_base/site.py; a press returns ~20 s of sim time after its contact, step10_r1):
@@ -28,6 +31,7 @@ Writes artifacts/eval/retry_budget/{results.md, rows.jsonl, runs/}.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -40,7 +44,7 @@ import offline_check as px  # noqa: E402
 OUT = REPO / "artifacts/eval/retry_budget"
 EUROPA = REPO / "baselines/europa"
 BUDGETS = (1, 2, 3, 5)
-PLEXIL_N = 3  # the unrolled legs of every Try
+PLEXIL_N = 3  # the unrolled legs of every Try in the locked plans
 # docs/heldout_design.md §14, the held-out rows; `reset`: how the faulted unit answers a press, `cause` its trip cause
 INSTANCES = {
     "L2-A pdu_1 radiator shutter": dict(mission="A", unit="pdu_1", reset="later", cause="OVERTEMP"),
@@ -50,6 +54,46 @@ INSTANCES = {
     "L3 isru module failure": dict(mission="A", unit="isru", reset="never", cause="FILTER_CLOGGED"),
     "L4 pdu_1 cannibalize": dict(mission="A", unit="pdu_1", reset="never", cause="ORU_SELFTEST_FAIL"),
 }
+
+
+def derived(text, n):
+    """The plan text with every Try's three legs made n (see the module docstring)."""
+    out, i = [], 0
+    for m in re.finditer(r"^( *)\w+: Try\n\1\{\n", text, re.M):
+        body_start = m.end()
+        depth, j = 1, body_start
+        while depth:
+            depth += {"{": 1, "}": -1}.get(text[j], 0)
+            j += 1
+        body = text[body_start:j - 1]
+        legs = list(re.finditer(rf"^{m.group(1)}  ([A-Za-z]+)([123]): ", body, re.M))
+        assert [int(l.group(2)) for l in legs] == [1, 2, 3], body
+        head = body[:legs[0].start()]
+        chunk = [body[legs[k].start():legs[k + 1].start() if k < 2 else len(body)] for k in range(3)]
+        tail_ws = re.search(r"\s*$", chunk[2]).group(0)
+        chunk[2] = chunk[2][:len(chunk[2]) - len(tail_ws)] + "\n"
+        leg = lambda k: chunk[0] if k == 1 else re.sub(r"\b([A-Z][A-Za-z]*)2:", lambda x: f"{x.group(1)}{k}:", chunk[1])
+        new = head + "".join(leg(k) for k in range(1, n + 1))
+        new = new[:len(new) - 1] + tail_ws
+        out.append(text[i:body_start] + new)
+        i = j - 1
+    out.append(text[i:])
+    plural = "s" if n > 1 else ""
+    return "".join(out).replace("failed 3 times", f"failed {n} time{plural}").replace("after 3 attempts", f"after {n} attempt{plural}")
+
+
+def plexil_plans(runs, n):
+    """The PLEXIL plans for budget n, compiled under runs/plexil/plans_N<n> (derived() from the locked .ple)."""
+    src, plans = REPO / "baselines/plexil/plans", runs / f"plexil/plans_N{n}"
+    (plans / "lib").mkdir(parents=True)
+    (plans / "Debug.cfg").write_text("Test:testOutput\n")
+    for f in [*src.glob("*.ple"), *src.glob("lib/*.ple")]:
+        t = f.read_text()
+        assert derived(t, PLEXIL_N) == t, f"derived({PLEXIL_N}) does not reproduce {f}"
+        (plans / f.relative_to(src)).write_text(derived(t, n))
+    subprocess.run(["plexilc", "-q", "-O", str(plans / "lib"), *map(str, plans.glob("lib/*.ple"))], check=True)
+    subprocess.run(["plexilc", "-q", "-O", str(plans), *map(str, plans.glob("*.ple"))], check=True)
+    return plans
 
 
 def printed(c):
@@ -142,7 +186,7 @@ def europa(inst, n, run):
 
 # ---- table -------------------------------------------------------------------------------------------------------
 def cell(r):
-    return f"{r['outcome']}, {r['calls']} calls, {r['retries']} retries" if r else "not run (N is the plan's structure)"
+    return f"{r['outcome']}, {r['calls']} calls, {r['retries']} retries"
 
 
 def table(rows):
@@ -157,7 +201,7 @@ def table(rows):
         for name in INSTANCES:
             got = [at.get((b, name, n)) for n in BUDGETS]
             ran = {r["outcome"] for r in got if r}
-            same = "only N=3 run" if sum(map(bool, got)) == 1 else "yes" if len(ran) == 1 else "NO"
+            same = "yes" if len(ran) == 1 else "NO"
             out.append(f"| {b} | {name} | " + " | ".join(map(cell, got)) + f" | {same} |")
     return "\n".join(out) + "\n"
 
@@ -165,18 +209,14 @@ def table(rows):
 def main():
     runs = OUT / "runs"
     shutil.rmtree(runs, ignore_errors=True)  # the host appends to events.jsonl
-    plans = runs / "plexil/plans"  # compiled here from the locked .ple; the tree's own .plx stay untouched
-    (plans / "lib").mkdir(parents=True)
-    (plans / "Debug.cfg").write_text("Test:testOutput\n")
-    src = REPO / "baselines/plexil/plans"
-    subprocess.run(["plexilc", "-q", "-O", str(plans / "lib"), *map(str, src.glob("lib/*.ple"))], check=True)
-    subprocess.run(["plexilc", "-q", "-O", str(plans), *map(str, src.glob("*.ple"))], check=True)
+    plans = {n: plexil_plans(runs, n) for n in BUDGETS}  # the locked .plx in the tree stay untouched
     rows = []
     for name, inst in INSTANCES.items():
-        d = runs / "plexil" / name.replace(" ", "_")
-        d.mkdir()
-        rows.append(dict(baseline="PLEXIL", instance=name, N=PLEXIL_N, **plexil(inst, plans, d)))
-        print(json.dumps(rows[-1])[:240], flush=True)
+        for n in BUDGETS:
+            d = runs / "plexil" / f"{name.replace(' ', '_')}_N{n}"
+            d.mkdir()
+            rows.append(dict(baseline="PLEXIL", instance=name, N=n, **plexil(inst, plans[n], d)))
+            print(json.dumps(rows[-1])[:240], flush=True)
         for n in BUDGETS:
             rows.append(dict(baseline="EUROPA", instance=name, N=n, **europa(inst, n, runs / "europa" / f"{name.replace(' ', '_')}_N{n}")))
             print(json.dumps(rows[-1])[:240], flush=True)

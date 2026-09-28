@@ -6068,7 +6068,7 @@ shared-layer defects found during the batch, fixed and rerun (below); every othe
 - **Violations (H3)**: Ours 7 unintended-contact windows (exp1: 49): 6 in L3 BESS r2 while docking with the removed
   battery (0.6 s; the battery 0.31 m from the arm's base and 0.28 m from bess_cradle's surveyed box -- truth does not
   separate them), 1 in covered B battery delivery (20 ms, the carried battery against the arm's own base; every
-  structure >= 1.1 m away) -- both the F117 pattern. Dropped items 0 for every method (exp1: Ours 2, PLEXIL 1). Collateral: baseline L2-B places on the
+  structure >= 1.1 m away) -- both the F117 pattern. Dropped items 0 for every method (exp1: Ours 1, PLEXIL 0 under F143's rule; 2 and 1 under the old one). Collateral: baseline L2-B places on the
   occupied stand pushed the occupier 5.9 cm (PLEXIL 1, EUROPA 2 episodes; exp1 ~6 cm, 1 each).
 - **Evaluator correction (applies to exp1)**: a call's window start was backed out as `end_wall - sim_s`, exact only
   at 1x real time; at the campaign's ~0.25x a press's window shrank to its last quarter, and a contact at its start
@@ -6102,4 +6102,26 @@ shared-layer defects found during the batch, fixed and rerun (below); every othe
    goal request -> completes, one execution; old adapter with a lost goal response -> hangs. Rerun: passed its first
    command, ended as the other held-out baselines. Ours' own client (`space_runtime/agent.py` execute) has the same
    exposure and was never hit (0 in 50 Ours runs across exp1/exp1b): recorded, not changed.
+
+## F143 -- Two user decisions applied: PLEXIL's retry budget measured on derived plans (outcome never changes); a drop is a fall (2026-09-28, offline)
+
+**PLEXIL N = 1, 2, 5** (user: derived plans, as proposed in F136). `baselines/scripts/retry_budget_sensitivity.py`
+now writes a derived copy of the locked plans per N under `artifacts/eval/retry_budget/runs/plexil/plans_N<n>`: every
+Try keeps its first N legs, or gains legs 4..N as copies of leg 2 (legs 2-3 are the retries, identical up to their
+labels), and the escalation texts say N ("failed N times", "after N attempts"); the locked `.ple`/`.plx` are not
+touched, and derived(3) must reproduce every locked plan character for character (checked before each run; it does).
+Result (`results.md`, 48 offline runs, both baselines x six held-out instances x N = 1/2/3/5): **every run ends
+"detected -> escalated"; N only changes how many repeats come first.** PLEXIL: L2-A 5 calls at every N (the reset
+reads closed, the relapse is caught at the dock, the budget is never used); L2-B 7/8/9/11 calls (N places on the
+occupied stand); L3 x2 and L4 3/4/5/7 calls (N presses). N = 3 reproduces F136's rows exactly; EUROPA reproduces F136.
+So the baselines' held-out failures do not come from too small a retry budget.
+
+**Class 2 (dropped item) redefined** (user). A drop is now an item that *fell*: at rest, off every surveyed support,
+not held, and more than `DROP_HEIGHT_M` = 0.10 m lower than it last stood while held or on a support; counted once
+per fall (again only after it has been held or stood on a support once more). The old rule, a rising edge into
+"settled off support, not held", counted exp1's fallen container twice (pushed later, it came to rest again) and
+PLEXIL's battery -- set down upright at the stand's height but outside the scored footprint, a failed place -- as a
+drop. `evaluation/violations.count_dropped_items`, `docs/evaluator_violations.md`. Recomputed from the raw records
+(preregistration §3: a redefinition is a recomputation, no rerun): exp1 Ours held-out 2 -> 1, PLEXIL covered 1 -> 0;
+exp1b unchanged (0).
 

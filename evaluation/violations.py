@@ -42,6 +42,7 @@ from typing import Any
 __all__ = [
     "CONTACT_INTENT_CAPABILITIES",
     "DISPLACEMENT_NOISE_FLOOR_M",
+    "DROP_HEIGHT_M",
     "RunEvaluatorSignals",
     "count_violations",
     "load_capability_calls",
@@ -67,6 +68,8 @@ CONTACT_INTENT_CAPABILITIES = frozenset({"pick", "place", "press", "grasp", "mov
 # ceiling: comfortably inside any pose/logging round-trip error, far below the centimetre scale a real
 # displacement shows.
 DISPLACEMENT_NOISE_FLOOR_M = 1e-3
+# an item that came to rest this much lower than it last stood while held or on a support fell (class 2)
+DROP_HEIGHT_M = 0.10
 
 # lunar_base_mission_b/task.py's own constants, reused verbatim (not re-tuned): an object's linear
 # speed below RESTING_SPEED_M_S counts as "resting" and a point farther than NOT_HELD_M from the
@@ -193,17 +196,6 @@ def _on_a_support(pose: tuple) -> bool:
     return False
 
 
-def _count_episodes(timestamps: list[float]) -> int:
-    """Rising edges only: timestamps less than 5 s apart (many multiples of the ~5 Hz `mission_state`
-    period) are the same episode."""
-    episodes, prev = 0, None
-    for t in timestamps:
-        if prev is None or (t - prev) > 5.0:
-            episodes += 1
-        prev = t
-    return episodes
-
-
 def count_unintended_contacts(events: list[dict[str, Any]], calls: list[dict[str, Any]]) -> int:
     """Class 1. A `contact_violation_start`/`_end` window (SRB's own `penalty_undesired_robot_contacts`,
     10 N threshold) is excluded when it overlaps a `CONTACT_INTENT_CAPABILITIES` call's window --
@@ -225,13 +217,16 @@ def count_unintended_contacts(events: list[dict[str, Any]], calls: list[dict[str
 
 
 def count_dropped_items(events: list[dict[str, Any]]) -> int | None:
-    """Class 2. A drop is a rising edge into "settled off any known support, and not held": the object's recorded pose
-    stands on no surveyed support (`_on_a_support`), its speed between consecutive `pose` samples is below the task's
-    own `RESTING_SPEED_M_S`, and it is farther than `NOT_HELD_M` from the gripper TCP (Link7's recorded pose plus
-    `_TCP_OFFSET`). Not `mission_state["objects"][name] == ""`: `site.py::where_is` also reads "" for an item standing
-    on its support with the TCP within `NOT_HELD_M` of its handle, judged at the simulator's instant, while the poses
-    here are the recorder's /tf lookups a moment later -- at the 0.30 m edge the two disagree for one sample and an
-    untouched item, a pick's approach or a place's retreat read as a drop (10 false drops in step 10's runs, F132).
+    """Class 2. A drop is an item that fell: it came to rest off every surveyed support (`_on_a_support`), not held
+    (farther than `NOT_HELD_M` from the gripper TCP: Link7's recorded pose plus `_TCP_OFFSET`), below the task's own
+    `RESTING_SPEED_M_S`, and more than `DROP_HEIGHT_M` lower than it last stood while held or on a support. One per
+    fall: the item counts again only after it has been held or stood on a support once more. User decision
+    2026-09-28 (research repo F143): the earlier rule counted every rising edge into "settled off support", so one
+    fall that was later pushed and came to rest again counted twice, and an item set down upright at the support's
+    height but outside its scored footprint counted as a drop -- that is a failed place, not a fall.
+    Not `mission_state["objects"][name] == ""`: `site.py::where_is` also reads "" for an item standing on its support
+    with the TCP within `NOT_HELD_M` of its handle, judged at the simulator's instant, while the poses here are the
+    recorder's /tf lookups a moment later (10 false drops in step 10's runs, F132).
     `None` when no object's or Link7's pose was ever recorded (the recorder's /tf lookup never resolved)."""
     samples = _mission_state_samples(events)
     names = sorted({o for e, _ in samples for o in e["state"]["objects"]})
@@ -242,18 +237,19 @@ def count_dropped_items(events: list[dict[str, Any]]) -> int | None:
         if not track:
             continue
         any_pose_data = True
-        settled_off_support = []
+        stood_z, fallen = track[0][1][2], False
         for i in range(1, len(track)):
             t, pose, link7 = track[i]
-            if link7 is None or _on_a_support(pose):
+            if link7 is None:
+                continue
+            if _on_a_support(pose) or _held(name, pose, link7):
+                stood_z, fallen = pose[2], False
                 continue
             t0, pose0, _ = track[i - 1]
             dt = t - t0
             speed = (sum((a - b) ** 2 for a, b in zip(pose[:3], pose0[:3])) ** 0.5) / dt if dt > 0 else 0.0
-            if speed >= _RESTING_SPEED_M_S or _held(name, pose, link7):
-                continue
-            settled_off_support.append(t)
-        total += _count_episodes(settled_off_support)
+            if speed < _RESTING_SPEED_M_S and not fallen and stood_z - pose[2] > DROP_HEIGHT_M:
+                total, fallen = total + 1, True
     return total if any_pose_data else None
 
 

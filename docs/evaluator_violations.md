@@ -121,9 +121,13 @@ none -- which covers both "currently held" and "somewhere else, including the gr
 `on_support()` also defines "resting" as linear speed below `RESTING_SPEED_M_S = 0.05` m/s and "held" as
 farther than `NOT_HELD_M = 0.30` m from the gripper TCP -- both reused verbatim.
 
-**Rule, and the held exclusion.** A drop is a rising edge into "the item's recorded pose stands on no
-surveyed support, its speed between consecutive recorded poses is below `RESTING_SPEED_M_S`, **and** it is
-farther than `NOT_HELD_M` from the gripper TCP" -- settled, off any known support, and not held. "On a
+**Rule, and the held exclusion.** A drop is an item that *fell*: "the item's recorded pose stands on no
+surveyed support, its speed between consecutive recorded poses is below `RESTING_SPEED_M_S`, it is
+farther than `NOT_HELD_M` from the gripper TCP, **and** it rests more than `DROP_HEIGHT_M = 0.10` m lower than it
+last stood while held or on a support" -- counted once per fall; the item counts again only after it has been held
+or stood on a support once more. (User decision 2026-09-28, F143. The earlier rule, a rising edge into "settled off
+support and not held", counted exp1's one fallen container twice -- pushed later, it came to rest again -- and a
+battery set down upright at the stand's height but outside the scored footprint as a drop; that is a failed place.) "On a
 support" is `on_supports()`'s own geometric test (centre within `ON_SUPPORT_XY_M` of a surveyed place point
 along/across its normal, base within `ON_SUPPORT_Z_M`, upright within 15 deg; constants reused verbatim) on
 the recorded pose, not `mission_state`'s `""`: `where_is()` also reads `""` for an item standing on its
