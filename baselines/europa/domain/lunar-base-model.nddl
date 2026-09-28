@@ -1,9 +1,15 @@
 // The one frozen domain of the EUROPA->PLEXIL baseline, for both missions (execution_plan §11.2, §21.6;
 // docs/baselines/authoring_spec.md, locked 2026-09-23): the rover's base, arm posture and jaws, every inventoried item's
 // location, every serviced unit's panel, and the capabilities that change them -- navigate_to_feature,
-// dock_at_feature, navigate_to_pose, arm_ready, stow, pick, place, press. Mission A ("every unit restored, arm stowed,
-// rover at dock") and Mission B ("item X from S on D, arm stowed, rover at dock") differ only in their goals, and each
-// has pick/place and press available.
+// dock_at_feature, navigate_to_pose, arm_ready, stow, pick, place, press, scan_label. Mission A ("every unit restored,
+// arm stowed, rover at dock") and Mission B ("item X from S on D, arm stowed, rover at dock") differ only in their goals,
+// and each has pick/place and press available.
+//
+// Experiment II (docs/exp2/extension_spec.md): the brief can name the cargo by its serial, and then only that unit
+// delivered is a success. The inventory record is a record, not an observation, and items of one kind are identical but
+// for the serial on their data plates: an item's `Plate` says whether its serial has been read where it stands
+// (scan_label, the one activity that reads it). A serial-naming brief adds the goal "the named unit's plate read"
+// ahead of its delivery (host.py); where the host believes an item stands is its fact, revised from what a scan reads.
 //
 // An activity's parameters are the capability's arguments (host.py's capability_call, see docs/baselines/europa.md's
 // traceability table); a parameter with no reason to vary in this domain is pinned with `eq` at its contract default.
@@ -49,12 +55,21 @@ class ItemLoc extends Timeline
   predicate Held {}
 }
 
+// whether an item's serial has been read on its data plate where it stands (scan_label): until then which of the
+// identical items of its kind stands on a support is only the record's word
+class Plate extends Timeline
+{
+  predicate Unread {}
+  predicate Read { Feature support; }
+}
+
 // every item of the inventory record (manifest), by serial number, on its recorded support
 class Item
 {
   string name;
   ItemLoc loc;
-  Item(string _name) { name = _name; loc = new ItemLoc(); }
+  Plate plate;
+  Item(string _name) { name = _name; loc = new ItemLoc(); plate = new Plate(); }
 }
 
 // arm_ready/stow move the arm between its two named postures; pick/place need Ready and change Jaws/ItemLoc
@@ -113,6 +128,8 @@ class LunarBot
   // stowed"), so it transitions posture from Stowed (the covered instance's own starting posture) to Ready, which is
   // what leaves `stow` something real to do.
   action press { Unit unit; Feature feature; leq(duration, 420); }
+  // scan_label's contract: `support` and the kind of `item` expected there (the host sends the item's catalogue name)
+  action scan_label { Feature support; Item item; leq(duration, 300); }
 }
 
 // Nav2 drives from wherever the base is
@@ -213,4 +230,21 @@ LunarBot::press
   meets(effect object.posture.Ready to);
   met_by(condition unit.panel.Faulted pf);
   meets(effect unit.panel.Restored pt);
+}
+
+// contracts.yaml scan_label: docked at the support (dock_at_feature, standoff 0) with the jaws empty; the wrist camera
+// views the lid of the item believed there and the arm folds back to its travel posture (Stowed at both ends here: a
+// Ready arm is stowed first, which stow's own rule allows only with empty jaws too). Planned, it reads that item's serial
+// there; what it actually reads is the host's fact (host.py facts_from_scan), and anything else ends it off-plan.
+LunarBot::scan_label
+{
+  contained_by(condition item.loc.On on);
+  eq(on.support, support);
+  contained_by(condition object.base.At bp);
+  eq(bp.loc, support.work);
+  contained_by(condition object.jaws.Empty j);
+  contained_by(condition object.posture.Stowed p);
+  met_by(condition item.plate.Unread u);
+  meets(effect item.plate.Read r);
+  eq(r.support, support);
 }

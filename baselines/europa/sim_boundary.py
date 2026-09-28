@@ -11,7 +11,11 @@ Arguments are taken and checked as the boundary does: a JSON object, or the posi
   --no-close           a reset does not take: the unit reads tripped already at the first power_status query after
                        the press (a held-out L3/L4 unit: its self-test trips it 3 s after the reset, before press returns)
 The manifest's inventory is the scene's authored one (every item on its authored support, serviceable), as the
-covered scenarios publish it. Mission control is stood in for too: every request on /space/operator/request is answered
+covered scenarios publish it.
+  --at SERIAL=SUPPORT  the unit actually stands on SUPPORT, whatever the record says (Experiment II: a wrong record);
+                       `--at SERIAL=` puts it nowhere on site. scan_label reads the serial of the unit on the support
+                       (px_from_aim 12) and of any unit on another slot of the same stand (px_from_aim 300); pick takes
+                       the unit on the support, place puts it there Mission control is stood in for too: every request on /space/operator/request is answered
 at once with the protocol's HOLD reply (experiments/operator_console/console.py), so an escalation ends the run.
   --fail CAP:N[:far]   the N-th call of CAP fails (failure_kind 3, "no progress"); `far` (base moves only) leaves the
                        base 5 m off the target instead of where it started; ignored for arm_ready/stow/pick/place/
@@ -52,15 +56,16 @@ def feature_pose(name, standoff):
 
 
 class SimBoundary(Node):
-    def __init__(self, fail, tripped, hold, close):
+    def __init__(self, fail, tripped, hold, close, at):
         super().__init__("europa_sim_boundary")
         self.fail, self.hold, self.close = fail, hold, close
+        self.where = {o["serial"]: o["support"] for o in IX["objects"].values()} | at  # serial -> the support it stands on
         self.breaker = {u: "tripped" if u in tripped else "closed" for u in IX["units"]}
         self.pending_trip = set()
         self.calls = Counter()
         self.base = dict(frame="map", x=0.0, y=0.0, yaw=0.0)
         self.posture = "stowed"
-        self.held = None  # item name in the jaws, or None
+        self.held = None  # serial of the unit in the jaws, or None
         ActionServer(self, ExecuteCapability, "/space/capability/execute", self.execute)
         self.create_service(QueryCapability, "/space/capability/query", self.query)
         reply = self.create_publisher(PromptStamped, "/space/operator/reply", 10)
@@ -89,9 +94,11 @@ class SimBoundary(Node):
         elif cap in ("arm_ready", "stow") and ok:
             self.posture = "ready" if cap == "arm_ready" else "stowed"
         elif cap == "pick" and ok:
-            self.held = args["item"]
+            self.held = next((s for s, w in self.where.items() if w == args["support"]), None)
+            self.where.pop(self.held, None)
             self.posture = "ready"
         elif cap == "place" and ok:
+            self.where[self.held] = args["support"]
             self.held = None
             self.posture = "ready"
         elif cap == "press" and ok:
@@ -104,7 +111,14 @@ class SimBoundary(Node):
         r.success = ok
         r.failure_kind = 0 if ok else 20 if reject else 3
         r.failure_reason = "" if ok else reject or f"ROSRuntimeError: {cap}: no progress for 20.0s (injected)"
-        r.evidence_json = json.dumps(dict(base_pose=self.base, arm=self.arm_evidence()))
+        evidence = dict(base_pose=self.base, arm=self.arm_evidence())
+        if cap == "scan_label":
+            self.posture = "stowed" if ok else self.posture
+            plates = [dict(serial=s, px_from_aim=12.0 if w == args["support"] else 300.0) for s, w in self.where.items()
+                      if ok and w and w.split("/")[0] == args["support"].split("/")[0]]
+            evidence["scan"] = dict(serials=[p["serial"] for p in plates], plates=plates, support=args["support"], folded=ok)
+            evidence["arm"] = self.arm_evidence()
+        r.evidence_json = json.dumps(evidence)
         goal.succeed()
         self.get_logger().info(f"{cap} {args} -> success={r.success}")
         return r
@@ -112,7 +126,8 @@ class SimBoundary(Node):
     def query(self, req, res):
         if req.query == "site_map":
             value = dict(frame="map", dock=dict(x=0.0, y=0.0, yaw=0.0),
-                         points={k: dict(type=v["type"], equipment=v["asset"], xyz=v["xyz"], normal=v["normal"])
+                         points={k: dict(type=v["type"], equipment=v["asset"], xyz=v["xyz"], normal=v["normal"],
+                                         **{f: v[f] for f in ("unit", "role") if f in v})
                                  for k, v in IX["points"].items() if "object" not in v})
         elif req.query == "manifest":
             value = dict(inventory=[dict(serial=o["serial"], item=o["item"], recorded_location=o["support"], status="serviceable")
@@ -137,6 +152,7 @@ if __name__ == "__main__":
     ap.add_argument("--tripped", action="append", default=[])
     ap.add_argument("--no-hold", action="store_true")
     ap.add_argument("--no-close", action="store_true")
+    ap.add_argument("--at", action="append", default=[])
     a = ap.parse_args()
     fail = {}
     for f in a.fail:
@@ -144,5 +160,5 @@ if __name__ == "__main__":
         fail[(cap, int(n))] = how[0] if how else "stay"
     rclpy.init()
     ex = MultiThreadedExecutor()
-    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold, not a.no_close))
+    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold, not a.no_close, dict(x.split("=", 1) for x in a.at)))
     ex.spin()
