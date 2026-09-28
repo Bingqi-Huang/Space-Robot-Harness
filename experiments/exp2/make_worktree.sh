@@ -19,11 +19,14 @@ for sub in openral space_robotics_bench; do
 done
 # read-only at run time: openral's venv and ROS install (engineers do not change openral), the SPICE kernels, the key
 for p in openral/.venv openral/install openral/build space_context/kernels AGENT/VLM_provider.md; do ln -s "$R/$p" "$W/$p"; done
+# the links are not directories, so the repos' `build/`-style ignore patterns miss them: exclude them by name
+grep -qx /space_context/kernels "$R/.git/info/exclude" || echo /space_context/kernels >> "$R/.git/info/exclude"
+for p in /.venv /install /build; do grep -qx "$p" "$R/openral/.git/info/exclude" || echo "$p" >> "$R/openral/.git/info/exclude"; done
 # the EUROPA planner and dispatch-plan builds are copied: an engineer may rebuild them here
 for p in baselines/europa/planner/build baselines/europa/plexil/build baselines/europa/plexil/plans/ActivityDispatch.plx; do
   cp -a "$R/$p" "$W/$p"
 done
 # the interface packages and the PLEXIL adapter, built from this checkout's sources in a pinned throwaway container
-nice -n 19 docker run --rm --cpuset-cpus 30,31,62,63 -v /mnt/SharedData:/mnt/SharedData runfarm:22.04 bash -lc \
-  "export PLEXIL_HOME=\$HOME/Programs/plexil && source /opt/ros/humble/setup.bash && cd $W/ros && colcon build --merge-install > build.log 2>&1; tail -3 build.log"
+nice -n 19 docker run --rm --cpuset-cpus 30,31,62,63 -v /mnt/SharedData:/mnt/SharedData -v "$HOME/Programs:$HOME/Programs" runfarm:22.04 bash -lc \
+  "export PLEXIL_HOME=\$HOME/Programs/plexil && source /opt/ros/humble/setup.bash && source $W/openral/install/setup.bash && cd $W/ros && mkdir -p log && colcon build --merge-install > log/make_worktree_build.log 2>&1; tail -3 log/make_worktree_build.log"
 git -C "$W" status --short
