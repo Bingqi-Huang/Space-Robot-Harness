@@ -32,6 +32,11 @@
 //                                                                       ItemDescriptions attribute in interface-config.xml,
 //                                                                       baselines/item_descriptions.json), keyed by the
 //                                                                       item's equipment-catalogue name
+//   Lookup  ManifestAt(String place, String field)                  -> String, one field ("item", "serial", "status")
+//                                                                       of the manifest's inventory entry recorded at
+//                                                                       that place frame (manifest query); "" when the
+//                                                                       record lists nothing there -- a typed read like
+//                                                                       PowerUnit, so a plan can branch without parsing
 // Neither interprets what it carries: the goal is the launcher's, the table the baselines' own authored artifact.
 // No failure kind or stage is exposed as a typed Lookup (docs/baselines/authoring_spec.md, locked 2026-09-23: a plan
 // branch on them is tier 3, forbidden); LastCapabilityResult still carries the whole raw result.
@@ -224,6 +229,18 @@ public:
         state.parameter(1).getValue(field);
         std::ifstream table(getXml().attribute("ItemDescriptions").value());
         rcvr->update(nlohmann::json::parse(table)[item][field].get<std::string>());
+      });
+    config->registerLookupHandlerFunction(
+      "ManifestAt",
+      [this](PLEXIL::State const &state, PLEXIL::LookupReceiver *rcvr) {
+        std::string place, field, value, found;
+        state.parameter(0).getValue(place);
+        state.parameter(1).getValue(field);
+        query("manifest", "{}", value);
+        auto const manifest = nlohmann::json::parse(value);  // kept: a range-for over a temporary's member dangles
+        for (auto const &entry : manifest["inventory"])
+          if (entry["recorded_location"] == place) found = entry[field].get<std::string>();
+        rcvr->update(found);
       });
     return true;
   }

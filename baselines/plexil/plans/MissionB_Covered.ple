@@ -16,13 +16,23 @@
 // header. Every capability call has at most 3 identical attempts (the library nodes' Try, tier 1); once a leg is out
 // of attempts no further capability call is issued, the plan asks mission control and the rover holds where it is.
 // The root is an UncheckedSequence so a failed leg does not abort the plan before that escalation.
+//
+// Re-authored after the freeze (docs/reauthoring/cases/l2b.md; tier 3 lifted for this case): a destination stand takes
+// one item. When the manifest records an item on the destination (Lookup ManifestAt, the manifest query's inventory
+// entry at that place frame) -- there, an outbound return container awaiting stowage -- the plan first moves it to the
+// return stand `return_stand/slot_0`, where outbound returns go (the brief), stows the emptied arm for the drive, and
+// then makes the delivery (ClearDestination). The occupier's description for `pick` and its release constraint come
+// from the same shared item table as the cargo's, by the catalogue name the manifest records. Nothing recorded there:
+// ClearDestination does nothing and the covered procedure runs unchanged.
 
 LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
 LibraryAction PickItem(In String target, In String part, In String item, In String support, InOut Boolean ok);
 LibraryAction PlaceItem(In String support, In String release_constraint, In String item, InOut Boolean ok);
 LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
+LibraryAction StowArm(InOut Boolean ok);
 String Lookup MissionGoal(String);
 String Lookup ItemDescription(String, String);
+String Lookup ManifestAt(String, String);
 String Command RequestOperator(String);
 Command pprint(...);
 
@@ -34,6 +44,11 @@ MissionB_Covered: UncheckedSequence
   String Target = "";
   String Part = "";
   String Release = "";
+  String Occupant = "";     // the catalogue name of the item the manifest records on the destination, "" if none
+  String OccupantTarget = "";
+  String OccupantPart = "";
+  String OccupantRelease = "";
+  String ReturnStand = "return_stand/slot_0";  // where outbound returns go (the brief)
   String Answer = "";
   Boolean ok = true;
 
@@ -45,6 +60,21 @@ MissionB_Covered: UncheckedSequence
     GetTarget: { Target = Lookup(ItemDescription(Item, "target")); }
     GetPart: { Part = Lookup(ItemDescription(Item, "part")); }
     GetRelease: { Release = Lookup(ItemDescription(Item, "release_constraint")); }
+    GetOccupant: { Occupant = Lookup(ManifestAt(Destination, "item")); }
+  }
+  ClearDestination:
+  {
+    if (Occupant != "") {
+      GetOccupantTarget: { OccupantTarget = Lookup(ItemDescription(Occupant, "target")); }
+      GetOccupantPart: { OccupantPart = Lookup(ItemDescription(Occupant, "part")); }
+      GetOccupantRelease: { OccupantRelease = Lookup(ItemDescription(Occupant, "release_constraint")); }
+      ToOccupant:    { PreCondition ok; LibraryCall DriveAndDock(feature = Destination, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+      PickOccupant:  { PreCondition ok; LibraryCall PickItem(target = OccupantTarget, part = OccupantPart, item = Occupant, support = Destination, ok = ok); }
+      ToReturnStand: { PreCondition ok; LibraryCall DriveAndDock(feature = ReturnStand, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+      PlaceOccupant: { PreCondition ok; LibraryCall PlaceItem(support = ReturnStand, release_constraint = OccupantRelease, item = Occupant, ok = ok); }
+      StowOccupant:  { PreCondition ok; LibraryCall StowArm(ok = ok); }
+    }
+    endif
   }
   ToSource:      { PreCondition ok; LibraryCall DriveAndDock(feature = Source, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
   Pick:          { PreCondition ok; LibraryCall PickItem(target = Target, part = Part, item = Item, support = Source, ok = ok); }
@@ -59,5 +89,5 @@ MissionB_Covered: UncheckedSequence
     }
     endif
   }
-  Done: { pprint("MissionB_Covered item:", Item, "from:", Source, "to:", Destination, "ok:", ok, "operator:", Answer); }
+  Done: { pprint("MissionB_Covered item:", Item, "from:", Source, "to:", Destination, "cleared:", Occupant, "ok:", ok, "operator:", Answer); }
 }

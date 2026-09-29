@@ -9,7 +9,9 @@ difference in arguments shows up as a hung case.
   a reset that does not hold (3 presses, escalate, hold); a re-trip seen at the dock; no tripped unit;
   Mission B covered for every item x destination;
   at every call site of both plans: the call failing twice then succeeding (the 3rd attempt runs, the mission
-  completes), and failing three times (escalate, hold).
+  completes), and failing three times (escalate, hold);
+  Mission B with the destination recorded occupied (docs/reauthoring/cases/l2b.md): the occupier moved to the return
+  stand first, then the delivery.
 
   python3 baselines/plexil/scripts/offline_check.py          (PLEXIL_HOME set, plexilc/plexiltest on PATH)
 """
@@ -75,12 +77,22 @@ def mission_a(u):
     return "MissionA_Covered", initial, calls, escalation
 
 
-def mission_b(cargo, dest):
+def mission_b(cargo, dest, occupant=""):
     item, src = CARGO[cargo]
     dst, d = DESTINATION[dest], ITEMS[item]
     initial = [("MissionGoal", ("item",), item), ("MissionGoal", ("source",), src), ("MissionGoal", ("destination",), dst),
-               *(("ItemDescription", (item, k), d[k]) for k in ("target", "part", "release_constraint"))]
-    calls = [call("ToSource.Nav", "navigate_to_feature", src, 1.2), call("ToSource.Dock", "dock_at_feature", src, 0.0, 1.2),
+               *(("ItemDescription", (item, k), d[k]) for k in ("target", "part", "release_constraint")),
+               ("ManifestAt", (dst, "item"), occupant)]
+    calls = []
+    if occupant:
+        o, ret = ITEMS[occupant], "return_stand/slot_0"
+        initial += [("ItemDescription", (occupant, k), o[k]) for k in ("target", "part", "release_constraint")]
+        calls = [call("ToOccupant.Nav", "navigate_to_feature", dst, 1.2), call("ToOccupant.Dock", "dock_at_feature", dst, 0.0, 1.2),
+                 call("PickOccupant.Ready", "arm_ready", 0.08), call("PickOccupant.Pick", "pick", o["target"], o["part"], occupant, dst),
+                 call("ToReturnStand.Nav", "navigate_to_feature", ret, 1.2),
+                 call("ToReturnStand.Dock", "dock_at_feature", ret, 0.0, 1.2),
+                 call("PlaceOccupant.Place", "place", ret, o["release_constraint"], occupant), call("StowOccupant.Stow", "stow", 0.08)]
+    calls += [call("ToSource.Nav", "navigate_to_feature", src, 1.2), call("ToSource.Dock", "dock_at_feature", src, 0.0, 1.2),
              call("Pick.Ready", "arm_ready", 0.08), call("Pick.Pick", "pick", d["target"], d["part"], item, src),
              call("ToDestination.Nav", "navigate_to_feature", dst, 1.2),
              call("ToDestination.Dock", "dock_at_feature", dst, 0.0, 1.2),
@@ -117,6 +129,9 @@ def cases():
         for d in DESTINATION:
             plan, initial, calls, esc = mission_b(c, d)
             yield f"B covered {c} -> {d}", plan, initial, [(x, True) for x in calls], True
+    plan, initial, calls, esc = mission_b("consumables_container", "habitat", occupant="return container")
+    yield "B destination occupied: return container -> return stand, then consumables_container -> habitat", plan, initial, [
+        (x, True) for x in calls], True
     for name, (plan, initial, calls, esc) in (("A", mission_a("isru")), ("B", mission_b("consumables_container", "habitat"))):
         for x in calls:
             for n in (2, 3):
