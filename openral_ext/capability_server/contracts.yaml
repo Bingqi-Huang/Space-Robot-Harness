@@ -295,6 +295,8 @@ effects:
       and says why. Reading nothing is a result, not a failure: the support is empty, or no plate is in the frame.
       A neighbouring item's plate can be in the frame too: every plate read comes back with its serial and its
       distance in the image from the point the view was aimed at, and the item on the named support is the nearest.
+      The same moment's depth says whether something stands on the support, so an empty support and an item whose
+      plate is not read are told apart.
       The frame is kept as evidence.
     inputs:
       support: [string, true, "the place frame the item stands on (e.g. depot_stand/slot_0), from site_map"]

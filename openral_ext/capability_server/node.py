@@ -863,6 +863,12 @@ class CapabilityServer(Node):
                 bgr = cv2.cvtColor(img, {"rgb8": cv2.COLOR_RGB2BGR, "rgba8": cv2.COLOR_RGBA2BGR, "bgra8": cv2.COLOR_BGRA2BGR}[m.encoding]) if m.encoding != "bgr8" else img
                 return bgr, np.array(node.infos["wrist"].k, float).reshape(3, 3), m.header.frame_id, m.header.stamp.sec + m.header.stamp.nanosec * 1e-9
 
+            def wrist_depth(self, after):
+                while "wrist" not in node.depths or (
+                        (d := node.depths["wrist"]).header.stamp.sec + d.header.stamp.nanosec * 1e-9) <= after:
+                    time.sleep(0.05)
+                return np.frombuffer(d.data, np.float32).reshape(d.height, d.width)
+
             def now(self):
                 return sim_t()
 

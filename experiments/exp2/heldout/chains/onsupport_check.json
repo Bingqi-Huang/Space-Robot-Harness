@@ -1,0 +1,136 @@
+[
+[
+"navigate_to_feature",
+{
+"feature": "depot_stand/slot_0",
+"standoff_m": 1.5
+}
+],
+[
+"dock_at_feature",
+{
+"feature": "depot_stand/slot_0",
+"standoff_m": 0.0
+}
+],
+[
+"scan_label",
+{
+"support": "depot_stand/slot_0",
+"item": "orbital replacement unit (ORU)"
+}
+],
+[
+"navigate_to_feature",
+{
+"feature": "depot_spares_stand/slot_0",
+"standoff_m": 1.5
+}
+],
+[
+"dock_at_feature",
+{
+"feature": "depot_spares_stand/slot_0",
+"standoff_m": 0.0
+}
+],
+[
+"scan_label",
+{
+"support": "depot_spares_stand/slot_0",
+"item": "orbital replacement unit (ORU)"
+}
+],
+[
+"navigate_to_feature",
+{
+"feature": "landing_stand/slot_1",
+"standoff_m": 1.5
+}
+],
+[
+"dock_at_feature",
+{
+"feature": "landing_stand/slot_1",
+"standoff_m": 0.0
+}
+],
+[
+"scan_label",
+{
+"support": "landing_stand/slot_1",
+"item": "orbital replacement unit (ORU)"
+}
+],
+[
+"navigate_to_feature",
+{
+"feature": "pdu_2_shelf/shelf",
+"standoff_m": 1.5
+}
+],
+[
+"dock_at_feature",
+{
+"feature": "pdu_2_shelf/shelf",
+"standoff_m": 0.0
+}
+],
+[
+"scan_label",
+{
+"support": "pdu_2_shelf/shelf",
+"item": "orbital replacement unit (ORU)"
+}
+],
+[
+"navigate_to_feature",
+{
+"feature": "bess_stand/slot_0",
+"standoff_m": 1.5
+}
+],
+[
+"dock_at_feature",
+{
+"feature": "bess_stand/slot_0",
+"standoff_m": 0.0
+}
+],
+[
+"scan_label",
+{
+"support": "bess_stand/slot_0",
+"item": "orbital replacement unit (ORU)"
+}
+],
+[
+"navigate_to_feature",
+{
+"feature": "return_stand/slot_0",
+"standoff_m": 1.5
+}
+],
+[
+"dock_at_feature",
+{
+"feature": "return_stand/slot_0",
+"standoff_m": 0.0
+}
+],
+[
+"scan_label",
+{
+"support": "return_stand/slot_0",
+"item": "orbital replacement unit (ORU)"
+}
+],
+[
+"navigate_to_pose",
+{
+"x": 0.0,
+"y": 0.0,
+"yaw": 0.0
+}
+]
+]

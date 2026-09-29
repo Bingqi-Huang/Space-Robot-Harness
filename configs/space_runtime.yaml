@@ -74,4 +74,4 @@ reasoner:
   # per step vs 13.3 s on, but the reasoning capability matters more than the latency (research repo F53)
   thinking: true
   retry_cap_per_call: 3  # ReasonerCore's identical-call cap
-  max_steps: 80  # mission step budget: exhausted -> run ends as needing ground assistance
+  max_steps: 80  # mission step budget, in calls on the robot (plan bookkeeping not counted, F147): exhausted -> run ends as needing ground assistance

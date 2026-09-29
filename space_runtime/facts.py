@@ -31,7 +31,7 @@ def empty_facts() -> dict:
         "reasoner": None,  # {"model", "endpoint"} currently attached
         "reasoner_history": [],  # every attach: {"seq", "model", "endpoint"}
         "objects": {},  # movable item (as the mission agent named it) -> {"state": in_gripper|on <support>|unknown, + the verified effect that set it}
-        "labels": {},  # support -> the latest frame read there: {"seq", "from_scan_view", "plates_read", "plates": [{"serial", "px_from_aim"}], "frame_px"}
+        "labels": {},  # support -> the latest frame read there: {"seq", "from_scan_view", "something_on_support", "plates_read", "plates": [{"serial", "px_from_aim"}], "frame_px"}
         "attempts": [],  # manipulation operations and their outcomes: {"seq", "operation", "args", "success", "stage", "why", "saw"}
         "active_execution": None,  # {"seq", "capability", "args"} between execution_started and _finished
         "reports": [],  # operator-facing reports/requests the agent emitted
@@ -131,8 +131,8 @@ def apply(f: dict, ev: dict) -> None:
                                       "read_twice_record_and_jaw_say_held": ev.get("record_and_jaw_expect_held")}
         if ev["effect"] == "labels_read" and ev.get("image"):
             # what one frame read at a support, kept past the recent window (a scan that took no frame read nothing there)
-            f["labels"][ev["support"]] = {"seq": ev["seq"], "from_scan_view": ev["holds"], "plates_read": ev["plates_read"],
-                                          "plates": ev["plates"], "frame_px": ev["frame_px"]}
+            f["labels"][ev["support"]] = {"seq": ev["seq"], "from_scan_view": ev["holds"], "something_on_support": ev["something_on_support"],
+                                          "plates_read": ev["plates_read"], "plates": ev["plates"], "frame_px": ev["frame_px"]}
         if ev["effect"] == "item_placed":
             # not established (holds None): let go at the support, not seen resting there -- the item is out of the jaws
             # and its place is unknown until something shows it

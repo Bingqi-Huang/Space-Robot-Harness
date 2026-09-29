@@ -101,13 +101,14 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
         # What one frame read, and whether it was taken from the view it was aimed for: the camera's pose from the arm's
         # kinematics against the commanded view. Every plate decoded, nearest the aim point first (the item on the named
         # support is the nearest; a neighbour's plate can be in the frame too), with the frame's size for the pixel
-        # distances. No plate is a reading too: an empty support, or no plate in the frame.
+        # distances. No plate is a reading too: an empty support, or no plate in the frame -- the same frame's depth says
+        # which (something stands on the support or not).
         sc = evidence.get("scan") or {}
         err = sc.get("view_error_m")
         m = dict(effect="labels_read", support=args["support"], holds=err is not None and err <= cfg["scan"]["view_m"])
         if sc.get("raw_image"):  # absent when no frame was taken (the view could not be reached, the call was refused)
             plates = sorted(({"serial": p["serial"], "px_from_aim": p["px_from_aim"]} for p in sc["plates"]), key=lambda p: p["px_from_aim"])
-            m.update(view_error_m=err, plates_read=len(plates), plates=plates,
+            m.update(view_error_m=err, plates_read=len(plates), plates=plates, something_on_support=sc["something_on_support"],
                      frame_px=list(cv2.imread(sc["raw_image"]).shape[1::-1]), image=sc["image"])
         out.append(m)
     if capability == "pick" and isinstance(arm, dict):

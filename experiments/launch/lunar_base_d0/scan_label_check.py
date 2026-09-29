@@ -33,6 +33,7 @@ ITEM_TOP_M = round(ORU["top_z"] - IX["points"][ORU["support"]]["xyz"][2], 4)
 wrist = {}
 n.create_subscription(Image, "/openral/cameras/wrist/image", lambda m: wrist.__setitem__("img", m), qos_profile_sensor_data)
 n.create_subscription(CameraInfo, "/openral/cameras/wrist/camera_info", lambda m: wrist.__setitem__("info", m), qos_profile_sensor_data)
+n.create_subscription(Image, "/openral/cameras/wrist_depth/image", lambda m: wrist.__setitem__("depth", m), qos_profile_sensor_data)
 ik_client = n.create_client(GetPositionIK, "/compute_ik")
 assert ik_client.wait_for_service(timeout_sec=60), "MoveIt's IK service is not up"
 
@@ -89,6 +90,12 @@ class RobotIO:
             spin(0.05)
         m = wrist["img"]
         return image_to_bgr(m), np.array(wrist["info"].k, float).reshape(3, 3), m.header.frame_id, stamp_of(m)
+
+    def wrist_depth(self, after):
+        while "depth" not in wrist or stamp_of(wrist["depth"]) <= after:
+            spin(0.05)
+        d = wrist["depth"]
+        return np.frombuffer(d.data, np.float32).reshape(d.height, d.width)
 
     def now(self):
         spin(0.01)

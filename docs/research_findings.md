@@ -6223,3 +6223,22 @@ Tables: `python3 experiments/exp2/tables.py` -> `artifacts/eval/exp2/tables.md`;
 - Open (user): how to handle Ours' H1 efficiency (a shared fact "something stands on the support", and/or the step
   budget); any Ours change now is informed by the held-out runs and is reported as a second round, its work added to
   Ours' extension cost.
+
+## F147 -- Two generic fixes from Ours' H1 runs: the scan says whether something stands on the support; the step budget counts calls on the robot (2026-09-29)
+
+User decision 2026-09-29 (after F146): both fixes, only the run they decided rerun (post_ours_h1_r2), reported with
+the Experiment II results like the other campaign fixes (F141/F142, F145). Diagnosis (F146): Ours' H1 runs spent
+their 80 steps on (a) repeated scans of a support whose item has no readable plate -- "no plate read" could not tell
+an empty support from an unreadable one -- and (b) its own plan bookkeeping, 10-15 steps a run.
+- **Shared (all methods)**: `openral_ext/scan_label.py` counts the same moment's wrist-depth points within 0.18 m of
+  the support point, between 5 cm over its surface and the catalogued lid (the jaws stand higher), and reports
+  `something_on_support` (>= 1000 points) and the count; the boundary IO gives the depth frame. Offline, synthetic
+  depth at the 0.45 m view: empty 0 points, an ORU 64k. Live (`artifacts/runs/exp2/checks/onsupport_batch`, H1's
+  scene, 6 supports): ORU 77k, battery (no plate read) 30k, return container 114k -> something; landing slot, PDU-2
+  shelf, BESS receiving stand (rear rail) 0 -> nothing.
+- **Ours**: `labels_read` and LABELS READ carry the fact; the contract says it (the shared interface); the step budget
+  (80) counts effects, queries, messages to mission control and failed steps, not the working plan's own tools
+  (`decompose_mission`, `set_task_status`: the model's advisory record, research_content §4.4); the STEP line says
+  so. Offline replay of the recorded Exp II runs under the new count: H1 r1/r2/r3 56/53/56, H2 20-23 (was 74/75/78,
+  27-35). The three tests: nothing names a situation, place or serial; both hold for every task; both trace to the
+  diagnosis of what a step and a reading mean.

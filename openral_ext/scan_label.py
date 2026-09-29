@@ -21,12 +21,14 @@ One whole operation, with the rover docked at the support:
    `_eye_in_hand.EyeInHandSkill.ik`); the path to it is the posture skill's planned one, the same as `stow` and
    `arm_ready` take.
 2. read -- one wrist frame once the arm has stopped; zxing-cpp on the frame upscaled 2x (a module is 2-3 px at these
-   views); every Data Matrix decoded, with its corners and how far it lies in the image from the aimed column foot.
+   views); every Data Matrix decoded, with its corners and how far it lies in the image from the aimed column foot; and
+   from the same moment's wrist depth, whether something stands on the support (research repo F147).
 3. fold -- the arm back to its travel posture. A fold that fails is reported beside the reading, not as a failed scan.
 
-One view, one look. Reading no label is a result, not a failure -- an empty support and a plate the view does not show
-both come back with no serials and the frame as evidence; what to do about it is the calling method's decision. The
-operation fails only when the view cannot be taken, and says why.
+One view, one look. Reading no label is a result, not a failure -- an empty support and an item whose plate the view
+does not show both come back with no serials and the frame as evidence, told apart by whether something stands on the
+support; what to do about it is the calling method's decision. The operation fails only when the view cannot be
+taken, and says why.
 
 The robot is reached through `io`, which the caller supplies (the capability boundary; the development check):
     io.tf(target, source) -> 4x4               transform from the robot's TF
@@ -35,6 +37,7 @@ The robot is reached through `io`, which the caller supplies (the capability bou
     io.move_joints(q) -> (ok, why)             the planned move to a configuration (posture skill)
     io.fold() -> (ok, why)                     the planned move to the travel posture
     io.wrist_frame(after) -> (bgr, K, frame_id, stamp)   the next wrist colour frame stamped after `after` (sim s)
+    io.wrist_depth(after) -> depth                        the next wrist depth frame (m, registered to the colour frame)
     io.now() -> float                          simulation time
     io.wait(sim_s)                             let simulation time pass
 """
@@ -65,6 +68,13 @@ SCAN_VIEWS = ((0.45, 55.0), (0.42, 60.0), (0.36, 67.0))
 UPSCALE = 2
 #: how long the arm is left to stop swinging before the frame is taken (sim s)
 SETTLE_S = 1.0
+#: Whether something stands on the support (F147): the wrist depth's points within `ON_SUPPORT_RADIUS_M` of the support
+#: point, horizontally, and between `ON_SUPPORT_ABOVE_M` over its surface and the catalogued lid (the jaws, nearer the
+#: camera, stand higher than that). A neighbouring slot's item is >= 0.4 m away; a shelf's lip is 3 cm high. An item
+#: gives tens of thousands of such points, an empty support none.
+ON_SUPPORT_RADIUS_M = 0.18
+ON_SUPPORT_ABOVE_M = 0.05
+ON_SUPPORT_MIN_POINTS = 1000
 
 
 def scan_camera_pose(foot_base: np.ndarray, normal_base: np.ndarray, distance_m: float, elevation_deg: float) -> np.ndarray:
@@ -92,6 +102,17 @@ def read_plates(bgr: np.ndarray) -> list[dict]:
         corners = [[round(q.x / UPSCALE, 1), round(q.y / UPSCALE, 1)] for q in (p.top_left, p.top_right, p.bottom_right, p.bottom_left)]
         out.append({"serial": r.text, "corners_px": corners})
     return out
+
+
+def points_on_support(depth: np.ndarray, K: np.ndarray, T_cam: np.ndarray, foot: np.ndarray, item_top_m: float) -> int:
+    """How many depth points (chassis_base_link) stand on the support below the catalogued lid: see ON_SUPPORT_*."""
+    v, u = np.nonzero(np.isfinite(depth) & (depth > 0))
+    z = depth[v, u]
+    pc = np.stack([(u - K[0, 2]) * z / K[0, 0], (v - K[1, 2]) * z / K[1, 1], z])
+    p = T_cam[:3, :3] @ pc + T_cam[:3, 3:4]
+    surface = foot[2] - item_top_m
+    near = np.hypot(p[0] - foot[0], p[1] - foot[1]) < ON_SUPPORT_RADIUS_M
+    return int((near & (p[2] > surface + ON_SUPPORT_ABOVE_M) & (p[2] < foot[2] + ON_SUPPORT_ABOVE_M)).sum())
 
 
 def scan(io, support: str, support_xyz_map, support_normal_map, item_top_m: float, evidence_dir: Path) -> dict:
@@ -132,6 +153,8 @@ def scan(io, support: str, support_xyz_map, support_normal_map, item_top_m: floa
     bgr, K, frame_id, stamp = io.wrist_frame(io.now())
     T_cam_now = io.tf("chassis_base_link", frame_id)
     plates = read_plates(bgr)
+    n_on = points_on_support(io.wrist_depth(stamp - 0.01), K, T_cam_now, foot, item_top_m)
+    ev.update(something_on_support=n_on >= ON_SUPPORT_MIN_POINTS, points_on_support=n_on)
     # where the aimed column foot falls in this frame: which plate belongs to the item at the support, when a
     # neighbouring item's plate is in view too
     pc = T_cam_now[:3, :3].T @ (foot - T_cam_now[:3, 3])

@@ -51,6 +51,8 @@ from space_runtime.tools import DECOMPOSE, REPLY_TOPIC, REPORT_TOPIC, REQUEST_TO
 from space_runtime.verification import verify
 
 REPO = Path(__file__).resolve().parents[1]
+#: the working plan's own tools as `tool_proposed` records them (dispatch: a plan is logged as "decompose_mission")
+PLAN_TOOLS = ("decompose_mission", SET_TASK_STATUS)
 #: How long to wait for a query's answer before sending it again. Humble drops the response to the first service
 #: call after discovery, and a read-only query is free to repeat -- but one timer served two unrelated things: how
 #: long a lost response costs, and how long the slowest legitimate answer takes. At 180 s every run paid three
@@ -287,8 +289,13 @@ class Agent:
                                  system_prompt=system_text(f, self.guard.target_authority))
         step = sum(ev["kind"] in ("tool_proposed", "reasoner_step_failed") for ev in self.store.events)
         while f["terminal"] is None:
-            if step >= self.max_steps:
-                self.event("budget_exhausted", steps=step)
+            # The step budget counts calls on the robot -- effects, queries, messages to mission control -- and failed
+            # steps. Writing and closing the working plan does not count: it is the model's own advisory record
+            # (research_content §4.4), and it had spent up to a fifth of the budget (research repo F147).
+            used = sum(ev["kind"] == "reasoner_step_failed" or (ev["kind"] == "tool_proposed" and ev["tool"] not in PLAN_TOOLS)
+                       for ev in self.store.events)
+            if used >= self.max_steps:
+                self.event("budget_exhausted", steps=used, turns=step)
                 break
             while self.fdir_inbox:
                 m = self.fdir_inbox.pop(0)
@@ -296,7 +303,7 @@ class Agent:
                     self.event("fdir_changed", fault="estop", active=bool(m.latched), detail=m.detail)
             self.take_operator_replies()
             step += 1
-            self.renderer.step = step
+            self.renderer.step = used + 1
             self.client.step = step  # so <run>/ours/model_io.jsonl's rows line up with events.jsonl's own step numbers
             self.event("reasoner_step_started", step=step)  # the model is thinking from here until the next proposal
             t = time.time()

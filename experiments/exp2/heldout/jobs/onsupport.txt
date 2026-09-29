@@ -1,0 +1,2 @@
+# F147 live check of the shared scan's on-support fact (development run), H1's scene; launched from main with the F147 changes
+f147_onsupport D0_CAPABILITY_SERVER=1 D0_CHECK=scripted_chain_check.py CHAIN_JSON=/mnt/SharedData/Research/Space_Robot_Harness/experiments/exp2/heldout/chains/onsupport_check.json D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=covered D0_ENV='env.cargo=spare_oru env.destination=pdu_3 env.name_serial=true env.placement=spare_oru:pdu_1_shelf/shelf+oru_returned:depot_stand/slot_0'
