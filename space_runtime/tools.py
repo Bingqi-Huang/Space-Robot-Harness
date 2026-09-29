@@ -34,6 +34,7 @@ from openral_core.exceptions import ROSPlanningError, ROSReasonerInvalidPlan
 from pydantic import ValidationError
 
 from openral_ext.capability_server.contracts import CONTRACTS
+from space_runtime import ablation
 
 REPORT_TOPIC = "/space/operator/report"
 REQUEST_TOPIC = "/space/operator/request"
@@ -43,7 +44,7 @@ REPLY_TOPIC = "/space/operator/reply"  # console -> requester: the operator's an
 SET_TASK_STATUS = "local/set_task_status"
 DECOMPOSE = "local/decompose_mission"
 WAIT = "local/wait_for_mission_control"
-TEXTS = yaml.safe_load((Path(__file__).resolve().parents[1] / "prompts/ours/tools.yaml").read_text())
+TEXTS = yaml.safe_load(ablation.prompt("tools.yaml").read_text())
 
 
 def _json_type(spec: str) -> dict:
@@ -66,12 +67,12 @@ def _function(name: str, description: str, inputs: dict) -> dict:
         "type": "object", "properties": props, "required": [k for k, (_, req, _) in inputs.items() if req]}}}
 
 
-def tool_schemas() -> list[dict]:
+def tool_schemas(texts: dict = TEXTS) -> list[dict]:
     """The palette: every mission-level capability contract, then the harness-local tools (prompts/ours/tools.yaml)."""
-    tools = [_function(name, f"{TEXTS['group'][group]}. {' '.join(c['description'].split())}", c.get("inputs") or {})
+    tools = [_function(name, f"{texts['group'][group]}. {' '.join(c['description'].split())}", c.get("inputs") or {})
              for group in ("effects", "queries") for name, c in CONTRACTS[group].items()
              if not c.get("engineering")]  # stage-level capabilities are not mission tools (plan v4 granularity rule)
-    return tools + [_function(name, " ".join(c["description"].split()), c["inputs"]) for name, c in TEXTS["local"].items()]
+    return tools + [_function(name, " ".join(c["description"].split()), c["inputs"]) for name, c in texts["local"].items()]
 
 
 def decode(name: str, args: dict):
@@ -94,7 +95,9 @@ def decode(name: str, args: dict):
         if name == "report_to_operator":
             return EmitPromptTool(target_topic=REPORT_TOPIC, text=args["text"], rationale=rationale)
         if name == "request_operator":
-            return EmitPromptTool(target_topic=REQUEST_TOPIC, text=args["text"], metadata_json=json.dumps({"kind": args["kind"]}),
+            # ablation no_guard: an authorization request names the call it asks for (nothing holds one)
+            named = {k: args[k] for k in ("authorize_capability", "authorize_target") if args.get(k)}
+            return EmitPromptTool(target_topic=REQUEST_TOPIC, text=args["text"], metadata_json=json.dumps({"kind": args["kind"], **named}),
                                   rationale=rationale)
     except (ValidationError, KeyError, TypeError) as exc:
         raise ROSReasonerInvalidPlan(f"tool {name!r}: invalid arguments: {exc}") from exc
@@ -104,7 +107,8 @@ def decode(name: str, args: dict):
 class HarnessToolClient:
     """`openral_reasoner.tool_use.ToolUseClient` over an OpenAI-compatible endpoint with the harness palette.
 
-    Stateless per step: the only input is the context the harness rebuilt from the authoritative record.
+    Stateless per step: the only input is the context the harness rebuilt from the authoritative record (ablation
+    no_context: one conversation that accumulates over the session instead, space_runtime/ablation.py).
     """
 
     def __init__(self, *, model_id: str, base_url: str, api_key: str, timeout_s: float, thinking: bool = True,
@@ -125,6 +129,7 @@ class HarnessToolClient:
         # checkout of this module would have sent; this is what was actually sent, immune to that code changing.
         self._model_io_path = (run_dir / "model_io.jsonl") if run_dir else None
         self.step = 0  # set by Agent before each tick, same pattern as HarnessRenderer.step
+        self.history = []  # ablation no_context: this session's conversation after the system prompt
 
     def _log_model_io(self, *, messages: list, resp, latency_s: float) -> None:
         if self._model_io_path is None:
@@ -146,7 +151,14 @@ class HarnessToolClient:
             f.write(json.dumps(entry) + "\n")
 
     def select_tool(self, *, context_text: str, palette, system_prompt: str):
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": context_text}]
+        if ablation.VARIANT == "no_context":
+            # one conversation for the whole session: the text answers the previous call, or opens the session
+            last = self.history[-1] if self.history else {}
+            self.history.append({"role": "tool", "tool_call_id": last["tool_calls"][0]["id"], "content": context_text}
+                                if last.get("tool_calls") else {"role": "user", "content": context_text})
+            messages = [{"role": "system", "content": system_prompt}, *self.history]
+        else:
+            messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": context_text}]
         self.last_reply = {}
         t0 = time.time()
         try:
@@ -160,6 +172,12 @@ class HarnessToolClient:
         self._log_model_io(messages=messages, resp=resp, latency_s=time.time() - t0)
         self.last_prompt_tokens = resp.usage.prompt_tokens if resp.usage else None
         msg = resp.choices[0].message
+        if ablation.VARIANT == "no_context":  # the reply joins the conversation, with the one call the step executes
+            reply = {"role": "assistant", "content": msg.content or ""}
+            if msg.tool_calls:
+                tc = msg.tool_calls[0]
+                reply["tool_calls"] = [{"id": tc.id, "type": "function", "function": {"name": tc.function.name, "arguments": tc.function.arguments}}]
+            self.history = [*messages[1:], reply]
         self.last_reply = {"content": msg.content or "", "reasoning": getattr(msg, "reasoning_content", None) or ""}
         if not msg.tool_calls:
             raise ROSReasonerInvalidPlan(f"no tool call in the response: {(msg.content or '')[:300]!r}")
