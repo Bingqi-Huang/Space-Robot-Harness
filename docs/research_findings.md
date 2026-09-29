@@ -6369,3 +6369,39 @@ below the bar, all kept inside the axes; the six exp1b figures re-rendered and l
 **Paper:** `paper/figures/success_by_level.py` (success vs level, Wilson 95%), `paper/tables/make_tables.py` (tables
 from the generated result tables), `paper/sections/results.tex` (Experiment I, ALFUS, trustworthiness, Experiment II;
 re-authoring and ablations TBD).
+
+## F150 -- Ablation stage 2: verification is decisive where nothing else observes the effect; the guard, the facts and context reconstruction show no difference in one decision; live: J1 (4) and J3 (2) (2026-09-29)
+
+684 chains (Qwen3.8-Max, exp1b texts), scored by F148's rubric: by rule, and the other 240 by a blind reader (arm hidden,
+shuffled; 25 borderline entries in `score/notes.md`, labels kept as read). `artifacts/eval/ablation/score/stage2.md`.
+
+| accident | full | variant |
+|---|---|---|
+| J1 item not in the jaws | CHECK 47, ASK 1, OTHER 3 (of 51) | no_verification: UNSAFE 48, CHECK 3 |
+| J2i press reported done | CHECK 15, RETRY 5, OTHER 4 (24) | no_verification: CHECK 22, OTHER 2 |
+| J2ii ... unit still tripped | RIGHT 23, OTHER 1 | no_verification: RIGHT 20, MISDIAGNOSIS 1, OTHER 3 |
+| J3 reasoner restart | CONTINUES 44, CHECK 31 (75) | no_facts: CONTINUES 43, CHECK 32; no_context: CHECK 75 |
+| J4 authorization, link down | HELD 1, OTHER 8 (9) | no_guard: ASK 1, OTHER 8; no_guard with the link up: ASK 9 |
+| N natural (full vs no_context) | SAME 54, DIFFERENT 21 (75) | no_context: SAME 47, DIFFERENT 28; DUPLICATE 0 both |
+| NF natural (full vs no_facts) | CONSISTENT 21, CHECK 17, OTHER 4 (42) | no_facts: CONSISTENT 19, CHECK 16, OTHER 7; STALE 0 both |
+
+- **Verification (J1, J2).** Without it the record still says the item is held, and the model carries on to the place
+  48 of 51 times; the full method checks first 47 times. At a missed press the picture splits by what else observes the
+  effect: at the seven reset presses the unit's own telemetry (reset counter unchanged) exposes the miss and the variant
+  judges right 20 of 21 times (one misdiagnosis: "the press was verified mechanically" -> asks about the module); at the
+  one shutter (HVAC cover) press, whose effect no telemetry shows before the next reset, the variant judged right 0 of 3
+  (two stowed and moved on stating the cover press was complete; labelled OTHER by the literal rubric) where the full
+  method judged right 3 of 3. So verification matters exactly for the effects nothing else in the system observes.
+- **Guard (J4).** Without the guard, told the rule, the model never took the donor module without an approval: 0 of 18
+  decisions, link down or up (up: 9 of 9 asked for authorization first). With the guard it proposed the pick once, as
+  its text invites ("the guard holds it"). Null result: the guard's value here is a guarantee that does not depend on
+  the model's compliance, which stage 2 cannot show and no live run can (nothing would differ).
+- **Facts (J3, NF).** Without the authoritative record the model's own plan notes carried what it needed: no stale act
+  in 42 natural decisions, and after a restart the same continuations as the full method. Null result for one decision.
+- **Context reconstruction (J3, N).** After a restart every no_context session (75 of 75) begins by reading the state
+  again; one decision cannot show whether it later repeats work. In natural decisions the accumulated conversation
+  changed the chosen tool more often (28 vs 21 of 75 different from the recorded one) but produced no duplicate.
+**Live (stage 3), by F148's rule plus the user's exception:** J1 full and no_verification at two instances (4 runs);
+J3 no_context at two instances (2 runs, the exception). J2 stays offline (making a skill report a false success live
+would need a change to the shared layer); J4 and NF showed no difference. Prepared and restored once (F149); waiting on
+the model gateway.
