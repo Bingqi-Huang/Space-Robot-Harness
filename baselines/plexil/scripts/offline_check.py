@@ -7,6 +7,7 @@ difference in arguments shows up as a hung case.
 
   Mission A covered at every serviced unit (covered_misreport is the same run: the plan never reads the report);
   a reset that does not hold (3 presses, escalate, hold); a re-trip seen at the dock; no tripped unit;
+  an OVERTEMP trip at a PDU and at the BESS (L2-A: the shutter opened first), each shutter call failing 2x / 3x;
   Mission B covered for every item x destination;
   at every call site of both plans: the call failing twice then succeeding (the 3rd attempt runs, the mission
   completes), and failing three times (escalate, hold).
@@ -26,6 +27,7 @@ UNITS = ["pdu_1", "pdu_2", "pdu_3", "bess", "isru"]
 BUTTON = {**{u: "the round red push button set into the yellow sub-panel" for u in UNITS[:3]},
           "bess": "the round white push button on the graphite control panel with the teal border",
           "isru": "the round black push button on the white control panel with the orange border"}
+SHUTTER = {**{u: f"{u}_radiator/cover_button" for u in UNITS[:3]}, "bess": "bess_hvac/cover_button"}
 CARGO = {"spare_oru": ("orbital replacement unit (ORU)", "depot_stand/slot_0"),
          "bat_spare": ("battery module", "depot_spares_stand/slot_0"),
          "consumables_container": ("consumables container", "landing_stand/slot_0")}
@@ -75,6 +77,17 @@ def mission_a(u):
     return "MissionA_Covered", initial, calls, escalation
 
 
+def mission_a_overtemp(u):
+    """L2-A: the unit tripped on OVERTEMP; its shutter is opened at its push button before the covered procedure."""
+    plan, initial, calls, esc = mission_a(u)
+    s = SHUTTER[u]
+    initial[-1] = ("PowerUnit", (u, "trip_cause"), "OVERTEMP")
+    shutter = [call("ToShutter.Nav", "navigate_to_feature", s, 1.2), call("ToShutter.Dock", "dock_at_feature", s, 0.0, 1.2),
+               call("PressShutter.Press", "press", "the round blue push button on the yellow plate", s)]
+    esc["ToShutter"] = esc["PressShutter"] = f"Could not open the heat-rejection shutter of {u}: a call failed 3 times." + HOLD
+    return plan, initial, shutter + calls, esc
+
+
 def mission_b(cargo, dest):
     item, src = CARGO[cargo]
     dst, d = DESTINATION[dest], ITEMS[item]
@@ -113,6 +126,13 @@ def cases():
         "operator", "pdu_2 tripped again after the reset; trip cause: OVERTEMP." + HOLD)], False
     yield "A no tripped unit", plan, [("PowerUnit", (v, "breaker"), "closed") for v in UNITS], [(
         "operator", "Power telemetry shows no tripped unit; the reported fault cannot be located. Holding; requesting instructions.")], False
+    for u in ("pdu_1", "bess"):
+        plan, initial, calls, esc = mission_a_overtemp(u)
+        yield f"A OVERTEMP {u}, shutter first", plan, initial, [(c, True) for c in calls], True
+    for x in calls[:3]:
+        for n in (2, 3):
+            steps, ok = failing(calls, esc, x["label"], n)
+            yield f"A OVERTEMP bess {x['label']} fails {n}x", plan, initial, steps, ok
     for c in CARGO:
         for d in DESTINATION:
             plan, initial, calls, esc = mission_b(c, d)

@@ -20,6 +20,12 @@
 //
 // Composed from the reusable library (lib/DriveAndDock, lib/StowAndReturn). `press`'s own contract needs no
 // arm_ready first. Units, the press feature naming and each panel's look are site knowledge (site_map).
+//
+// Re-authored after the freeze for L2-A (docs/reauthoring/cases/l2a.md, tier 3 lifted for this case): a unit whose
+// heat-rejection shutter is drawn trips OVERTEMP, and trips again about 30 s after every reset while the shutter stays
+// drawn. When the tripped unit's trip cause reads OVERTEMP, its shutter is opened first, at the shutter's push button
+// (the unit's `cover` in the site survey, press point `<cover>/cover_button`; the ISRU plant has none); then the
+// covered procedure resets and verifies as before.
 
 LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
 LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
@@ -32,6 +38,7 @@ MissionA_Covered: UncheckedSequence
 {
   String Unit = "";
   String ButtonTarget = "";
+  String Shutter = "";   // the unit's heat-rejection shutter button (press point); "" when it has none
   String Answer = "";
   Boolean ok = true;     // every leg so far succeeded
   Boolean held = false;  // mission control was asked; nothing more is commanded
@@ -50,6 +57,12 @@ MissionA_Covered: UncheckedSequence
       else { ButtonTarget = "the round red push button set into the yellow sub-panel"; }
       endif
     }
+    ShutterOf:
+    {
+      if (Unit == "bess") { Shutter = "bess_hvac/cover_button"; }
+      elseif (Unit == "pdu_1" || Unit == "pdu_2" || Unit == "pdu_3") { Shutter = Unit + "_radiator/cover_button"; }
+      endif
+    }
   }
   // decisions on live state are taken when the node runs (if/endif): a SkipCondition is watched the whole time a
   // node waits in its Sequence, so a later branch would be skipped the moment an earlier step changed that state
@@ -59,6 +72,32 @@ MissionA_Covered: UncheckedSequence
       ok = false;
       held = true;
       Answer = RequestOperator("Power telemetry shows no tripped unit; the reported fault cannot be located. Holding; requesting instructions.");
+    }
+    endif
+  }
+  // OVERTEMP with the shutter drawn: open it before the reset, or the reset trips again (L2-A)
+  OpenShutter:
+  {
+    if (ok && Shutter != "" && Lookup(PowerUnit(Unit, "trip_cause")) == "OVERTEMP") {
+      Open: Sequence
+      {
+        ToShutter: LibraryCall DriveAndDock(feature = Shutter, standoff_m = 1.2, approach_m = 1.2, ok = ok);
+        PressShutter: Try
+        {
+          PreCondition ok;
+          Shutter1: { EndCondition isKnown(ok); PostCondition ok; ok = press("the round blue push button on the yellow plate", Shutter); }
+          Shutter2: { EndCondition isKnown(ok); PostCondition ok; ok = press("the round blue push button on the yellow plate", Shutter); }
+          Shutter3: { EndCondition isKnown(ok); PostCondition ok; ok = press("the round blue push button on the yellow plate", Shutter); }
+        }
+      }
+    }
+    endif
+  }
+  ShutterNotOpened:
+  {
+    if (!ok && !held) {
+      held = true;
+      Answer = RequestOperator("Could not open the heat-rejection shutter of " + Unit + ": a call failed 3 times. No procedure applies; holding, requesting instructions.");
     }
     endif
   }
