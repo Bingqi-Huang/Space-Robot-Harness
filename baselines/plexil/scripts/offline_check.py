@@ -8,6 +8,8 @@ difference in arguments shows up as a hung case.
   Mission A covered at every serviced unit (covered_misreport is the same run: the plan never reads the report);
   a reset that does not hold (3 presses, escalate, hold); a re-trip seen at the dock; no tripped unit;
   Mission B covered for every item x destination;
+  Mission A with the unit's module failed (BESS battery module, ISRU filter cartridge; re-authored, docs/reauthoring/
+  cases/l3.md): the module replaced (out of the bay onto a free support, the spare in), then the reset;
   at every call site of both plans: the call failing twice then succeeding (the 3rd attempt runs, the mission
   completes), and failing three times (escalate, hold).
 
@@ -75,6 +77,37 @@ def mission_a(u):
     return "MissionA_Covered", initial, calls, escalation
 
 
+# the plan's own FailedModule table (MissionA_Covered.ple): trip cause, catalogue item, look, bay, spare's stand, set-down
+MODULE = {"bess": ("BATTERY_MODULE_FAULT", "battery module", "the battery module: a black drum-shaped module on a black base, "
+                   "with amber windows around its round face, and a black lifting post on top", "bess_cradle/tray",
+                   "depot_spares_stand/slot_0", "bess_stand/slot_0"),
+          "isru": ("FILTER_CLOGGED", "filter cartridge", "the filter cartridge: a grey ribbed cylindrical canister with a "
+                   "yellow band near its top, and a black lifting post on top", "isru_filter/tray", "isru_stand/slot_0",
+                   "isru_return_stand/slot_0")}
+
+
+def mission_a_module(u):
+    """The unit tripped on its own module's fault: replace the module, then the covered reset and return."""
+    plan, initial, calls, escalation = mission_a(u)
+    cause, item, target, bay, spare, set_down = MODULE[u]
+    initial[-1] = ("PowerUnit", (u, "trip_cause"), cause)
+    part, release = ITEMS["battery module"]["part"], "below_overhang"
+    swap = [call("ToBay.Nav", "navigate_to_feature", bay, 1.2), call("ToBay.Dock", "dock_at_feature", bay, 0.0, 1.2),
+            call("TakeOut.Ready", "arm_ready", 0.08), call("TakeOut.Pick", "pick", target, part, item, bay),
+            call("ToSetDown.Nav", "navigate_to_feature", set_down, 1.2),
+            call("ToSetDown.Dock", "dock_at_feature", set_down, 0.0, 1.2),
+            call("SetOut.Place", "place", set_down, release, item), call("Fold1.Stow", "stow", 0.08),
+            call("ToSpare.Nav", "navigate_to_feature", spare, 1.2), call("ToSpare.Dock", "dock_at_feature", spare, 0.0, 1.2),
+            call("TakeSpare.Ready", "arm_ready", 0.08), call("TakeSpare.Pick", "pick", target, part, item, spare),
+            call("BackToBay.Nav", "navigate_to_feature", bay, 1.2),
+            call("BackToBay.Dock", "dock_at_feature", bay, 0.0, 1.2),
+            call("Install.Place", "place", bay, release, item), call("Fold2.Stow", "stow", 0.08)]
+    message = f"Replacing the {item} of {u}: a call failed 3 times." + HOLD
+    escalation.update({c["label"].split(".")[0]: message for c in swap})
+    escalation["Reset"] = escalation["Reset"].replace("OVERCURRENT", cause)
+    return plan, initial, swap + calls, escalation
+
+
 def mission_b(cargo, dest):
     item, src = CARGO[cargo]
     dst, d = DESTINATION[dest], ITEMS[item]
@@ -117,7 +150,11 @@ def cases():
         for d in DESTINATION:
             plan, initial, calls, esc = mission_b(c, d)
             yield f"B covered {c} -> {d}", plan, initial, [(x, True) for x in calls], True
-    for name, (plan, initial, calls, esc) in (("A", mission_a("isru")), ("B", mission_b("consumables_container", "habitat"))):
+    for u in MODULE:
+        plan, initial, calls, esc = mission_a_module(u)
+        yield f"A module failed {u}", plan, initial, [(c, True) for c in calls], True
+    for name, (plan, initial, calls, esc) in (("A", mission_a("isru")), ("B", mission_b("consumables_container", "habitat")),
+                                              ("A module failed", mission_a_module("bess"))):
         for x in calls:
             for n in (2, 3):
                 steps, ok = failing(calls, esc, x["label"], n)

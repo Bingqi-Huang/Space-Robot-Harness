@@ -20,9 +20,20 @@
 //
 // Composed from the reusable library (lib/DriveAndDock, lib/StowAndReturn). `press`'s own contract needs no
 // arm_ready first. Units, the press feature naming and each panel's look are site knowledge (site_map).
+//
+// Re-authored after the freeze for one held-out case (docs/reauthoring/cases/l3.md, "the unit's module has failed"):
+// a unit that tripped on its own module's fault (BESS: BATTERY_MODULE_FAULT, ISRU plant: FILTER_CLOGGED) fails the
+// module's self-test at every reset, so no reset holds until the module is replaced. For that trip cause, before the
+// reset: take the failed module out of its bay (the tripped unit is de-energized: within the vehicle's authority), set
+// it down on a free support, fetch the serviceable spare from its stand (manifest) and put it into the bay; then the
+// covered reset and return. Modules are picked and placed like any catalogued item (lib/PickItem, lib/PlaceItem); the
+// arm is folded after each set-down, before the next drive (lib/StowArm).
 
 LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
 LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
+LibraryAction PickItem(In String target, In String part, In String item, In String support, InOut Boolean ok);
+LibraryAction PlaceItem(In String support, In String release_constraint, In String item, InOut Boolean ok);
+LibraryAction StowArm(InOut Boolean ok);
 Boolean Command press(String, String);
 String Command RequestOperator(String);
 String Lookup PowerUnit(String, String);
@@ -33,6 +44,11 @@ MissionA_Covered: UncheckedSequence
   String Unit = "";
   String ButtonTarget = "";
   String Answer = "";
+  String Module = "";    // the failed module's catalogue item, when the trip cause is that module's fault
+  String ModuleTarget = "";
+  String Bay = "";       // its equipment bay (place point of role equipment_bay)
+  String Spare = "";     // the stand of its serviceable spare (manifest)
+  String SetDown = "";   // a free support near the unit for the failed module (manifest: nothing recorded on it)
   Boolean ok = true;     // every leg so far succeeded
   Boolean held = false;  // mission control was asked; nothing more is commanded
 
@@ -59,6 +75,51 @@ MissionA_Covered: UncheckedSequence
       ok = false;
       held = true;
       Answer = RequestOperator("Power telemetry shows no tripped unit; the reported fault cannot be located. Holding; requesting instructions.");
+    }
+    endif
+  }
+  // the module's trip cause and serials: the case brief; bays, stands and what stands on them: site survey + manifest
+  // (interaction.json points / objects; return_stand/slot_0 carries the return container, so the BESS module goes on
+  // the free BESS receiving stand next to the unit); each module's look: its catalogue preview; handle and release
+  // constraint: the catalogue grasp interface, the same collar handle as every item of lib/PickItem's callers
+  FailedModule:
+  {
+    if (ok && Unit == "bess" && Lookup(PowerUnit(Unit, "trip_cause")) == "BATTERY_MODULE_FAULT") {
+      Module = "battery module";
+      ModuleTarget = "the battery module: a black drum-shaped module on a black base, with amber windows around its round face, and a black lifting post on top";
+      Bay = "bess_cradle/tray";
+      Spare = "depot_spares_stand/slot_0";
+      SetDown = "bess_stand/slot_0";
+    }
+    elseif (ok && Unit == "isru" && Lookup(PowerUnit(Unit, "trip_cause")) == "FILTER_CLOGGED") {
+      Module = "filter cartridge";
+      ModuleTarget = "the filter cartridge: a grey ribbed cylindrical canister with a yellow band near its top, and a black lifting post on top";
+      Bay = "isru_filter/tray";
+      Spare = "isru_stand/slot_0";
+      SetDown = "isru_return_stand/slot_0";
+    }
+    endif
+  }
+  ReplaceModule: UncheckedSequence
+  {
+    String Part = "the slot on the narrow neck of the black lifting post on top, between the transverse head above and the collar below (fingers close on opposite sides of the neck)";
+    PreCondition ok && Module != "";
+    ToBay:     { PreCondition ok; LibraryCall DriveAndDock(feature = Bay, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+    TakeOut:   { PreCondition ok; LibraryCall PickItem(target = ModuleTarget, part = Part, item = Module, support = Bay, ok = ok); }
+    ToSetDown: { PreCondition ok; LibraryCall DriveAndDock(feature = SetDown, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+    SetOut:    { PreCondition ok; LibraryCall PlaceItem(support = SetDown, release_constraint = "below_overhang", item = Module, ok = ok); }
+    Fold1:     { PreCondition ok; LibraryCall StowArm(ok = ok); }
+    ToSpare:   { PreCondition ok; LibraryCall DriveAndDock(feature = Spare, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+    TakeSpare: { PreCondition ok; LibraryCall PickItem(target = ModuleTarget, part = Part, item = Module, support = Spare, ok = ok); }
+    BackToBay: { PreCondition ok; LibraryCall DriveAndDock(feature = Bay, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+    Install:   { PreCondition ok; LibraryCall PlaceItem(support = Bay, release_constraint = "below_overhang", item = Module, ok = ok); }
+    Fold2:     { PreCondition ok; LibraryCall StowArm(ok = ok); }
+  }
+  NotReplaced:
+  {
+    if (!ok && !held) {
+      held = true;
+      Answer = RequestOperator("Replacing the " + Module + " of " + Unit + ": a call failed 3 times. No procedure applies; holding, requesting instructions.");
     }
     endif
   }

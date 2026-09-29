@@ -1,0 +1,21 @@
+// Reusable library node (execution_plan §11.1): fold the arm into its travel pose after an item was set down, before
+// the next drive (jaws must already be empty -- contracts.yaml `stow`; `place` leaves the arm over the support).
+//
+// Result comes back through `ok` (InOut); see lib/DriveAndDock.ple for why not node outcome.
+//
+// Failure handling: at most 3 identical attempts (Try; docs/baselines/authoring_spec.md tier 1).
+
+Boolean Command stow(Real);
+
+StowArm:
+{
+  InOut Boolean ok;
+
+  Stow: Try
+  {
+    PreCondition ok;
+    Stow1: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+    Stow2: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+    Stow3: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+  }
+}
