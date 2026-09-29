@@ -6331,3 +6331,41 @@ query is the decision). `stage2.py`.
 snapshot before the point (a J1 drop by moving the item out of the jaws in a copy of the snapshot; J4 with Earth-set
 moved as above), paired with the full method where the recorded run is not already the control; at most 12 runs.
 Limitation to state: stage 2 asks one step after the accident, on the full method's recorded prefix.
+
+## F149 -- Stage 2 done; live runs blocked twice (an exp1b checkout simulated main's SRB; then the model gateway refused the account); the re-authoring study set up (2026-09-29)
+
+User 2026-09-29: follow the recommendations for everything (J3 live as an exception to F148's stage-3 rule, 2 runs; the
+re-authoring study now; the swimlane fix); judge by what makes the paper more complete. **Stage 2** ran all 684 chains
+(`artifacts/eval/ablation/results/`, 828 model calls, 19.3 M prompt tokens); scored by rule where the rubric decides
+(`stage2_score.py`), the other 240 decisions go to a blind reader (arm hidden, shuffled; `score/sheet.md`, rubric
+`score/reading_rubric.md`). By rule already: J1 full CHECK 44/51 vs no_verification UNSAFE 45/51 (J1 goes live); J3
+no_context 75/75 check the state first (the single decision cannot show a later duplicate: live, the user's exception);
+J4 no_guard with the link up asked for authorization 9/9.
+**Two shared-infrastructure defects on the way, both fixed or waiting, no data kept from the affected runs:**
+1. *An exp1b checkout simulated the main checkout's SRB.* openral's deploy configs name the main checkout's SRB by
+   absolute path (the simulator's cwd, the nav map) and `srb` imports the package the Isaac python installed (main's);
+   main's SRB has Experiment II's extra ORU (`lb_oru_returned`), the exp1b snapshots do not, and every restore died with
+   a KeyError (the six J1/J3 runs hung after INITIAL; stopped). Fix: `experiments/reauthoring/pin_srb.sh <checkout>`
+   points the configs at the checkout's own SRB and puts it first on the simulator's PYTHONPATH (checked: `srb`
+   resolves to the checkout); applied to `.worktree/ablation` and all re-authoring checkouts, and in their
+   `make_worktree.sh`. Relaunched: all six restored (the item-in-jaws drop included).
+2. *The model gateway refused the account* (HTTP 403 "team not allowed to access model", user: out of credit) for
+   Qwen3.8-Max and DeepSeek-V4.1-Flash: the relaunched runs' reasoner failed every step to the budget (category 8); all
+   stopped. Every live run needs the gateway (Ours' reasoner; every method's press/pick locate), so the rest of stage 3
+   and all re-authoring validation wait for the user. Budget stated to the user: stage 3 ~6-12 Ours runs (~1 M prompt
+   tokens each, no_context more), re-authoring validation 12-18 baseline runs (vision model only).
+A network drop also killed the first round of engineer sessions a few minutes in (timers started, nothing written):
+their worklogs were deleted and the sessions restarted from the start (preregistration §3: infrastructure is repeated).
+**Re-authoring study** (heldout_design §8; `docs/reauthoring/spec.md`, briefs `docs/reauthoring/cases/{l2a,l2b,l3,l4}.md`,
+`experiments/reauthoring/`): one fresh Claude engineer (opus) per baseline x case from tag exp1b, diagnosis given (the
+cause and the facts, not the procedure), tier 3 lifted for that case only, timed (`engineering_worklog.py`), 3 h cap,
+validation live on every instance of the case (`validate.py`: evaluator success, nothing dropped, no unapproved
+removal); GPUs shared with the ablation's live runs through one lock per GPU (`gpu_run.sh`). Held-out material seen by
+accident: two PLEXIL engineers' repo-wide greps printed lines of `experiments/launch/lunar_base_d0/chains/l2a_*.json`,
+`chains/l3_isru.json` and `experiments/scenarios/mission_a/held_out/a_l3_module_failure_isru*.yaml` (not opened,
+recorded in their worklogs); the remaining engineers were told to keep searches inside their baseline's files.
+**Swimlane labels** (`experiments/video/swimlane.py`): neighbouring same-kind labels merge (press x2), colliding ones go
+below the bar, all kept inside the axes; the six exp1b figures re-rendered and looked at.
+**Paper:** `paper/figures/success_by_level.py` (success vs level, Wilson 95%), `paper/tables/make_tables.py` (tables
+from the generated result tables), `paper/sections/results.tex` (Experiment I, ALFUS, trustworthiness, Experiment II;
+re-authoring and ablations TBD).
