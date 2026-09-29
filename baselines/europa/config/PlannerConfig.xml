@@ -3,6 +3,9 @@
 
   <ThreatManager defaultPriority="0">
     <FlawHandler component="StandardThreatHandler"/>
+    <!-- a slot token is ordered on its place point once pick/place have fixed which point: ordered first, a pick's
+         freed slot bound its support to whatever point came first -->
+    <FlawHandler component="StandardThreatHandler" class-match="Slot" priority="10"/>
     <FlawFilter class-match="Reservoir"/>
   </ThreatManager>
 

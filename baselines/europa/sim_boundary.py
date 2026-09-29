@@ -10,9 +10,12 @@ Arguments are taken and checked as the boundary does: a JSON object, or the posi
                        the press (what a held-out L2-A unit looks like to a covered plan: OVERTEMP after 30 s)
   --no-close           a reset does not take: the unit reads tripped already at the first power_status query after
                        the press (a held-out L3/L4 unit: its self-test trips it 3 s after the reset, before press returns)
+  --failed-module SERIAL  that module fails its unit's self-test: the unit starts tripped with the trip cause naming
+                       its kind, and a reset takes only once every bay of the unit holds a module other than SERIAL
 The manifest's inventory is the scene's authored one (every item on its authored support, serviceable), as the
-covered scenarios publish it. Mission control is stood in for too: every request on /space/operator/request is answered
-at once with the protocol's HOLD reply (experiments/operator_console/console.py), so an escalation ends the run.
+covered scenarios publish it; power_status reports each bay's installed module as pick/place leave it. Mission control
+is stood in for too: every request on /space/operator/request is answered at once with the protocol's HOLD reply
+(experiments/operator_console/console.py), so an escalation ends the run.
   --fail CAP:N[:far]   the N-th call of CAP fails (failure_kind 3, "no progress"); `far` (base moves only) leaves the
                        base 5 m off the target instead of where it started; ignored for arm_ready/stow/pick/place/
                        press, which simply do not change posture/jaws/held item on a failed call
@@ -41,6 +44,8 @@ from contracts import CONTRACTS, check_args  # noqa: E402
 
 IX = json.loads(Path(os.environ.get("EUROPA_IX", Path(__file__).resolve().parents[2] / "space_robotics_bench/assets/lunar_base/usd/scene/lunar_base/interaction.json")).read_text())
 STANCE = IX["robot"]["hull_x_back_m"] + IX["robot"]["reach_m"]["pick"]
+# the trip cause a unit reports when its self-test fails a module of that kind
+TRIP_CAUSE = {"battery module": "BATTERY_MODULE_FAULT", "filter cartridge": "FILTER_CLOGGED"}
 HOLD = "ACK. Hold in a safe state. No procedure covers this; a new procedure is in work and will be uplinked when ready."
 
 
@@ -52,10 +57,15 @@ def feature_pose(name, standoff):
 
 
 class SimBoundary(Node):
-    def __init__(self, fail, tripped, hold, close):
+    def __init__(self, fail, tripped, hold, close, failed_module):
         super().__init__("europa_sim_boundary")
-        self.fail, self.hold, self.close = fail, hold, close
-        self.breaker = {u: "tripped" if u in tripped else "closed" for u in IX["units"]}
+        self.fail, self.hold, self.close, self.failed_module = fail, hold, close, failed_module
+        self.on = {o["support"]: o["serial"] for o in IX["objects"].values()}  # place frame -> serial standing on it
+        self.bays = {u: [f"{b}/tray" for b in v["bays"]] for u, v in IX["units"].items()}
+        kind = {o["serial"]: o["item"] for o in IX["objects"].values()}
+        self.cause = {u: TRIP_CAUSE[kind[failed_module]] for u, bays in self.bays.items()
+                      if failed_module in [self.on.get(b) for b in bays]}
+        self.breaker = {u: "tripped" if u in tripped or u in self.cause else "closed" for u in IX["units"]}
         self.pending_trip = set()
         self.calls = Counter()
         self.base = dict(frame="map", x=0.0, y=0.0, yaw=0.0)
@@ -89,15 +99,17 @@ class SimBoundary(Node):
         elif cap in ("arm_ready", "stow") and ok:
             self.posture = "ready" if cap == "arm_ready" else "stowed"
         elif cap == "pick" and ok:
-            self.held = args["item"]
+            self.held = self.on.pop(args["support"])
             self.posture = "ready"
         elif cap == "place" and ok:
+            self.on[args["support"]] = self.held
             self.held = None
             self.posture = "ready"
         elif cap == "press" and ok:
             self.posture = "ready"  # press reaches into the panel and does not fold back afterward on its own
             unit = args["feature"].split("_panel")[0]
-            self.breaker[unit] = "closed" if self.close else "tripped"
+            seated = all(self.on.get(b) not in (None, self.failed_module) for b in self.bays[unit])
+            self.breaker[unit] = "closed" if self.close and seated else "tripped"
             if not self.hold:
                 self.pending_trip.add(unit)
         r = ExecuteCapability.Result()
@@ -120,7 +132,8 @@ class SimBoundary(Node):
         elif req.query == "arm_state":
             value = self.arm_evidence()
         elif req.query == "power_status":
-            value = dict(units={u: dict(breaker=b, trip_cause="OVERCURRENT" if b == "tripped" else None)
+            value = dict(units={u: dict(breaker=b, trip_cause=self.cause.get(u, "OVERCURRENT") if b == "tripped" else None,
+                                        installed_modules={bay: self.on.get(bay) for bay in self.bays[u]})
                                 for u, b in self.breaker.items()})
             for u in self.pending_trip:  # the reset read closed once; the unit trips again after that
                 self.breaker[u] = "tripped"
@@ -137,6 +150,7 @@ if __name__ == "__main__":
     ap.add_argument("--tripped", action="append", default=[])
     ap.add_argument("--no-hold", action="store_true")
     ap.add_argument("--no-close", action="store_true")
+    ap.add_argument("--failed-module")
     a = ap.parse_args()
     fail = {}
     for f in a.fail:
@@ -144,5 +158,5 @@ if __name__ == "__main__":
         fail[(cap, int(n))] = how[0] if how else "stay"
     rclpy.init()
     ex = MultiThreadedExecutor()
-    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold, not a.no_close))
+    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold, not a.no_close, a.failed_module))
     ex.spin()

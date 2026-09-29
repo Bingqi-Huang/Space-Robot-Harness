@@ -55,6 +55,8 @@ NEAR_M = HOST_CONFIG["near_m"]      # dock_at_feature closes "the last metre" af
                                      # this close to the feature can dock
 ATTEMPTS = HOST_CONFIG["attempts"]  # the same call failing this often ends the run -- the domain has no other way there
 JAW_HOLD = (HOST_CONFIG["jaw_holding_min_rad"], HOST_CONFIG["jaw_holding_max_rad"])  # d0_common.py's own bands
+RETURN_STANDS = HOST_CONFIG["return_stands"]  # the site survey's return stands, where a failed module is set down
+MODULE_FAULTS = HOST_CONFIG["module_faults"]  # a unit's trip cause -> the kind of installed module it names as failed
 
 # An item's natural-language description (pick's target/part) and catalogue release constraint (place's) are text
 # the solver has no reason to search over -- there is exactly one way to describe an item. The table is shared with the
@@ -73,21 +75,23 @@ def ident(name):
 
 
 # ---- mission instance and state as NDDL --------------------------------------------------------------------------
-def instance(site, items, units):
-    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, every item of
-    the inventory record (`items`: serial -> its support; where it stands is a fact, not part of the object) and every
+def instance(site, items, units, kinds, serviceable):
+    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances (a place point
+    as a `Support`, a return stand of RETURN_STANDS marked), every item of the inventory record (`items`: serial -> its
+    support; where it stands is a fact, not part of the object) with its catalogue kind and serviceability, and every
     serviced unit (`units`: name -> its button's feature name, a structural property of the `Unit` constructor itself,
     not a fact)."""
     lines = ['NamedPose dock = new NamedPose("dock");', 'Location elsewhere = new Location("elsewhere");']
     names = {"dock": "dock", "elsewhere": "elsewhere"}
-    for f in site["points"]:
+    for f, point in site["points"].items():
         i = ident(f)
         lines += [f'Location {i}_a = new Location("{f}@approach");', f'Location {i}_w = new Location("{f}@work");',
-                  f'Feature {i} = new Feature("{f}", {i}_a, {i}_w);']
+                  f'Support {i} = new Support("{f}", {i}_a, {i}_w, {str(f in RETURN_STANDS).lower()});'
+                  if point["type"] == "place" else f'Feature {i} = new Feature("{f}", {i}_a, {i}_w);']
         names.update({i: f, f"{i}_a": f"{f}@approach", f"{i}_w": f"{f}@work"})
     for item in items:
         i = ident(item)
-        lines.append(f'Item {i} = new Item("{item}");')
+        lines.append(f'Item {i} = new Item("{item}", "{kinds[item]}", {str(serviceable[item]).lower()});')
         names[i] = item
     for unit, button in units.items():
         i = ident(unit)
@@ -189,6 +193,8 @@ def facts_from_result(state, cap, args, res, site):
             new["rover.jaws"] = ["Holding", {"item": ident(item)}] if holding else ["Empty", {}]
             if holding:
                 new[f"{ident(item)}.loc"] = ["Held", {}]
+                if cap == "pick":
+                    new[f"{ident(args['support'])}.slot"] = ["Free", {}]
         return new, False
     return state, False
 
@@ -198,9 +204,37 @@ def initial_state(pose, arm, site, items_at):
     state = {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}],
              "rover.posture": ["Ready" if arm.get("posture") == "ready" else "Stowed", {}],
              "rover.jaws": ["Empty", {}]}  # every covered instance starts with empty jaws; nothing here detects otherwise
+    for f, point in site["points"].items():
+        if point["type"] == "place":
+            state[f"{ident(f)}.slot"] = ["Free", {}]
     for item, support in items_at.items():
         state[f"{ident(item)}.loc"] = ["On", {"support": ident(support)}]
+        state[f"{ident(support)}.slot"] = ["Holds", {"item": ident(item)}]
     return state
+
+
+def unserviceable_modules(telemetry, kinds):
+    """The modules a unit's own trip cause names (MODULE_FAULTS: cause -> the kind of module it names): the one of that
+    kind installed in the tripped unit's bays. Read once, at the start: the trip cause stays that of the last trip
+    until a reset holds, whatever module is seated after it."""
+    return {serial for u in telemetry["units"].values() if u["breaker"] == "tripped" and u["trip_cause"] in MODULE_FAULTS
+            for serial in u["installed_modules"].values() if serial and kinds[serial] == MODULE_FAULTS[u["trip_cause"]]}
+
+
+def selftests_from_telemetry(state, units, telemetry, failed, kinds, bay_kinds):
+    """Each unit's self-test as its telemetry reports its installed modules: Fail on the first bay holding no module
+    or a failed one (with the kind of module the bay takes, from the inventory record, and the failed module of that
+    kind), else Pass."""
+    new = dict(state)
+    for u in units:
+        bad = [b for b, serial in telemetry["units"][u]["installed_modules"].items() if not serial or serial in failed]
+        if bad:
+            module = next(s for s in failed if kinds[s] == bay_kinds[bad[0]])
+            new[f"{ident(u)}.selftest"] = ["Fail", {"bay": ident(bad[0]), "kind": json.dumps(bay_kinds[bad[0]]),
+                                                    "module": ident(module)}]
+        else:
+            new[f"{ident(u)}.selftest"] = ["Pass", {}]
+    return new
 
 
 def panels_from_telemetry(state, units, telemetry):
@@ -317,9 +351,13 @@ def main():
     inventory = query(node, client, "manifest")["inventory"]
     items_at = {r["serial"]: r["recorded_location"] for r in inventory}
     kinds = {r["serial"]: r["item"] for r in inventory}
+    bay_kinds = {r["recorded_location"]: r["item"] for r in inventory}
+    telemetry = query(node, client, "power_status")
+    failed = unserviceable_modules(telemetry, kinds)
+    serviceable = {r["serial"]: r["status"] == "serviceable" and r["serial"] not in failed for r in inventory}
     # the serviced units are the ones reporting on the base network; each unit's panel reset is its `<unit>_panel/press`
-    units = {u: f"{u}_panel/press" for u in query(node, client, "power_status")["units"]}
-    site_lines, names = instance(site, items_at, units)
+    units = {u: f"{u}_panel/press" for u in telemetry["units"]}
+    site_lines, names = instance(site, items_at, units, kinds, serviceable)
     loc = {v: k for k, v in names.items()}
     delivery = None
     if "MISSION_GOAL" in os.environ:
@@ -330,12 +368,13 @@ def main():
     if a.final:
         goals += [x[:3] + (True,) for x in parse_goal(a.final, loc, units, delivery)]
     state = initial_state(query(node, client, "base_pose"), query(node, client, "arm_state"), site, items_at)
-    state = panels_from_telemetry(state, units, query(node, client, "power_status"))
-    log("mission", goals=goals, state=state)
+    state = panels_from_telemetry(state, units, telemetry)
+    log("mission", goals=goals, state=state, unserviceable=sorted(failed))
     link = Link(listener)
     failures, n_plan, reached = {}, 0, set()
     while True:
-        state = panels_from_telemetry(state, units, query(node, client, "power_status"))
+        telemetry = query(node, client, "power_status")
+        state = selftests_from_telemetry(panels_from_telemetry(state, units, telemetry), units, telemetry, failed, kinds, bay_kinds)
         # a unit restore that was reached and no longer holds (read from the unit's telemetry) is a failure of the
         # activities that reached it; the rover leaving the dock or unfolding the arm on the way is not
         for g in goals:

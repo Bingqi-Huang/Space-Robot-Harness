@@ -14,5 +14,10 @@
     "target": "the consumables container: a long silver-white rugged case with a grey front panel, and a black lifting post on top",
     "part": "the slot on the narrow neck of the black lifting post on top, between the transverse head above and the collar below (fingers close on opposite sides of the neck)",
     "release_constraint": "below_overhang"
+  },
+  "filter cartridge": {
+    "target": "the filter cartridge: a grey ribbed cylindrical canister with a yellow band below its dark grey lid, and a black lifting post on top",
+    "part": "the slot on the narrow neck of the black lifting post on top, between the transverse head above and the collar below (fingers close on opposite sides of the neck)",
+    "release_constraint": "below_overhang"
   }
 }

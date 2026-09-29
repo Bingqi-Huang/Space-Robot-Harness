@@ -49,12 +49,42 @@ class ItemLoc extends Timeline
   predicate Held {}
 }
 
-// every item of the inventory record (manifest), by serial number, on its recorded support
+// every item of the inventory record (manifest), by serial number, on its recorded support; `kind` is its
+// equipment-catalogue name, `serviceable` its recorded status unless its own unit's trip cause names it (host.py)
 class Item
 {
   string name;
+  string kind;
+  bool serviceable;
   ItemLoc loc;
-  Item(string _name) { name = _name; loc = new ItemLoc(); }
+  Item(string _name, string _kind, bool _serviceable)
+  {
+    name = _name;
+    kind = _kind;
+    serviceable = _serviceable;
+    loc = new ItemLoc();
+  }
+}
+
+// what stands on a place point: pick empties it, place fills it (one item per point)
+class Slot extends Timeline
+{
+  predicate Free {}
+  predicate Holds { Item item; }
+}
+
+// a surveyed place point (site_map type `place`): the only features pick and place work on. A return stand (the
+// survey's return stands) is where a module that failed its unit's self-test is set down.
+class Support extends Feature
+{
+  Slot slot;
+  bool return_stand;
+  Support(string _name, Location _approach, Location _work, bool _return_stand)
+  {
+    super(_name, _approach, _work);
+    slot = new Slot();
+    return_stand = _return_stand;
+  }
 }
 
 // arm_ready/stow move the arm between its two named postures; pick/place need Ready and change Jaws/ItemLoc
@@ -79,12 +109,26 @@ class Panel extends Timeline
   predicate Restored {}
 }
 
+// a unit's self-test of the modules in its equipment bays, as its telemetry reports them (installed_modules, the
+// module its trip cause names): Fail names a bay with no serviceable module in it and the kind of module the bay
+// takes. No reset of the unit holds while it fails.
+class SelfTest extends Timeline
+{
+  predicate Pass {}
+  predicate Fail { Support bay; string kind; Item module; }
+}
+
 class Unit
 {
   string name;
   Panel panel;
   Feature button;  // which surveyed feature presses this unit's reset -- a structural fact, like a Feature's own stances
-  Unit(string _name, Feature _button) { name = _name; panel = new Panel(); button = _button; }
+  SelfTest selftest;
+  Unit(string _name, Feature _button) { name = _name; panel = new Panel(); button = _button; selftest = new SelfTest(); }
+
+  // the unit's own self-test passing on a serviceable module seated in the failing bay: the unit's behaviour, not a
+  // capability of the rover, so the host never dispatches it (it dispatches LunarBot's activities only)
+  action seat { Item module; Support bay; }
 }
 
 class LunarBot
@@ -105,20 +149,21 @@ class LunarBot
   // target/part (pick) and release_constraint (place) are natural-language/catalogue text the solver has no reason
   // to reason over (there is exactly one way to describe an item); host.py's capability_call fills them in from
   // the baselines' shared item table (baselines/item_descriptions.json).
-  action pick { Item item; Feature support; leq(duration, 900); }
-  action place { Item item; Feature support; leq(duration, 600); }
+  action pick { Item item; Support support; leq(duration, 900); }
+  action place { Item item; Support support; leq(duration, 600); }
   // press's own contract needs no particular starting posture ("plans its own way from wherever the arm is") and
   // does not itself need arm_ready -- but it does reach into the panel to press the button and does not fold back
   // to the travel posture afterward (contracts.yaml: "the tool goes in ... then withdraws", not "returns to
-  // stowed"), so it transitions posture from Stowed (the covered instance's own starting posture) to Ready, which is
-  // what leaves `stow` something real to do.
+  // stowed"), so it leaves the posture Ready, which is what leaves `stow` something real to do. It needs no posture
+  // before it (as its contract says): a press right after seating a module starts from Ready.
   action press { Unit unit; Feature feature; leq(duration, 420); }
 }
 
-// Nav2 drives from wherever the base is
+// Nav2 drives from wherever the base is: no condition on where the base was (a `met_by` stance here only let the
+// solver chain a drive onto the base's first recorded stance and then regress through ever more drives when a later
+// leg needed that stance first)
 LunarBot::navigate_to_feature
 {
-  met_by(condition object.base.At from);
   equals(effect object.base.Moving m);
   eq(m.to, feature.approach);
   meets(effect object.base.At to);
@@ -138,7 +183,6 @@ LunarBot::dock_at_feature
 
 LunarBot::navigate_to_pose
 {
-  met_by(condition object.base.At from);
   equals(effect object.base.Moving m);
   eq(m.to, pose);
   meets(effect object.base.At to);
@@ -176,15 +220,20 @@ LunarBot::stow
 // pick/place's own effects transition, exactly like Rover::Go's `met_by(condition object.navigator.At _from)`.
 LunarBot::pick
 {
+  // the item's own location first: it fixes `support` before anything else is matched against it (the solver takes
+  // these in order, and a base stance or slot matched first would bind `support` to whatever stance it met)
+  met_by(condition item.loc.On from);
+  eq(from.support, support);
+  met_by(condition support.slot.Holds was);
+  eq(was.item, item);
   contained_by(condition object.posture.Ready p);
   met_by(condition object.jaws.Empty j);
   contained_by(condition object.base.At bp);
   eq(bp.loc, support.work);
-  met_by(condition item.loc.On from);
-  eq(from.support, support);
   meets(effect object.jaws.Holding held);
   eq(held.item, item);
   meets(effect item.loc.Held to);
+  meets(effect support.slot.Free now);
 }
 
 LunarBot::place
@@ -195,9 +244,40 @@ LunarBot::place
   contained_by(condition object.base.At bp);
   eq(bp.loc, support.work);
   met_by(condition item.loc.Held from);
+  met_by(condition support.slot.Free was);
   meets(effect object.jaws.Empty j);
   meets(effect item.loc.On to);
   eq(to.support, support);
+  meets(effect support.slot.Holds now);
+  eq(now.item, item);
+}
+
+// a self-test fails only as the unit reports it now (a fact at the plan's start): nothing the rover does makes it fail
+SelfTest::Fail
+{
+  eq(start, 0);
+}
+
+// the self-test passes once the failed module stands on a return stand and a serviceable module of the kind the bay
+// takes stands in the bay (the brief: out of the bay onto a free support, the spare in). It re-runs on the seated
+// module, never at the plan's start (a self-test passing then is a fact): starting at 1 keeps the failure it ends
+// inside the planning horizon, so the solver has to merge it with the unit's own reported Fail.
+Unit::seat
+{
+  leq(1, start);
+  met_by(condition object.selftest.Fail f);
+  eq(f.bay, bay);
+  eq(f.kind, module.kind);
+  eq(module.serviceable, true);
+  Item failed;
+  eq(f.module, failed);
+  contained_by(condition failed.loc.On out);
+  Support stand;
+  eq(out.support, stand);
+  eq(stand.return_stand, true);
+  contained_by(condition bay.slot.Holds h);
+  eq(h.item, module);
+  meets(effect object.selftest.Pass p);
 }
 
 // the unit's reset button, docked at: its breaker closes. `feature` is kept as its own action parameter (not just
@@ -209,8 +289,9 @@ LunarBot::press
   eq(feature, unit.button);
   contained_by(condition object.base.At bp);
   eq(bp.loc, feature.work);
-  met_by(condition object.posture.Stowed from);
   meets(effect object.posture.Ready to);
   met_by(condition unit.panel.Faulted pf);
+  // a reset holds only while the unit's self-test passes
+  contained_by(condition unit.selftest.Pass t);
   meets(effect unit.panel.Restored pt);
 }
