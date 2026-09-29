@@ -122,7 +122,8 @@ def point(pid: str, accident: str, run: str, step: int, arms: dict, meta: dict) 
             else:
                 system, user = render(name, evs, step, t)
                 messages = [{"role": "user", "content": user}]
-        out["arms"][arm] = {"system": system, "messages": messages, "tools": tools(name)}
+        out["arms"][arm] = {"system": system, "messages": messages, "tools": tools(name),
+                            "_state": {"variant": name, "events": evs, "mission_t": t, "los": los}}  # not written
     return out
 
 
@@ -263,8 +264,12 @@ def natural() -> list[dict]:
         steps = [e["step"] for e in evs if e["kind"] == "reasoner_step_started"]
         step = steps[round(len(steps) * 2 / 3) - 1]
         cut, t = before(evs, step)
+        recorded = next(e["tool"] for e in evs[len(cut):] if e["kind"] in STEP_KINDS)
+        held = sorted({json.dumps([e["capability"], json.dumps(e["args"], sort_keys=True)]) for i, e in enumerate(cut)
+                       if e["kind"] == "execution_finished" and any(x["kind"] == "effect_verified" and x["effect"] != "item_still_held"
+                                                                      and x["holds"] for x in cut[i + 1:i + 4])})
         pts.append(point(f"N/{run}", "N", run, step, {"full": (cut, t, None, None), "no_context": (cut, t, None, 1)},
-                         {"steps_in_run": len(steps)}))
+                         {"steps_in_run": len(steps), "recorded": {"tool": recorded, "held_effects": [json.loads(h) for h in held]}}))
     return pts
 
 
@@ -300,5 +305,5 @@ if __name__ == "__main__":
     pts = all_points()
     for p in pts:
         path = out / (p["id"].replace("/", "__") + ".json")
-        path.write_text(json.dumps(p))
+        path.write_text(json.dumps({**p, "arms": {a: {k: v for k, v in c.items() if k != "_state"} for a, c in p["arms"].items()}}))
     print(len(pts), "points,", sum(len(p["arms"]) for p in pts), "contexts ->", out)

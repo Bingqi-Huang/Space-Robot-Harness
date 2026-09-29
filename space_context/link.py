@@ -3,9 +3,16 @@
 long until it closes or reopens, and the one-way delay. Mission time is the simulator clock since the mission started.
 Store-and-forward (DTN): a message sent while the link is down is delivered when it next comes up, not dropped."""
 import json
+import os
 from pathlib import Path
 
 PROFILE = json.loads((Path(__file__).resolve().parent / "profiles/earth_link.json").read_text())
+if os.environ.get("SPACE_LINK_LOS_S"):
+    # ablation J4 (research repo F148): the same mission started later in the same pass -- Earth sets this many seconds
+    # after the start, and the next pass is shifted with it
+    _shift = PROFILE["los_after_start_s"] - float(os.environ["SPACE_LINK_LOS_S"])
+    PROFILE["los_after_start_s"] -= _shift
+    PROFILE["aos_after_start_s"] -= _shift
 
 
 def state(mission_t: float) -> dict:
