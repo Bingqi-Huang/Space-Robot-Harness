@@ -72,10 +72,13 @@ class Jaws extends Timeline
   predicate Holding { Item item; }
 }
 
-// a serviced unit's breaker as its own telemetry reports it (power_status): tripped = Faulted, closed = Restored
+// a serviced unit's breaker as its own telemetry reports it (power_status): tripped = Faulted, closed = Restored.
+// Overheated: tripped with trip cause OVERTEMP -- the unit's heat-rejection shutter is drawn closed, and with it closed
+// a closed breaker overheats and trips OVERTEMP again about 30 s after a reset: a reset alone does not restore it.
 class Panel extends Timeline
 {
   predicate Faulted {}
+  predicate Overheated {}
   predicate Restored {}
 }
 
@@ -85,6 +88,15 @@ class Unit
   Panel panel;
   Feature button;  // which surveyed feature presses this unit's reset -- a structural fact, like a Feature's own stances
   Unit(string _name, Feature _button) { name = _name; panel = new Panel(); button = _button; }
+}
+
+// a unit's heat-rejection shutter (site survey `units[u].cover`: a PDU's radiator shutter, the BESS HVAC condenser
+// shutter; the ISRU plant has none) and the surveyed push button that opens it (`<cover>/cover_button`)
+class Shutter
+{
+  Unit unit;
+  Feature button;
+  Shutter(Unit _unit, Feature _button) { unit = _unit; button = _button; }
 }
 
 class LunarBot
@@ -113,6 +125,8 @@ class LunarBot
   // stowed"), so it transitions posture from Stowed (the covered instance's own starting posture) to Ready, which is
   // what leaves `stow` something real to do.
   action press { Unit unit; Feature feature; leq(duration, 420); }
+  // the same `press` capability, on a shutter's push button instead of a unit's reset
+  action open_shutter { Shutter shutter; Feature feature; leq(duration, 420); }
 }
 
 // Nav2 drives from wherever the base is
@@ -213,4 +227,15 @@ LunarBot::press
   meets(effect object.posture.Ready to);
   met_by(condition unit.panel.Faulted pf);
   meets(effect unit.panel.Restored pt);
+}
+
+// the shutter's push button, docked at: the shutter opens, and the unit's trip becomes one a reset clears (Overheated ->
+// Faulted, which `press` then restores). No posture change: press's contract folds the arm back to its travel posture.
+LunarBot::open_shutter
+{
+  eq(feature, shutter.button);
+  contained_by(condition object.base.At bp);
+  eq(bp.loc, feature.work);
+  met_by(condition shutter.unit.panel.Overheated po);
+  meets(effect shutter.unit.panel.Faulted pf);
 }

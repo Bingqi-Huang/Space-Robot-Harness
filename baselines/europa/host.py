@@ -66,6 +66,12 @@ ITEM_DESCRIPTIONS = json.loads((HERE.parent / "item_descriptions.json").read_tex
 UNIT_DESCRIPTIONS = {**{u: {"target": "the round red push button set into the yellow sub-panel"} for u in ("pdu_1", "pdu_2", "pdu_3")},
                      "bess": {"target": "the round white push button on the graphite control panel with the teal border"},
                      "isru": {"target": "the round black push button on the white control panel with the orange border"}}
+# The units' heat-rejection shutters: the push button that opens each (site survey `units[u].cover`, its
+# `<cover>/cover_button` press point; the ISRU plant has none) and that button's look for press's `target`, the same
+# status as UNIT_DESCRIPTIONS (previews/{pdu_radiator,hvac_condenser}_*.png).
+SHUTTER_BUTTONS = {"pdu_1": "pdu_1_radiator/cover_button", "pdu_2": "pdu_2_radiator/cover_button",
+                   "pdu_3": "pdu_3_radiator/cover_button", "bess": "bess_hvac/cover_button"}
+SHUTTER_TARGET = "the round blue push button on the yellow plate"
 
 
 def ident(name):
@@ -73,11 +79,11 @@ def ident(name):
 
 
 # ---- mission instance and state as NDDL --------------------------------------------------------------------------
-def instance(site, items, units):
+def instance(site, items, units, shutters):
     """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, every item of
-    the inventory record (`items`: serial -> its support; where it stands is a fact, not part of the object) and every
+    the inventory record (`items`: serial -> its support; where it stands is a fact, not part of the object), every
     serviced unit (`units`: name -> its button's feature name, a structural property of the `Unit` constructor itself,
-    not a fact)."""
+    not a fact) and every unit's heat-rejection shutter (`shutters`: unit -> its button's feature name)."""
     lines = ['NamedPose dock = new NamedPose("dock");', 'Location elsewhere = new Location("elsewhere");']
     names = {"dock": "dock", "elsewhere": "elsewhere"}
     for f in site["points"]:
@@ -93,6 +99,9 @@ def instance(site, items, units):
         i = ident(unit)
         lines.append(f'Unit {i} = new Unit("{unit}", {ident(button)});')
         names[i] = unit
+    for unit, button in shutters.items():
+        lines.append(f'Shutter {ident(unit)}_shutter = new Shutter({ident(unit)}, {ident(button)});')
+        names[f"{ident(unit)}_shutter"] = unit
     return lines, names
 
 
@@ -140,6 +149,10 @@ def capability_call(act, names, site, kinds):
     elif cap == "press":
         unit = args.pop("unit")  # a domain-only concept (which unit's button); press's own contract has no such arg
         args["target"] = UNIT_DESCRIPTIONS[unit]["target"]
+    elif cap == "open_shutter":  # the press capability, on the shutter's button
+        cap = "press"
+        args.pop("shutter")
+        args["target"] = SHUTTER_TARGET
     return cap, args
 
 
@@ -204,10 +217,18 @@ def initial_state(pose, arm, site, items_at):
 
 
 def panels_from_telemetry(state, units, telemetry):
-    """The serviced units' panel facts as their own telemetry reports them (breaker tripped -> Faulted): the host
-    verifies a restore by reading the unit, not by trusting the plan's post-state."""
-    return {**state, **{f"{ident(u)}.panel": ["Faulted" if telemetry["units"][u]["breaker"] == "tripped" else "Restored", {}]
-                        for u in units}}
+    """The serviced units' panel facts as their own telemetry reports them (breaker tripped -> Faulted, or Overheated
+    when the trip's cause is OVERTEMP): the host verifies a restore by reading the unit, not by trusting the plan's
+    post-state. The cause is read when a trip is seen (the first reading, or a restore lost); a unit still reading
+    tripped keeps the fact the plan gave it -- trip_cause is the last trip's, still OVERTEMP after open_shutter."""
+    new = dict(state)
+    for u in units:
+        t, key = telemetry["units"][u], f"{ident(u)}.panel"
+        if t["breaker"] != "tripped":
+            new[key] = ["Restored", {}]
+        elif state.get(key, ["Restored"])[0] == "Restored":
+            new[key] = ["Overheated" if t["trip_cause"] == "OVERTEMP" else "Faulted", {}]
+    return new
 
 
 def parse_goal(token, loc, units, delivery):
@@ -319,7 +340,7 @@ def main():
     kinds = {r["serial"]: r["item"] for r in inventory}
     # the serviced units are the ones reporting on the base network; each unit's panel reset is its `<unit>_panel/press`
     units = {u: f"{u}_panel/press" for u in query(node, client, "power_status")["units"]}
-    site_lines, names = instance(site, items_at, units)
+    site_lines, names = instance(site, items_at, units, SHUTTER_BUTTONS)
     loc = {v: k for k, v in names.items()}
     delivery = None
     if "MISSION_GOAL" in os.environ:
