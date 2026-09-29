@@ -116,18 +116,36 @@ def main(run_dir: str, stem: str) -> None:
                 ha="center", va="bottom", fontsize=7, color=MUTED)
 
     pad = x1 * 0.008
+    char = x1 * 0.009  # a label character's width at this font size, in mission seconds (the in-bar fit test's own measure)
     for i, lane in enumerate(LANES):
+        outside = []  # labels that do not fit in their bar: (centre, label), merged and placed clear of each other below
         for t0, t1, colour, label, hatch, where in bars[lane]:
             ax.barh(i, max(t1 - t0, x1 * 0.0015), left=t0, height=0.5, color=colour, hatch=hatch, edgecolor="white" if hatch else colour,
                     lw=0, zorder=3)
-            if where == "in" and t1 - t0 > x1 * 0.009 * len(label):
+            if where == "in" and t1 - t0 > char * len(label):
                 ax.text((t0 + t1) / 2, i, label, ha="center", va="center", fontsize=6, color="white", zorder=4)
             elif where in ("in", "above"):
-                ax.text((t0 + t1) / 2, i - 0.4, label, ha="center", va="center", fontsize=6, color=INK, zorder=4)
+                outside.append(((t0 + t1) / 2, label))
             elif where == "beside":
                 right = t1 < 0.6 * x1
                 ax.text(t1 + pad if right else t0 - pad, i, label, ha="left" if right else "right", va="center", fontsize=6,
                         color=INK, zorder=4)
+        # neighbouring calls of one kind whose labels would overlap read as one label (press x2); what still collides
+        # goes below the bar instead of above it
+        groups = []
+        for c, label in outside:
+            if groups and groups[-1][1] == label and c - groups[-1][0][-1] < char * len(label):
+                groups[-1][0].append(c)
+            else:
+                groups.append(([c], label))
+        ends = {-0.4: -float("inf"), 0.4: -float("inf")}
+        for cs_, label in groups:
+            text = label if len(cs_) == 1 else f"{label} \u00d7{len(cs_)}"
+            c, w = (cs_[0] + cs_[-1]) / 2, char * len(text)
+            lo = min(max(c - w / 2, pad), x1 - pad - w)  # kept inside the axes
+            dy = -0.4 if lo > ends[-0.4] else 0.4 if lo > ends[0.4] else -0.4
+            ends[dy] = lo + w
+            ax.text(lo + w / 2, i + dy, text, ha="center", va="center", fontsize=6, color=INK, zorder=4)
         for t, colour, marker, label, where in ticks[lane]:
             ax.plot([t], [i], marker=marker, ms=6 if marker != "|" else 9, color=colour, mew=1.4, zorder=5, ls="none")
             if where == "right":
