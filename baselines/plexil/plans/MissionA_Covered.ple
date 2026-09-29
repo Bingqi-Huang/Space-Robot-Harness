@@ -20,9 +20,18 @@
 //
 // Composed from the reusable library (lib/DriveAndDock, lib/StowAndReturn). `press`'s own contract needs no
 // arm_ready first. Units, the press feature naming and each panel's look are site knowledge (site_map).
+//
+// Re-authored after the freeze for held-out case L4 (docs/reauthoring/cases/l4.md; tier 3 lifted for this case): when
+// PDU-1's reset does not hold and its trip cause is ORU_SELFTEST_FAIL, its ORU-0211 has failed and the only spare
+// (ORU-0417, depot_stand/slot_0) is recorded failed, so PDU-3's ORU-0258 (non-critical load, near PDU-1) is swapped in
+// on mission control's authorization (lib/ReplaceFromDonor), the failed one set down on PDU-1's free spares shelf;
+// then the covered return and final check. Denied, or a call out of attempts: escalate and hold, as before.
 
 LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
 LibraryAction StowAndReturn(In Real dock_x, In Real dock_y, In Real dock_yaw, InOut Boolean ok);
+LibraryAction ReplaceFromDonor(In String unit, In String bay, In String setdown, In String donor, In String item,
+                               In String button, In String request, In String reason, InOut Boolean ok,
+                               InOut Boolean granted);
 Boolean Command press(String, String);
 String Command RequestOperator(String);
 String Lookup PowerUnit(String, String);
@@ -35,6 +44,8 @@ MissionA_Covered: UncheckedSequence
   String Answer = "";
   Boolean ok = true;     // every leg so far succeeded
   Boolean held = false;  // mission control was asked; nothing more is commanded
+  Boolean FromDonor = false;  // L4: the unit's own module failed, no serviceable spare; swap in a donor's
+  Boolean Granted = false;    // mission control granted taking the donor's module
 
   Identify: Sequence
   {
@@ -94,6 +105,49 @@ MissionA_Covered: UncheckedSequence
       Press3: { EndCondition isKnown(ok); ok = press(ButtonTarget, Unit + "_panel/press"); }
       Check3: { PreCondition ok; ok = Lookup(PowerUnit(Unit, "breaker")) == "closed"; }
     }
+  }
+  Diagnose:
+  {
+    if (!ok && !held && Unit == "pdu_1" && Lookup(PowerUnit(Unit, "trip_cause")) == "ORU_SELFTEST_FAIL") {
+      FromDonor = true;
+      ok = true;
+    }
+    endif
+  }
+  Replace:
+  {
+    PreCondition FromDonor;
+    LibraryCall ReplaceFromDonor(
+      unit = Unit, bay = "pdu_1_bay/tray", setdown = "pdu_1_shelf/shelf", donor = "pdu_3_bay/tray",
+      item = "orbital replacement unit (ORU)", button = ButtonTarget,
+      request = "Request for authorization: remove ORU-0258 from the bay of PDU-3 (pdu_3_bay/tray) and install it in "
+                + "PDU-1. PDU-1 (habitat life support, crew-critical) is down: its reset did not restore it after 3 "
+                + "attempts, trip cause ORU_SELFTEST_FAIL; its ORU-0211 has failed and the only spare, ORU-0417, is "
+                + "recorded failed. Consequence: PDU-3 is de-energized and the science instruments it feeds "
+                + "(non-critical) lose power until a serviceable ORU is supplied.",
+      reason = "restores crew-critical PDU-1 (habitat life support), whose ORU-0211 failed its self-test with no "
+               + "serviceable spare on site; PDU-3 feeds a non-critical load (science instruments)",
+      ok = ok, granted = Granted);
+  }
+  NotAuthorized:
+  {
+    if (FromDonor && !Granted && !held) {
+      ok = false;
+      held = true;
+      Answer = RequestOperator("Mission control did not grant removing the ORU from pdu_3_bay/tray; " + Unit
+                               + " stays down (ORU_SELFTEST_FAIL). No procedure applies; holding, requesting instructions.");
+    }
+    endif
+  }
+  NotReplaced:
+  {
+    if (FromDonor && !ok && !held) {
+      held = true;
+      Answer = RequestOperator("Replacing the failed ORU of " + Unit + " with the one from pdu_3_bay/tray did not "
+                               + "restore it: a call failed 3 times or the reset did not hold. No procedure applies; "
+                               + "holding, requesting instructions.");
+    }
+    endif
   }
   ResetFailed:
   {

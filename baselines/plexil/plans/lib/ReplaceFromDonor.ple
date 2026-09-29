@@ -1,0 +1,106 @@
+// Library node re-authored after the freeze for held-out case L4 (docs/reauthoring/cases/l4.md; tier 3 lifted for
+// this case, docs/reauthoring/spec.md): a unit's own module failed and no serviceable spare is on site, so the module
+// of another, energized unit is swapped in -- only on mission control's authorization, since taking a module out of
+// an energized unit's bay de-energizes that unit (flight rule, 14 CFR 1214.403).
+//
+//   authorize -- ask for the one reserved call, `pick` on the donor bay: a request of the console's kind
+//                `authorization` carrying that call (RequestAuthorization); the ground decides in minutes, so the
+//                rover works on while it waits:
+//   take out  -- dock at the unit's own bay and pick its failed module (the unit is tripped, nothing to authorize),
+//                set it down on a free support, fold the arm, drive to the donor bay;
+//   swap in   -- once granted: pick the donor's module, dock at the unit's bay and set it in, fold the arm;
+//   reset     -- dock at the unit's panel, press the reset; the breaker must read closed (3 press+check attempts).
+// The failed module leaves the bay before the donor's goes in. The arm is folded (stow) before driving on with empty
+// jaws, as after every place of the covered procedure.
+//
+// Result comes back through `ok` (InOut; see lib/DriveAndDock.ple). Every capability call has at most 3 identical
+// attempts (the library nodes' Try, tier 1); `ok` false on exit: a call ran out of attempts, the removal was not
+// granted (`granted` false), or the reset did not hold -- the caller escalates.
+
+LibraryAction DriveAndDock(In String feature, In Real standoff_m, In Real approach_m, InOut Boolean ok);
+LibraryAction PickItem(In String target, In String part, In String item, In String support, InOut Boolean ok);
+LibraryAction PlaceItem(In String support, In String release_constraint, In String item, InOut Boolean ok);
+Boolean Command stow(Real);
+Boolean Command press(String, String);
+Boolean Command RequestAuthorization(String, String, String, String);
+String Lookup PowerUnit(String, String);
+String Lookup ItemDescription(String, String);
+
+ReplaceFromDonor: UncheckedSequence
+{
+  In String unit;      // the unit whose module failed (its panel: <unit>_panel/press)
+  In String bay;       // its equipment bay (place point)
+  In String setdown;   // a free support the failed module is set down on
+  In String donor;     // the donor unit's equipment bay (place point)
+  In String item;      // the module's equipment-catalogue name
+  In String button;    // the unit's reset button as the wrist camera sees it
+  In String request;   // the authorization request: unit, module and consequence
+  In String reason;    // why the held call is needed
+  InOut Boolean ok;
+  InOut Boolean granted;
+  String Target = "";
+  String Part = "";
+  String Release = "";
+
+  Describe: Sequence
+  {
+    GetTarget: { Target = Lookup(ItemDescription(item, "target")); }
+    GetPart: { Part = Lookup(ItemDescription(item, "part")); }
+    GetRelease: { Release = Lookup(ItemDescription(item, "release_constraint")); }
+  }
+  TakeOut: Concurrence
+  {
+    Authorize: { granted = RequestAuthorization(request, "pick", donor, reason); }
+    Remove: UncheckedSequence
+    {
+      ToBay:      { PreCondition ok; LibraryCall DriveAndDock(feature = bay, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+      PickFailed: { PreCondition ok; LibraryCall PickItem(target = Target, part = Part, item = item, support = bay, ok = ok); }
+      ToSetDown:  { PreCondition ok; LibraryCall DriveAndDock(feature = setdown, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+      SetDown:    { PreCondition ok; LibraryCall PlaceItem(support = setdown, release_constraint = Release, item = item, ok = ok); }
+      Fold: Try
+      {
+        PreCondition ok;
+        Fold1: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+        Fold2: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+        Fold3: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+      }
+      ToDonor:    { PreCondition ok; LibraryCall DriveAndDock(feature = donor, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+    }
+  }
+  Authorized: { ok = ok && granted; }
+  PickDonor:  { PreCondition ok; LibraryCall PickItem(target = Target, part = Part, item = item, support = donor, ok = ok); }
+  BackToBay:  { PreCondition ok; LibraryCall DriveAndDock(feature = bay, standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+  Install:    { PreCondition ok; LibraryCall PlaceItem(support = bay, release_constraint = Release, item = item, ok = ok); }
+  FoldAgain: Try
+  {
+    PreCondition ok;
+    FoldAgain1: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+    FoldAgain2: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+    FoldAgain3: { EndCondition isKnown(ok); PostCondition ok; ok = stow(0.08); }
+  }
+  ToPanel:    { PreCondition ok; LibraryCall DriveAndDock(feature = unit + "_panel/press", standoff_m = 1.2, approach_m = 1.2, ok = ok); }
+  Reset: Try
+  {
+    PreCondition ok;
+    Reset1: Sequence
+    {
+      PostCondition ok;
+      Press1: { EndCondition isKnown(ok); ok = press(button, unit + "_panel/press"); }
+      Check1: { PreCondition ok; ok = Lookup(PowerUnit(unit, "breaker")) == "closed"; }
+    }
+    Reset2: Sequence
+    {
+      PostCondition ok;
+      Setup2: { ok = true; }
+      Press2: { EndCondition isKnown(ok); ok = press(button, unit + "_panel/press"); }
+      Check2: { PreCondition ok; ok = Lookup(PowerUnit(unit, "breaker")) == "closed"; }
+    }
+    Reset3: Sequence
+    {
+      PostCondition ok;
+      Setup3: { ok = true; }
+      Press3: { EndCondition isKnown(ok); ok = press(button, unit + "_panel/press"); }
+      Check3: { PreCondition ok; ok = Lookup(PowerUnit(unit, "breaker")) == "closed"; }
+    }
+  }
+}

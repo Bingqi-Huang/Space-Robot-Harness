@@ -23,6 +23,11 @@
 //        /space/operator/reply, published by experiments/operator_console/console.py; a plan escalates with this
 //        and reads the answer as a plain String -- no mission logic here about when to call it or what the answer
 //        means, that is the plan library's.
+//   Command Boolean RequestAuthorization(String question, String capability, String target, String reason)
+//                                                                    -> whether mission control granted that call
+//     -> the same topics, a request of the console's kind "authorization" carrying the one call it holds for approval
+//        (metadata_json: {"request_id", "kind": "authorization", "pending_approvals": [{capability, target, reason}]});
+//        returns whether the reply's `grants` holds that call (a denial, or a request the link only queued, is false)
 //   Lookup  MissionGoal(String field)                                -> String, one field of the launcher-supplied
 //                                                                       mission goal (env MISSION_GOAL, a JSON object,
 //                                                                       e.g. Mission B's {"item", "source", "destination"};
@@ -174,6 +179,9 @@ public:
     config->registerCommandHandlerFunction(
       "RequestOperator",
       [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) { requestOperator(cmd, intf); });
+    config->registerCommandHandlerFunction(
+      "RequestAuthorization",
+      [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) { requestAuthorization(cmd, intf); });
     // every other Command is a capability with positional arguments (the Utility adapter's print/pprint keep theirs)
     config->setDefaultCommandHandlerFunction(
       [this](PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf) {
@@ -353,11 +361,36 @@ private:
     request_pub_->publish(m);
   }
 
+  // RequestAuthorization(question, capability, target, reason) -> Boolean granted: the console's authorization
+  // request, the held call in its metadata; answered like RequestOperator (no ack until the reply).
+  void requestAuthorization(PLEXIL::Command *cmd, PLEXIL::AdapterExecInterface *intf)
+  {
+    std::vector<PLEXIL::Value> const &args = cmd->getArgValues();
+    std::string question, capability, target, reason;
+    args[0].getValue(question);
+    args[1].getValue(capability);
+    args[2].getValue(target);
+    args[3].getValue(reason);
+    std::string request_id = std::to_string(++request_seq_);
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      pending_operator_[request_id] = {cmd, intf};
+      pending_grant_[request_id] = {capability, target};
+    }
+    nlohmann::json held = {{"capability", capability}, {"target", target}, {"reason", reason}};
+    PromptStamped m;
+    m.text = question;
+    m.metadata_json = nlohmann::json{{"request_id", request_id}, {"kind", "authorization"},
+                                     {"pending_approvals", nlohmann::json::array({held})}}.dump();
+    request_pub_->publish(m);
+  }
+
   void onOperatorReply(PromptStamped::SharedPtr msg)
   {
     std::string request_id = json_string_field(msg->metadata_json, "request_id");
     PLEXIL::Command *cmd;
     PLEXIL::AdapterExecInterface *intf;
+    std::pair<std::string, std::string> grant;  // (capability, target) of an authorization request
     {
       std::lock_guard<std::mutex> lock(mutex_);
       auto it = pending_operator_.find(request_id);
@@ -365,8 +398,20 @@ private:
       cmd = it->second.first;
       intf = it->second.second;
       pending_operator_.erase(it);
+      auto g = pending_grant_.find(request_id);
+      if (g != pending_grant_.end()) {
+        grant = g->second;
+        pending_grant_.erase(g);
+      }
     }
-    intf->handleCommandReturn(cmd, PLEXIL::Value(msg->text));
+    if (grant.second.empty()) {
+      intf->handleCommandReturn(cmd, PLEXIL::Value(msg->text));
+    } else {
+      auto const meta = nlohmann::json::parse(msg->metadata_json);
+      bool granted = false;
+      for (auto const &g : meta.at("grants")) granted |= g.at("capability") == grant.first && g.at("target") == grant.second;
+      intf->handleCommandReturn(cmd, PLEXIL::Value(granted));
+    }
     intf->handleCommandAck(cmd, PLEXIL::COMMAND_SUCCESS);
     intf->notifyOfExternalEvent();
   }
@@ -414,6 +459,7 @@ private:
   std::string last_result_ = "{}";
   std::atomic<int> request_seq_{0};
   std::map<std::string, std::pair<PLEXIL::Command *, PLEXIL::AdapterExecInterface *>> pending_operator_;  // request_id -> the Command awaiting its answer
+  std::map<std::string, std::pair<std::string, std::string>> pending_grant_;  // request_id -> the held call (capability, target)
 };
 
 extern "C" {
