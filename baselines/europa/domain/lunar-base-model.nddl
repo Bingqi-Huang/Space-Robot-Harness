@@ -5,6 +5,14 @@
 // rover at dock") and Mission B ("item X from S on D, arm stowed, rover at dock") differ only in their goals, and each
 // has pick/place and press available.
 //
+// Re-authored after the freeze for held-out case L4 (docs/reauthoring/cases/l4.md; tier 3 lifted for it): a unit whose
+// bay holds a module that is not serviceable is Blocked -- its reset cannot close it until a serviceable module of the
+// kind the bay takes is installed; the failed module comes out and is set aside on a free place point; a serviceable
+// module may be taken out of an energized unit only if its load is non-critical and with mission control's authorization
+// (flight rule, 14 CFR 1214.403), which de-energizes that unit. Bays, their modules and their access are new objects
+// and timelines; remove_module / take_donor_module / install_module / deposit_module are the pick / place capabilities
+// in those roles, request_authorization is a request to mission control.
+//
 // An activity's parameters are the capability's arguments (host.py's capability_call, see docs/baselines/europa.md's
 // traceability table); a parameter with no reason to vary in this domain is pinned with `eq` at its contract default.
 // Durations are bounded by the contracts' `default_deadline_s`.
@@ -49,12 +57,25 @@ class ItemLoc extends Timeline
   predicate Held {}
 }
 
-// every item of the inventory record (manifest), by serial number, on its recorded support
+// every item of the inventory record (manifest), by serial number, on its recorded support (an item recorded in a unit's
+// bay is that bay's module, see Bay). `kind` is its equipment-catalogue name; `serviceable` is false for an item the
+// record lists out of service and for the module whose unit reports a failed self-test (power_status trip cause
+// ORU_SELFTEST_FAIL).
 class Item
 {
   string name;
+  string kind;
+  bool serviceable;
   ItemLoc loc;
-  Item(string _name) { name = _name; loc = new ItemLoc(); }
+  Item(string _name, string _kind, bool _serviceable) { name = _name; kind = _kind; serviceable = _serviceable; loc = new ItemLoc(); }
+}
+
+// a surveyed place point (site_map type `place`) that is not a unit's equipment bay: where pick, place and
+// deposit_module work. `free`: nothing stands on it in the inventory record.
+class Place extends Feature
+{
+  bool free;
+  Place(string _name, Location _approach, Location _work, bool _free) { super(_name, _approach, _work); free = _free; }
 }
 
 // arm_ready/stow move the arm between its two named postures; pick/place need Ready and change Jaws/ItemLoc
@@ -66,17 +87,22 @@ class Posture extends Timeline
   predicate Ready {}
 }
 
+// HoldingModule: a module taken out of a unit's bay (remove_module / take_donor_module), which only install_module or
+// deposit_module put down -- kept apart from a picked item so that neither pick nor place is planned for a bay's module
 class Jaws extends Timeline
 {
   predicate Empty {}
   predicate Holding { Item item; }
+  predicate HoldingModule { Item module; }
 }
 
-// a serviced unit's breaker as its own telemetry reports it (power_status): tripped = Faulted, closed = Restored
+// a serviced unit's breaker as its own telemetry reports it (power_status): tripped = Faulted, closed and energized =
+// Restored; tripped (or de-energized) with a bay that reports no module or one that is not serviceable = Blocked
 class Panel extends Timeline
 {
   predicate Faulted {}
   predicate Restored {}
+  predicate Blocked {}
 }
 
 class Unit
@@ -84,7 +110,41 @@ class Unit
   string name;
   Panel panel;
   Feature button;  // which surveyed feature presses this unit's reset -- a structural fact, like a Feature's own stances
-  Unit(string _name, Feature _button) { name = _name; panel = new Panel(); button = _button; }
+  bool noncritical;  // the load it feeds is non-critical (power_status criticality)
+  Unit(string _name, Feature _button, bool _noncritical) { name = _name; panel = new Panel(); button = _button; noncritical = _noncritical; }
+}
+
+// the flight rule on a bay (14 CFR 1214.403): its module may be taken out of an energized unit only with mission
+// control's authorization -- Reserved while the unit is energized and no authorization is on record, else Cleared
+class Access extends Timeline
+{
+  predicate Reserved {}
+  predicate Cleared {}
+}
+
+// the module in a unit's bay (power_status installed_modules; the inventory record)
+class Contents extends Timeline
+{
+  predicate Holds { Item module; }
+  predicate Empty {}
+}
+
+// a unit's equipment bay (site_map: a place point with role equipment_bay and its unit). Not a `Place`: its module comes
+// out and goes in only as the unit's module (remove_module, take_donor_module, install_module).
+class Bay extends Feature
+{
+  Unit unit;
+  string takes;  // the catalogue kind of module it holds (the one the inventory record has in it)
+  Access access;
+  Contents contents;
+  Bay(string _name, Location _approach, Location _work, Unit _unit, string _takes)
+  {
+    super(_name, _approach, _work);
+    unit = _unit;
+    takes = _takes;
+    access = new Access();
+    contents = new Contents();
+  }
 }
 
 class LunarBot
@@ -105,13 +165,24 @@ class LunarBot
   // target/part (pick) and release_constraint (place) are natural-language/catalogue text the solver has no reason
   // to reason over (there is exactly one way to describe an item); host.py's capability_call fills them in from
   // the baselines' shared item table (baselines/item_descriptions.json).
-  action pick { Item item; Feature support; leq(duration, 900); }
-  action place { Item item; Feature support; leq(duration, 600); }
+  action pick { Item item; Place support; leq(duration, 900); }
+  action place { Item item; Place support; leq(duration, 600); }
+  // a unit's module out of / into its bay and a removed module set down: the pick / place capabilities (host.py's
+  // capability_call), with what they do to the unit. `unit` is kept as a parameter, constrained to be the bay's own,
+  // like press's `feature`. They start after the state they are planned from (t = 0).
+  action remove_module { Item item; Bay bay; Unit unit; leq(1, start); leq(duration, 900); }
+  action take_donor_module { Item item; Bay bay; Unit unit; leq(1, start); leq(duration, 900); }
+  action install_module { Item item; Bay bay; Unit unit; leq(1, start); leq(duration, 600); }
+  action deposit_module { Item item; Place support; leq(1, start); leq(duration, 600); }
+  // mission control's authorization to take a bay's module out of its energized unit: a request on the operator channel
+  // (kind authorization, the held pick on the bay), decided 300 s of mission time after it arrives plus the one-way link
+  // delay each way (experiments/operator_console/console.py); host.py sends it, not PLEXIL
+  action request_authorization { Bay bay; Unit unit; leq(1, start); leq(duration, 320); }
   // press's own contract needs no particular starting posture ("plans its own way from wherever the arm is") and
   // does not itself need arm_ready -- but it does reach into the panel to press the button and does not fold back
   // to the travel posture afterward (contracts.yaml: "the tool goes in ... then withdraws", not "returns to
-  // stowed"), so it transitions posture from Stowed (the covered instance's own starting posture) to Ready, which is
-  // what leaves `stow` something real to do.
+  // stowed"), so it ends in Ready, which is what leaves `stow` something real to do. (Re-authoring L4: it no longer
+  // requires Stowed before -- the contract does not, and a press right after installing a module starts from Ready.)
   action press { Unit unit; Feature feature; leq(duration, 420); }
 }
 
@@ -209,8 +280,86 @@ LunarBot::press
   eq(feature, unit.button);
   contained_by(condition object.base.At bp);
   eq(bp.loc, feature.work);
-  met_by(condition object.posture.Stowed from);
   meets(effect object.posture.Ready to);
   met_by(condition unit.panel.Faulted pf);
   meets(effect unit.panel.Restored pt);
+}
+
+// the module that is not serviceable, out of its blocked unit's bay (a tripped unit is de-energized: access Cleared)
+LunarBot::remove_module
+{
+  eq(unit, bay.unit);
+  eq(item.serviceable, false);
+  contained_by(condition bay.access.Cleared a);
+  contained_by(condition unit.panel.Blocked pb);
+  contained_by(condition object.posture.Ready p);
+  met_by(condition object.jaws.Empty j);
+  contained_by(condition object.base.At bp);
+  eq(bp.loc, bay.work);
+  met_by(condition bay.contents.Holds h);
+  eq(h.module, item);
+  meets(effect object.jaws.HoldingModule held);
+  eq(held.module, item);
+  meets(effect bay.contents.Empty e);
+}
+
+// a serviceable module out of an energized unit whose load is non-critical, with mission control's authorization on
+// record: the unit loses it and is Blocked
+LunarBot::take_donor_module
+{
+  eq(unit, bay.unit);
+  eq(unit.noncritical, true);
+  eq(item.serviceable, true);
+  contained_by(condition bay.access.Cleared a);
+  met_by(condition unit.panel.Restored pr);
+  contained_by(condition object.posture.Ready p);
+  met_by(condition object.jaws.Empty j);
+  contained_by(condition object.base.At bp);
+  eq(bp.loc, bay.work);
+  met_by(condition bay.contents.Holds h);
+  eq(h.module, item);
+  meets(effect object.jaws.HoldingModule held);
+  eq(held.module, item);
+  meets(effect bay.contents.Empty e);
+  meets(effect unit.panel.Blocked pb);
+}
+
+// a serviceable module of the kind the bay takes, into the empty bay of a blocked unit: its reset can close it again
+LunarBot::install_module
+{
+  eq(unit, bay.unit);
+  eq(item.serviceable, true);
+  eq(item.kind, bay.takes);
+  met_by(condition unit.panel.Blocked pb);
+  met_by(condition bay.contents.Empty e);
+  contained_by(condition object.posture.Ready p);
+  met_by(condition object.jaws.HoldingModule held);
+  eq(held.module, item);
+  contained_by(condition object.base.At bp);
+  eq(bp.loc, bay.work);
+  meets(effect object.jaws.Empty j);
+  meets(effect bay.contents.Holds h);
+  eq(h.module, item);
+  meets(effect unit.panel.Faulted pf);
+}
+
+// a module taken out of a bay, set down on a place point nothing stands on
+LunarBot::deposit_module
+{
+  eq(support.free, true);
+  contained_by(condition object.posture.Ready p);
+  met_by(condition object.jaws.HoldingModule held);
+  eq(held.module, item);
+  contained_by(condition object.base.At bp);
+  eq(bp.loc, support.work);
+  meets(effect object.jaws.Empty j);
+}
+
+// the flight-rule table grants a removal from a unit whose load is non-critical (while a crew-critical unit is down)
+LunarBot::request_authorization
+{
+  eq(unit, bay.unit);
+  eq(unit.noncritical, true);
+  met_by(condition bay.access.Reserved r);
+  meets(effect bay.access.Cleared c);
 }

@@ -73,26 +73,37 @@ def ident(name):
 
 
 # ---- mission instance and state as NDDL --------------------------------------------------------------------------
-def instance(site, items, units):
-    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, every item of
-    the inventory record (`items`: serial -> its support; where it stands is a fact, not part of the object) and every
-    serviced unit (`units`: name -> its button's feature name, a structural property of the `Unit` constructor itself,
-    not a fact)."""
+def instance(site, items, kinds, failed, units, noncritical):
+    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances (a place point
+    as a `Place`, free if the record has nothing on it; a unit's equipment bay as a `Bay` of that unit taking the kind
+    of module the record has in it), every item of the inventory record (`items`: serial -> its support; where it
+    stands is a fact, not part of the object; its catalogue kind `kinds` and whether it is serviceable, `failed`) and
+    every serviced unit (`units`: name -> its button's feature name, and whether its load is non-critical: structural
+    properties of the constructors, not facts)."""
     lines = ['NamedPose dock = new NamedPose("dock");', 'Location elsewhere = new Location("elsewhere");']
     names = {"dock": "dock", "elsewhere": "elsewhere"}
-    for f in site["points"]:
+    bays = {f: p["unit"] for f, p in site["points"].items() if p.get("role") == "equipment_bay"}
+
+    def feature(f, cls, extra=""):
         i = ident(f)
-        lines += [f'Location {i}_a = new Location("{f}@approach");', f'Location {i}_w = new Location("{f}@work");',
-                  f'Feature {i} = new Feature("{f}", {i}_a, {i}_w);']
+        lines.extend([f'Location {i}_a = new Location("{f}@approach");', f'Location {i}_w = new Location("{f}@work");',
+                      f'{cls} {i} = new {cls}("{f}", {i}_a, {i}_w{extra});'])
         names.update({i: f, f"{i}_a": f"{f}@approach", f"{i}_w": f"{f}@work"})
-    for item in items:
-        i = ident(item)
-        lines.append(f'Item {i} = new Item("{item}");')
-        names[i] = item
+    for f, p in site["points"].items():
+        if p["type"] == "place" and f not in bays:
+            feature(f, "Place", f', {str(f not in items.values()).lower()}')
+        elif f not in bays:
+            feature(f, "Feature")
     for unit, button in units.items():
         i = ident(unit)
-        lines.append(f'Unit {i} = new Unit("{unit}", {ident(button)});')
+        lines.append(f'Unit {i} = new Unit("{unit}", {ident(button)}, {str(noncritical[unit]).lower()});')
         names[i] = unit
+    for f, unit in bays.items():
+        feature(f, "Bay", f', {ident(unit)}, "{next(kinds[s] for s, at in items.items() if at == f)}"')
+    for item in items:
+        i = ident(item)
+        lines.append(f'Item {i} = new Item("{item}", "{kinds[item]}", {str(item not in failed).lower()});')
+        names[i] = item
     return lines, names
 
 
@@ -122,8 +133,12 @@ def capability_call(act, names, site, kinds):
     """An activity's parameters are the capability's arguments: a feature goes by its site name, an item by its
     serial (the dispatch sends its catalogue name), a named pose as its coordinates; an item's fixed description text
     is filled in from ITEM_DESCRIPTIONS by its catalogue name `kinds[serial]` (its own comment says why that is not a
-    domain parameter)."""
+    domain parameter). remove_module / take_donor_module / install_module are the pick / place capabilities at the bay
+    (the unit is a domain-only parameter), deposit_module the place capability; request_authorization is no capability
+    (host.py sends it to mission control)."""
     cap = act["type"].split(".", 1)[1]
+    if cap == "request_authorization":
+        return cap, {p: names[v] for p, v in act["params"].items()}
     args = {}
     for p, v in act["params"].items():
         if p == "pose":
@@ -132,6 +147,12 @@ def capability_call(act, names, site, kinds):
             args[p] = names[v]
         else:
             args[p] = v
+    if cap in ("remove_module", "take_donor_module", "install_module"):
+        cap = "place" if cap == "install_module" else "pick"
+        args["support"] = args.pop("bay")
+        del args["unit"]
+    elif cap == "deposit_module":
+        cap = "place"
     if cap == "pick":
         item = ITEM_DESCRIPTIONS[kinds[args["item"]]]
         args.update(target=item["target"], part=item["part"])
@@ -184,7 +205,12 @@ def facts_from_result(state, cap, args, res, site):
             return state, False
         new = {**state, "rover.posture": ["Ready" if arm.get("posture") == "ready" else "Stowed", {}]}
         item = args.get("item")
-        if item:
+        if item and f"{ident(item)}.loc" not in state:  # a unit's module (tracked by its bay, not on a support)
+            holding = JAW_HOLD[0] < arm.get("jaw_rad", 1.0) < JAW_HOLD[1]
+            new["rover.jaws"] = ["HoldingModule", {"module": ident(item)}] if holding else ["Empty", {}]
+            if holding and cap == "pick":
+                new[f"{ident(args['support'])}.contents"] = ["Empty", {}]
+        elif item:
             holding = JAW_HOLD[0] < arm.get("jaw_rad", 1.0) < JAW_HOLD[1]
             new["rover.jaws"] = ["Holding", {"item": ident(item)}] if holding else ["Empty", {}]
             if holding:
@@ -193,21 +219,33 @@ def facts_from_result(state, cap, args, res, site):
     return state, False
 
 
-def initial_state(pose, arm, site, items_at):
+def initial_state(pose, arm, site, items_at, telemetry):
     at_dock = math.dist((pose["x"], pose["y"]), (site["dock"]["x"], site["dock"]["y"])) < 0.6
     state = {"rover.base": ["At", {"loc": "dock" if at_dock else "elsewhere"}],
              "rover.posture": ["Ready" if arm.get("posture") == "ready" else "Stowed", {}],
              "rover.jaws": ["Empty", {}]}  # every covered instance starts with empty jaws; nothing here detects otherwise
+    # an item recorded in a unit's bay is the bay's module; whether taking it out is reserved to mission control is the
+    # unit's energized state
     for item, support in items_at.items():
-        state[f"{ident(item)}.loc"] = ["On", {"support": ident(support)}]
+        if site["points"][support].get("role") == "equipment_bay":
+            state[f"{ident(support)}.contents"] = ["Holds", {"module": ident(item)}]
+            state[f"{ident(support)}.access"] = ["Reserved" if telemetry["units"][site["points"][support]["unit"]]["energized"] else "Cleared", {}]
+        else:
+            state[f"{ident(item)}.loc"] = ["On", {"support": ident(support)}]
     return state
 
 
-def panels_from_telemetry(state, units, telemetry):
-    """The serviced units' panel facts as their own telemetry reports them (breaker tripped -> Faulted): the host
-    verifies a restore by reading the unit, not by trusting the plan's post-state."""
-    return {**state, **{f"{ident(u)}.panel": ["Faulted" if telemetry["units"][u]["breaker"] == "tripped" else "Restored", {}]
-                        for u in units}}
+def panels_from_telemetry(state, units, telemetry, bays, failed):
+    """The serviced units' panel facts as their own telemetry reports them (breaker closed and energized -> Restored;
+    tripped -> Faulted, or Blocked when a bay of the unit reports no module or one not serviceable): the host verifies
+    a restore by reading the unit, not by trusting the plan's post-state."""
+    def panel(u):
+        t = telemetry["units"][u]
+        if t["breaker"] == "closed" and t["energized"]:
+            return "Restored"
+        installed = [t["installed_modules"].get(b) for b in bays[u]]
+        return "Blocked" if any(m is None or m in failed for m in installed) else "Faulted"
+    return {**state, **{f"{ident(u)}.panel": [panel(u), {}] for u in units}}
 
 
 def parse_goal(token, loc, units, delivery):
@@ -263,11 +301,12 @@ def query(node, client, name):
     return json.loads(f.result().value_json)
 
 
-def ask_operator(node, pub, inbox, question):
-    """Publish `question` on REQUEST_TOPIC and block (spinning `node`) for the console's reply on
-    REPLY_TOPIC, matched by request_id. Returns (answer_text, {authority_level, interaction_id})."""
+def ask_operator(node, pub, inbox, question, **meta):
+    """Publish `question` on REQUEST_TOPIC (with `meta`, e.g. an authorization's kind and held call) and block
+    (spinning `node`) for the console's reply on REPLY_TOPIC, matched by request_id. Returns (answer_text,
+    {authority_level, interaction_id, grants})."""
     request_id = uuid.uuid4().hex[:12]
-    pub.publish(PromptStamped(text=question, metadata_json=json.dumps({"request_id": request_id})))
+    pub.publish(PromptStamped(text=question, metadata_json=json.dumps({"request_id": request_id, **meta})))
     while True:
         rclpy.spin_once(node, timeout_sec=0.1)
         while not inbox.empty():
@@ -318,8 +357,14 @@ def main():
     items_at = {r["serial"]: r["recorded_location"] for r in inventory}
     kinds = {r["serial"]: r["item"] for r in inventory}
     # the serviced units are the ones reporting on the base network; each unit's panel reset is its `<unit>_panel/press`
-    units = {u: f"{u}_panel/press" for u in query(node, client, "power_status")["units"]}
-    site_lines, names = instance(site, items_at, units)
+    power = query(node, client, "power_status")
+    units = {u: f"{u}_panel/press" for u in power["units"]}
+    bays = {u: [f for f, p in site["points"].items() if p.get("role") == "equipment_bay" and p["unit"] == u] for u in units}
+    # not serviceable: an item the record lists out of service, and the module in a unit whose self-test failed
+    failed = {r["serial"] for r in inventory if r["status"] != "serviceable"}
+    failed |= {s for t in power["units"].values() if t["trip_cause"] == "ORU_SELFTEST_FAIL" for s in t["installed_modules"].values()}
+    site_lines, names = instance(site, items_at, kinds, failed, units,
+                                 {u: t["criticality"] == "non-critical" for u, t in power["units"].items()})
     loc = {v: k for k, v in names.items()}
     delivery = None
     if "MISSION_GOAL" in os.environ:
@@ -329,13 +374,13 @@ def main():
     goals = [x for t in a.goal for x in parse_goal(t, loc, units, delivery)]
     if a.final:
         goals += [x[:3] + (True,) for x in parse_goal(a.final, loc, units, delivery)]
-    state = initial_state(query(node, client, "base_pose"), query(node, client, "arm_state"), site, items_at)
-    state = panels_from_telemetry(state, units, query(node, client, "power_status"))
+    state = initial_state(query(node, client, "base_pose"), query(node, client, "arm_state"), site, items_at, power)
+    state = panels_from_telemetry(state, units, power, bays, failed)
     log("mission", goals=goals, state=state)
     link = Link(listener)
     failures, n_plan, reached = {}, 0, set()
     while True:
-        state = panels_from_telemetry(state, units, query(node, client, "power_status"))
+        state = panels_from_telemetry(state, units, query(node, client, "power_status"), bays, failed)
         # a unit restore that was reached and no longer holds (read from the unit's telemetry) is a failure of the
         # activities that reached it; the rover leaving the dock or unfolding the arm on the way is not
         for g in goals:
@@ -363,7 +408,8 @@ def main():
         # after which chained goals solve too) and kept as the baseline's locked behaviour. The goal *sequence*
         # semantics do not change: each solve still finds its own minimal path to the next unmet goal from
         # wherever the previous one left off, which is what the chain meant in the first place.
-        plan = solve(model, problem(model, site_lines, state, [next(g for g in goals if state.get(g[0]) != [g[1], g[2]])]), run_dir, n_plan)
+        goal = next(g for g in goals if state.get(g[0]) != [g[1], g[2]])
+        plan = solve(model, problem(model, site_lines, state, [goal]), run_dir, n_plan)
         log("plan", n=n_plan, solved=plan["solved"], steps=plan["steps"],
             activities=[(x["type"], x["params"]) for x in plan["activities"]])
         if not plan["solved"]:
@@ -377,14 +423,28 @@ def main():
             # the domain names an item by its serial; the capability contract by its equipment-catalogue name
             sent = {**args, "item": kinds[args["item"]]} if "item" in args else args
             log("dispatch", capability=cap, args=sent)
-            res = link.dispatch(cap, sent)
+            if cap == "request_authorization":
+                # the held call is the plan's pick at the bay; granted -> the bay's access Cleared (the activity's
+                # effect), and the unit mission control lets go is no longer a restore goal
+                question = f"Authorization requested: pick on {args['bay']} (takes the module out of energized {args['unit']})."
+                answer, meta = ask_operator(node, request_pub, reply_inbox, question, kind="authorization",
+                                            pending_approvals=[{"capability": "pick", "target": args["bay"],
+                                                                "reason": f"its module restores {goal[0].split('.')[0]}"}])
+                log("operator_answered", question=question, answer=answer, authority_level=meta.get("authority_level"),
+                    interaction_id=meta.get("interaction_id"), grants=meta.get("grants"))
+                res = dict(success=bool(meta.get("grants")), failure_kind=None, failure_reason="" if meta.get("grants") else answer,
+                           evidence={})
+                if res["success"]:
+                    goals = [g for g in goals if g[0] != f"{ident(args['unit'])}.panel"]
+            else:
+                res = link.dispatch(cap, sent)
             if res["success"]:
                 state, as_planned = {**state, **post_state(act)}, True
             else:
                 state, as_planned = facts_from_result(state, cap, args, res, site)
             # every panel fact is re-read from the unit's own telemetry: a press that "succeeded" on a unit still
             # reading tripped did not end as planned
-            read = panels_from_telemetry(state, units, query(node, client, "power_status"))
+            read = panels_from_telemetry(state, units, query(node, client, "power_status"), bays, failed)
             as_planned = as_planned and read == state
             state = read
             reached |= {json.dumps(g[:3]) for g in goals if state.get(g[0]) == [g[1], g[2]]}
