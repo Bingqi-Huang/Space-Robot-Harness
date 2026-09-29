@@ -13,8 +13,8 @@
    report.
 3. Every run: the evaluator's verdict, false completions, reasoner steps (Ours), capability calls, scans, failed calls.
 
-Runs are found by name under artifacts/runs/exp2/{pre,post}: `<pre|post>_<method>_<h1|h2>[_r<n>][_f145]`. A run
-superseded by a shared-layer fix (post_superseded/) is listed in table 3 only.
+Runs are found by name under artifacts/runs/exp2/{pre,post}: `<pre|post>_<method>_<h1|h2>[_r<n>][_f<finding>]`, the
+suffix naming the fix a rerun came after (F145, F147); the run it replaced is in post_superseded/, listed in table 3.
 """
 import json
 import re
@@ -33,13 +33,13 @@ OUT = R / "artifacts/eval/exp2/tables.md"
 METHODS = {"ours": ("ours", "exp2-base", "exp2-ours"), "plexil": ("plexil", "exp2-base-plexil", "exp2-plexil"),
            "europa": ("europa_plexil", "exp2-base-europa", "exp2-europa_plexil")}
 CASES = {"h1": "H1 mislocated", "h2": "H2 swapped"}
-#: the primary failure category of each failed post-extension run (preregistration §2, assigned from the logs: the
-#: first failure on the causal path)
+#: why each superseded or failed post-extension run failed (preregistration §2, assigned from the logs: the first failure
+#: on the causal path) and what replaced it
 WHY = {
-    "post_ours_h1_r2": "3 -- step budget (75 of 80) spent on a search that re-scanned supports and tried a pick on an "
-                       "empty stand after a front-camera answer saw an item there; reported the delivery not done",
-    "post_europa_h1": "1/4 -- the shared scan read nothing where the unit stood (plate cut by the frame edge, F145); "
-                      "superseded by post_europa_h1_f145",
+    "post_ours_h1_r2": "3 -- step budget (75 of 80) spent re-scanning a support whose item has no readable plate and on "
+                       "plan bookkeeping; reported the delivery not done; rerun as post_ours_h1_r2_f147 after F147",
+    "post_europa_h1": "1/4 -- the shared scan read nothing where the unit stood (plate cut by the frame edge); rerun as "
+                      "post_europa_h1_f145 after F145",
 }
 
 
@@ -104,14 +104,14 @@ def main() -> None:
     for key, (method, _, _) in METHODS.items():
         for case, name in CASES.items():
             pre = [f for r, f in runs.items() if re.fullmatch(f"pre_{key}_{case}", r)]
-            post = [f for r, f in runs.items() if re.fullmatch(f"post_{key}_{case}(_r\\d)?(_f145)?", r)]
+            post = [f for r, f in runs.items() if re.fullmatch(f"post_{key}_{case}(_r\\d)?(_f\\d+)?", r)]
             k = lambda fs: f"{sum(bool(f['success']) for f in fs)}/{len(fs)}"  # noqa: E731
             fails = "; ".join(f"{f['run']}: {WHY[f['run']]}" for f in post if not f["success"]) or "-"
             claims = (f"{sum(f['false_completion'] for f in pre)} / {sum(f['false_completion'] for f in post)}" if key == "ours"
                       else "no report (before: the plan ended normally with the wrong unit delivered)")
             out.append(f"| {method} | {name} | {k(pre)} | {k(post)} | {claims} | {fails} |")
     superseded = [run_facts(p) for p in sorted((RUNS / "post_superseded").iterdir()) if p.is_dir()]
-    out += ["", "## 3. Every run", "", "| phase | run | success | false completion | reasoner steps | capability calls | "
+    out += ["", "## 3. Every run", "", "| phase | run | success | false completion | reasoner turns (all proposals) | capability calls | "
             "scans | mission time (s) | failed calls |", "|---|---|---|---|---|---|---|---|---|"]
     for phase, facts in [("pre" if r.startswith("pre") else "post", f) for r, f in runs.items()] + [("superseded", f) for f in superseded]:
         out.append(f"| {phase} | {facts['run']} | {facts['success']} | {facts['false_completion']} | "

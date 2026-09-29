@@ -19,14 +19,13 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
   videos (L4, L2-B x 3 methods) in `artifacts/figures/exp1b/`. Evaluator call-window fix recomputed exp1 (unchanged).
   exp1b supersedes exp1 for the paper; exp1 kept.
 
-## Now (2026-09-29): Experiment II done as plan A (F144-F146); one open decision
+## Now (2026-09-29): Experiment II done (F144-F147)
 
-- [x] Shared supply (F144, `exp2-base`), G2/G3, three timed extensions (tags `exp2-ours`, `exp2-plexil`,
-      `exp2-europa_plexil`), pre-extension controls 0/6, post-extension Ours 5/6, PLEXIL 2/2, EUROPA 2/2 (F146);
-      shared scan view widened (F145), EUROPA H1 rerun. Held-out cases now in `experiments/exp2/heldout/`; runs
-      `artifacts/runs/exp2/`; tables `python3 experiments/exp2/tables.py` -> `artifacts/eval/exp2/tables.md`.
-- [ ] User decision (asked 2026-09-28): Ours' H1 efficiency -- A: the scan reports whether something stands on the
-      support (shared fact), B: the step budget (80) redefined; which Ours reruns. Reported as a second round.
+- [x] Shared supply (F144), G2/G3, three timed extensions (tags `exp2-ours`, `exp2-plexil`, `exp2-europa_plexil`),
+      pre-extension controls 0/6; shared fixes during the held-out runs: scan view (F145), on-support fact + Ours'
+      step budget counts calls on the robot (F147); only the runs they decided rerun. After the extension: Ours 6/6,
+      PLEXIL 2/2, EUROPA 2/2. Cases `experiments/exp2/heldout/`, runs `artifacts/runs/exp2/`, tables
+      `python3 experiments/exp2/tables.py` -> `artifacts/eval/exp2/tables.md`.
 - Not now (user): plan B (the user as engineer with Claude as assistant).
 - Known limits (F141): localization ~5 cm at bess_stand, 0.3-1.3 m transients round the habitat row's east end.
 

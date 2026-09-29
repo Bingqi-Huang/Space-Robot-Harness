@@ -1,8 +1,8 @@
 # Handoff
 
-Updated 2026-09-29 (Experiment II done as plan A, F144-F146; F145 widened the shared scan view; tags exp1b, exp2-*;
-nothing pushed since F142 -- pushing waits for the user). Next: the user's decision on Ours' H1 efficiency
-(`AGENT/todo.md` "Now"), then the ablations (method B), re-authoring cost, the results section.
+Updated 2026-09-29 (Experiment II done, F144-F147: after the extension Ours 6/6, PLEXIL 2/2, EUROPA 2/2; tags exp1b,
+exp2-*; nothing pushed since F142 -- pushing waits for the user). Next (`AGENT/todo.md`): the §5.7 ablations (method
+B, from `exp1b`), the baselines' re-authoring cost per held-out case, the results section.
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
 **`docs/preregistration.md`** (metrics, taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md`
@@ -15,7 +15,8 @@ verification and hard boundaries. Simulator truth is for evaluation / post-hoc d
   `experiments/exp2/worklog/`; held-out cases, chains and launch lines `experiments/exp2/heldout/`; runs
   `artifacts/runs/exp2/{setup,g2_physical,validation,pre,post,post_superseded,checks}`; deltas and tables
   `artifacts/eval/exp2/` (`python3 experiments/exp2/tables.py`). Engineer checkouts (removed after merging) came from
-  `experiments/exp2/make_worktree.sh`. The scan takes the widest of three views (F145).
+  `experiments/exp2/make_worktree.sh`. The scan takes the widest of three views (F145) and says whether something stands on the support; Ours' step
+  budget counts calls on the robot, not its plan bookkeeping (F147). Move a run dir only after its queue logs "queue done".
 - `freeze-1` (F139) is history: the user dropped the freeze ceremony (2026-09-27). The shared layer was fixed after
   exp1 (F141, F142) on `feat/shared-fixes`, merged into research `main`, openral `master`, SRB `main` and pushed
   (research 8d90d63, openral 9338521, SRB 601588f). The `feat/shared-fixes` branches can go.

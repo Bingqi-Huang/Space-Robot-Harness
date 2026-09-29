@@ -6242,3 +6242,11 @@ an empty support from an unreadable one -- and (b) its own plan bookkeeping, 10-
   so. Offline replay of the recorded Exp II runs under the new count: H1 r1/r2/r3 56/53/56, H2 20-23 (was 74/75/78,
   27-35). The three tests: nothing names a situation, place or serial; both hold for every task; both trace to the
   diagnosis of what a step and a reading mean.
+Rerun of the run they decided (`artifacts/runs/exp2/post/post_ours_h1_r2_f147`, research e1506c6; the pre-fix run in
+`post_superseded/`): **success**, 12 scans (no support re-scanned for an unreadable item; the battery stand read "no
+plate, something on the support" once), 46 of 80 budget steps (67 turns). Experiment II after the extension: Ours
+6/6, PLEXIL 2/2, EUROPA -> PLEXIL 2/2 (`artifacts/eval/exp2/tables.md`). My slip on the way: I moved the finished run
+directory while its farm worker was still alive and deleted the queue's counter, so the worker claimed the same job
+again and booted a duplicate run; stopped after ~1 min and deleted (no data), and the moved run's manifest -- written
+after teardown, into the path I had moved -- backfilled from the run dir with run_d0.sh's own read-only step. Rule:
+move a run only after its queue has logged "queue done".

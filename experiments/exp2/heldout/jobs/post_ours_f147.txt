@@ -1,0 +1,2 @@
+# Ours H1 r2 rerun after F147 (research e1506c6), scored in place of post_ours_h1_r2 (post_superseded/)
+post_ours_h1_r2_f147 D0_CHECK=ours_mission_check.py D0_CAPABILITY_SERVER=1 D0_SCENE=scenes/deploy/srb_lunar_base_mission_b.yaml D0_SCENARIO=covered D0_ENV='env.cargo=spare_oru env.destination=pdu_3 env.name_serial=true env.placement=spare_oru:pdu_1_shelf/shelf+oru_returned:depot_stand/slot_0'
