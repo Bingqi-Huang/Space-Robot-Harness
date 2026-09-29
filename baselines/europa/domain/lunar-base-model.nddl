@@ -1,7 +1,8 @@
 // The one frozen domain of the EUROPA->PLEXIL baseline, for both missions (execution_plan §11.2, §21.6;
 // docs/baselines/authoring_spec.md, locked 2026-09-23): the rover's base, arm posture and jaws, every inventoried item's
 // location, every serviced unit's panel, and the capabilities that change them -- navigate_to_feature,
-// dock_at_feature, navigate_to_pose, arm_ready, stow, pick, place, press. Mission A ("every unit restored, arm stowed,
+// dock_at_feature, navigate_to_pose, arm_ready, stow, pick, place, press -- and what rests on each support, which
+// takes one item (brief L2-B). Mission A ("every unit restored, arm stowed,
 // rover at dock") and Mission B ("item X from S on D, arm stowed, rover at dock") differ only in their goals, and each
 // has pick/place and press available.
 //
@@ -41,11 +42,27 @@ class Base extends Timeline
   predicate Moving { Location to; }
 }
 
+class ItemLoc;
+
+// what rests on a support: an item's stay on it, or the item being set down on it
+class Slot extends Timeline
+{
+  predicate Occupied { ItemLoc by; }
+}
+
+// a surveyed place point (site_map type `place`; place's contract sets an item down only on one): a stand slot, a shelf,
+// a tray. It takes one item (brief L2-B: "the stand takes one item").
+class Support extends Feature
+{
+  Slot slot;
+  Support(string _name, Location _approach, Location _work) { super(_name, _approach, _work); slot = new Slot(); }
+}
+
 // where a movable item is: on a surveyed support, or in the rover's own jaws. `pick`/`place` are the only
 // activities that move it -- nothing else changes an item's location in this domain.
 class ItemLoc extends Timeline
 {
-  predicate On { Feature support; }
+  predicate On { Support support; }
   predicate Held {}
 }
 
@@ -105,8 +122,8 @@ class LunarBot
   // target/part (pick) and release_constraint (place) are natural-language/catalogue text the solver has no reason
   // to reason over (there is exactly one way to describe an item); host.py's capability_call fills them in from
   // the baselines' shared item table (baselines/item_descriptions.json).
-  action pick { Item item; Feature support; leq(duration, 900); }
-  action place { Item item; Feature support; leq(duration, 600); }
+  action pick { Item item; Support support; leq(duration, 900); }
+  action place { Item item; Support support; leq(duration, 600); }
   // press's own contract needs no particular starting posture ("plans its own way from wherever the arm is") and
   // does not itself need arm_ready -- but it does reach into the panel to press the button and does not fold back
   // to the travel posture afterward (contracts.yaml: "the tool goes in ... then withdraws", not "returns to
@@ -198,6 +215,8 @@ LunarBot::place
   meets(effect object.jaws.Empty j);
   meets(effect item.loc.On to);
   eq(to.support, support);
+  equals(support.slot.Occupied s);
+  eq(s.by, item.loc);
 }
 
 // the unit's reset button, docked at: its breaker closes. `feature` is kept as its own action parameter (not just
@@ -213,4 +232,12 @@ LunarBot::press
   meets(effect object.posture.Ready to);
   met_by(condition unit.panel.Faulted pf);
   meets(effect unit.panel.Restored pt);
+}
+
+// a support takes one item (brief L2-B): an item's stay on a support, and its being set down there, occupy the support's
+// slot, so nothing is set down on a support until what rests on it has been lifted off
+ItemLoc::On
+{
+  equals(support.slot.Occupied o);
+  eq(o.by, object);
 }

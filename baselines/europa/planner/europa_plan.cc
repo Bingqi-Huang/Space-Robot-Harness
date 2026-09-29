@@ -68,7 +68,10 @@ int main(int argc, char const **argv)
     return 1;
   }
   PSSolver *solver = engine->createSolver(config);
-  solver->configure(0, horizon);
+  // the horizon opens one tick before the facts (t=0): the HorizonFilter's PartiallyContained policy keeps a flaw only
+  // if its end can lie after the horizon start, so with the horizon at 0 the conditions of an activity that can start
+  // at once (met at t=0 by the current state) were never checked -- e.g. a pick right where the rover already stands
+  solver->configure(-1, horizon);
   bool solved = false;
   while (!solver->isExhausted() && !solver->isTimedOut() && solver->getStepCount() < max_steps) {
     solver->step();

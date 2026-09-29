@@ -21,7 +21,8 @@ The mission instance is the site as the boundary reports it: every surveyed feat
 inventory record on its recorded support (manifest), every serviced unit with its breaker as its own telemetry reads
 (power_status). The goals are only the mission's own outcomes (docs/baselines/authoring_spec.md, "Mission goals"):
 Mission A every unit restored, Mission B the launcher's item X from source S on destination D (MISSION_GOAL, the same
-variable the PLEXIL baseline's plan reads); then arm stowed and base at the dock. navigate_to_feature/dock_at_feature/
+variable the PLEXIL baseline's plan reads); then arm stowed and base at the dock. An outbound return the record lists as
+awaiting stowage is first set on the return stand (brief L2-B). navigate_to_feature/dock_at_feature/
 arm_ready and which unit to press are not goals at all -- pick/place/press's own domain preconditions force the solver
 to derive them, the same way the point of using EUROPA over a hand-sequenced plan is that a single high-level goal
 expands into the steps that satisfy it (nasa/europa's own Rover example: TakeSample(rock4) alone yields
@@ -55,6 +56,8 @@ NEAR_M = HOST_CONFIG["near_m"]      # dock_at_feature closes "the last metre" af
                                      # this close to the feature can dock
 ATTEMPTS = HOST_CONFIG["attempts"]  # the same call failing this often ends the run -- the domain has no other way there
 JAW_HOLD = (HOST_CONFIG["jaw_holding_min_rad"], HOST_CONFIG["jaw_holding_max_rad"])  # d0_common.py's own bands
+RETURNS_SUPPORT = HOST_CONFIG["returns_support"]  # where outbound returns go (brief L2-B)
+OUTBOUND = "outbound return, awaiting stowage"      # the record's status of an outbound return still to be stowed
 
 # An item's natural-language description (pick's target/part) and catalogue release constraint (place's) are text
 # the solver has no reason to search over -- there is exactly one way to describe an item. The table is shared with the
@@ -74,16 +77,17 @@ def ident(name):
 
 # ---- mission instance and state as NDDL --------------------------------------------------------------------------
 def instance(site, items, units):
-    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances, every item of
-    the inventory record (`items`: serial -> its support; where it stands is a fact, not part of the object) and every
-    serviced unit (`units`: name -> its button's feature name, a structural property of the `Unit` constructor itself,
-    not a fact)."""
+    """Site objects of the domain: the dock, `elsewhere`, every surveyed feature with its two stances (a `place` point
+    is a `Support`: it takes one item), every item of the inventory record (`items`: serial -> its support; where it
+    stands is a fact, not part of the object) and every serviced unit (`units`: name -> its button's feature name, a
+    structural property of the `Unit` constructor itself, not a fact)."""
     lines = ['NamedPose dock = new NamedPose("dock");', 'Location elsewhere = new Location("elsewhere");']
     names = {"dock": "dock", "elsewhere": "elsewhere"}
-    for f in site["points"]:
+    for f, p in site["points"].items():
         i = ident(f)
         lines += [f'Location {i}_a = new Location("{f}@approach");', f'Location {i}_w = new Location("{f}@work");',
-                  f'Feature {i} = new Feature("{f}", {i}_a, {i}_w);']
+                  f'Support {i} = new Support("{f}", {i}_a, {i}_w);' if p["type"] == "place"
+                  else f'Feature {i} = new Feature("{f}", {i}_a, {i}_w);']
         names.update({i: f, f"{i}_a": f"{f}@approach", f"{i}_w": f"{f}@work"})
     for item in items:
         i = ident(item)
@@ -327,6 +331,11 @@ def main():
         serial = next(r["serial"] for r in inventory if r["item"] == g["item"] and r["recorded_location"] == g["source"])
         delivery = (serial, g["destination"])
     goals = [x for t in a.goal for x in parse_goal(t, loc, units, delivery)]
+    # the record's outbound returns still to be stowed go on the return stand first (brief L2-B): a support takes one
+    # item (the domain), so one of them can stand where the mission sets something down, and one goal per solve keeps
+    # its stowage a plan of its own ahead of the mission's
+    goals = [(f"{ident(r['serial'])}.loc", "On", {"support": loc[RETURNS_SUPPORT]}, False)
+             for r in inventory if r["status"] == OUTBOUND] + goals
     if a.final:
         goals += [x[:3] + (True,) for x in parse_goal(a.final, loc, units, delivery)]
     state = initial_state(query(node, client, "base_pose"), query(node, client, "arm_state"), site, items_at)

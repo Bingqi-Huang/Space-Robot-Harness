@@ -13,6 +13,8 @@ Arguments are taken and checked as the boundary does: a JSON object, or the posi
 The manifest's inventory is the scene's authored one (every item on its authored support, serviceable), as the
 covered scenarios publish it. Mission control is stood in for too: every request on /space/operator/request is answered
 at once with the protocol's HOLD reply (experiments/operator_console/console.py), so an escalation ends the run.
+  --outbound SERIAL=SUPPORT  the record lists the item at SUPPORT as an outbound return awaiting stowage (the L2-B
+                       occupied destination)
   --fail CAP:N[:far]   the N-th call of CAP fails (failure_kind 3, "no progress"); `far` (base moves only) leaves the
                        base 5 m off the target instead of where it started; ignored for arm_ready/stow/pick/place/
                        press, which simply do not change posture/jaws/held item on a failed call
@@ -52,9 +54,9 @@ def feature_pose(name, standoff):
 
 
 class SimBoundary(Node):
-    def __init__(self, fail, tripped, hold, close):
+    def __init__(self, fail, tripped, hold, close, outbound):
         super().__init__("europa_sim_boundary")
-        self.fail, self.hold, self.close = fail, hold, close
+        self.fail, self.hold, self.close, self.outbound = fail, hold, close, outbound
         self.breaker = {u: "tripped" if u in tripped else "closed" for u in IX["units"]}
         self.pending_trip = set()
         self.calls = Counter()
@@ -116,6 +118,9 @@ class SimBoundary(Node):
                                  for k, v in IX["points"].items() if "object" not in v})
         elif req.query == "manifest":
             value = dict(inventory=[dict(serial=o["serial"], item=o["item"], recorded_location=o["support"], status="serviceable")
+                                    if o["serial"] not in self.outbound else
+                                    dict(serial=o["serial"], item=o["item"], recorded_location=self.outbound[o["serial"]],
+                                         status="outbound return, awaiting stowage")
                                     for o in IX["objects"].values()])
         elif req.query == "arm_state":
             value = self.arm_evidence()
@@ -137,6 +142,7 @@ if __name__ == "__main__":
     ap.add_argument("--tripped", action="append", default=[])
     ap.add_argument("--no-hold", action="store_true")
     ap.add_argument("--no-close", action="store_true")
+    ap.add_argument("--outbound", action="append", default=[])
     a = ap.parse_args()
     fail = {}
     for f in a.fail:
@@ -144,5 +150,5 @@ if __name__ == "__main__":
         fail[(cap, int(n))] = how[0] if how else "stay"
     rclpy.init()
     ex = MultiThreadedExecutor()
-    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold, not a.no_close))
+    ex.add_node(SimBoundary(fail, set(a.tripped), not a.no_hold, not a.no_close, dict(o.split("=") for o in a.outbound)))
     ex.spin()

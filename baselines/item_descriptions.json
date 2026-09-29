@@ -14,5 +14,10 @@
     "target": "the consumables container: a long silver-white rugged case with a grey front panel, and a black lifting post on top",
     "part": "the slot on the narrow neck of the black lifting post on top, between the transverse head above and the collar below (fingers close on opposite sides of the neck)",
     "release_constraint": "below_overhang"
+  },
+  "return container": {
+    "target": "the return container: a squat orange rugged case with brown straps and latches, a large black 09 on its front, and a black lifting post on top",
+    "part": "the slot on the narrow neck of the black lifting post on top, between the transverse head above and the collar below (fingers close on opposite sides of the neck)",
+    "release_constraint": "below_overhang"
   }
 }
