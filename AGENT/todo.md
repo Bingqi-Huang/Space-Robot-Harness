@@ -17,17 +17,22 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
 
 ## Next work
 
-- [ ] §5.7 ablations, method B (user 2026-09-28): fault injection + offline counterfactual replay on recorded runs
-      (from the `exp1b` system), live only where offline shows a difference. Variants (research_content §5.7):
-      without authoritative facts, without internal effect verification, without the guard, without dynamic
-      context reconstruction. F130 has the offline reading of what each would change.
-- [ ] Re-authoring cost per held-out case for both baselines (heldout_design §8, authoring_spec "After the freeze";
-      feeds H2): developer time and new plan / domain nodes to cover each of the six Exp I held-out cases.
-- [ ] Swimlane label overlap (press/press, place/stow) before the paper figure.
-- [ ] Paper results section from `artifacts/eval/exp1b/{tables,failures}.md` and `artifacts/eval/exp2/tables.md`;
-      limitations: one engineer per method (Claude sessions in Exp II), category-level L2-B precedent, H2 held-out
+- [ ] §5.7 ablations, method B (user 2026-09-29: variants, accidents, rubric as in F148). Branch `feat/ablation`
+      (`.worktree/ablation`, from tag exp1b; `OURS_ABLATION`). Done: switches (full re-renders 1099/1099 identically),
+      stage 1 offline (`artifacts/eval/ablation/stage1.md`), 100 decision points (`points/`). Running: stage 2, 684 model
+      chains (`results/`, `stage2.log`); then `stage2_score.py` + blind reading sheet -> labels.json -> stage2.md. Then
+      stage 3 live (<= 12 runs, from snapshots: restore drops a held item (F60) = J1's physical drop; J3 only at points
+      with nothing held; J4 with `SPACE_LINK_LOS_S=0`, r1/r2). Merge the branch at the end.
+- [ ] Re-authoring cost per held-out case for both baselines -- plan proposed (Q5-Q7: fresh Claude engineer per
+      baseline x case from exp1b, diagnosis given, live validation on every instance, 3 h cap); needs the user's go.
+- [ ] Swimlane label overlap (press/press, place/stow) -- plan proposed; needs the user's go.
+- [ ] Paper results section (format/location to ask first): Exp I tables + a success-vs-level curve (not made yet),
+      Exp II, ablations, re-authoring cost. Framing (user 2026-09-29): trustworthy AI -- an FM embedded in the
+      space-robot workflow, raising autonomy while keeping safety and the established engineering disciplines.
+      Limitations: one engineer per method (Claude sessions in Exp II), category-level L2-B precedent, H2 held-out
       precedent off-ISS, AMCL bias, fixed 300 s ground decision, Ours' post-mission inspection tours, Ours' H1 search
-      less systematic than PLEXIL's sweep, the held-out categories were in heldout_design §6.
+      less systematic than PLEXIL's sweep, the held-out categories were in heldout_design §6, ablation stage 2 asks one
+      decision on the full method's recorded prefix.
 - Not now (user): Exp II "plan B" (the user as engineer with Claude as assistant); push (waits for the user).
 
 ## Clean-up (user 2026-09-26: keep for now)

@@ -1,13 +1,15 @@
 # Handoff
 
-Updated 2026-09-29. Experiment I (exp1b, F142/F143) and Experiment II (F144-F147) are done. Next (`AGENT/todo.md`):
-the §5.7 ablations (method B, from tag `exp1b`), the baselines' re-authoring cost per held-out case, the results
-section. Nothing pushed since F142: research main is 16 commits ahead of origin, SRB main 1, tags exp1b / exp2-* local
--- pushing waits for the user. No runs live; GPUs 0-5 free.
+Updated 2026-09-29. Experiment I (exp1b, F142/F143) and Experiment II (F144-F147) are done. In progress: the §5.7
+ablations, method B (F148; branch `feat/ablation` in `.worktree/ablation`, from tag exp1b) -- stage 1 done, stage 2
+(684 model chains, `artifacts/eval/ablation/`) running in container `abl-stage2`. Next after it: score (blind reading
+sheet), stage 3 live (<= 12 runs), then ask the user about the baselines' re-authoring cost (Q5-Q7) and the swimlane fix.
+Nothing pushed since F142: research main is 18 commits ahead of origin, SRB main 1, tags exp1b / exp2-* local --
+pushing waits for the user. GPUs 0-5 free.
 
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (§6 Exp II, §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preregistration.md`** (metrics,
-taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md` F130, F131, F136, F140-F147. Goal: the Acta
+taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md` F130, F131, F136, F140-F148. Goal: the Acta
 Astronautica paper (H1 no rewrite for unplanned situations, H2 less engineering to add a capability, H3 open reasoning
 inside hard boundaries). The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
 boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
@@ -34,6 +36,18 @@ boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a
   coding time (user: a human-engineer round "plan B" not now). Ours' H1 search is less systematic than PLEXIL's sweep.
   rows.py's ledger rule cannot see a false completion when the report is the plan's still-active last task; the Exp II
   table reads the reports (`CLAIMS` in tables.py).
+
+## Ablations (F148)
+
+- Paper framing (user 2026-09-29): trustworthy AI -- the harness is what makes the model's autonomy safe; an FM embedded
+  in the space-robot workflow that keeps the established engineering disciplines. Not "an LLM calling tools".
+- Variants (`OURS_ABLATION`: no_facts / no_verification / no_guard / no_context; texts in `prompts/ours_ablation/`);
+  unset = full, byte-identical (`experiments/ablation/render_check.py`). Accidents J1-J4 + natural N/NF
+  (`accidents.py`); `stage1.py`; `stage2.py` (plan calls and static queries carried forward offline); `stage2_score.py`.
+- Containers for the offline scripts: `runfarm:22.04`, `--dns 223.5.5.5 --dns 119.29.29.29` (the host DNS is fake-IP;
+  without it the gateway times out), openral venv python, ROS + openral/install + worktree ros/install sourced.
+- Live (stage 3): a restore puts a held item out of the jaws (F60) -- that is J1's drop; J3 live only at points with
+  nothing held; J4 live with `SPACE_LINK_LOS_S=0` (link.py, env-gated), from r1/r2. Resumed runs start a new sim clock.
 
 ## Heads
 
