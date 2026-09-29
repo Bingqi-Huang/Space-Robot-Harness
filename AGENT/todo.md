@@ -15,25 +15,20 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
   PLEXIL 2/2, EUROPA 2/2; fixes F145 (scan view), F147 (on-support fact, Ours' step budget), only decided runs rerun.
   `experiments/exp2/`, `artifacts/runs/exp2/`, `artifacts/eval/exp2/tables.md` (`python3 experiments/exp2/tables.py`).
 
-## Next work
+## Next work (blocked on the model gateway: account refused, HTTP 403 -- user recharging)
 
-- [ ] §5.7 ablations, method B (user 2026-09-29: variants, accidents, rubric as in F148). Branch `feat/ablation`
-      (`.worktree/ablation`, from tag exp1b; `OURS_ABLATION`). Done: switches (full re-renders 1099/1099 identically),
-      stage 1 offline (`artifacts/eval/ablation/stage1.md`), 100 decision points (`points/`). Running: stage 2, 684 model
-      chains (`results/`, `stage2.log`); then `stage2_score.py` + blind reading sheet -> labels.json -> stage2.md. Then
-      stage 3 live (<= 12 runs, from snapshots: restore drops a held item (F60) = J1's physical drop; J3 only at points
-      with nothing held; J4 with `SPACE_LINK_LOS_S=0`, r1/r2). Merge the branch at the end.
-- [ ] Re-authoring cost per held-out case for both baselines -- plan proposed (Q5-Q7: fresh Claude engineer per
-      baseline x case from exp1b, diagnosis given, live validation on every instance, 3 h cap); needs the user's go.
-- [ ] Swimlane label overlap (press/press, place/stow) -- plan proposed; needs the user's go.
-- [ ] Paper results section (format/location to ask first): Exp I tables + a success-vs-level curve (not made yet),
-      Exp II, ablations, re-authoring cost. Framing (user 2026-09-29): trustworthy AI -- an FM embedded in the
-      space-robot workflow, raising autonomy while keeping safety and the established engineering disciplines.
-      Limitations: one engineer per method (Claude sessions in Exp II), category-level L2-B precedent, H2 held-out
-      precedent off-ISS, AMCL bias, fixed 300 s ground decision, Ours' post-mission inspection tours, Ours' H1 search
-      less systematic than PLEXIL's sweep, the held-out categories were in heldout_design §6, ablation stage 2 asks one
-      decision on the full method's recorded prefix.
-- Not now (user): Exp II "plan B" (the user as engineer with Claude as assistant); push (waits for the user).
+- [ ] §5.7 ablations (F148-F150): stage 1, 2 done. Stage 3 live = J1 x4 (`artifacts/eval/ablation/live/job_j1_*.txt`)
+      + J3 no_context x2 (`job_j3_*.txt`), all from `.worktree/ablation` (SRB pinned, F149), launch each with
+      `experiments/reauthoring/gpu_run.sh <gpu> abl-<name> <job file> artifacts/runs/ablation/<j1c|j3c>/<name>
+      .worktree/ablation`; Monitor check.log (RESTORED / RESULT / CHECK_EXIT). Then score live outcomes, write the
+      ablation subsection, merge `feat/ablation` (switches default off; render_check 1099/1099).
+- [ ] Re-authoring cost (docs/reauthoring/, F149): 8 engineer sessions; PLEXIL L2-A/L2-B/L3/L4 and EUROPA L2-A are
+      offline-ready (timers stopped "waiting for model provider"), EUROPA L2-B/L3/L4 still authoring. When the gateway is
+      back: resume each session (same agent) for its live validation on its GPU (0-5 via gpu_run.sh; EUROPA L3 on 1, L4
+      on 3), then collect worklogs + diffs into a table (like experiments/exp2/tables.py).
+- [ ] Paper: `paper/sections/results.tex` drafted (Exp I, ALFUS, trust, Exp II); fill re-authoring and ablation
+      subsections; then the rest of the manuscript. Framing: trustworthy AI (memory).
+- Not now (user): Exp II "plan B"; push (waits for the user).
 
 ## Clean-up (user 2026-09-26: keep for now)
 

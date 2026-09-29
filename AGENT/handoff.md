@@ -1,15 +1,12 @@
 # Handoff
 
-Updated 2026-09-29. Experiment I (exp1b, F142/F143) and Experiment II (F144-F147) are done. In progress: the §5.7
-ablations, method B (F148; branch `feat/ablation` in `.worktree/ablation`, from tag exp1b) -- stage 1 done, stage 2
-(684 model chains, `artifacts/eval/ablation/`) running in container `abl-stage2`. Next after it: score (blind reading
-sheet), stage 3 live (<= 12 runs), then ask the user about the baselines' re-authoring cost (Q5-Q7) and the swimlane fix.
-Nothing pushed since F142: research main is 18 commits ahead of origin, SRB main 1, tags exp1b / exp2-* local --
-pushing waits for the user. GPUs 0-5 free.
+Updated 2026-09-29 evening. Exp I, Exp II done. Ablations (F148-F150): stages 1-2 done; stage 3 (6 live runs) and the
+re-authoring study's live validation (F149) wait for the model gateway (account refused, user recharging). Swimlane fix
+done; paper results draft in `paper/`. See AGENT/todo.md. Nothing pushed (research main ahead of origin; SRB 1).
 
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (§6 Exp II, §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preregistration.md`** (metrics,
-taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md` F130, F131, F136, F140-F148. Goal: the Acta
+taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md` F130, F131, F136, F140-F150. Goal: the Acta
 Astronautica paper (H1 no rewrite for unplanned situations, H2 less engineering to add a capability, H3 open reasoning
 inside hard boundaries). The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
 boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
