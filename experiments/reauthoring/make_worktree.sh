@@ -27,3 +27,4 @@ for p in baselines/europa/planner/build baselines/europa/plexil/build baselines/
 done
 nice -n 19 docker run --rm --cpuset-cpus 30,31,62,63 -v /mnt/SharedData:/mnt/SharedData -v "$HOME/Programs:$HOME/Programs" runfarm:22.04 bash -lc \
   "export PLEXIL_HOME=\$HOME/Programs/plexil && source /opt/ros/humble/setup.bash && source $W/openral/install/setup.bash && cd $W/ros && mkdir -p log && colcon build --merge-install > log/make_worktree_build.log 2>&1; tail -1 log/make_worktree_build.log"
+"$R/experiments/reauthoring/pin_srb.sh" "$W" > /dev/null

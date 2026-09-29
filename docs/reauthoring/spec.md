@@ -49,12 +49,15 @@ one held-out case autonomously. (Ours solved every held-out case with no change;
 ## Validation (the timer stops at the first PASS)
 
 1. Live run(s) of your baseline on **every instance of the case** (the case brief lists the jobs lines: your baseline's
-   own Experiment I lines). Run them from your checkout on **your GPU only** (assigned in your task):
-   `tmux new-session -d -s <name> "<your checkout>/experiments/launch/lunar_base_d0/farm_queue.sh <jobs file> <run root>
-   '<gpu>'"`, run root `/mnt/SharedData/Research/Space_Robot_Harness/artifacts/runs/reauth/<baseline>_<case>/v<k>`.
-   Before launching, `/mnt/SharedData/Research/Space_Robot_Harness/experiments/reauthoring/gpu_free.sh <gpu>` must print
-   `free` (one simulation per GPU, also while a previous container tears down). Watch a run with a Monitor on its
-   `check.log` / the queue's `queue.log` ("end" lines), never by polling; a Mission A/B baseline run takes ~15-40 min.
+   own Experiment I lines). Run them from your checkout on **your GPU only** (assigned in your task), through the GPU
+   lock that the other users of the run farm share:
+   `/mnt/SharedData/Research/Space_Robot_Harness/experiments/reauthoring/gpu_run.sh <gpu> <session name> <jobs file>
+   /mnt/SharedData/Research/Space_Robot_Harness/artifacts/runs/reauth/<baseline>_<case>/v<k> <your checkout>`. It
+   returns at once; the queue starts when the GPU is free and writes a "start" line to `<run root>/queue.log`. If it
+   has to wait, stop your timer ("waiting for GPU") and start it again when the start line appears. Watch the queue and
+   your runs' `check.log` with a Monitor (never poll, never sleep-loop); a Mission A/B baseline run takes ~15-40 min.
+   Your checkout's simulator already uses your checkout's own SRB (experiments/reauthoring/pin_srb.sh); leave
+   `openral/scenes` alone.
 2. `python3 /mnt/SharedData/Research/Space_Robot_Harness/experiments/reauthoring/validate.py <run dir> [<run dir> ...]`
    (one run dir per instance): PASS when every instance succeeded by the external evaluator, nothing dropped, and no
    module removed from an energized unit without mission control's approval.
