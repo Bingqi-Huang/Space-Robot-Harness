@@ -6405,3 +6405,38 @@ shuffled; 25 borderline entries in `score/notes.md`, labels kept as read). `arti
 J3 no_context at two instances (2 runs, the exception). J2 stays offline (making a skill report a false success live
 would need a change to the shared layer); J4 and NF showed no difference. Prepared and restored once (F149); waiting on
 the model gateway.
+
+## F151 -- Re-authoring cost, offline part: PLEXIL covers each held-out case in 5-13 min, EUROPA -> PLEXIL in 11-66 min with 3-9 modelling notes; live validation waits for the gateway (2026-09-29)
+
+All eight engineers (docs/reauthoring/spec.md, F149) finished authoring and their own offline checks; none has run live
+(gateway refused, F149), each timer stopped "waiting for model provider". Active time so far (worklogs
+`experiments/reauthoring/worklog/`, `engineering_worklog.py total`), notes (validation failures + modelling errors +
+outage/hygiene notes), and the diff of the baseline's own files (`baselines/`, `ros/`) on branch `reauth/<b>-<case>`:
+
+| case | PLEXIL: active, notes, diff | EUROPA -> PLEXIL: active, notes, diff |
+|---|---|---|
+| L2-A shutter | 312 s, 1, 3 files +60/-1 | 685 s, 3, 3 files +70/-16 |
+| L2-B occupied stand | 527 s, 4, 7 files +96/-6 | 3977 s, 6, 6 files +67/-16 |
+| L3 module failure | 488 s, 4, 5 files +122/-2 | 3786 s, 9, 6 files +178/-34 |
+| L4 donor + authorization | 785 s, 4, 6 files +278/-6 | 3524 s, 6, 3 files +300/-58 |
+
+What they wrote. PLEXIL: a branch keyed on the case's cause (trip cause OVERTEMP -> shutter button; module fault ->
+remove / set down / fetch spare / install; ORU_SELFTEST_FAIL at PDU-1 -> authorization request + donor transfer; a
+manifest record on the destination -> clear it to the return stand) composed of the existing library nodes, plus new
+Lookups/Commands in the adapter where the case needed a signal (`ManifestAt`, `RequestAuthorization`). The L4 plan hard-
+codes "the only spare is recorded failed" from the brief: with a serviceable spare it would still take PDU-3's module --
+a pre-written branch holds for the situation it was written for. EUROPA: new classes, timelines and actions (shutter,
+bay contents and access, slots/supports, self-test), host translation of the new facts, and changes to covered rules the
+solver needed (press no longer requires the arm stowed; navigation without a from-pose condition; slot tokens ordered
+last). Deviations kept and counted as cost: L2-B turns the record's "awaiting stowage" into a host-side goal ahead of the
+mission's, because the solver could not find move-occupier-then-deliver in one solve (5,000 steps; 60,000 still running
+after 11 min); L2-B also found a defect in the frozen planner -- the horizon opened at 0, so open conditions of an
+activity that could start at once were skipped (it picked the container where the rover stood). Exp I's covered runs did
+not depend on it (7/7); recorded, the frozen baseline unchanged. Several engineers edited the shared
+`baselines/item_descriptions.json` (a row for the return container, the filter cartridge) on their own branches.
+Held-out material seen by accident (recorded in the worklogs): PLEXIL L2-A and L3 (F149); EUROPA L2-B's early grep printed
+lines of SRB `lunar_base_mission_b/task.py` and the two `b_l2_destination_occupied_habitat` scenario files (said nothing
+beyond the brief); EUROPA L3/L4 read `baselines/scripts/retry_budget_sensitivity.py`'s docstring/line (the held-out
+stand-ins of F136) and SRB `lunar_base/site.py` telemetry code.
+Next: when the gateway is back, each session resumes for its live validation (`validate.py` on every instance); the
+table then adds validation runs and time waiting on them.
