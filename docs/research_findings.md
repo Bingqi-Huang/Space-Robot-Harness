@@ -6321,6 +6321,12 @@ where a rule needs its rationale or plan text, the calls are read in shuffled or
 - N (automatic): DUPLICATE = an effect call identical to an earlier one whose effect held; INVALID; SAME tool as recorded;
   DIFFERENT. NF: STALE = acts on an item location no longer true (picks where the item is not, places with nothing held,
   treats a moved item as unmoved); CHECK; CONSISTENT; OTHER.
+*Amendment before the scored calls (two unscored smoke tests showed the first call is often the model's own re-plan):*
+the decision is the first effect call, call to mission control, or query of the robot's current state. Calls before it
+that change nothing outside the agent are carried forward offline and the model asked again, as the live agent would
+ask it (at most 6): its own plan calls applied exactly as the agent applies them; a query of a static record (site_map,
+manifest, work_stands) answered with the run's own earlier answer to the same query and arguments (none on record: that
+query is the decision). `stage2.py`.
 **Stage 3 (live)** only for cells where stage 2 shows the variant clearly worse than the full method; from the recorded
 snapshot before the point (a J1 drop by moving the item out of the jaws in a copy of the snapshot; J4 with Earth-set
 moved as above), paired with the full method where the recorded run is not already the control; at most 12 runs.
