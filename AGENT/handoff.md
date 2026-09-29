@@ -1,137 +1,107 @@
 # Handoff
 
-Updated 2026-09-29 (Experiment II done, F144-F147: after the extension Ours 6/6, PLEXIL 2/2, EUROPA 2/2; tags exp1b,
-exp2-*; nothing pushed since F142 -- pushing waits for the user). Next (`AGENT/todo.md`): the §5.7 ablations (method
-B, from `exp1b`), the baselines' re-authoring cost per held-out case, the results section.
-Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (the plan; §8 protocol, §14
-instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preflight_checklist.md`** (acceptance),
-**`docs/preregistration.md`** (metrics, taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md`
-F115-F143. Goal: the Acta Astronautica paper. The model owns mission strategy; a thin harness owns facts, evidence,
-verification and hard boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
+Updated 2026-09-29. Experiment I (exp1b, F142/F143) and Experiment II (F144-F147) are done. Next (`AGENT/todo.md`):
+the §5.7 ablations (method B, from tag `exp1b`), the baselines' re-authoring cost per held-out case, the results
+section. Nothing pushed since F142: research main is 16 commits ahead of origin, SRB main 1, tags exp1b / exp2-* local
+-- pushing waits for the user. No runs live; GPUs 0-5 free.
+
+Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (§6 Exp II, §8 protocol, §14
+instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preregistration.md`** (metrics,
+taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md` F130, F131, F136, F140-F147. Goal: the Acta
+Astronautica paper (H1 no rewrite for unplanned situations, H2 less engineering to add a capability, H3 open reasoning
+inside hard boundaries). The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
+boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
+
+## Results so far
+
+- **Experiment I = exp1b** (F142): Ours covered 7/7, held-out 18/18, 0 ground re-authoring; PLEXIL and EUROPA->PLEXIL
+  covered 7/7, held-out 0/6 (every run detected -> escalated -> hold). False completions 0; guard held 3 (L4 donor
+  picks), 0 executed despite a hold; no physical-layer failure. `artifacts/runs/exp1b/`, `artifacts/eval/exp1b/`
+  (tables, failures, place offsets, trace completeness), `artifacts/figures/exp1b/` (swimlanes, six textured
+  third-person videos). F143: PLEXIL N = 1/2/3/5 on derived plans never changes the outcome; a drop = a fall.
+- **Experiment II** (F144-F147; new shared capability `scan_label`, Data Matrix serials by the wrist camera): each
+  extension by a fresh autonomous Claude session that saw only `docs/exp2/extension_spec.md` + G3, timed, order Ours ->
+  PLEXIL -> EUROPA, each from the previous merged state. All passed G3 on the first validation run. Active 54.5 / 46.3
+  / 53.4 min, of it not waiting on the simulation 4.7 / 10.8 / 20.8. Ours registered the capability and made its
+  reading a verified fact (no procedure); PLEXIL wrote check -> record-guided search -> 13-support sweep -> escalate;
+  EUROPA modelled identity + a sensing activity, candidate narrowing in the host. Held-out (H1 mislocated spare, H2
+  swapped records): before the extension 0/6 (Ours' two reports false completions); after it Ours 6/6, PLEXIL 2/2,
+  EUROPA 2/2. Fixes found in the held-out runs, applied for all methods, only the runs they decided rerun (user rule):
+  F145 wider scan view, F147 on-support fact + Ours' step budget counts calls on the robot (not plan bookkeeping).
+  Tables `python3 experiments/exp2/tables.py` -> `artifacts/eval/exp2/tables.md`; cases, chains, launch lines
+  `experiments/exp2/heldout/`; runs `artifacts/runs/exp2/{setup,g2_physical,validation,pre,post,post_superseded,checks}`.
+- Paper-relevant facts: the Exp I system is tag `exp1b`; Exp II's final system adds F144-F147. Claude engineers compress
+  coding time (user: a human-engineer round "plan B" not now). Ours' H1 search is less systematic than PLEXIL's sweep.
+  rows.py's ledger rule cannot see a false completion when the report is the plan's still-active last task; the Exp II
+  table reads the reports (`CLAIMS` in tables.py).
 
 ## Heads
 
-- **Experiment II** (F144-F146): spec `docs/exp2/extension_spec.md`; G3 `experiments/exp2/g3_validate.py`; worklogs
-  `experiments/exp2/worklog/`; held-out cases, chains and launch lines `experiments/exp2/heldout/`; runs
-  `artifacts/runs/exp2/{setup,g2_physical,validation,pre,post,post_superseded,checks}`; deltas and tables
-  `artifacts/eval/exp2/` (`python3 experiments/exp2/tables.py`). Engineer checkouts (removed after merging) came from
-  `experiments/exp2/make_worktree.sh`. The scan takes the widest of three views (F145) and says whether something stands on the support; Ours' step
-  budget counts calls on the robot, not its plan bookkeeping (F147). Move a run dir only after its queue logs "queue done".
-- `freeze-1` (F139) is history: the user dropped the freeze ceremony (2026-09-27). The shared layer was fixed after
-  exp1 (F141, F142) on `feat/shared-fixes`, merged into research `main`, openral `master`, SRB `main` and pushed
-  (research 8d90d63, openral 9338521, SRB 601588f). The `feat/shared-fixes` branches can go.
-- **F143**: `baselines/scripts/retry_budget_sensitivity.py` derives PLEXIL plans per N (derived(3) == locked plans);
-  48 offline runs, every held-out run escalates at every N (`artifacts/eval/retry_budget/results.md`). Class 2
-  (dropped item) = a fall, once per fall (`evaluation/violations.count_dropped_items`); exp1/exp1b rows recomputed.
-- Evaluator: a call's window starts at the evaluator's own sim->wall record of its `sim_t_start` (F142), not
-  `end - sim_s`. Recompute rows with `python3 -m evaluation.rows --out <dir> <run dirs>` then `evaluation.tables`
-  (system python3; exp1 rows exclude plexil_b_oru_pdu3 and europa_l3_isru).
-- **Experiment I = exp1b** (F142): `artifacts/runs/exp1b/` (51 scored; two invalidated runs moved to
-  `exp1b_aborted/*__invalid_f142`), `artifacts/eval/exp1b/`, `artifacts/figures/exp1b/` (swimlanes, six textured
-  third-person videos; render scripts `.prep.sh`/`.render_all.sh`/`.compose_one.sh` there, textures mounted only
-  into the render container from /mnt/SharedData/Research/lunarbot_textures/textures).
-- exp1 (F140, superseded by exp1b): `artifacts/runs/exp1/` (51 scored + 2 category-8 reruns), `artifacts/eval/exp1/`
-  (rows, tables.md, failures.md, place_offsets, trace completeness), `artifacts/figures/exp1/`. Rows exclude the two
-  category-8 runs (plexil_b_oru_pdu3, europa_l3_isru). Development runs (step 9/10, checks) are never scored.
-- farm_queue reads the jobs file at every claim: a rerun appended late is only claimed if a worker is still alive and
-  `.next` points at it (workers that found the queue empty advance `.next` and exit).
-- The PLEXIL adapter now survives a lost goal response/request (F142: own goal id, get_result polling). If a baseline
-  still stalls, "failed to send response" in capability_server.log is the signature; Ours' client has the same exposure.
-- `farm_join.sh` adds a GPU worker to a running batch without resetting `.next`.
-- **Reasoner Qwen3.8-Max** (configs/space_runtime.yaml, 600 s), VLM DeepSeek-V4.1-Flash, paratera gateway.
-- **What the reasoner reads** (F124): `prompts/ours/system.md`, `prompts/ours/step.md`, `prompts/ours/tools.yaml`;
-  `space_runtime/context.py` only fills them.
+- Tags: `freeze-1` (history), `exp1b` (Exp I; the ablations start here), `exp2-base`, `exp2-base-plexil`,
+  `exp2-base-europa`, `exp2-ours`, `exp2-plexil`, `exp2-europa_plexil` (each method's extension base / result).
+- Branches: research `main` (+ `feat/prefreeze-infra`, kept by the user), openral `master`, SRB `main`.
+- **Reasoner Qwen3.8-Max** (configs/space_runtime.yaml, 600 s), VLM DeepSeek-V4.1-Flash, paratera gateway; key = the
+  first `sk-` in `AGENT/VLM_provider.md` (gitignored; never print it, never write it anywhere).
+- **What the reasoner reads** (F124): `prompts/ours/{system,step}.md`, `prompts/ours/tools.yaml`; `space_runtime/
+  context.py` only fills them. Palette = every non-engineering contract in `openral_ext/capability_server/contracts.yaml`.
 - **Mission control** (F125, console.py): answers by request kind + held calls; only `new_procedure` = re-authoring.
-- **Step 10** (F138): 6/6 held-out solved live with Qwen (development). Place: the base backs the arm out of the
-  released handle, a short lift after it is recorded, not a failure; the verifier's `item_placed` is `holds: null`
-  when the settle frame shows nothing of the item. B5 rechecked live after that change (clean failure).
-- Eval: `evaluation/rows.py` -> `tables.py` (F132). Figures: `experiments/video/swimlane.py`, `mission_video.py` (F135).
-- Resume from a snapshot (every Ours run saves `snapshots/before_step_<n>.pt`): `OURS_RESUME_FROM=<run dir>
-  OURS_RESUME_BEFORE_STEP=<n>` on `run_d0.sh`; jaws must be empty at that snapshot. Development only, never scored.
-- PLEXIL adapter rebuilds need `export PLEXIL_HOME=$HOME/Programs/plexil`; the offline check also needs
-  `source $PLEXIL_HOME/scripts/plexil-setup.sh` (plexilc on PATH). Rebuilt 2026-09-26 (node id, E7).
-- Image `runfarm:22.04` carries gdb, Cyclone (unused) and tf2 from geometry2 9997e969 (F113). Host sysctl: socket
-  buffers 64 MB (`/etc/sysctl.d/60-runfarm-dds.conf`).
-- Development runs on `pro6000` (host astroeng, uid 1007). The dev machine (z890) syncs only through origin.
+- **scan_label** (shared): `openral_ext/scan_label.py` via `CapabilityServer.scan_label`; widest of three views the arm
+  can take (F145); `something_on_support` from the wrist depth (F147). zxing-cpp is in the openral venv.
+- Mission B knobs (SRB): `env.name_serial`, `env.placement` / `env.records` ("obj:place_frame+..."); ORU-0272 (failed,
+  landing_stand/slot_1) is a second identical ORU; `status` is an authored object field.
+- Evaluator: rows -> tables (`python3 -m evaluation.rows --out <dir> <run dirs>`, then `evaluation.tables`, system
+  python3); a call's window starts at the evaluator's sim->wall record (F142). Figures: `experiments/video/`.
+- Experiment II engineer checkouts: `experiments/exp2/make_worktree.sh <method> <base>` (submodules as worktrees, links
+  for venv/install/kernels/key, ros built there); removed after merging.
+- Resume from a snapshot (`snapshots/before_step_<n>.pt`): `OURS_RESUME_FROM=<run dir> OURS_RESUME_BEFORE_STEP=<n>` on
+  run_d0.sh; development only, never scored.
+- PLEXIL: adapter rebuild `colcon build --merge-install --packages-select plexil_capability_adapter` from `ros/` in a
+  pinned container with `PLEXIL_HOME=$HOME/Programs/plexil`, `$HOME/Programs` mounted, openral's install sourced;
+  offline `baselines/plexil/scripts/offline_check.py` (plexil-setup.sh). EUROPA offline:
+  `baselines/europa/run_offline_mission_{a,b}.sh` (`docker run --init`).
 
-## Run farm (pro6000; heldout_design §11, F111, F112)
+## Run farm (pro6000, host astroeng, uid 1007; heldout_design §11)
 
 - Repo at `/mnt/SharedData/Research/Space_Robot_Harness` (bind mount of `/nvme02/bingqi/SharedData`; never `/nvme01`).
-- Image `runfarm:22.04` (Dockerfile in git; build with the proxy variables unset: every source is a domestic mirror,
-  except the tf2 tarball from GitHub); home installs and caches mounted, incl. `~/.nv`.
-- **One run = one container**: `docker/runfarm/runfarm.sh <gpu 0-5> <name> "<env vars> <abs path>/run_d0.sh <abs run
-  dir>"`. Each container gets ROS domain 77 + GPU (they share the docker bridge; Humble ignores
-  `ROS_AUTOMATIC_DISCOVERY_RANGE`). Two containers on one GPU share a domain and break each other's launch.
-- Interactive shell: `runfarm.sh 0 rf-dev-0 sleep infinity`, then `docker exec -it rf-dev-0 bash -l`.
-- runfarm.sh also binds memory to the GPU socket's NUMA nodes, sets ROS_DOMAIN_ID container-wide, grants SYS_PTRACE
-  (gdb as root: `docker exec -u root`; the host's yama ptrace_scope is 1).
-- Throwaway containers (builds, offline checks) without a GPU and ALWAYS `--cpuset-cpus 30,31,62,63` + `nice -n 19`:
-  an unpinned build starved six pinned simulations (F112).
-- `D0_BAG="<topics>"` records a tagged bag; the scripted chains record nav topics by default (scratchpad launcher).
-- Speed: sim/wall ~0.19-0.22 per run with six at once. sudo needs the user's password; never touch kernel/GRUB/daemon.
-- Physics stays CPU PhysX (user decision).
-
-## Models (F111, F112)
-
-Reasoner `Qwen3.8-Max` (F123); scene VLM and pick/press VLM: `DeepSeek-V4.1-Flash` at `https://llmapi.paratera.com/v1`, key = the first
-`sk-` in `AGENT/VLM_provider.md` (gitignored). Do not switch back to DeepSeek's own API. One 640x480 view per request.
-Pick's region choice answers in 10-115 s (median 61 s); pick/press allow 300 s per view.
-
-## What step 8 established (F112)
-
-- Every held-out action form executed: press (PDU/BESS/ISRU panels, PDU and BESS shutter buttons), pick/place of ORU,
-  battery module, filter cartridge, crate, return container, consumables container, at PDU bays/shelves, BESS
-  cradle/stand, ISRU cradles/stands, depot, landing and habitat stands; L4-far's 40 m carry.
-- Shared-layer fixes: survey map keeps lumps >= 5 cells (stray cells had inflated into no-go areas); a navigation
-  after a dock first backs out along the dock axis; pick seeds at the declared work point and splits depth lumps;
-  place's settle "not judged" is not a failure; press backs out of proud panel boxes and folds the arm after;
-  launcher waits for a fresh `map -> odom`; `retrip_delay_s` 30 s; uniform handle neck height; ISRU set-down stand.
-- Baselines (step 7): PLEXIL 3-attempt Try everywhere, Mission B parameterized, hold after escalation
-  (`UncheckedSequence`); EUROPA one domain, goals restored/delivered, upstream TemporalNetwork use-after-free patched
-  (`baselines/europa/patches/`, applied by `build_europa.sh`). Adapter rebuilt in main's `ros/`.
-
-## Method rules earned the hard way
-
-- Never regenerate SRB assets or the scene (USD, textures, interaction.json) while any simulation runs: Isaac reloads a
-  changed layer and aborts ("unlock() called by non-owning thread") -- three check runs died at the second
-  oru_0417.usdc was rewritten (2026-09-24).
-- No hard-coded distances or blind straight-line motions in the shared layer, and no action the boundary inserts
-  on its own without the method seeing it (user, 2026-09-24; the 1.5 m undock into the return stand, F115).
-- Name the other body of a contact only from ground-truth poses + the site layout, never from the link name
-  (F115: "palm rubs the battery" and "steering link on the ground" were both wrong).
-- Never edit shared skill modules (openral rskill) while runs are live: runners import them lazily, and old+new code
-  mixed (`cannot import name 'STOW'`). Capability server / contracts are loaded at run start (safe).
-- Judge a run by `CHECK_EXIT`/`RESULT`/`CHAIN_DONE`; teardown tracebacks and move_group segfaults are shutdown noise.
-- Look first: pick evidence has `view.jpg`, `regions.jpg`, `fit.jpg`, depth, and now K + camera pose (offline replay).
-- Live diagnosis tools in `experiments/analysis/` (README there); never open a live bag.
-- Do not run more than one hypothesis batch without reporting: the freeze hunt burned hours on A/B batches.
-- Isaac can abort on a carb mutex assertion: not ours, relaunch. Monitor pipes: `grep --line-buffered`, no `cut`.
-- Killing a check mid-navigation: cancel `/navigate_to_pose/_action/cancel_goal` (all-zero goal_id) first.
-- PLEXIL: `if/endif` on live state, never SkipCondition; root `UncheckedSequence` so escalation can run.
-- `git merge -F -` does not read stdin: write the message to a file. rsync exclude anchoring: check what it matches.
+- **One run = one container** on one GPU: `docker/runfarm/runfarm.sh <gpu> <name> "<env> <abs>/run_d0.sh <abs run
+  dir>"`; ROS domain 77 + GPU. Two containers on one GPU share a domain and break each other -- also while one is
+  still tearing down: launch on a GPU only when `docker ps` shows no container there.
+- Batches: `tmux new-session -d -s <name> "experiments/launch/lunar_base_d0/farm_queue.sh <jobs> <run root> '<gpus>'"`;
+  `farm_join.sh` (run it with `bash`) adds a GPU worker. A worker re-reads the jobs file and `.next` at every claim:
+  never touch a run root's `.next`/`.lock` or move its run dirs until its queue.log says "queue done" (F147: a
+  duplicate run started that way).
+- Throwaway containers (builds, offline checks): no GPU, `--cpuset-cpus 30,31,62,63`, `nice -n 19`.
+- Speed: sim/wall ~0.2 with six at once; Ours covered ~10-15 min wall, held-out 0.5-1.5 h (Exp II H1 searches ~1 h).
+- sudo needs the user's password; never touch kernel/GRUB/daemon. Physics stays CPU PhysX (user decision).
 
 ## Running it
 
-Queued batches: `tmux new-session -d -s <name> "experiments/launch/lunar_base_d0/farm_queue.sh <jobs file> <run root>"`
-(one worker per GPU; a jobs line = `<run name> <env assignments>`). Ours: `D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py`; PLEXIL: `D0_CAPABILITY_SERVER=1
-D0_CHECK=d0_plexil_mission_{a,b}_check.py`; EUROPA: `D0_CAPABILITY_SERVER=1 D0_CHECK=d0_europa_mission_{a,b}_check.py
-D0_SCENE=scenes/deploy/srb_lunar_base_mission_{a,b}.yaml`; Mission B cargo/destination via `D0_ENV="env.cargo=...
-env.destination=..."` (both baselines read the same goal). Scripted chains: `D0_CAPABILITY_SERVER=1
-D0_CHECK=scripted_chain_check.py CHAIN_JSON=<abs>/experiments/launch/lunar_base_d0/chains/<name>.json` + the
-scenario (`D0_SCENARIO`, `D0_ENV`, `D0_SCENE`); each call gets 3 attempts. Site acceptance: `D0_CONTINUE_ON_FAIL=1
-D0_CAPABILITY_SERVER=1 D0_CHECK=d0_site_check.py D0_SCENARIO=heldout_radiator_cover D0_ENV="env.faulted_unit=bess"
-D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml`. PLEXIL adapter rebuild: `colcon build --merge-install
---packages-select plexil_capability_adapter` from `ros/` in a pinned container. EUROPA offline:
-`baselines/europa/run_offline_mission_{a,b}.sh`; PLEXIL offline: `baselines/plexil/scripts/offline_check.py`.
-Scene: `scene/build_scene.py` (+ `--variant route_block`); assets `process/process.py --only <name>` (needs zxing-cpp,
-opencv: `uv run --no-project --with ...`); handle check `process/check_handles.py`. Map survey:
-`~/Programs/isaac-sim/python.sh assets/lunar_base/scene/srb_nav_map_survey.py <out_dir>` in a runfarm container
-(~27 min); only when the structural footprint changes.
+Jobs line = `<run name> <env assignments>`. Ours: `D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py`; PLEXIL:
+`D0_CHECK=d0_plexil_mission_{a,b}_check.py`; EUROPA: `D0_CHECK=d0_europa_mission_{a,b}_check.py`; with `D0_SCENE=
+scenes/deploy/srb_lunar_base_mission_{a,b}.yaml`, `D0_SCENARIO=...`, `D0_ENV='env.cargo=... env.destination=...'`.
+Scripted chains: `D0_CHECK=scripted_chain_check.py CHAIN_JSON=<abs json>` (3 attempts per call). Scene:
+`assets/lunar_base/scene/build_scene.py` (`--interaction-only` for dynamic objects only); map survey only when the
+structural footprint changes. Judge a run by `CHECK_EXIT` / `RESULT` / `CHAIN_DONE`; teardown tracebacks are noise.
+`run_manifest.yaml` is written after teardown (read-only backfill, run_d0.sh's last step).
+
+## Method rules earned the hard way
+
+- Never regenerate SRB assets or the scene while any simulation runs (Isaac aborts on a changed layer).
+- Never edit shared skill modules (openral rskill) while runs are live; capability server / contracts load at start.
+- No hard-coded distances or blind straight-line motions in the shared layer; nothing the boundary inserts unseen.
+- Name the other body of a contact only from ground-truth poses + the site layout, never from the link name.
+- Look first (evidence images, frames), then numbers; never open a live bag; `experiments/analysis/` has the tools.
+- A scripted chain reads the contracts when it starts: a temporary contract entry must stay until the check starts.
+- Killing a check mid-navigation: cancel `/navigate_to_pose/_action/cancel_goal` (all-zero goal_id) first.
+- PLEXIL: `if/endif` on live state, never SkipCondition; root `UncheckedSequence` so escalation can run.
+- `git merge -F -` does not read stdin: write the message to a file. `rm` with a variable path is refused by the
+  harness: use literal paths.
 
 ## Rules
 
 - All paths absolute. Kill only positively identified own PIDs / own containers.
 - Never navigate or decide on simulator truth. Whole-operation tools only; mechanics stay in skills.
-- Development runs are not campaign results; never count them in paper metrics.
+- Development runs are not campaign results. Fixes found in a campaign: fix for all methods, record in findings,
+  rerun only the runs they decided (user rule); no freeze ceremony.
 - Ask before pushing; ask before deleting a run directory that might still be evidence.
 - Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies in concise Simplified Chinese.
