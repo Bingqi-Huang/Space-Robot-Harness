@@ -3,3 +3,9 @@
 {"kind": "note", "session_id": "4710af5e8e02", "t": "2026-09-29T09:51:26.374081+00:00", "text": "offline chain (run_offline_mission_a.sh, sim_boundary --drawn): pdu_1 and bess derive nav/dock cover_button -> open_shutter(press) -> nav/dock panel -> press -> stow -> dock, done; covered pdu_2 and Mission B ORU->PDU-1 shelf unchanged, done. No live run: model gateway outage (coordinator)"}
 {"kind": "session_stop", "session_id": "4710af5e8e02", "t": "2026-09-29T09:51:26.411760+00:00", "reason": "waiting for model provider (shared outage)"}
 {"kind": "note", "session_id": null, "t": "2026-09-29T09:51:26.448637+00:00", "text": "stopped: ready for live validation, waiting for model provider (shared outage); jobs file prepared at checkout artifacts/reauth_jobs_l2a.txt"}
+{"kind": "session_start", "session_id": "57e46b7aa58d", "t": "2026-09-30T01:13:40.703424+00:00", "extension_id": "reauth_l2a", "method": "europa_plexil", "engineer": "reauth-europa-l2a"}
+{"kind": "session_stop", "session_id": "57e46b7aa58d", "t": "2026-09-30T02:06:32+00:00", "reason": "shared outage: Claude session limit"}
+{"kind": "note", "session_id": null, "t": "2026-09-30T05:49:20.757856+00:00", "text": "session_stop above written by hand at the queue end (10:06:32 CST, coordinator's instruction): the CLI stop has no time argument and the session was cut until 13:40 CST"}
+{"kind": "session_start", "session_id": "d58e1da7c2e1", "t": "2026-09-30T05:49:20.794976+00:00", "extension_id": "reauth_l2a", "method": "europa_plexil", "engineer": "reauth-europa-l2a"}
+{"kind": "note", "session_id": "d58e1da7c2e1", "t": "2026-09-30T05:49:28.902671+00:00", "text": "validate.py PASS on v1 (europa_l2a_pdu1, europa_l2a_bess): both success, parked and stowed, 1 cover press + 1 reset each, no drops/removals"}
+{"kind": "session_stop", "session_id": "d58e1da7c2e1", "t": "2026-09-30T05:49:28.941802+00:00", "reason": "validate.py PASS"}
