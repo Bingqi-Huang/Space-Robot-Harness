@@ -13,15 +13,15 @@ a public project website (GitHub Pages, `.worktree/site`, branch `gh-pages`); it
 - feat/ablation merged into main (full method re-renders the final Exp II run 67/67 identical); worktrees of the
   ablation and the 8 re-authoring engineers removed (branches kept).
 
-## Open -- decisions for the user
+## Open
 
-1. EUROPA->PLEXIL L3, BESS instance: its reset press is blocked by a shared press-skill limitation (arm arriving
-   unstowed at the BESS panel: 4/4 first presses fail). Options: (a) report as is (current record: not passed,
-   engineering time 63.3 min); (b) a fresh engineer session adds a stow before the reset (counted engineering, one
-   ~80 min validation run on one GPU); (c) fix the shared skill after the campaigns (shared-layer change: record it,
-   rerun only this validation).
-2. Push research main to origin (50+ commits ahead) -- only on the user's go.
-3. Optional clean-up: `artifacts/figures/exp1b/video_1x/replay/` (259 GB of rendered frames; the mp4s are final).
+1. **EUROPA->PLEXIL L3, BESS (user chose option b, 2026-09-30 19:30)**: a fresh engineer session (Opus, spec +
+   brief + worklog + its own runs; diagnosis given: the shared press skill fails at the BESS panel when the arm arrives
+   unstowed) continues the case in the re-created `.worktree/reauth-europa-l3` (branch `reauth/europa-l3`); cap = 3 h
+   of engineering time without the simulation wait (116 min left); validation of both instances with the new code:
+   `artifacts/runs/reauth/europa_plexil_l3/v2_bess` (GPU 1) and `v2_isru` (GPU 2). Then: cost_table, F156 update,
+   report part 5 §A.9 + overview, rebuild report, remove the worktree, push main and the branch.
+2. Optional clean-up: `artifacts/figures/exp1b/video_1x/replay/` (259 GB; user: keep for now).
 
 ## Not now (user)
 
