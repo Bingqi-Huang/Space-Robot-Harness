@@ -47,11 +47,12 @@ for m in order:
         k = sum(int(x["successes"]) for x in success if x["method"] == m and x["coverage"] == c)
         n = sum(int(x["n"]) for x in success if x["method"] == m and x["coverage"] == c)
         req = r["requests: authorization / authority check / new procedure / information"].split(" / ")
-        lines.append(f"{NAME[m] if c == 'covered' else ''} & {COV[c]} & {k}/{n} & {r['human intervention ratio']} & "
-                     f"{req[0]} / {req[2]} / {req[3]} & {r['highest ALFUS level'].replace('_', ' ').replace('-', 'none')} & "
-                     f"{r['ground re-authoring']} & {r['idle waiting']} & {float(r['longest autonomous stretch (s)']):.0f}")
+        lines.append(f"{NAME[m] if c == 'covered' else ''} & {COV[c]} & {k}/{n} & {r['human intervention ratio, median [95% CI]']} & "
+                     f"{req[0]} / {req[2]} / {req[3]} & {r['highest ALFUS level, runs'].replace('_', ' ')} & "
+                     f"{r['ground re-authoring']} & {r['idle waiting, median [95% CI]']} & "
+                     f"{r['longest autonomous stretch (s), median [95% CI]']}")
 write("exp1_independence", "llrrcccrr",
-      "method & coverage & success & HIR & requests A / N / I & highest level & re-authoring & idle & stretch (s)", lines)
+      "method & coverage & success & HIR & requests A / N / I & highest level (runs) & re-authoring & idle & stretch (s)", lines)
 
 # Table: Experiment I, constraint violations counted by the external evaluator
 lines = []

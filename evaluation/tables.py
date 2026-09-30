@@ -8,8 +8,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import random
+from collections import Counter
 from pathlib import Path
+
+import numpy as np
 
 from evaluation.rows import NormalizedRunRow
 
@@ -31,18 +33,14 @@ def wilson_ci(successes: int, n: int, *, z: float = 1.96) -> tuple[float, float,
     return p, max(0.0, (centre - spread) / denom), min(1.0, (centre + spread) / denom)
 
 
-def bootstrap_ci(values: list[float], *, statistic=lambda xs: sum(xs) / len(xs), n_resamples: int = 2000,
-                  alpha: float = 0.05, seed: int = 0) -> tuple[float, float, float]:
-    """§15 "bootstrap ... confidence intervals for HIR and continuous timing measures". `(point, low, high)`.
-    Empty `values` returns `(0.0, 0.0, 0.0)` -- no data, not a fabricated interval."""
-    if not values:
-        return 0.0, 0.0, 0.0
-    rng = random.Random(seed)
-    point = statistic(values)
-    n = len(values)
-    resamples = sorted(statistic([values[rng.randrange(n)] for _ in range(n)]) for _ in range(n_resamples))
-    lo_idx, hi_idx = int(n_resamples * alpha / 2), int(n_resamples * (1 - alpha / 2)) - 1
-    return point, resamples[max(lo_idx, 0)], resamples[min(hi_idx, n_resamples - 1)]
+def bootstrap_ci(values: list[float], *, n_resamples: int = 10000, alpha: float = 0.05,
+                 seed: int = 0) -> tuple[float, float, float]:
+    """Preregistration §4 "HIR, waiting time, neglect time: medians with bootstrap intervals". `(median, low, high)`:
+    the median of `values` (one per run) and its percentile bootstrap interval, the runs resampled with replacement."""
+    v = np.asarray(values)
+    medians = np.median(np.random.default_rng(seed).choice(v, (n_resamples, len(v))), axis=1)
+    lo, hi = np.percentile(medians, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return float(np.median(v)), float(lo), float(hi)
 
 
 def load_rows(rows_dir: Path) -> list[NormalizedRunRow]:
@@ -118,32 +116,35 @@ def violation_table(rows: list[NormalizedRunRow]) -> str:
 
 def interaction_table(rows: list[NormalizedRunRow]) -> str:
     """Markdown table: human involvement per (method, coverage) -- research repo docs/heldout_design.md §8, ALFUS
-    (NIST SP 1011-II-1.0). Means over the group's runs with a recorded mission time; counts are sums; the ALFUS level
-    is the most human-directed one used in any run of the group; re-authoring is how many runs needed it."""
+    (NIST SP 1011-II-1.0). HIR, idle waiting and the longest autonomous stretch (neglect time) are medians over the
+    group's runs with a recorded mission time, with a percentile bootstrap 95% interval over those runs (preregistration
+    §4); counts are sums; the ALFUS level is the distribution of each run's most human-directed level over the runs
+    (none: no answer at any level); re-authoring is how many runs needed it."""
     from evaluation.interaction import ALFUS_ORDER
 
     groups: dict[tuple[str, str | None], list[NormalizedRunRow]] = {}
     for r in rows:
         groups.setdefault((r.method, r.coverage), []).append(r)
     lines = [
-        "| method | coverage | n | human intervention ratio | requests: authorization / authority check / new procedure / information | grants/denials | highest ALFUS level | ground re-authoring | idle waiting | longest autonomous stretch (s) |",
+        "| method | coverage | n | human intervention ratio, median [95% CI] | requests: authorization / authority check / new procedure / information | grants/denials | highest ALFUS level, runs | ground re-authoring | idle waiting, median [95% CI] | longest autonomous stretch (s), median [95% CI] |",
         "|---|---|---|---|---|---|---|---|---|---|",
     ]
     for (method, coverage), grp in sorted(groups.items(), key=lambda kv: kv[0]):
         timed = [r for r in grp if r.mission_elapsed_s]
 
-        def mean(attr: str) -> str:
-            v = [getattr(r, attr) for r in timed if getattr(r, attr) is not None]
-            return f"{sum(v) / len(v):.3f}" if v else "-"
+        def median(attr: str, fmt: str) -> str:
+            p, lo, hi = bootstrap_ci([getattr(r, attr) for r in timed])
+            return f"{p:{fmt}} [{lo:{fmt}}, {hi:{fmt}}]"
 
-        levels = [r.highest_interaction_level for r in grp if r.highest_interaction_level]
+        levels = Counter(r.highest_interaction_level or "none" for r in grp)
         kinds = " / ".join(str(sum(getattr(r, f"requests_{k}") for r in grp))
                            for k in ("authorization", "authority_check", "new_procedure", "information"))
         lines.append(
-            f"| {method} | {coverage or '?'} | {len(grp)} | {mean('human_intervention_ratio')} | {kinds} | "
+            f"| {method} | {coverage or '?'} | {len(grp)} | {median('human_intervention_ratio', '.3f')} | {kinds} | "
             f"{sum(r.grants for r in grp)}/{sum(r.denials for r in grp)} | "
-            f"{max(levels, key=ALFUS_ORDER.index) if levels else '-'} | {sum(r.ground_reauthoring_required for r in grp)} | "
-            f"{mean('idle_waiting_fraction')} | {mean('longest_autonomous_stretch_s')} |"
+            f"{', '.join(f'{k} {levels[k]}' for k in ('none', *ALFUS_ORDER) if k in levels)} | "
+            f"{sum(r.ground_reauthoring_required for r in grp)} | "
+            f"{median('idle_waiting_fraction', '.3f')} | {median('longest_autonomous_stretch_s', '.0f')} |"
         )
     return "\n".join(lines)
 

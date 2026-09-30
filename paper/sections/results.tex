@@ -45,31 +45,60 @@ median of 50 against 23.
 
 On the held-out instances the methods also separate on every ALFUS measure of human independence
 (Table~\ref{tab:independence}). Each held-out baseline run ended in one new-procedure request, so all twelve required
-ground re-authoring, and the highest interaction level was the assignment of a mission task. The robots then waited:
-the baselines spent 0.608 (PLEXIL) and 0.483 (EUROPA\,$\rightarrow$\,PLEXIL) of held-out mission time idle for the
-ground. The proposed runtime sent no new-procedure request in its 18 held-out runs. Its ten requests were three
-authorizations, all for the L4 donor removal and all granted, and seven information requests, which mission control
-answered with no data beyond the robot's own queries. Its highest interaction level was a tactical goal, the approval
-of one held call.
+ground re-authoring, and in each of them the highest interaction level was the assignment of a mission task. The
+baselines' robots then waited. The median fraction of held-out mission time spent idle for the ground was 0.634 for
+PLEXIL and 0.499 for EUROPA\,$\rightarrow$\,PLEXIL, against 0.026 for the proposed runtime. The proposed runtime sent no
+new-procedure request in its 18 held-out runs. Its ten requests were three authorizations, all for the L4 donor removal
+and all granted, and seven information requests, which mission control answered with no data beyond the robot's own
+queries. Its highest interaction level was a tactical goal, the approval of one held call, in each of the three L4
+runs, and none in the other 15.
+% artifacts/eval/exp1b/tables.md, interaction table (evaluation/tables.py interaction_table; preregistration §4:
+% medians with percentile bootstrap 95% intervals over runs, level as the distribution over runs). Idle, held-out:
+% PLEXIL 0.634 [0.475, 0.716], EUROPA 0.499 [0.320, 0.630], Ours 0.026 [0.000, 0.162]. Highest level per run,
+% held-out: mission_task 6 (each baseline); Ours none 15, tactical_goal 3. The previous draft's 0.608 and 0.483 were
+% means over runs.
 
-The human intervention ratio of the proposed runtime is 0.136 on held-out runs against 0.591 and 0.470, and its
-longest autonomous stretch 955\,s against 218\,s and 390\,s. The ratio stays above zero because every request costs a
-fixed 300\,s of mission control's decision time (Section~\ref{sec:setup-operator}). The ratio scales linearly with
-that assumption, while the request counts and the re-authoring flag do not depend on it.
+The proposed runtime also needed less of mission control's time and ran longer without it. Its median human
+intervention ratio on held-out runs is 0.080, with an interval from 0.000 to 0.240, against 0.617 for PLEXIL and 0.485
+for EUROPA\,$\rightarrow$\,PLEXIL. Its median longest autonomous stretch is 1029\,s against 179\,s and 319\,s. Each
+interval is a percentile bootstrap 95\% interval over runs, six per baseline and 18 for the proposed runtime. For the
+ratio, the idle fraction and the stretch alike, the interval of the proposed runtime does not overlap either
+baseline's. Half of its held-out runs sent no request and have a ratio of zero. The ratio of the other half is above
+zero because every request costs a fixed 300\,s of mission control's decision time (Section~\ref{sec:setup-operator}).
+The ratio scales linearly with that assumption, while the request counts and the re-authoring flag do not depend on
+it.
+% artifacts/eval/exp1b/tables.md, interaction table, held-out: HIR Ours 0.080 [0.000, 0.240], PLEXIL 0.617
+% [0.461, 0.696], EUROPA 0.485 [0.313, 0.613]; stretch (s) Ours 1029 [770, 1096], PLEXIL 179 [122, 353], EUROPA 319
+% [182, 668]. No overlap: HIR 0.240 < 0.313, idle 0.162 < 0.320, stretch 770 > 668. Nine of the 18 held-out Ours runs
+% sent no request (requests_* 0, HIR 0 in artifacts/eval/exp1b/rows). The previous draft's 0.136, 0.591, 0.470, 955 s,
+% 218 s and 390 s were means over runs.
 
 Autonomy costs mission time. On covered instances the proposed runtime took a median 538\,s against 264\,s for PLEXIL
 and 265\,s for EUROPA\,$\rightarrow$\,PLEXIL. Every capability call waits for a reasoning step, and the model also
-chose extra work, such as inspecting the site again after the objective was verified.
+chose extra work, such as inspecting the site again after the objective was verified. Mission time understates the
+cost of that reasoning, and so overstates the human intervention ratio of the proposed runtime, which divides by
+mission time. A reasoning call took a median 19.9\,s of wall clock (interquartile range from 11.3 to 38.7\,s), and the
+simulation advanced 0.237\,s of mission time per wall-clock second during the calls. Counted in full, the latency
+raises the covered median mission time of the proposed runtime from 538\,s to 825\,s, an upper bound on the cost of
+reasoning for a model served at this latency.
 % medians of mission_elapsed_s over artifacts/eval/exp1b/rows, covered: 538.0, 263.7, 265.2.
+% artifacts/eval/exp1b/reasoning_latency.md (experiments/analysis/reasoning_latency.py), all 25 Ours runs: per-call
+% wall latency 19.9 [IQR 11.3, 38.7] s; 0.237 mission s per wall s in calls (pooled); covered medians: recorded 538,
+% latency in full 825 (= mission_elapsed_s - mission time in calls + wall time in calls, per run). Upper bound: the
+% runtime keeps reasoning while a request is open, and those calls would overlap mission control's decision time; with
+% no request open the figure is exact for this latency. Held-out median HIR with the latency in full: 0.036 (recorded
+% 0.080).
 
 \begin{table*}[t]
   \centering
   \caption{Human independence in Experiment I (NIST ALFUS). HIR: human intervention ratio. Requests: authorization /
-  new procedure / information. Re-authoring: runs that needed a new procedure from the ground. Idle: fraction of
-  mission time waiting on the ground. Stretch: longest autonomous stretch.}
+  new procedure / information. Highest level: runs by the most human-directed ALFUS level mission control acted at
+  (none: no answer directed the robot). Re-authoring: runs that needed a new procedure from the ground. Idle: fraction
+  of mission time waiting on the ground. Stretch: longest autonomous stretch. HIR, idle and stretch: median over runs
+  [percentile bootstrap 95\% interval].}
   \label{tab:independence}
   \small
-  \input{tables/exp1_independence.tex}
+  \resizebox{\textwidth}{!}{\input{tables/exp1_independence.tex}}
 \end{table*}
 
 \subsection{Trustworthiness of open reasoning}
