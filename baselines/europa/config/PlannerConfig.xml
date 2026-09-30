@@ -11,6 +11,10 @@
 
   <OpenConditionManager defaultPriority="0">
     <FlawHandler component="StandardOpenConditionHandler"/>
+    <!-- press's Stowed condition last, once the plan has fixed what comes before the press (a module swap): decided
+         first, it merged with the initial Stowed fact and the swap then failed deep in the search -->
+    <FlawHandler component="StandardOpenConditionHandler" class-match="Posture" predicate-match="Stowed"
+                 masterPredicate="press" priority="100"/>
   </OpenConditionManager>
 
   <UnboundVariableManager defaultPriority="0">

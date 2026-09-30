@@ -151,11 +151,13 @@ class LunarBot
   // the baselines' shared item table (baselines/item_descriptions.json).
   action pick { Item item; Support support; leq(duration, 900); }
   action place { Item item; Support support; leq(duration, 600); }
-  // press's own contract needs no particular starting posture ("plans its own way from wherever the arm is") and
-  // does not itself need arm_ready -- but it does reach into the panel to press the button and does not fold back
-  // to the travel posture afterward (contracts.yaml: "the tool goes in ... then withdraws", not "returns to
-  // stowed"), so it leaves the posture Ready, which is what leaves `stow` something real to do. It needs no posture
-  // before it (as its contract says): a press right after seating a module starts from Ready.
+  // press does not itself need arm_ready -- but it does reach into the panel to press the button and does not fold
+  // back to the travel posture afterward (contracts.yaml: "the tool goes in ... then withdraws", not "returns to
+  // stowed"), so it transitions posture from Stowed to Ready, which is what leaves `stow` something real to do.
+  // Stowed before it is required although its contract names no starting posture: mission control's record of
+  // every run on this site (L3 brief) is that press fails at locate when the arm arrives at the panel in the posture
+  // a pick or place leaves it in (4 of 4) and succeeds when it arrives stowed (36 of 43) -- so a press after a module
+  // swap is preceded by a stow.
   action press { Unit unit; Feature feature; leq(duration, 420); }
 }
 
@@ -289,6 +291,9 @@ LunarBot::press
   eq(feature, unit.button);
   contained_by(condition object.base.At bp);
   eq(bp.loc, feature.work);
+  // resolved after every other flaw (config/PlannerConfig.xml): taken first, it merged with the initial Stowed fact,
+  // fixing the press before any module swap the plan still had to derive
+  met_by(condition object.posture.Stowed from);
   meets(effect object.posture.Ready to);
   met_by(condition unit.panel.Faulted pf);
   // a reset holds only while the unit's self-test passes
