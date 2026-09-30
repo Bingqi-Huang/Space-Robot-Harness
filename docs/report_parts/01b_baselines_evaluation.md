@@ -774,9 +774,9 @@ run -- PLEXIL 1.0, EUROPA 1.0 ..., Ours 0.0 in every run". **Decided**: per inst
 certificate, "the fraction of that solution's transitions (capability call + its ordering constraint) that a method's
 frozen artifacts contain as authored structure. Covered instances: 1.0 for both baselines by construction; held-out:
 what the baseline would have needed and did not have ... Ours: 0.0 by construction (the freeze audit checks it).
-Reported once per instance x method" [preregistration.md §1]. **Status: not computed.** `rows.py` sets the field to
-`None` ("DRAFT hook"); `evaluation/README.md` still calls it "a pending user decision"; no script computes the
-per-instance value [rows.py; evaluation/README.md; counted for this report: `grep -rn preplanned`].
+Reported once per instance x method" [preregistration.md §1]. **Status: computed offline 2026-09-30** (user
+decision) by `evaluation/preplanned_fraction.py`, per instance x method as decided; results and rule in part 2 §5.9
+[F155]. The per-run row field in `rows.py` stays `None` (the decided measure is per instance, not per run).
 
 **§2 Failure taxonomy**, one primary category per failed run: 1 perception / semantic interpretation; 2 mission-model
 coverage / decomposition ("baselines' escalation on held-out"); 3 planner / executive failure; 4 capability /
@@ -878,7 +878,7 @@ development (`resume43d`, F138/C5).
 | D3 | operator_protocol.md §6: PLEXIL escalation ALFUS `mission_task` or `tactical_goal`, EUROPA `strategic_goal` | Any kind-less request is `new_procedure` -> `mission_task` [console.py] |
 | D4 | heldout_design §8 grant row: GRANT when donor non-critical, removal restores a crew-critical load "and the request names unit, module and consequence" | console.py grants on donor non-critical and some crew-critical unit tripped; the request text is never read (F125) |
 | D5 | execution_plan §14.2 / operator_protocol §3: HIR = active operator-system interaction time (incl. operator response latency) / mission elapsed from acceptance | interaction.py: numerator = mission control's decision time only (uplink/downlink excluded); window = first call start to max(last call end, last request exchange) |
-| D6 | preregistration §1: `preplanned_transition_fraction` decided per instance | Not computed: rows.py `None`; evaluation/README.md still "pending user decision" |
+| D6 | preregistration §1: `preplanned_transition_fraction` decided per instance | Computed per instance offline on 2026-09-30, after the campaign (F155, part 2 §5.9); rows.py's per-run field stays `None` |
 | D7 | execution_plan §14.2 `human_mission_specific_planning_time_s`; heldout_design §8 "human-planning ratio" per run | No row field; re-authoring cost measured offline instead (F151) |
 | D8 | docs/evaluator_violations.md class 1 and "What's missing": call start = `end - evidence.sim_s` | violations.py uses the evaluator's sim->wall record (F142) |
 | D9 | docs/evaluator_violations.md class 3 equipment: per-PDU `presses`/`faults`, `faulted_pdu`/`reported_pdu` | violations.py: every unit's `reset_presses`/`cover_presses`/`tripped`, `faulted_unit`/`reported_unit`, grant exclusion |
@@ -899,7 +899,7 @@ development (`resume43d`, F138/C5).
 
 ## Gaps
 
-1. `preplanned_transition_fraction` (preregistration §1) has not been computed for any instance x method; no script exists.
+1. ~~`preplanned_transition_fraction` not computed~~: computed 2026-09-30 (`evaluation/preplanned_fraction.py`, part 2 §5.9, F155).
 2. No per-run human-planning ratio / `human_mission_specific_planning_time_s` exists in the rows (execution_plan §14.2, heldout_design §8).
 3. Preregistration §3's per-request "wall-clock send time ... beside its mission time" robustness figure: not found as a produced table (reasoning_latency.md covers call latency, not per-request send times).
 4. Preregistration §2's "second reading of the trace" for failure categories: no record of a second reader found; `plexil_l3_bess`'s category (D16) is not discussed in any finding.

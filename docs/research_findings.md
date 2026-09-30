@@ -6503,3 +6503,27 @@ table then adds validation runs and time waiting on them.
   top-handle grasp a snapshot restore keeps a held item in the jaws (F60's drop was the old bail grasp); (2) a restore
   puts back only physical state (articulations, rigid objects): a unit's task state (shutter open, reset count, trip)
   restarts from the scenario, so a run resumed after a press sees the press undone.
+
+## F155 -- Preregistered preplanned_transition_fraction computed offline: the baselines held 75-100 % of each held-out solution and still stopped; Ours 0 by construction (2026-09-30, offline)
+
+User decision 2026-09-30: compute it (not a stated deviation). `evaluation/preplanned_fraction.py` ->
+`artifacts/eval/exp1b/preplanned_fraction.md`; report part 2 §5.9. Per preregistration §1: per held-out instance, the
+fraction of its certified solution's transitions (call + ordering constraint = the pair previous call -> call, the first
+after the start) that the method's frozen artifacts (exp1b) contain as authored structure.
+- Solution = the certificate's valid sequence: the scripted chains executed live end to end before the campaign (F112
+  §6-7; the certificates' `solution_sequence` field was never filled). L4 gets the authorization step before the donor
+  pick (the chain was a physical check). Calls by capability; press split into reset button vs shutter button;
+  arm_ready left out.
+- PLEXIL: pairs its locked plans' control flow issues (9; identical to the pairs of its 7 covered exp1b runs).
+  EUROPA -> PLEXIL: pairs its frozen domain admits (the host declares every surveyed feature and inventoried item, bay
+  modules and the L2-B occupier included; press only on a unit's reset button; no authorization action). Its covered runs
+  issue the same 9 pairs; the domain admits more (a second leg after a place).
+- Held-out: PLEXIL L2-A 0.75 / 0.75, L2-B 0.93, L3 0.88 / 0.88, L4 0.78; EUROPA -> PLEXIL 0.75 / 0.75, 1.00, 1.00 / 1.00,
+  0.89. Missing for PLEXIL: the shutter press and its ordering before the reset (L2-A), a drive after a place (L2-B,
+  L3 x2, L4 x2), the authorization (L4); for EUROPA only the shutter press (L2-A) and the authorization (L4). Covered:
+  1.0 for both baselines; Ours 0 everywhere, by construction (F137).
+- Meaning: the baselines lacked little in count and it was decisive (12/12 held-out escalations). For EUROPA the L2-B and
+  L3 gap is relational (a stand holds one item; a failed module keeps the reset from holding), which a transition count
+  cannot see -- the re-authoring diffs add exactly those relations (F151).
+- Caveats: one solution per instance; the abstraction above; the frozen EUROPA domain needs a stowed arm before a
+  press, so after a swap it would plan a stow before the reset (equivalent solution, dock -> press counted admitted).

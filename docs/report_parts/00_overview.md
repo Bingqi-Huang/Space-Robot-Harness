@@ -44,6 +44,12 @@ external evaluator that reads simulator truth. Only the mission layer differs.
   needed ground re-authoring, Ours 0/18 [F142]. Nine baseline runs detected it by goal checks, the two L2-B runs by a
   failing place (the designed symptom), and PLEXIL's L3 battery run failed at the physical layer first (F153, below).
   Offline, a retry budget of 1, 2, 3 or 5 attempts never changes the baseline outcome (48 runs) [F143].
+- Preregistered `preplanned_transition_fraction` (share of each held-out instance's certified solution that the frozen
+  artifacts already contained): PLEXIL 0.75 to 0.93, EUROPA→PLEXIL 0.75 to 1.00, Ours 0 by construction; covered 1.0
+  for both baselines. The baselines held most of each solution and still stopped on every held-out run; PLEXIL lacked
+  the composition (the shutter press before the reset, a second leg after a set-down, the authorization step), EUROPA's
+  domain admitted every transition of L2-B and L3 and lacked relations (stand occupancy, a failed module) that a
+  transition count cannot see [F155; part 2 §5.9].
 - ALFUS human independence, held-out, median [percentile bootstrap 95% over runs]: human intervention ratio Ours 0.080
   [0.000, 0.240], PLEXIL 0.617 [0.461, 0.696], EUROPA→PLEXIL 0.485 [0.313, 0.613]; longest autonomous stretch 1029 s
   [770, 1096] vs 179 s [122, 353] and 319 s [182, 668]; idle fraction 0.026 vs 0.634 and 0.499; no interval overlaps.
@@ -97,6 +103,7 @@ change, not in hours.
 | Ablation N | 21 vs 28 of 75 decisions different | 18 per arm forced by the rule; comparable 57: 3 (full) vs 10 (no_context) | F153 |
 | Ablation J1 variant | 3 CHECK | the 3 look at the destination slot, not at the item | F153 |
 | Ablation reader | "blind reader" | a Claude Sonnet subagent, one reader, no agreement statistic | F153 |
+| `preplanned_transition_fraction` | not computed | computed per held-out instance x method (part 2 §5.9) | F155 |
 | L4 donors | PDU-3 in all runs | r3 used the ISRU plant's power ORU (energized, non-critical), granted | part 1a, part 2 |
 
 ## Pending (as of 2026-09-30, 15:00 CST)
@@ -105,8 +112,7 @@ change, not in hours.
    stages only (part 4 sections before "Stage 3"; F150, F153).
 2. **Re-authoring live validation**: 6 of 8 cases PASS on their first live validation, 2 open (PLEXIL L2-B,
    EUROPA→PLEXIL L3); results in F154. Report engineering time without the simulation wait (user decision).
-3. **Preregistered `preplanned_transition_fraction`** was never computed (certificates' solution sequences are open).
-   State it as a deviation, or compute it before submission.
+3. ~~Preregistered `preplanned_transition_fraction`~~: computed offline 2026-09-30 (user decision), part 2 §5.9, F155.
 4. Real LunarBot hardware demonstration (research_content §5.8): **dropped by the user on 2026-09-30**; future work.
 
 ## Writing guidance for the manuscript

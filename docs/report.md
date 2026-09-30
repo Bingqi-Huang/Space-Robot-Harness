@@ -44,6 +44,12 @@ external evaluator that reads simulator truth. Only the mission layer differs.
   needed ground re-authoring, Ours 0/18 [F142]. Nine baseline runs detected it by goal checks, the two L2-B runs by a
   failing place (the designed symptom), and PLEXIL's L3 battery run failed at the physical layer first (F153, below).
   Offline, a retry budget of 1, 2, 3 or 5 attempts never changes the baseline outcome (48 runs) [F143].
+- Preregistered `preplanned_transition_fraction` (share of each held-out instance's certified solution that the frozen
+  artifacts already contained): PLEXIL 0.75 to 0.93, EUROPA→PLEXIL 0.75 to 1.00, Ours 0 by construction; covered 1.0
+  for both baselines. The baselines held most of each solution and still stopped on every held-out run; PLEXIL lacked
+  the composition (the shutter press before the reset, a second leg after a set-down, the authorization step), EUROPA's
+  domain admitted every transition of L2-B and L3 and lacked relations (stand occupancy, a failed module) that a
+  transition count cannot see [F155; part 2 §5.9].
 - ALFUS human independence, held-out, median [percentile bootstrap 95% over runs]: human intervention ratio Ours 0.080
   [0.000, 0.240], PLEXIL 0.617 [0.461, 0.696], EUROPA→PLEXIL 0.485 [0.313, 0.613]; longest autonomous stretch 1029 s
   [770, 1096] vs 179 s [122, 353] and 319 s [182, 668]; idle fraction 0.026 vs 0.634 and 0.499; no interval overlaps.
@@ -97,6 +103,7 @@ change, not in hours.
 | Ablation N | 21 vs 28 of 75 decisions different | 18 per arm forced by the rule; comparable 57: 3 (full) vs 10 (no_context) | F153 |
 | Ablation J1 variant | 3 CHECK | the 3 look at the destination slot, not at the item | F153 |
 | Ablation reader | "blind reader" | a Claude Sonnet subagent, one reader, no agreement statistic | F153 |
+| `preplanned_transition_fraction` | not computed | computed per held-out instance x method (part 2 §5.9) | F155 |
 | L4 donors | PDU-3 in all runs | r3 used the ISRU plant's power ORU (energized, non-critical), granted | part 1a, part 2 |
 
 ## Pending (as of 2026-09-30, 15:00 CST)
@@ -105,8 +112,7 @@ change, not in hours.
    stages only (part 4 sections before "Stage 3"; F150, F153).
 2. **Re-authoring live validation**: 6 of 8 cases PASS on their first live validation, 2 open (PLEXIL L2-B,
    EUROPA→PLEXIL L3); results in F154. Report engineering time without the simulation wait (user decision).
-3. **Preregistered `preplanned_transition_fraction`** was never computed (certificates' solution sequences are open).
-   State it as a deviation, or compute it before submission.
+3. ~~Preregistered `preplanned_transition_fraction`~~: computed offline 2026-09-30 (user decision), part 2 §5.9, F155.
 4. Real LunarBot hardware demonstration (research_content §5.8): **dropped by the user on 2026-09-30**; future work.
 
 ## Writing guidance for the manuscript
@@ -2049,9 +2055,9 @@ run -- PLEXIL 1.0, EUROPA 1.0 ..., Ours 0.0 in every run". **Decided**: per inst
 certificate, "the fraction of that solution's transitions (capability call + its ordering constraint) that a method's
 frozen artifacts contain as authored structure. Covered instances: 1.0 for both baselines by construction; held-out:
 what the baseline would have needed and did not have ... Ours: 0.0 by construction (the freeze audit checks it).
-Reported once per instance x method" [preregistration.md §1]. **Status: not computed.** `rows.py` sets the field to
-`None` ("DRAFT hook"); `evaluation/README.md` still calls it "a pending user decision"; no script computes the
-per-instance value [rows.py; evaluation/README.md; counted for this report: `grep -rn preplanned`].
+Reported once per instance x method" [preregistration.md §1]. **Status: computed offline 2026-09-30** (user
+decision) by `evaluation/preplanned_fraction.py`, per instance x method as decided; results and rule in part 2 §5.9
+[F155]. The per-run row field in `rows.py` stays `None` (the decided measure is per instance, not per run).
 
 **§2 Failure taxonomy**, one primary category per failed run: 1 perception / semantic interpretation; 2 mission-model
 coverage / decomposition ("baselines' escalation on held-out"); 3 planner / executive failure; 4 capability /
@@ -2153,7 +2159,7 @@ development (`resume43d`, F138/C5).
 | D3 | operator_protocol.md §6: PLEXIL escalation ALFUS `mission_task` or `tactical_goal`, EUROPA `strategic_goal` | Any kind-less request is `new_procedure` -> `mission_task` [console.py] |
 | D4 | heldout_design §8 grant row: GRANT when donor non-critical, removal restores a crew-critical load "and the request names unit, module and consequence" | console.py grants on donor non-critical and some crew-critical unit tripped; the request text is never read (F125) |
 | D5 | execution_plan §14.2 / operator_protocol §3: HIR = active operator-system interaction time (incl. operator response latency) / mission elapsed from acceptance | interaction.py: numerator = mission control's decision time only (uplink/downlink excluded); window = first call start to max(last call end, last request exchange) |
-| D6 | preregistration §1: `preplanned_transition_fraction` decided per instance | Not computed: rows.py `None`; evaluation/README.md still "pending user decision" |
+| D6 | preregistration §1: `preplanned_transition_fraction` decided per instance | Computed per instance offline on 2026-09-30, after the campaign (F155, part 2 §5.9); rows.py's per-run field stays `None` |
 | D7 | execution_plan §14.2 `human_mission_specific_planning_time_s`; heldout_design §8 "human-planning ratio" per run | No row field; re-authoring cost measured offline instead (F151) |
 | D8 | docs/evaluator_violations.md class 1 and "What's missing": call start = `end - evidence.sim_s` | violations.py uses the evaluator's sim->wall record (F142) |
 | D9 | docs/evaluator_violations.md class 3 equipment: per-PDU `presses`/`faults`, `faulted_pdu`/`reported_pdu` | violations.py: every unit's `reset_presses`/`cover_presses`/`tripped`, `faulted_unit`/`reported_unit`, grant exclusion |
@@ -2174,7 +2180,7 @@ development (`resume43d`, F138/C5).
 
 ## Gaps
 
-1. `preplanned_transition_fraction` (preregistration §1) has not been computed for any instance x method; no script exists.
+1. ~~`preplanned_transition_fraction` not computed~~: computed 2026-09-30 (`evaluation/preplanned_fraction.py`, part 2 §5.9, F155).
 2. No per-run human-planning ratio / `human_mission_specific_planning_time_s` exists in the rows (execution_plan §14.2, heldout_design §8).
 3. Preregistration §3's per-request "wall-clock send time ... beside its mission time" robustness figure: not found as a produced table (reasoning_latency.md covers call latency, not per-request send times).
 4. Preregistration §2's "second reading of the trace" for failure categories: no record of a second reader found; `plexil_l3_bess`'s category (D16) is not discussed in any finding.
@@ -2908,6 +2914,60 @@ module swap described in §7.2.)
 > time, so the increase over the recorded mission time is an upper bound on the cost of reasoning for a model served at
 > this latency. Model calls inside the shared skills (the VLM that locates a press target) run on the same compressed
 > clock for every method and are not corrected here.
+
+### 5.9 `artifacts/eval/exp1b/preplanned_fraction.md`: the preregistered `preplanned_transition_fraction` (computed offline 2026-09-30, F155)
+
+ALFUS "portion of the mission pre-generated by humans", as preregistration §1 decided it: per instance, the fraction of
+the instance's certified solution's transitions (a capability call with its ordering constraint) that a method's frozen
+artifacts (tag `exp1b`) already contain as authored structure. Script `evaluation/preplanned_fraction.py` (offline, no
+simulation, no model call); the rule and every source are in its docstring.
+
+- **Solution per held-out instance**: the certificate's valid solution sequence is the scripted chain executed live end
+  to end through the frozen shared layer before the campaign (`experiments/launch/lunar_base_d0/chains/<name>.json`,
+  runs `artifacts/runs/chain_*` [F112 §6-7]; the certificates' `solution_sequence` field was never filled, these chains
+  are that sequence). L4 adds the authorization mission control must give before a module leaves an energized unit
+  (the chain was a physical check; a removal without approval is a class-5 violation), placed just before the donor pick.
+- **Transition**: the pair (previous call, call), the first call after the mission start. A call is its capability;
+  `press` also says what it presses (a unit's reset button vs a shutter button: different operations); `arm_ready` is
+  left out (a posture prerequisite; pick plans its own way).
+- **PLEXIL**: authored if the locked plans' control flow issues it (MissionA_Covered: DriveAndDock -> press ->
+  StowAndReturn; MissionB_Covered: DriveAndDock -> PickItem -> DriveAndDock -> PlaceItem -> StowAndReturn; the library
+  nodes take any feature). The calls of its 7 covered exp1b runs give exactly these 9 pairs.
+- **EUROPA→PLEXIL**: authored if the frozen domain admits it: both calls are actions it can instantiate (its host
+  declares every surveyed feature and every inventoried item, the installed modules and the L2-B occupier included;
+  `press` only on a unit's own reset button; no authorization action) and the second's conditions can follow the
+  first. Its 7 covered runs issue the same 9 pairs as PLEXIL's; the domain admits more (e.g. a second leg, place -> drive).
+- **Proposed runtime: 0 on every instance** by construction: its artifacts hold no mission sequence (F137); every call
+  is chosen online. **Covered instances: 1.0 for both baselines** by construction.
+
+| held-out instance | transitions | PLEXIL | EUROPA→PLEXIL | missing for PLEXIL | missing for EUROPA→PLEXIL |
+|---|---|---|---|---|---|
+| L2-A PDU-1 shutter | 8 | 0.75 (6/8) | 0.75 (6/8) | dock->press[shutter], press[shutter]->nav | dock->press[shutter], press[shutter]->nav |
+| L2-A BESS shutter | 8 | 0.75 (6/8) | 0.75 (6/8) | dock->press[shutter], press[shutter]->nav | dock->press[shutter], press[shutter]->nav |
+| L2-B destination occupied | 14 | 0.93 (13/14) | 1.00 (14/14) | place->nav | none |
+| L3 BESS module failed | 17 | 0.88 (15/17) | 1.00 (17/17) | place->nav x2 | none |
+| L3 ISRU filter clogged | 17 | 0.88 (15/17) | 1.00 (17/17) | place->nav x2 | none |
+| L4 spare failed, cannibalize | 18 | 0.78 (14/18) | 0.89 (16/18) | place->nav x2, dock->authorize, authorize->pick | dock->authorize, authorize->pick |
+
+Reading (for the paper):
+1. **The baselines held most of each held-out solution and still stopped on every held-out run** (12/12 escalated,
+   §5.1). PLEXIL already had 75-93 % of the transitions, EUROPA→PLEXIL 75-100 %. What was missing is small in count
+   and decisive: PLEXIL lacked the shutter press and its place before the reset (L2-A), any second leg after a
+   set-down (L2-B, L3, L4: a place followed by another drive) and the authorization step (L4) -- the composition, not
+   the calls, as preregistration §1 anticipated for L3.
+2. **For EUROPA→PLEXIL the missing knowledge is mostly not a transition.** Its domain admits every transition of the
+   L2-B and L3 solutions (1.00), yet both escalated: it had no relation saying that a stand holds one item (so the
+   occupied destination is not a blocker it can plan around) and none saying that a failed module keeps a reset from
+   holding (so the solver plans the press alone). The measure cannot see relational knowledge; the re-authoring study
+   (part 5) shows what was added (occupancy/slots, module self-test, shutter, authorization).
+3. **The proposed runtime pre-authored none of it (0) and solved 18/18 held-out runs** by composing the sequence
+   online; its only pre-written knowledge is the shared capability contracts, which every method has.
+
+Caveats: one solution per instance (the certificate's; others exist, e.g. clearing the occupier to another free stand);
+calls abstracted as above; the L4 authorization step is added to the executed chain; the frozen EUROPA domain requires a
+stowed arm before a press, so after a swap it would plan a stow before the reset press (an equivalent solution; the
+pairwise rule counts dock -> press as admitted); one analyst, but with the two authored sets stated the computation is
+mechanical.
 
 ## 6. Per-run table (all 51 exp1b runs)
 

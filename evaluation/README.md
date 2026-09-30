@@ -46,7 +46,7 @@ CSV: every table is produced by a script reading normalized rows.
 - Does not score development runs as campaign results (AGENT.md: development numbers
   are not findings about methods) -- `extract_row` is exercised against dev runs only
   to prove the mechanism works, never to report a method's success rate.
-- Does not fill in `preplanned_transition_fraction` -- still a pending user decision;
+- Does not fill in `preplanned_transition_fraction` per run: preregistration §1 decided it per instance x method, computed by `evaluation/preplanned_fraction.py` (F155);
   `rows.py` exposes only the raw counts it would be built from.
 - Does not implement HIR/interaction-level metrics beyond what `operator/events.jsonl`
   (written by `experiments/operator_console/`) can supply -- `None` when that file is
