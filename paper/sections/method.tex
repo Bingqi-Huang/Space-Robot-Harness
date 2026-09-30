@@ -1,0 +1,148 @@
+% The proposed runtime. Sources: space_runtime/{agent,facts,context,guard,verification,report}.py, prompts/ours/
+% {system,step}.md and tools.yaml (F124), openral_ext/capability_server/contracts.yaml, configs/space_runtime.yaml,
+% experiments/operator_console/console.py (F125), space_context/link.py; framing from AGENT/research_content.md §4 and
+% the user's direction (F148: trustworthy AI, the harness contains the consequence). Implementation names (simulator,
+% middleware, planners, model names) are kept out of this section; they are in Section setup.
+\providecommand{\TBD}[1]{\textcolor{red}{[TBD: #1]}}
+
+\section{The proposed runtime}
+\label{sec:method}
+
+The proposed runtime puts a foundation model where a mission executive would run an authored procedure. Every
+responsibility that space operations assign to independently engineered mechanisms stays outside the model. The model
+decides what to do next. It chooses what to observe, how to break the objective into tasks and which capability to
+call, and it decides how to recover and when to involve mission control. The runtime decides what is true, what is
+permitted and what physically happened. This division meets R1 by construction, since no part of the runtime chooses an action. It also fixes where
+trust comes from. A model can misread a scene, lose track of an earlier result or propose a reserved operation. The
+design question is which mechanism contains the consequence when that happens. In the proposed runtime that mechanism is
+never the model itself (Fig.~\ref{fig:architecture}).
+
+\begin{figure}[t]
+  \centering
+  \fbox{\parbox[c][4cm][c]{0.9\columnwidth}{\centering architecture figure placeholder}}
+  \caption{\TBD{The step loop of the proposed runtime: mission record, step context, model, guard, capability boundary,
+  verifier, trace; mission control behind the link. Mark which maps are outside the model.}}
+  \label{fig:architecture}
+\end{figure}
+
+One step of the runtime is a fixed chain of maps. The runtime keeps an append-only record $E_t=(e_1,\dots,e_t)$ of
+typed events. A reducer $\phi$ folds the record into the mission facts $F_t=\phi(E_t)$. A renderer $\rho$ turns the
+facts into the step context $c_t=\rho(F_t)$, which is everything the model reads. The model proposes exactly one call
+$a_t$ from a closed set $\mathcal{A}$ of typed tools. When $a_t$ acts on the robot, the guard returns an outcome
+$g(a_t,F_t)\in\{\text{allow},\text{deny},\text{approval required},\text{unavailable}\}$. Only an allowed call reaches
+the capability boundary, the same boundary the baselines call. The boundary executes the call and returns
+robot-observable evidence $y_t$. The verifier maps the call and its evidence to effect records $v(a_t,y_t)$. Each record
+has a verdict that holds, fails or is not established. Every outcome is appended to the record, and the next step
+starts again from $\phi$. The model's output enters the record only as a proposal. Four maps stand between that proposal
+and mission truth, namely $\phi$, $\rho$, $g$ and $v$. Together they form the harness around the model, and each answers
+a requirement of Section~\ref{sec:requirements}.
+
+The reducer $\phi$ makes the record the only mission truth (R2). Facts change only through typed events. These are the
+objective as received, execution results with their evidence, verified effects and answers to queries. They also
+include guard decisions, fault and availability changes, and mission control's answers and approvals. The state of a
+manipulated item changes only through a verified effect, and it carries the effect that set it. No claim of the model
+moves an item. The model's working plan is kept in the record as working state. The model writes and revises it, and
+nothing reads it as evidence. Truth lives in the record and not in a conversation. A reasoning service that stops and
+restarts therefore resumes from the same facts, and so does a different service that takes over. A call that was
+running when the previous reasoner stopped becomes an anomaly of its own. The successor sees the gap instead of assuming
+the result.
+
+The renderer $\rho$ rebuilds the step context from the facts at every step, and the model has no memory beyond it. A
+standing text is fixed for each reasoner session. It gives the operating rules and the authority model, which is read
+off the capability contracts and the guard configuration. It also gives the constants of the link to Earth, the
+surveyed site and the equipment catalogue. The step message gives the record. It holds the objective, the robot's latest
+evidence, the verified effects, the observations and the state of each manipulated item. It also holds the manipulation
+attempts, the unresolved anomalies, the exchanges with mission control, the state of the link, the active faults, the
+working plan and the last 12 calls. The renderer selects and formats facts. It writes no advice and names no situation.
+Two properties follow. A restarted or replaced reasoner reads exactly what its predecessor would have read. And the
+context grows with the number of items and open anomalies, not with the number of steps, because an old result leaves
+the recent window while its effect stays in the facts.
+% "last 12 calls": space_runtime/facts.py RECENT = 12. Sections of the step message: prompts/ours/step.md; windows in
+% space_runtime/context.py (verified effects 12, observations 8, attempts 10; items, labels, anomalies in full).
+
+The model acts only through the closed set $\mathcal{A}$ of whole operations with mission-level arguments. It can drive
+to a surveyed feature or a pose and dock at a feature. It can ready or stow the arm, pick an item by its catalogued
+handle, place an item on a surveyed support, press a declared button and open the jaws. It observes through read-only
+queries of the site survey, the serviced units' own telemetry, mission control's inventory record and the robot's
+state. A further query asks a vision-language model a question about one camera frame. The model reads text only. An
+image reaches it as the vision model's answer to a question the model asked. That answer enters the record as an
+observation, never as a fact about the world. Each capability has a typed contract that says what one call means and
+what it returns, with no ordering and no recovery. The mechanics of an operation live in the skills below the contract,
+which every method shares. Examples are where the camera looks, how a grasp is fitted and how the arm withdraws. The
+model therefore chooses among operations. It cannot command a joint, create a capability or write a fact.
+% Mission-level effects and queries: contracts.yaml entries without `engineering: true`; the local tools (working plan,
+% report, request, wait) are prompts/ours/tools.yaml. No image is sent to the reasoner (space_runtime/tools.py).
+
+The guard $g$ enforces authority and invariant boundaries outside the model (R4). Before an effect is dispatched, it
+checks explicit boundaries only. The capability must exist, and its arguments must satisfy the contract. It must not be
+unavailable, no active fault may prohibit it, and no configured hard invariant may be violated. Its authority must
+permit it. Authority has two sources. Each capability carries an authority class, and a target rule classes a call by
+what it acts on. The rule exercised in this study reserves the removal of a module from the bay of a unit that reports
+itself energized. It follows the flight-rule principle that equipment is not removed or altered without authorization
+\citep{cfr1214403}. The guard reads the units' telemetry fresh before it decides. A held call is recorded as pending. A
+request to mission control sent while the call is pending carries it as structured data. A grant is recorded as an
+approval of that capability on that target, and the guard then allows the call. The outcome and its reason return to
+the model as context. The guard never judges whether a call is a good next step, so it cannot become a second planner.
+Its value is a guarantee that does not depend on the model. A model that has misunderstood the rule still cannot
+execute the removal.
+
+The verifier $v$ establishes what physically happened (R3). It compares the evidence the boundary returns with the goal
+the call commanded. It never reads the skill's success flag, the model's claims, the order of calls or simulator truth.
+A drive holds when the rover's own localization estimate lies within the navigation tolerance of the goal. A pick holds
+when the jaw encoder, the arm kinematics and the wrist images before and after the lift agree that the item rose with
+the gripper. A place holds when the jaws are open, the tool is clear, the item stays still in the settle frames and no
+depth points remain between the fingers. A press holds when the tool went past the fitted button's tip and withdrew.
+The verifier recomputes the image checks from the raw frames the skill recorded, so the skill's own verdict is never its
+evidence. Its verdict has three values. An effect that the evidence neither shows nor contradicts is recorded as not
+established. The item's state then becomes unknown, which leaves the model to look. Whatever the record says is carried
+is examined again after every call that does not itself let go. The vision model reads the wrist frame, and the jaw
+encoder can overrule it when the fingers are shut on nothing. A payload can leave the jaws while the rover drives, and
+this check catches the loss before an unrelated failure hides it. The model's statement that the mission succeeded is
+never evidence. The report to mission control is generated from the record, with the model's own words quoted beside
+the verified effects.
+
+Detection and escalation follow the fault-management discipline of onboard autonomy (R5). Failures, refusals and
+disagreements between sources become typed anomalies in the record. One such disagreement is a catalogued handle that
+the wrist depth does not match. Each anomaly stays until a later success of the same capability resolves it. A latched
+fault of the robot's safety kernel prohibits every effect. Any other fault or degradation is a fact for the model to
+reason about. The runtime does not decide when to escalate. It gives the model the means and the facts. A request to
+mission control declares one of four kinds, an authorization, a check of what lies within the robot's authority, a new
+procedure, or information. It carries the calls the guard is holding. The request does not block the robot, because its
+answer crosses a delayed link and may be queued until the next pass. The model continues other work and reads the
+answer when it arrives. The context also states the link's state, the time until Earth sets and mission control's
+decision time. These are facts computed from the site's geometry and the published protocol, and none of them is a
+rule. The runtime thus keeps detection, isolation into a typed anomaly and escalation to the next level of authority
+\citep{ecss2008operability}. The recovery strategy stays with the model.
+% Four request kinds: experiments/operator_console/console.py REQUEST_KINDS; prompts/ours/tools.yaml request_operator.
+% Anomaly kinds and resolution: space_runtime/facts.py apply() (a later success of the same capability resolves them).
+
+The record is also the trace (R6). For each call it joins the proposal with the model's one-sentence rationale, the
+guard's outcome, the execution result with its evidence, and the verification. Mission control can reconstruct from it
+what the robot knew at each step, what it attempted, which boundary acted and what physically happened. It needs no
+access to the model's private reasoning for that.
+% research_content.md §4.13 (trace chain). Generated report: space_runtime/report.py.
+
+Nothing in the runtime names a situation, a task order or a recovery. It pre-engineers boundaries and evidence, and two
+conditions bound what that can deliver. The capability set must contain every physical operation a solution needs,
+because the model composes operations and cannot invent one. And each mechanism contains a consequence only where it
+has evidence or a rule for it. The verifier can refuse a false effect only when the robot's sensors can establish that
+effect. The guard can hold only a call that some rule classes. Removing a mechanism should therefore matter where
+nothing else in the system observes or bounds the consequence, and nowhere else. Section~\ref{sec:setup-ablation}
+defines the test of this prediction for each of $\phi$, $\rho$, $g$ and $v$.
+
+% Disagreements between this section (as built) and AGENT/research_content.md §4:
+% - §4.10 lists "deterministic simulator truth" among the verifier's evidence sources. As built, the verifier never reads
+%   simulator truth (space_runtime/verification.py docstring; configs/space_runtime.yaml verification comment); truth is
+%   the external evaluator's only.
+% - §4.8/§4.9 describe communication, compute, energy, thermal and illumination facts and onboard / edge / Earth reasoning
+%   tiers with reconciliation. As built, the space context is the Direct-with-Earth link (SPICE), mission control's
+%   decision time, and the units' telemetry (load, criticality, energized, breaker); one remote reasoner; reconstruction
+%   after restart is supported (facts.py reasoner_history, agent.py resume option) but no endpoint change occurred in
+%   the experiments (tested offline by ablation J3).
+% - §4.7 lists hard resource/health limits and staleness checks among guard inputs. As built, `invariants: []` and
+%   `fdir_prohibits: {estop: [all_effects]}` (configs/space_runtime.yaml); the only authority rule is the target rule
+%   energized_equipment_removal; every capability contract has authority_class routine. The mechanism exists; only the
+%   target rule was exercised. Capability unavailability is a guard outcome, but no event in the runs made a capability
+%   unavailable (agent.py emits no availability_changed event).
+% - §1.4/§2.5 motivate the design from coding-agent harnesses (Hermes, Pi, Codex). Per the user's framing (F148), this
+%   section derives the design from space-operations disciplines instead and makes no coding-agent analogy.

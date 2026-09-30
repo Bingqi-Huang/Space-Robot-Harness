@@ -1,0 +1,97 @@
+% Problem setting and requirements. Sources: AGENT/research_content.md §1.5, §3 (intended logic), docs/heldout_design.md
+% §1-§2 and §14 (as built), docs/baselines/authoring_spec.md, the SRB Mission A task (brief text). Where the build and
+% research_content.md disagree, the build is followed and the disagreement is noted in a comment.
+% Preamble needs \usepackage{enumitem} for the R1-R6 labels.
+\providecommand{\TBD}[1]{\textcolor{red}{[TBD: #1]}}
+
+\section{Problem setting and requirements}
+\label{sec:requirements}
+
+Lunar surface infrastructure will run for long periods without crew, and robots are expected to keep it running. They
+will reset tripped power units, replace failed modules and move spares between stands while the ground team is far
+away \citep{lewis2022uncrewed}. Mission control states such work as an objective. A representative objective in this
+study reads: ``PDU-2 reported a fault. Inspect the base's serviced units, identify the failed unit, restore it if within
+your authority, verify the result, and return the rover to the dock with the arm stowed.'' The objective names neither
+the cause nor the steps. The robot has to find both.
+% Brief text: space_robotics_bench/srb/tasks/mobile_manipulation/lunar_base_mission_a/task.py mission_brief(),
+% L0 instance faulted_unit=pdu_2 (docs/heldout_design.md §14).
+
+Mission control cannot sit inside every decision. Operational one-way delays for lunar missions range from 3 to 14\,s
+\citep{landon2025delay}. From a south-polar site, Earth is above the horizon for only about half of each sidereal month
+\citep{nasa2023lcn}. For days at a time, a request to the ground is stored and forwarded, not answered. Onboard autonomy
+already absorbs this for the situations its designers modelled. Plan executives run authored procedures with conditions,
+loops and recovery branches \citep{estlin2006plexil}. Model-based planners replan within an authored domain
+\citep{bedraxweiss2004europa,rabideau2025cadre}. This paper concerns the situations whose response nobody authored.
+% "3 to 14 s": Landon et al. 2025 (research_content.md §1.5.1). "about half of each sidereal month": NASA LCN white
+% paper 2023, as cited in space_context/earth_visibility.py and docs/heldout_design.md §2.
+
+The comparison fixes everything except the mission-level system. Every method drives the same robot through the same
+closed set of capabilities behind one typed contract. All methods share the sensors, the vision-language model and the
+low-level safety kernel, and each call returns the same raw evidence to whichever method made it. One external evaluator
+scores every run. It reads simulator truth, and no method does. What differs is how a method turns the objective and the
+evidence into calls. The baselines are not given the proposed runtime's mechanisms. Each encodes mission and authority
+constraints in its own artifacts, as its designers intended. The comparison therefore holds the problem and the robot
+fixed, and lets the mechanisms differ.
+% research_content.md §3.2 "Method boundary (revised 2026-09-17)"; the evaluator is the only reader of simulator truth
+% (evaluation/violations.py docstring; openral_ext/capability_server/node.py docstring: "No simulator truth").
+
+A situation is \emph{covered} for a baseline when its frozen artifacts contain the procedure, recovery branch or domain
+relation that a valid solution needs. A situation is \emph{held-out} when five conditions hold together. Every
+capability a solution needs exists and is available to every method. The relevant physical state is observable with the
+shared sensors. The frozen baseline artifacts encode no decomposition, relation or composition for the situation. The
+proposed runtime receives no hidden solution either. It gets the generic objective, the capability contracts, the
+current evidence and the frozen authority configuration. No artifact of any method changes once the situation is
+revealed, and a run that could continue only after such a change is recorded as requiring ground re-authoring.
+Held-out situations are graded by what the frozen baseline model lacks. The ladder runs from a missing cause or relation
+to a missing composition across mission families, and then to a goal conflict that needs ground authority
+(Section~\ref{sec:setup-missions}). The grade depends on the baseline's artifacts alone, so the ladder does not depend on
+how hard a case is for the proposed runtime.
+% research_content.md §3.3 (the five conditions); docs/heldout_design.md §1 rule 5 (levels by what the frozen baseline
+% model lacks).
+
+The setting yields three hypotheses. H1 predicts that, on the same robot, the proposed runtime completes held-out
+situations without ground re-authoring where the frozen baselines stop. H2 predicts that, when a capability is added
+after the freeze, the proposed runtime needs less mission-specific engineering to reach validated support, with
+comparable held-out success. H3 predicts that this autonomy does not come from crossing hard boundaries. Under H3,
+authority and invariant boundaries hold and no unverified effect enters the mission record. No completion is declared
+that the evaluator does not confirm, and the runtime contains no task order or recovery for any situation.
+% research_content.md §1.7 (H1-H3). H2 is stated as registered; Section results-exp2 reports that active time was
+% similar and the kind of change differed, which the results section argues, not this one.
+
+Six requirements follow for any system that gives a foundation model the mission strategy. The first comes from the
+question under test, and the other five from lunar operations.
+\begin{enumerate}[label=R\arabic*]
+  \item \label{req:no-solution} The runtime pre-engineers boundaries and evidence, not solutions. It may encode
+  capabilities, facts, verification and authority. It may not encode a task order, an observation policy or a recovery
+  for a situation. A held-out situation whose response is hidden in the runtime is in fact covered, and H1 would then
+  test nothing.
+  \item \label{req:facts} Mission truth lives in an authoritative record that only evidence advances. Flight computers
+  are limited in power and radiation tolerance \citep{nasa2024hpsc}, so the strongest model may run behind a link that
+  closes. The record must survive a restart or a change of reasoning service. A model's belief must never become a
+  fact.
+  \item \label{req:verification} Every physical effect is verified independently of the model and of the skill that
+  produced it. With the ground out of the loop, nobody watches each action. A skill's success flag says the skill
+  finished, and a model's report says what the model believes. Neither shows that the world changed.
+  \item \label{req:authority} Authority and invariant boundaries are enforced outside the model. Flight rules reserve
+  some operations for mission control, such as removing equipment from operating infrastructure \citep{cfr1214403}. A
+  boundary that holds only when the model complies is advice.
+  \item \label{req:fdir} Failures are detected and isolated onboard. They are escalated to the next level of authority
+  when onboard handling cannot resolve them \citep{ecss2008operability}. The escalation crosses a delayed link and may
+  wait for the next pass \citep{cerf2007dtn}. The robot must not block on it, and it must know the timing of the link.
+  \item \label{req:trace} Mission control can reconstruct what the robot knew, what it did and why. More onboard
+  autonomy moves the ground's role from commanding each step to reconstructing the vehicle's decisions afterwards
+  \citep{castano2022ops}.
+\end{enumerate}
+% Disagreement with research_content.md §3.4: it lists five requirements, including "semantic observation" (§3.4.2) and
+% "space-native operational context and distributed intelligence" with onboard / edge / Earth tiers (§3.4.3). As built,
+% semantic observation is one query of the shared capability set (observe, answered by the shared VLM), and the
+% space-native context is the Direct-with-Earth link state, the units' telemetry and mission control's decision time;
+% no edge or onboard reasoning tier exists (the reasoner is one remote model, configs/space_runtime.yaml). The
+% distributed-intelligence argument survives here only as R2's restart and endpoint-change requirement, which the
+% record supports (space_runtime/facts.py reasoner_history; agent.py resume option) and ablation J3 tests.
+% The FDIR and trace requirements are split out of research_content.md §3.4.4/§3.4.5 to match the user's framing
+% (five engineering disciplines plus model-owned strategy).
+
+Requirement R1 separates the proposed runtime from a mission executive. R2 to R6 are disciplines that space operations
+already require of onboard autonomy. Section~\ref{sec:method} builds each of R2 to R6 as a mechanism outside the model,
+and it keeps R1 by leaving every choice of action to the model.

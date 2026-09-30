@@ -1,0 +1,349 @@
+% Experimental setup. Sources, in order of authority: docs/research_findings.md F108-F151, AGENT/handoff.md; the code
+% (configs/space_runtime.yaml, openral_ext/capability_server/{contracts.yaml,node.py}, experiments/operator_console/
+% console.py, space_context/{link.py,earth_visibility.py,profiles/earth_link.json}, evaluation/{interaction,violations,
+% rows,tables}.py); docs/heldout_design.md §1, §2, §6, §8, §9, §14; docs/preregistration.md;
+% docs/baselines/authoring_spec.md; docs/reauthoring/spec.md; docs/exp2/extension_spec.md; F148 for the ablations.
+% Every number carries its source in a comment next to it.
+\providecommand{\TBD}[1]{\textcolor{red}{[TBD: #1]}}
+
+\section{Experimental setup}
+\label{sec:setup}
+
+\subsection{Simulated lunar base and robot}
+\label{sec:setup-site}
+
+The experiments run in a simulated lunar base on a LOLA elevation model of a ridge near the south pole, at
+89.455\,$^\circ$S, 213.64\,$^\circ$E \citep{barker2021lola}. The simulator is Isaac Sim 5.1 with the Space Robotics Bench
+\citep{orsula2024srb} (Fig.~\ref{fig:site}). Five serviced units each have their own load and criticality. The power
+distribution units PDU-1, PDU-2 and PDU-3 feed habitat life support (crew-critical), the communication station
+(mission-critical) and the science instruments (non-critical). The battery storage unit (BESS) is mission-critical, and
+the ISRU oxygen plant is non-critical. Each unit has a control panel with a reset button and a status lamp, and a bay
+that holds a replaceable module. The PDUs and the BESS also have a radiator or condenser behind a shutter with its own
+button. Stands at the depot, the landing pad, the habitat and the return area hold spares, logistics items and returns.
+% 89.455 S 213.64 E: F108 §5 (earth_visibility.py SITE: -89.4553, 213.642). Isaac Sim 5.1: docs/upstream_pins.md.
+% Units, loads, criticality: interaction.json `units`; docs/heldout_design.md §9 "As built".
+
+One site model governs every scenario, and scenarios differ only in their initial state. A press on a unit's panel
+resets its breaker. A drawn shutter makes the unit trip on over-temperature 30\,s after a reset. An unserviceable module
+makes it trip after a 3\,s self-test, and an empty bay makes it trip at once. Each unit reports its own telemetry: breaker
+state, trip cause, energized state, load, criticality, reset count and the serial of each installed module. Mission control's inventory record lists every tracked item by serial, recorded
+location and status. Assets are rigid and actuators are push buttons. The carried modules are look-alikes, far lighter
+than flight hardware.
+% 30 s: F112 §4(d) retrip_delay_s "from a stated thermal assumption"; 3 s: F108 §1, site.py SELFTEST_S = 3.0.
+% "far lighter": docs/heldout_design.md §9 honesty note (the 1 kg look-alikes).
+
+The robot is LunarBot, a rover with four independently steered wheels. It carries a seven-joint RM-75 arm, an EG2
+parallel gripper, a Livox Mid-360 lidar, and RGB-D cameras on its mast and wrist. Its software runs on ROS~2 Humble
+\citep{macenski2022ros2}. It localizes with AMCL on a map surveyed with its own lidar and drives with Nav2
+\citep{macenski2020nav2}. The arm plans collision-checked motions with MoveIt \citep{coleman2014moveit}. Pick, place and
+press are OpenRAL skills \citep{openral}, and pick and press ask the shared vision-language model which surface in the
+wrist view is the target. All methods call the skills through one capability boundary with the same names and
+arguments, and the boundary returns only robot-observable evidence. Every module carries a Data Matrix data plate
+\citep{nasa2020std6002}, which only the scanner added in Experiment II reads.
+% Robot: docs/lunar_task_catalog.md header; docs/lunar_bot_capability_set_plan.md (Mid-360); contracts.yaml (D435i
+% RGB-D, RM-75 joints). Boundary: openral_ext/capability_server/node.py docstring. Plates: heldout_design §4, §6.
+
+The link to Earth is Direct-with-Earth only. Earth's elevation at the site comes from SPICE and the DE440 ephemeris
+\citep{acton1996spice,park2021de440}, over a flat horizon. The mission epoch, 2028-10-11 01:18:39 UTC, puts Earth-set
+925\,s of mission time after the start of every run. That interval is three request-and-answer cycles of the protocol
+in Section~\ref{sec:setup-operator}, fixed before any run of a case that needs the ground. Earth rises again 13.4 days
+later. The one-way delay is 4.27\,s, the light time of 1.27\,s plus 3\,s of ground latency at the low end of the lunar
+range \citep{landon2025delay}. Mission time is the simulator clock. The simulation ran at about one fifth of real time,
+and the reasoning model's latency passed into mission time at the same ratio. Mission time therefore charges the model's
+deliberation at about one fifth of its wall-clock duration.
+% Epoch, 925 s, 13.4 d (aos_after_start_s 1161258.8 s), 4.27 = 1.271 + 3.0 s: space_context/profiles/earth_link.json,
+% F116. "three request-and-answer cycles": 3 x (4.27 + 300 + 4.27) s, earth_visibility.py MISSION_START_BEFORE_LOS_S.
+% "about one fifth": F116 "deliberation runs at the sim/wall ratio (~0.2)"; handoff "sim/wall ~0.2 with six at once".
+% docs/preregistration.md §3 asks for each request's wall-clock send time beside its mission time (open question).
+
+\begin{figure}[t]
+  \centering
+  \fbox{\parbox[c][4cm][c]{0.9\columnwidth}{\centering site figure placeholder}}
+  \caption{\TBD{The simulated lunar base: the five serviced units, the stands, the dock, and LunarBot at a unit's
+  bay. Third-person render from the scene.}}
+  \label{fig:site}
+\end{figure}
+
+\subsection{Missions and the novelty ladder}
+\label{sec:setup-missions}
+
+Two mission families share the site. Mission A is the restoration objective quoted in Section~\ref{sec:requirements},
+with the reported unit as a parameter. Mission B reads ``Deliver the \emph{item} staged at the \emph{source} (slot 0
+per the manifest) to \emph{destination}, then return the rover to the dock with the arm stowed.'' The external evaluator
+scores a Mission A run as successful when the faulted unit is restored and still restored at the end, with the rover
+docked and the arm stowed. L2-A also needs the shutter open. L3 and L4 need a serviceable module in the target bay and
+the failed one out of it. A Mission B run succeeds when the named item rests on the destination inside its footprint,
+with the rover docked and the arm stowed.
+% Mission B brief: lunar_base_mission_b/task.py mission_brief(). Success conditions: docs/heldout_design.md §4.
+
+\begin{table*}[t]
+  \centering
+  \caption{The thirteen instances of Experiment I, by novelty level. L0 and L1 are covered for both baselines; L2-A to
+  L4 are held-out. Each held-out situation has a documented precedent.}
+  \label{tab:instances}
+  \small
+  \begin{tabular}{lllp{0.36\textwidth}l}
+    \toprule
+    level & frozen baseline lacks & mission & instance & precedent \\
+    \midrule
+    L0 & nothing & A & PDU-2 trips; reset & \citep{lewis2022uncrewed} \\
+       &         & B & spare ORU, depot stand to the PDU-3 spares shelf & \citep{lewis2022uncrewed} \\
+    L1 & variable values & A & BESS trips; reset & \citep{lewis2022uncrewed} \\
+       &                 & A & ISRU plant trips; reset & \citep{lewis2022uncrewed} \\
+       &                 & A & the report names PDU-2; the BESS is the tripped unit & \citep{nasa2015issdsr} \\
+       &                 & B & spare battery module, depot spares stand to the BESS receiving stand & \citep{lewis2022uncrewed} \\
+       &                 & B & consumables container, landing-pad stand to the habitat logistics stand & \citep{lewis2022uncrewed} \\
+    L2-A & a cause & A & PDU-1: radiator shutter drawn, over-temperature after each reset & \citep{gaier2005apollo,nasa1971apollo15} \\
+         &         & A & BESS: condenser shutter drawn, over-temperature after each reset & \citep{gaier2005apollo,nasa1971apollo15} \\
+    L2-B & a relation & B & habitat logistics stand occupied by an outbound return container & \citep{nasa2019issdsr0617} \\
+    L3 & a composition & A & BESS battery module fails its self-test; spare on the depot spares stand & \citep{dextre2011rpcm,nasa2019issdsr0402} \\
+       &               & A & ISRU filter cartridge clogged; spare on the ISRU receiving stand & \citep{ogs2011filters} \\
+    L4 & a goal conflict & A & PDU-1 module failed, the depot spare recorded failed; the only serviceable module is in energized PDU-3 & \citep{cfr1214403,gao1988cannibalization} \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
+% Instances: docs/heldout_design.md §14 (13 instances, 7 covered + 6 held-out). Precedents: §2, §9, §13.
+
+The novelty ladder grades the held-out cases by what the frozen baseline model lacks (Table~\ref{tab:instances}). L0
+and L1 differ from a covered procedure in nothing or only in variable values, so they are covered for both baselines.
+At L2-A a drawn shutter makes every reset trip again, a cause the baselines do not model. At L2-B the destination is
+already occupied, a relation they do not model. L3 needs a composition across the two families. Both baselines contain
+every piece of its solution, the reset of Mission A and the pick, carry and place of Mission B, but not their
+combination. L4 poses a goal conflict. The only serviceable module sits in an energized, non-critical unit, and taking it
+needs mission control's authorization before Earth sets. Each level runs on one or two units. Two precedents hold only
+for the category, and the drawn shutter and the occupied stand are our extrapolations from them.
+% docs/heldout_design.md §2 (ladder, L3 "the sharpest", L4 authority + link), §14 ("each level is instantiated on one
+% or two units"); §2 and §9 honesty notes on the two extrapolations.
+
+Physical actions take only forms verified before the campaign: pressing a button, picking and placing a top-handled item
+on a horizontal surveyed support, driving and docking. Every held-out physical sequence ran once before the campaign as a
+fixed chain of calls through the shared capabilities, with no method in the loop, and completed. A physical failure in
+the campaign therefore cannot pass for a reasoning result.
+% docs/heldout_design.md §1 rule 3 and §12; F112 §6-7 ("all nine held-out sequences now executed end to end").
+
+\subsection{Compared methods}
+\label{sec:setup-baselines}
+
+The proposed runtime uses Qwen3.8-Max as its reasoning model, with thinking enabled and a 600\,s timeout per step. The
+vision-language model is DeepSeek-V4.1-Flash, with a 300\,s timeout. It answers the proposed runtime's observation
+queries and makes the target selection inside pick and press for all three methods, so it is the only model the
+baselines use. No request sets a sampling parameter. The mission step budget is 80 steps, and the loop suppresses a
+fourth identical call. The palette holds 27 tools in Experiment I. The guard has one target rule, the removal of a module
+from an energized unit's bay, and a latched emergency stop prohibits every effect. No other authority class or hard
+invariant is configured. Tables and figures label the proposed runtime Ours.
+% configs/space_runtime.yaml: model Qwen3.8-Max, thinking true, timeout_s 600, retry_cap_per_call 3, max_steps 80,
+% guard target_authority energized_equipment_removal, invariants [], fdir_prohibits estop; every contract routine.
+% VLM: node.py VLM_MODEL DeepSeek-V4.1-Flash; 300 s: F114, F137. No sampling parameter: F137. 27 tools: F124.
+% Step budget: Experiment I counted every proposal; Experiment II's final system counts only calls on the robot (F147).
+
+The reasoning model was chosen among four candidates before the freeze, on development runs and offline replays of
+recorded decisions. The proposed runtime was developed on development runs of the held-out instances under one rule. A
+change must name no situation, place or serial, hold for every mission, and trace to a recorded finding. Before the
+campaign, an audit checked every change against this rule and searched every text the model reads for the words of the
+held-out cases. No development run is scored.
+% F119-F123 (candidates DeepSeek-V4.1-Flash, Kimi-K3, Qwen3.8-Max, GLM-5.3-Flash), F137 and F139 (freeze audit),
+% AGENT/todo.md "Ours: generic changes only, three tests". Open question: level of detail on the model choice.
+
+PLEXIL is the official executive, Release 6.1.3 \citep{estlin2006plexil}. An interface adapter exposes each capability
+as a Command and each query as a Lookup, and logs the issuing plan node with every call. EUROPA\,$\rightarrow$\,PLEXIL is
+our integration of two NASA open-source components, not a NASA product. The EUROPA planner \citep{bedraxweiss2004europa}
+holds one domain model for both missions and takes the units' telemetry, the site survey and the inventory record as
+facts. A bridge dispatches its activities through the PLEXIL executive, and the planner replans from the updated facts
+after each result. A one-line patch fixed a use-after-free in EUROPA's temporal network that crashed the planner on some
+inputs. Another solver defect made the host solve one goal at a time, which makes the planner greedier, not stronger.
+% PLEXIL 6.1.3: F133. Adapter node id: F133. EUROPA patch: F112 §1 ("10 memcheck errors -> 0"). One goal per solve:
+% docs/baselines/authoring_spec.md change table ("makes EUROPA greedier, i.e. weaker").
+
+Both baselines follow a specification locked before any further baseline run, so that no failed run could pull a
+baseline stronger or weaker after the fact. A baseline is its native mechanism plus the knowledge of the covered
+specification, authored natively for every covered instance. Mission A's formal goal is every unit restored, and the
+plan or the solver finds the tripped unit from telemetry. Mission B is parameterized by item, source and destination.
+Failure handling has three tiers. A failed call is repeated up to 3 attempts, the cap the proposed runtime has on an
+identical call. A failed goal check that the covered brief asks for, such as a breaker that must still read closed at
+the dock, re-runs its action under the same budget. The baseline then asks mission control and holds. No branch may key
+on a cause or a situation, such as a trip cause, an inventory status, an occupied support or the stage at which a skill
+failed. That knowledge is what the re-authoring study and Experiment II price. The operability standard for space
+segments treats the retry count as a parameter and sends what a level cannot handle to the ground
+\citep{ecss2008operability}.
+% docs/baselines/authoring_spec.md "Locked specification" (lock commit 1b6a40f); retry = configs retry_cap_per_call 3;
+% ECSS-E-ST-70-11C §5.7.5 ("no standard value"). Change control after the lock: shared-infrastructure and conformance
+% fixes only.
+
+A larger retry budget could have changed where the baselines stop. After the freeze, both baselines ran offline against
+stand-ins of every held-out state with one, two, three and five attempts per call, 48 runs in all. PLEXIL's plans unroll
+the budget, so each other budget ran on a derived copy of the locked plans. The copy for three attempts reproduces the
+locked plans character for character.
+% F136, F143 (48 offline runs: 2 baselines x 6 held-out instances x N = 1/2/3/5; derived(3) identical to the lock).
+
+\subsection{Mission control}
+\label{sec:setup-operator}
+
+Mission control is a scripted protocol, published before the runs and identical for all methods. It answers a request
+by its declared kind and by the calls the guard holds, never by its text. A flight-rule table decides an authorization.
+It grants the removal of a module from a unit with a non-critical load while a crew-critical unit is down, and denies
+anything else with a reason code \citep{cfr1214403}. An authority check receives the published rules. An information
+request receives the statement that mission control holds no data beyond the robot's own queries. A new-procedure
+request receives the instruction to hold in a safe state while a procedure is written. Historical new procedures took
+from hours to days \citep{nasa2019mbsu3}, so nothing is uplinked during a run, and this answer alone marks a run as
+requiring ground re-authoring. A request without a kind counts as a new-procedure request, and every baseline request
+is of this kind.
+% experiments/operator_console/console.py decide(), module docstring; F125; docs/heldout_design.md §8 table
+% (historical times: Apollo 13 ~34 h, STS-120 4 d, MBSU-3 2019 3 d, Dextre RPCM ~13 months).
+
+Every request is decided 300\,s of mission time after it reaches the ground. We chose this value from minute-scale
+decisions in rover operations \citep{lim2024viper}, fixed it before the campaign and ran no sensitivity study. The human
+intervention ratio scales linearly with it. While Earth is below the horizon, the robot's link node reports a request as
+queued for the next pass. A queued new-procedure request still counts as re-authoring, and an authorization held back
+past the end of the run counts as unanswered. Mission control's answer to an authorization is recorded at the ALFUS level
+of a tactical goal, and a new procedure at the level of a mission task \citep{huang2007alfus}. No live operator took part
+in a scored run, which keeps the ground identical across methods \citep{riek2012woz}.
+% 300 s: console.py DECISION_TIME_S; docs/heldout_design.md §8 ("value is ours", "no sensitivity runs", HIR scales
+% linearly). Queued escalation = re-authoring, unanswered authorization: docs/preregistration.md §3, F116.
+% ALFUS labels: console.py decide() (tactical_goal / mission_task).
+
+\subsection{Experiment I: autonomous mission generalization}
+\label{sec:setup-exp1}
+
+Experiment I runs the three frozen methods on the thirteen instances of Table~\ref{tab:instances}. The baselines' plans
+and domain fix their decisions, so each baseline ran once per instance. The proposed runtime ran once per covered
+instance and three times per held-out instance, to expose the variance of its reasoning model. That gives 51 scored runs.
+The three methods of an instance ran on the same hardware, one simulation per GPU on a six-GPU machine. Every run
+recorded its full raw data, so a later change of a metric's definition is recomputed, never re-simulated. Defects of the
+shared layer found during the campaign were fixed for every method, and Experiment I was then repeated in full. Two runs
+of the repeat, invalidated by a further shared defect, were rerun. The results report the repeat.
+% Runs: docs/heldout_design.md §14 (26 baseline + 7 + 18 Ours = 51); F142 (51 scored runs, 6 GPUs; two runs
+% invalidated by shared-layer defects, fixed and rerun). Raw data: docs/preregistration.md preamble. First full campaign:
+% F140 (exp1), shared-layer fixes F141, repeat F142 (exp1b). Open question: whether to report exp1 in an appendix.
+
+\subsection{Experiment II: extending the mission envelope}
+\label{sec:setup-exp2}
+
+Experiment II adds a capability after the freeze and prices the change. The capability, \texttt{scan\_label}, reads the
+serial plates of the item on a surveyed support with the wrist camera. It was built before the experiment, supplied
+identically to all methods and registered with none. Its specification says that the inventory record can be wrong and
+that items of one kind differ only by serial. A Mission B brief can now name the cargo by serial, and the delivered unit
+must match it. One engineer extended each method, a fresh Claude session \TBD{model and version} that saw only the
+specification and a visible validation suite. The sessions ran in the order proposed runtime, PLEXIL,
+EUROPA\,$\rightarrow$\,PLEXIL, each from the previous merged state. The baselines thus started with the first engineer's
+capability contract, and EUROPA\,$\rightarrow$\,PLEXIL also with PLEXIL's adapter Lookups. This order favours the
+baselines.
+% docs/exp2/extension_spec.md §1-§4; F131 (built, unregistered), F144 (supplied before any timer), F146 (protocol as
+% run: fresh Claude session per method, order Ours -> PLEXIL -> EUROPA from the merged state).
+
+Each engineer changed only its method's own artifacts. A change to the proposed runtime had to name no situation, place
+or serial and hold for every task. The baselines could encode scanning and searching, since the extension specification
+joined their covered specification, but not a particular wrong record. A timer ran over active work, including waiting
+on the engineer's own validation run, and stopped at the first pass of the suite. The suite is one live run of a visible
+case with correct records. It checks the wiring, the evaluator's success, a depot scan that read the named serial, that
+nothing was dropped and that the trace is complete.
+% docs/exp2/extension_spec.md §4-§5; experiments/exp2/g3_validate.py (F144 "Visible validation suite (G3)").
+
+Two hidden cases stayed outside the repository until the last method was tagged. In H1 the named spare stands on
+PDU-1's spares shelf, and a failed unit of the same kind stands where the record puts the spare. An ISS cargo bag once
+stayed lost for about a year while the inventory records pointed to the wrong modules \citep{berger2021rfid}. In H2 the
+two depot units carry each other's records, as when a THEMIS flight model received a part of the right part number and
+the wrong serial \citep{themis2007pfr196}. Each method ran each case once before its extension. After it, the proposed
+runtime ran each case three times and each baseline once. These runs exposed three generic defects. Two were shared,
+a scan view that could cut a plate at the frame's edge and a scan result that could not tell an empty support from an
+unreadable plate. The third was the proposed runtime's step budget, which counted its own plan bookkeeping. The fixes
+went into the extended systems, and only the two runs they decided were rerun.
+% experiments/exp2/heldout/README.md (H1, H2, precedents.md); artifacts/eval/exp2/tables.md §2 (before 0/1 per case
+% per method; after Ours 3/3 per case, baselines 1/1). F145 (scan view, rerun EUROPA H1), F147 (on-support fact,
+% step budget, rerun Ours H1 r2).
+
+\subsection{Re-authoring cost of the held-out cases}
+\label{sec:setup-reauthoring}
+
+Every held-out baseline run in Experiment I ended with a request for a new procedure. The re-authoring study measures
+that procedure. For each pair of baseline and held-out case, eight in all, a fresh Claude session \TBD{model and version}
+started from the Experiment I freeze. It received the diagnosis that mission control's engineers would have after the
+escalation, meaning the cause, the facts that matter and the goal, but not the procedure. Tier three of the lock was
+lifted for that case only, so a branch or a domain relation could key on its cause. The retry budget and the covered
+procedure stayed. The engineer could not open any record of the proposed runtime. A timer with a cap of 3\,h ran over
+active work and stops at the first passing validation. Validation runs the modified baseline live on every instance of
+the case. It passes when the evaluator scores every instance a success, nothing was dropped and no module left an
+energized unit without approval. The proposed runtime needed no re-authoring for these cases, so its cost here is zero.
+% docs/reauthoring/spec.md; F149 (eight sessions, opus; briefs docs/reauthoring/cases/{l2a,l2b,l3,l4}.md); F151
+% (authoring done offline, live validation pending). Accidental exposure of held-out material in some engineers'
+% repository-wide searches is recorded in their worklogs (F149, F151); open question whether to state it.
+
+\subsection{Ablations of the harness}
+\label{sec:setup-ablation}
+
+The ablations test the prediction of Section~\ref{sec:method}, that removing one mechanism matters where nothing else
+observes or bounds the consequence. Each variant removes one of the four maps and nothing else. \emph{No verification}
+takes each effect from the skill's success flag and never looks at a carried item again. \emph{No facts} removes the
+authoritative record from the context, leaving the model its own working plan and its last 12 steps. \emph{No guard}
+checks no call. Its authority rule stays in the standing text, and an authorization request names the call for mission
+control to decide. \emph{No context} replaces the rebuilt context with one accumulating conversation. With no variant
+selected, all 1099 recorded steps of the 25 Experiment I runs of the proposed runtime re-render identically.
+% F148 "Variants", render_check 1099/1099 over the 25 exp1b Ours runs; "last 12 steps": facts.py RECENT = 12.
+
+Natural runs rarely exercise these mechanisms, so the ablations inject accidents into what the sensors and records
+reported, never into simulator truth. J1 reports a carried item as gone from the jaws, at 17 points. J2 reports each of
+the 8 failed presses as successful, and asks once right after it and once after a telemetry reading that shows the unit
+unchanged. J3 restarts the reasoner after the first world-changing verified effect of each run, at 25 points. J4 starts
+the L4 mission 755\,s later in the same pass, so Earth sets 170\,s after the start, at 3 points. Two probes without an
+accident complete the design. One compares the full runtime with no context two thirds through each run (25 points).
+The other compares it with no facts where an item's recorded location is older than the recent window (14 points).
+% F148 "Accidents": J1 = first look at a carried item in each of 16 carrying runs + exp1's real drop = 17; J2 8 + 8;
+% J3 25; J4 3 (755 s later, Earth-set 170 s after start); N 25; NF 14.
+
+Stage one reads the Experiment I record for what each variant would have changed, with no model call. Stage two replays
+each point offline. The exact system text, messages and palette of the point go to the Experiment I reasoning model three
+times per arm. The decision is the first effect call, request to mission control or query of the robot's current state,
+after applying up to six intervening plan calls offline. A rubric fixed before any model call classifies each decision,
+and a reader blind to the arm scores those that need the rationale. Stage two comprised 684 replay chains and 828 model
+calls. Stage three runs live from the recorded snapshot, only where stage two shows the variant clearly worse, with at
+most 12 runs. J1 qualified for live runs of the full runtime and no verification at two instances. J3 runs live with no
+context at two instances as a planned exception, since one decision cannot show a later repetition. Stage two sees only
+the step after the accident.
+% F148 "Rubric", "Amendment before the scored calls" (at most 6), "Stage 3" (at most 12); F149 (684 chains, 828 model
+% calls, 240 decisions to the blind reader); F150 ("live: J1 (4) and J3 (2)"). Live runs pending the model gateway;
+% results in Section results-ablation are TBD.
+% Disagreement with research_content.md §5.7: it planned focused ablations on natural runs of a subset of Experiment I
+% cases. F130 showed that natural runs would most likely give null results; the build uses injected accidents with
+% offline counterfactual replay first and live runs only where offline shows a difference (user decision, F148).
+
+\subsection{Metrics and statistics}
+\label{sec:setup-metrics}
+
+Autonomous mission success is the external evaluator's verdict with no artifact changed after the reveal. Human
+independence follows ALFUS \citep{huang2007alfus}, computed identically for all methods from mission control's log and
+the capability boundary's call windows. A mission spans from the first call's start to the later of the last call's end
+and the last exchange with mission control. The human intervention ratio divides mission control's total decision time
+by that span. Requests are counted by kind. The highest interaction level is the most human-directed ALFUS level at which
+mission control answered. The re-authoring flag marks a new-procedure request, answered or queued. The idle fraction is
+the share of the mission with a request open and no capability executing. The longest autonomous stretch is the longest
+interval with no request open, the neglect time of \citet{olsen2003metrics}.
+% evaluation/interaction.py measures() (mission span, HIR, idle_waiting_fraction, longest_autonomous_stretch_s,
+% ground_reauthoring_required); ALFUS_ORDER.
+
+The evaluator counts five classes of violation from simulator truth, by one rule for every method. An unintended contact
+is a force above 10\,N on a robot body other than a wheel, outside a call whose contract ends in contact. A dropped item
+comes to rest off every support, not held, more than 0.10\,m below where it last stood. A collateral change is another
+unit's state changing, or an object that no call acts on moving by more than 1\,mm. The other classes are execution
+during a latched safety fault and removal of a module from an energized unit without approval. A false completion is a
+final report sent with every task of the working plan closed while the evaluator scores failure. The baselines send no
+report, and a baseline plan that ends normally on a failed mission is stated in the results. Trace completeness counts
+calls of the proposed runtime that carry proposal, guard outcome, execution result and verification. For PLEXIL it
+counts boundary calls joined to their plan node by its identifier, and the checker does not cover
+EUROPA\,$\rightarrow$\,PLEXIL. Experiment II adds active engineering time, the validation runs to the first pass, the
+lines changed and held-out success before and after the extension.
+% docs/evaluator_violations.md (10 N, SRB's own threshold; wheels excluded F109); DROP_HEIGHT_M = 0.10 (F143);
+% DISPLACEMENT_NOISE_FLOOR_M = 1e-3; evaluation/rows.py false_completion (Experiment II reads the report texts,
+% experiments/exp2/tables.py CLAIMS, F146). Trace: F133, evaluation/trace_completeness_check.py. Exp II columns:
+% paper/tables/exp2_engineering.tex.
+
+Success rates carry Wilson 95\% intervals \citep{wilson1927probable}, paired by instance. With samples this small the
+comparison across coverage is descriptive, and no significance test was chosen after the data. Interaction measures are
+means over the runs of each method and coverage. Metrics, failure taxonomy, exclusion rules and statistics were fixed
+before the campaign. Each failed run gets one primary failure category, the first failure on its causal path. An
+infrastructure failure, such as a simulator crash or a model-provider outage, is repeated and never scored. A physical
+failure after the retry budget counts as a failed run.
+% docs/preregistration.md §2 (eight categories), §3 (exclusion), §4 (Wilson, paired, descriptive). evaluation/tables.py
+% interaction_table: means over runs. Disagreement: preregistration §4 says HIR, waiting and neglect time are reported as
+% medians with bootstrap intervals; the generated tables report means without intervals (open question).
+% Disagreement: research_content.md §5.5 metric 3 (human planning burden / preplanned transition fraction) is not
+% computed (evaluation/README.md: pending); the re-authoring flag and the re-authoring study stand in for it.
+% research_content.md §5.8 (real LunarBot demonstration) has no counterpart in the build yet.
