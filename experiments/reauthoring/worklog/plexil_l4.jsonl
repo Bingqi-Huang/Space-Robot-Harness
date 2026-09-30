@@ -4,3 +4,8 @@
 {"kind": "note", "session_id": "39d385779b49", "t": "2026-09-29T09:52:58.587246+00:00", "text": "adapter RequestAuthorization checked against the real console.py (stub boundary, fake clock/telemetry, isolated domain): pdu_3_bay/tray granted -> true, pdu_2_bay/tray denied -> false, a request without kind still new_procedure"}
 {"kind": "note", "session_id": "39d385779b49", "t": "2026-09-29T09:52:58.624685+00:00", "text": "ready for live validation; not launched: model gateway down (HTTP 403, shared outage, coordinator instruction)"}
 {"kind": "session_stop", "session_id": "39d385779b49", "t": "2026-09-29T09:52:58.661620+00:00", "reason": "waiting for model provider (shared outage)"}
+{"kind": "session_start", "session_id": "5475b7c8efb0", "t": "2026-09-30T01:13:36.894684+00:00", "extension_id": "reauth_l4", "method": "plexil", "engineer": "reauth-plexil-l4"}
+{"kind": "session_stop", "session_id": "5475b7c8efb0", "t": "2026-09-30T02:24:20+00:00", "reason": "shared outage: Claude session limit"}
+{"kind": "session_start", "session_id": "9d85917a3840", "t": "2026-09-30T05:49:18.493786+00:00", "extension_id": "reauth_l4", "method": "plexil", "engineer": "reauth-plexil-l4"}
+{"kind": "note", "session_id": "9d85917a3840", "t": "2026-09-30T05:49:25.771023+00:00", "text": "live validation v1 (GPU 3, no GPU wait, 09:13:58-10:24:20 CST): validate.py PASS on first run (success, parked_and_stowed, dropped 0, unauthorized_removal 0)"}
+{"kind": "session_stop", "session_id": "9d85917a3840", "t": "2026-09-30T05:49:25.808898+00:00", "reason": "validate.py PASS"}
