@@ -124,8 +124,62 @@ def camera_path(frames: list[dict], eye: np.ndarray, sigma: float) -> tuple[np.n
     look = gauss(np.array(look), sigma)
     yaw = gauss(np.unwrap(np.array(yaw))[:, None], sigma)[:, 0]
     c, s = np.cos(yaw), np.sin(yaw)
-    eyes = look + np.stack([c * eye[0] - s * eye[1], s * eye[0] + c * eye[1], np.full_like(c, eye[2])], axis=1)
+
+    def place(off: np.ndarray, a: int = 0, b: int | None = None) -> np.ndarray:  # eye offsets (rover frame) -> eyes
+        cc, ss = c[a:b], s[a:b]
+        return look[a:b] + np.stack([cc * off[:, 0] - ss * off[:, 1], ss * off[:, 0] + cc * off[:, 1], off[:, 2]], axis=1)
+
+    # Where the ISRU tank skid (5.7 m) or the radome stands between the camera and the rover, the view was the tank's
+    # side or black: over each such stretch (joined across gaps under 2 s, grown by 1 s) the camera takes the position
+    # (default first, then the alternatives) that sees the rover in the most frames, blended in and out by the path's
+    # own smoothing. Elsewhere the offset is the default and the shot is unchanged.
+    n = len(look)
+    off = np.tile(eye, (n, 1)).astype(float)
+    hidden = np.array([occluded(l, e) for l, e in zip(look, place(off))])
+    gap, pad = int(sigma / 2), int(sigma / 4)
+    for a, b in stretches(hidden, gap):
+        a, b = max(0, a - pad), min(n, b + pad)
+        off[a:b] = min([eye] + ALT_EYES, key=lambda v: sum(occluded(l, e) for l, e in zip(look[a:b], place(np.tile(v, (b - a, 1)), a, b))))
+    off = gauss(off, sigma)
+    eyes = place(off)
+    # a swing between sides can still pass through the tank: there the camera rises over it (dilated, then smoothed)
+    lift = np.array([max([hi[2] + 0.5 - e[2] for lo, hi in OCCLUDERS.values()
+                          if np.all(e[:2] >= lo[:2] - 0.3) and np.all(e[:2] <= hi[:2] + 0.3) and e[2] < hi[2] + 0.5], default=0.0)
+                     for e in eyes])
+    r = int(sigma / 2)
+    lift = np.array([lift[max(0, i - r):i + r + 1].max() for i in range(n)])
+    eyes[:, 2] += gauss(lift[:, None], sigma / 4)[:, 0]
     return eyes, look
+
+
+OCCLUDERS = {k: np.array(v) for k, v in json.loads((Path(__file__).parent / "lunar_base_asset_bounds.json").read_text()).items()
+             if k in ("isru_tank_skid", "comm_radome")}
+ALT_EYES = [np.array(v) for v in ((2.5, 4.5, 2.8), (2.5, -4.5, 7.5), (2.5, 4.5, 7.5), (5.0, 0.0, 7.5), (-4.0, 0.0, 7.5),
+                                   (0.0, -6.0, 4.5), (0.0, 6.0, 4.5))]
+
+
+def occluded(look: np.ndarray, eye: np.ndarray, margin: float = 0.2) -> bool:
+    """Does the sight line from the eye to the look-at point pass through the tank skid or the radome
+    (lunar_base_asset_bounds.json, from asset_bounds.py)?"""
+    for lo, hi in OCCLUDERS.values():
+        if np.all(look >= lo - 0.3) and np.all(look <= hi + 0.3):
+            continue  # the rover works at it
+        for f in np.linspace(0.3, 1.0, 15):
+            p = look + f * (eye - look)
+            if np.all(p >= lo - margin) and np.all(p <= hi + margin):
+                return True
+    return False
+
+
+def stretches(mask: np.ndarray, gap: int) -> list[tuple[int, int]]:
+    """[a, b) index stretches where mask is true, joined across gaps shorter than gap."""
+    out = []
+    for i in np.flatnonzero(mask):
+        if out and i - out[-1][1] < gap:
+            out[-1][1] = i + 1
+        else:
+            out.append([i, i + 1])
+    return [tuple(x) for x in out]
 
 
 def main() -> None:
