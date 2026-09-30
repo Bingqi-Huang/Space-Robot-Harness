@@ -150,11 +150,14 @@ injected faults.
 \subsection{Cost of extending the mission envelope}
 \label{sec:results-exp2}
 
-Adding a capability after the freeze took the three methods comparable time and very different kinds of change
-(Table~\ref{tab:extension}). Each extension engineer, a fresh Claude session given only the extension specification
-and the validation suite, passed the suite on its first validation run. Active time was 54.5, 46.3 and 53.4 minutes, the
-longest for the proposed runtime, whose validation run was the slowest. Waiting on the simulation dominated all three, and the work outside that wait took 4.7 minutes for the proposed
-runtime, 10.8 for PLEXIL and 20.8 for EUROPA\,$\rightarrow$\,PLEXIL.
+Adding a capability after the freeze cost the proposed runtime the least engineering work, and the three methods made
+very different kinds of change (Table~\ref{tab:extension}). Each extension engineer, a fresh Claude session given only
+the extension specification and the validation suite, passed the suite on its first validation run. The engineering
+work, the active time outside waiting on the validation simulation, took 4.7 minutes for the proposed runtime, 10.8
+for PLEXIL and 20.8 for EUROPA\,$\rightarrow$\,PLEXIL. The simulation wait measures the simulator and the load on the
+run farm, not the method, and the table reports it only for completeness.
+% Active time including the wait: 54.5 / 46.3 / 53.4 min (artifacts/eval/exp2/tables.md). User decision 2026-09-30:
+% simulation time carries no information about the methods; engineering time excludes it.
 
 The kind of change is the sharper result. The proposed runtime registered the capability contract and made a scan
 reading a verified fact the model sees. It added no rule about when to scan or what to do when a record is wrong.
