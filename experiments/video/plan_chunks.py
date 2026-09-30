@@ -1,8 +1,8 @@
 """Split the 1x replay renders into chunks that run in parallel (several renders share one GPU: a replay uses ~1.6
 cores and a quarter of a GPU). For each run: the frame times replay_render.py would render (the bag's full-/tf span on
 the 1/fps grid), minus the frames already in <video dir>/replay/<run>/ (the newest one is re-rendered: its writer may
-have been stopped mid-file); the missing times go out as chunks "<run> <a> <b>" (a <= t < b, cut between grid points)
-of at most --size frames, longest run first.
+have been stopped mid-file); the missing times go out as chunks "<run> <a> <b>" (a <= t < b, cut between grid points), each within one
+contiguous stretch of missing frames and of at most --size frames, longest run first.
 
     python3 experiments/video/plan_chunks.py <video dir> <run> [<run> ...] > <video dir>/chunks.txt
 """
@@ -32,9 +32,14 @@ for run in a.runs:
     done = set(have[:-1])
     todo = [t for t in times if t not in done]
     half = 0.5 / a.fps
-    for k in range(0, len(todo), a.size):
-        c = todo[k:k + a.size]
-        plan.append((len(times), run, round(c[0] - half, 3), round(c[-1] + half, 3), len(c)))
+    runs, i = [], 0  # contiguous stretches of missing frames, then chunks of at most --size
+    for j in range(1, len(todo) + 1):
+        if j == len(todo) or todo[j] - todo[j - 1] > 1.5 / a.fps:
+            runs.append(todo[i:j]); i = j
+    for seg in runs:
+        for k in range(0, len(seg), a.size):
+            c = seg[k:k + a.size]
+            plan.append((len(times), run, round(c[0] - half, 3), round(c[-1] + half, 3), len(c)))
     print(f"# {run}: {len(times)} frames, {len(done)} kept, {len(todo)} to render", flush=True)
 for n, run, lo, hi, k in sorted(plan, key=lambda p: (-p[0], p[2])):
     print(run, lo, hi)

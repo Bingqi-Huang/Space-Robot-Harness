@@ -1,133 +1,84 @@
 # Handoff
 
-Updated 2026-09-30 15:00 CST. All experiments done except the last two re-authoring validations (F154); the 1x
-videos are rendering. The manuscript is written by another agent from `docs/report.md`; this agent runs experiments and
-records them (user). See AGENT/todo.md. Nothing pushed (research main ahead of origin).
+Updated 2026-09-30 17:30 CST. Experiments are done; this session is closing the last items (AGENT/todo.md). The
+manuscript is written by another agent from `docs/report.md` (+ research_content, execution_plan); this agent runs
+experiments and records them; it never edits `paper/` (user). Nothing pushed: research main is ahead of origin (42+).
 
-Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (§6 Exp II, §8 protocol, §14
-instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preregistration.md`** (metrics,
-taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md` F130, F131, F136, F140-F154, and `docs/report.md` (the evidence base). Goal: the Acta
-Astronautica paper (H1 no rewrite for unplanned situations, H2 less engineering to add a capability, H3 open reasoning
-inside hard boundaries). The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
-boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
+Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, `docs/heldout_design.md`, `docs/baselines/authoring_spec.md`,
+`docs/preregistration.md`, `AGENT/todo.md`, `docs/research_findings.md` F140-F157, then `docs/report.md` (the evidence
+base: overview + parts 1a, 1b, 2, 3, 4, 5, 6). Goal: the Acta Astronautica paper (H1 no rewrite for unplanned situations,
+H2 less engineering to add a capability, H3 open reasoning inside hard boundaries). Framing (user): trustworthy AI --
+a foundation model embedded in a space robot's mission workflow raises autonomy while the harness keeps safety and the
+established engineering disciplines; never "an LLM calling tools" or "Claude Code for the Moon".
 
-## Results so far
+## Results (all in docs/report.md; numbers there are sourced)
 
-- **Experiment I = exp1b** (F142): Ours covered 7/7, held-out 18/18, 0 ground re-authoring; PLEXIL and EUROPA->PLEXIL
-  covered 7/7, held-out 0/6 (every run detected -> escalated -> hold). False completions 0; guard held 3 (L4 donor
-  picks), 0 executed despite a hold; no physical-layer failure. `artifacts/runs/exp1b/`, `artifacts/eval/exp1b/`
-  (tables, failures, place offsets, trace completeness), `artifacts/figures/exp1b/` (swimlanes, six textured
-  third-person videos). F143: PLEXIL N = 1/2/3/5 on derived plans never changes the outcome; a drop = a fall.
-- **Experiment II** (F144-F147; new shared capability `scan_label`, Data Matrix serials by the wrist camera): each
-  extension by a fresh autonomous Claude session that saw only `docs/exp2/extension_spec.md` + G3, timed, order Ours ->
-  PLEXIL -> EUROPA, each from the previous merged state. All passed G3 on the first validation run. Active 54.5 / 46.3
-  / 53.4 min, of it not waiting on the simulation 4.7 / 10.8 / 20.8. Ours registered the capability and made its
-  reading a verified fact (no procedure); PLEXIL wrote check -> record-guided search -> 13-support sweep -> escalate;
-  EUROPA modelled identity + a sensing activity, candidate narrowing in the host. Held-out (H1 mislocated spare, H2
-  swapped records): before the extension 0/6 (Ours' two reports false completions); after it Ours 6/6, PLEXIL 2/2,
-  EUROPA 2/2. Fixes found in the held-out runs, applied for all methods, only the runs they decided rerun (user rule):
-  F145 wider scan view, F147 on-support fact + Ours' step budget counts calls on the robot (not plan bookkeeping).
-  Tables `python3 experiments/exp2/tables.py` -> `artifacts/eval/exp2/tables.md`; cases, chains, launch lines
-  `experiments/exp2/heldout/`; runs `artifacts/runs/exp2/{setup,g2_physical,validation,pre,post,post_superseded,checks}`.
-- Paper-relevant facts: the Exp I system is tag `exp1b`; Exp II's final system adds F144-F147. Claude engineers compress
-  coding time (user: a human-engineer round "plan B" not now). Ours' H1 search is less systematic than PLEXIL's sweep.
-  rows.py's ledger rule cannot see a false completion when the report is the plan's still-active last task; the Exp II
-  table reads the reports (`CLAIMS` in tables.py).
+- Experiment I = exp1b (F142, F152, F153): Ours covered 7/7, held-out 18/18, 0 ground re-authoring; PLEXIL and
+  EUROPA->PLEXIL covered 7/7, held-out 0/6 each (detected -> escalated -> safe hold). 0 false completions; guard held 3.
+- Experiment II (F144-F147): new shared capability `scan_label`; fresh Claude engineers; hidden cases 0/6 before,
+  Ours 6/6, PLEXIL 2/2, EUROPA 2/2 after. Ours changed no procedure (a contract + a verified fact).
+- Ablations (F148-F150, F153): offline only (684 decisions); live runs stopped by the user, not reported.
+- F155: preregistered `preplanned_transition_fraction` computed offline (report part 2 §5.9): PLEXIL 0.75-0.93,
+  EUROPA 0.75-1.00, Ours 0 by construction.
+- F157: community-standard metrics computed post hoc (report part 6: glossary of every measure, GC, PLW, pass^k, safe
+  success, FDIR coverage, MTBI, intervention response time, run-time assurance, code churn, planning-model size, ECSS
+  levels, references). Which enter the paper is decided at writing time (user). Scripts `evaluation/standard_metrics.py`,
+  `evaluation/engineering_metrics.py`.
+- Re-authoring study (F149, F151, F154; F156 to write): engineering time = timer minus overlap with own validation runs
+  (`experiments/reauthoring/cost_table.py`). PLEXIL 5.5 / 11.0 / 8.8 / 13.6 min (L2-A/L2-B/L3/L4), EUROPA 11.7 / 81.4 /
+  63.3+ / 59.7 min. 7 of 8 PASS. PLEXIL L2-B: v1 stalled (the engineer's new Lookup never re-asked after a lost
+  response), v2 PASS 16:12. EUROPA L3: v1 ISRU PASS; v1 BESS = PLEXIL executive SIGSEGV 10 s after start (infrastructure,
+  1 in 46 exec starts), rerun `artifacts/runs/reauth/europa_plexil_l3/v1_rerun` running on GPU 1 (tmux
+  `reauth-europa-l3-rerun`), then `validate.py v1_rerun/europa_l3_bess v1/europa_l3_isru`.
 
-## Ablations (F148-F150, F153)
+## In progress right now (do not disturb)
 
-- Reported offline only: stage 1 (deterministic) and stage 2 (684 counterfactual decisions of Qwen3.8-Max on recorded
-  exp1b states, 4 variants `OURS_ABLATION` = no_facts / no_verification / no_guard / no_context, texts in
-  `prompts/ours_ablation/`, code on branch `feat/ablation` in `.worktree/ablation`, not merged yet). Live runs were
-  stopped by the user on 2026-09-30 and are not used or reported.
-- Resume facts (F154): a snapshot restore keeps a top-handle grasp; it restores physics only, not a unit's task state
-  (shutter, reset count), so a run resumed after a press sees the press undone.
-- Offline containers: `runfarm:22.04`, `--dns 223.5.5.5 --dns 119.29.29.29`, openral venv python, ROS + openral/install
-  + worktree ros/install sourced (`experiments/ablation/*` import the runtime).
+- **1x videos of the 13 Ours exp1b runs** re-rendering WITH body textures (the 16:xx render lacked the texture mount:
+  second time this happened). Workers: tmux `vid-gpu{0,2,3,4,5}-{1..6}` running `experiments/video/render_1x.sh <gpu>
+  <slot>`; they claim chunks from `artifacts/figures/exp1b/video_1x/chunks.txt` (made by `experiments/video/plan_chunks.py`),
+  render with `.worktree/ablation/experiments/video/replay_render.py --only a,b` and compose when a run's frames are
+  complete. The texture mount comes from `RUNFARM_ARGS` (render_1x.sh -> docker/runfarm/runfarm.sh). ETA ~18:15.
+  Never delete `.worktree/ablation` or edit its `replay_render.py` while a worker runs (each chunk reloads it).
+- **Next for the videos (camera occlusion fix, developed and checked offline)**: in 5 videos the ISRU tank skid (5.7 m)
+  or the radome hid the rover (some frames black). `.worktree/ablation/experiments/video/replay_render_next.py` picks,
+  per occluded stretch, the least-occluded of 8 camera positions, blends it in, lifts the camera over an occluder it
+  would enter; bounds in `lunar_base_asset_bounds.json` (made by `asset_bounds.py` with Isaac's pxr on CPU). Offline:
+  only ours_a_isru, ours_b_cons_habitat, ours_l2a_bess_r1, ours_l2b_habitat_r1, ours_l3_isru_r1 change (~5300 frames),
+  eye never inside an occluder, residual partial occlusion 3-6 s. After the render: move _next over replay_render.py,
+  delete exactly the changed frames (compare old vs new `camera_path`), remove those runs' `replay/<run>.composing` and
+  mp4, re-plan chunks, re-render, check (textures: 0 "can not be found" + a side-by-side frame; black frames; duration).
 
-## Re-authoring study (F149, F151, F154)
+## Videos, general
 
-- 8 engineer sessions (baseline x held-out case), spec `docs/reauthoring/spec.md`, cases `docs/reauthoring/cases/`,
-  checkouts `.worktree/reauth-<b>-<case>` (SRB pinned by `experiments/reauthoring/pin_srb.sh`), branches
-  `reauth/<b>-<case>`, worklogs `experiments/reauthoring/worklog/`, runs `artifacts/runs/reauth/`, validation
-  `experiments/reauthoring/validate.py`, GPU lock `experiments/reauthoring/gpu_run.sh` (`gpu_free.sh`).
-- Engineering time = active time minus waiting on the simulation (user). Shared outages (model gateway, Claude session
-  limit) are excluded; waiting on a stalled run counts up to 15 min after its last progress.
-
-## Videos
-
-- `experiments/video/render_1x.sh <gpu>`: replay (`replay_render.py --fps 10`, from `.worktree/ablation` because main's
-  scene has Exp II items the exp1b bags lack) -> track (`track_from_bag.py`) -> compose (`mission_video.py --fps 10`,
-  all panels, 1x). Output `artifacts/figures/exp1b/video_1x/`. Earlier 6x videos: `artifacts/figures/exp1b/video/`.
+- Output `artifacts/figures/exp1b/video_1x/<run>.mp4` (1600x900, 10 fps = 1x simulated time, all panels, label
+  "THIRD-PERSON VIEW"); earlier 6x textured videos of six runs (3 methods, L4 + L2-B) in `artifacts/figures/exp1b/video/`;
+  swimlanes `artifacts/figures/exp1b/swimlane/`; success figure `paper/figures/success_by_level.png`.
+- LunarBot's USD points at textures on the dev machine's absolute path; on pro6000 they are mounted from
+  `/mnt/SharedData/Research/lunarbot_textures/textures` (memory: feedback-video-textures-mount).
 
 ## Heads
 
-- Tags: `freeze-1` (history), `exp1b` (Exp I; the ablations start here), `exp2-base`, `exp2-base-plexil`,
-  `exp2-base-europa`, `exp2-ours`, `exp2-plexil`, `exp2-europa_plexil` (each method's extension base / result).
-- Branches: research `main` (+ `feat/prefreeze-infra`, kept by the user), openral `master`, SRB `main`.
-- **Reasoner Qwen3.8-Max** (configs/space_runtime.yaml, 600 s), VLM DeepSeek-V4.1-Flash, paratera gateway; key = the
-  first `sk-` in `AGENT/VLM_provider.md` (gitignored; never print it, never write it anywhere).
-- **What the reasoner reads** (F124): `prompts/ours/{system,step}.md`, `prompts/ours/tools.yaml`; `space_runtime/
-  context.py` only fills them. Palette = every non-engineering contract in `openral_ext/capability_server/contracts.yaml`.
-- **Mission control** (F125, console.py): answers by request kind + held calls; only `new_procedure` = re-authoring.
-- **scan_label** (shared): `openral_ext/scan_label.py` via `CapabilityServer.scan_label`; widest of three views the arm
-  can take (F145); `something_on_support` from the wrist depth (F147). zxing-cpp is in the openral venv.
-- Mission B knobs (SRB): `env.name_serial`, `env.placement` / `env.records` ("obj:place_frame+..."); ORU-0272 (failed,
-  landing_stand/slot_1) is a second identical ORU; `status` is an authored object field.
-- Evaluator: rows -> tables (`python3 -m evaluation.rows --out <dir> <run dirs>`, then `evaluation.tables`, system
-  python3); a call's window starts at the evaluator's sim->wall record (F142). Figures: `experiments/video/`.
-- Experiment II engineer checkouts: `experiments/exp2/make_worktree.sh <method> <base>` (submodules as worktrees, links
-  for venv/install/kernels/key, ros built there); removed after merging.
-- Resume from a snapshot (`snapshots/before_step_<n>.pt`): `OURS_RESUME_FROM=<run dir> OURS_RESUME_BEFORE_STEP=<n>` on
-  run_d0.sh; development only, never scored.
-- PLEXIL: adapter rebuild `colcon build --merge-install --packages-select plexil_capability_adapter` from `ros/` in a
-  pinned container with `PLEXIL_HOME=$HOME/Programs/plexil`, `$HOME/Programs` mounted, openral's install sourced;
-  offline `baselines/plexil/scripts/offline_check.py` (plexil-setup.sh). EUROPA offline:
-  `baselines/europa/run_offline_mission_{a,b}.sh` (`docker run --init`).
+- Tags: `freeze-1`, `exp1b` (Exp I), `exp2-*` (Exp II bases/results). Branches: research `main`, `feat/ablation`
+  (`.worktree/ablation`; merge approved by the user after the videos), `reauth/<baseline>-<case>` (8, committed;
+  worktrees `.worktree/reauth-*` to remove after the merge), `feat/prefreeze-infra` + `.worktree/prefreeze` (keep, user).
+- Reasoner Qwen3.8-Max, VLM DeepSeek-V4.1-Flash, paratera gateway; key = first `sk-` in `AGENT/VLM_provider.md`
+  (gitignored; never print it or write it anywhere).
+- Report build: `docs/report.md` = parts 00, 01a, 01b, 02, 03, 04, 05, 06 of `docs/report_parts/` joined by
+  "\n\n---\n\n" (a loop over the eight files; the result must equal the join exactly).
 
-## Run farm (pro6000, host astroeng, uid 1007; heldout_design §11)
+## Run farm (pro6000, host astroeng, uid 1007)
 
-- Repo at `/mnt/SharedData/Research/Space_Robot_Harness` (bind mount of `/nvme02/bingqi/SharedData`; never `/nvme01`).
-- **One run = one container** on one GPU: `docker/runfarm/runfarm.sh <gpu> <name> "<env> <abs>/run_d0.sh <abs run
-  dir>"`; ROS domain 77 + GPU. Two containers on one GPU share a domain and break each other -- also while one is
-  still tearing down: launch on a GPU only when `docker ps` shows no container there.
-- Batches: `tmux new-session -d -s <name> "experiments/launch/lunar_base_d0/farm_queue.sh <jobs> <run root> '<gpus>'"`;
-  `farm_join.sh` (run it with `bash`) adds a GPU worker. A worker re-reads the jobs file and `.next` at every claim:
-  never touch a run root's `.next`/`.lock` or move its run dirs until its queue.log says "queue done" (F147: a
-  duplicate run started that way).
-- Throwaway containers (builds, offline checks): no GPU, `--cpuset-cpus 30,31,62,63`, `nice -n 19`.
-- Speed: sim/wall ~0.2 with six at once; Ours covered ~10-15 min wall, held-out 0.5-1.5 h (Exp II H1 searches ~1 h).
-- sudo needs the user's password; never touch kernel/GRUB/daemon. Physics stays CPU PhysX (user decision).
+- Repo `/mnt/SharedData/Research/Space_Robot_Harness`. One simulation per GPU through the lock
+  (`experiments/reauthoring/gpu_run.sh`, `gpu_free.sh`); replay renders (no ROS) may share a GPU (user 2026-09-30).
+- Batches: `farm_queue.sh`; never touch a run root's `.next`/`.lock` or move its runs before "queue done".
+- Throwaway containers: no GPU, `--cpuset-cpus 30,31,62,63`, `nice -n 19`. Isaac's pxr works on CPU with
+  `PYTHONPATH=LD_LIBRARY_PATH=.../extscache/omni.usd.libs-*` and `kit/python/bin/python3`.
 
-## Running it
+## Rules (user)
 
-Jobs line = `<run name> <env assignments>`. Ours: `D0_CAPABILITY_SERVER=1 D0_CHECK=ours_mission_check.py`; PLEXIL:
-`D0_CHECK=d0_plexil_mission_{a,b}_check.py`; EUROPA: `D0_CHECK=d0_europa_mission_{a,b}_check.py`; with `D0_SCENE=
-scenes/deploy/srb_lunar_base_mission_{a,b}.yaml`, `D0_SCENARIO=...`, `D0_ENV='env.cargo=... env.destination=...'`.
-Scripted chains: `D0_CHECK=scripted_chain_check.py CHAIN_JSON=<abs json>` (3 attempts per call). Scene:
-`assets/lunar_base/scene/build_scene.py` (`--interaction-only` for dynamic objects only); map survey only when the
-structural footprint changes. Judge a run by `CHECK_EXIT` / `RESULT` / `CHAIN_DONE`; teardown tracebacks are noise.
-`run_manifest.yaml` is written after teardown (read-only backfill, run_d0.sh's last step).
-
-## Method rules earned the hard way
-
-- Never regenerate SRB assets or the scene while any simulation runs (Isaac aborts on a changed layer).
-- Never edit shared skill modules (openral rskill) while runs are live; capability server / contracts load at start.
-- No hard-coded distances or blind straight-line motions in the shared layer; nothing the boundary inserts unseen.
-- Name the other body of a contact only from ground-truth poses + the site layout, never from the link name.
-- Look first (evidence images, frames), then numbers; never open a live bag; `experiments/analysis/` has the tools.
-- A scripted chain reads the contracts when it starts: a temporary contract entry must stay until the check starts.
-- Killing a check mid-navigation: cancel `/navigate_to_pose/_action/cancel_goal` (all-zero goal_id) first.
-- PLEXIL: `if/endif` on live state, never SkipCondition; root `UncheckedSequence` so escalation can run.
-- `git merge -F -` does not read stdin: write the message to a file. `rm` with a variable path is refused by the
-  harness: use literal paths.
-
-## Rules
-
-- All paths absolute. Kill only positively identified own PIDs / own containers.
-- Never navigate or decide on simulator truth. Whole-operation tools only; mechanics stay in skills.
-- Development runs are not campaign results. Fixes found in a campaign: fix for all methods, record in findings,
-  rerun only the runs they decided (user rule); no freeze ceremony.
-- Ask before pushing; ask before deleting a run directory that might still be evidence.
-- Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies in concise Simplified Chinese, plain words,
-  no internal codes (J1, F153, ...) when talking to the user.
+- Simplified Chinese, plain words, conclusion first; no internal codes (J1, F153, ...) when talking to the user.
+- Decide defaults yourself; ask only design questions; plan changes, experiments, merges, pushes need the user's go.
+- Only fix the current blocker; offline check first, one decisive live test; rerun only the affected run.
+- No defensive code, no hash checks, minimal pytest. Truth only for evaluation, never for decisions or navigation.
+- Kill only own containers; long runs watched by a Monitor; state the token budget before a large model batch.
+- Keep this file and todo.md <= 150 lines, overwrite at milestones.
