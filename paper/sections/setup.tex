@@ -48,13 +48,14 @@ The link to Earth is Direct-with-Earth only. Earth's elevation at the site comes
 925\,s of mission time after the start of every run. That interval is three request-and-answer cycles of the protocol
 in Section~\ref{sec:setup-operator}, fixed before any run of a case that needs the ground. Earth rises again 13.4 days
 later. The one-way delay is 4.27\,s, the light time of 1.27\,s plus 3\,s of ground latency at the low end of the lunar
-range \citep{landon2025delay}. Mission time is the simulator clock. The simulation ran at about one fifth of real time,
-and the reasoning model's latency passed into mission time at the same ratio. Mission time therefore charges the model's
-deliberation at about one fifth of its wall-clock duration.
+range \citep{landon2025delay}. Mission time is the simulator clock. During the reasoning model's calls the simulation ran at 0.237 of real time,
+so mission time charges the model's deliberation at about a quarter of its wall-clock duration. The shared perception
+model's calls run on the same clock for every method. Section~\ref{sec:results-alfus} reports mission time with the
+latency counted in full.
 % Epoch, 925 s, 13.4 d (aos_after_start_s 1161258.8 s), 4.27 = 1.271 + 3.0 s: space_context/profiles/earth_link.json,
 % F116. "three request-and-answer cycles": 3 x (4.27 + 300 + 4.27) s, earth_visibility.py MISSION_START_BEFORE_LOS_S.
-% "about one fifth": F116 "deliberation runs at the sim/wall ratio (~0.2)"; handoff "sim/wall ~0.2 with six at once".
-% docs/preregistration.md §3 asks for each request's wall-clock send time beside its mission time (open question).
+% 0.237: sim/wall over all reasoning calls of the 25 exp1b Ours runs (per run 0.220 to 0.257),
+% experiments/analysis/reasoning_latency.py -> artifacts/eval/exp1b/reasoning_latency.md.
 
 \begin{figure}[t]
   \centering
@@ -337,13 +338,12 @@ lines changed and held-out success before and after the extension.
 
 Success rates carry Wilson 95\% intervals \citep{wilson1927probable}, paired by instance. With samples this small the
 comparison across coverage is descriptive, and no significance test was chosen after the data. Interaction measures are
-means over the runs of each method and coverage. Metrics, failure taxonomy, exclusion rules and statistics were fixed
+medians over the runs of each method and coverage, with percentile bootstrap 95\% intervals over runs. Metrics, failure taxonomy, exclusion rules and statistics were fixed
 before the campaign. Each failed run gets one primary failure category, the first failure on its causal path. An
 infrastructure failure, such as a simulator crash or a model-provider outage, is repeated and never scored. A physical
 failure after the retry budget counts as a failed run.
 % docs/preregistration.md §2 (eight categories), §3 (exclusion), §4 (Wilson, paired, descriptive). evaluation/tables.py
-% interaction_table: means over runs. Disagreement: preregistration §4 says HIR, waiting and neglect time are reported as
-% medians with bootstrap intervals; the generated tables report means without intervals (open question).
+% interaction_table: medians with percentile bootstrap intervals (10000 resamples over runs), as preregistration §4.
 % Disagreement: research_content.md §5.5 metric 3 (human planning burden / preplanned transition fraction) is not
 % computed (evaluation/README.md: pending); the re-authoring flag and the re-authoring study stand in for it.
 % research_content.md §5.8 (real LunarBot demonstration) has no counterpart in the build yet.

@@ -6440,3 +6440,17 @@ beyond the brief); EUROPA L3/L4 read `baselines/scripts/retry_budget_sensitivity
 stand-ins of F136) and SRB `lunar_base/site.py` telemetry code.
 Next: when the gateway is back, each session resumes for its live validation (`validate.py` on every instance); the
 table then adds validation runs and time waiting on them.
+
+## F152 -- Exp I interaction measures as preregistered (medians, bootstrap intervals); reasoning latency disclosed (2026-09-30)
+
+- Preregistration §4 fixes HIR, waiting and neglect time as medians with bootstrap intervals; `evaluation/tables.py`
+  reported means (F142's 0.136 / 0.591 / 0.470 HIR, 0.608 / 0.483 idle, 955 / 218 / 390 s stretch are means). Now
+  medians with percentile bootstrap 95% intervals over runs (10000 resamples, seed 0), interaction level as a
+  distribution. Held-out: HIR Ours 0.080 [0.000, 0.240], PLEXIL 0.617 [0.461, 0.696], EUROPA 0.485 [0.313, 0.613];
+  idle PLEXIL 0.634, EUROPA 0.499; longest stretch 1029 / 179 / 319 s. Ours' intervals overlap neither baseline's on
+  all three. 9 of 18 Ours held-out runs sent no request (HIR 0). Supersedes the F142 means for the paper.
+- Latency (`experiments/analysis/reasoning_latency.py`): a reasoning call takes 19.9 s wall (median; IQR 11.3-38.7);
+  the sim runs at 0.237 of real time during calls, so mission time charges about a quarter of it. Counting it in full,
+  Ours' covered median mission time goes 538 -> 825 s, held-out 1132 -> 2071 s (an upper bound: some calls overlap the
+  ground's decision time); held-out HIR would fall 0.080 -> 0.036. The shared VLM's calls run on the same clock for all
+  methods (not corrected). Stated in results and setup.
