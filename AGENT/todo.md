@@ -28,7 +28,8 @@ Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 wo
       on 3), then collect worklogs + diffs into a table (like experiments/exp2/tables.py).
 - [ ] Paper: `paper/sections/results.tex` drafted (Exp I, ALFUS, trust, Exp II); fill re-authoring and ablation
       subsections; then the rest of the manuscript. Framing: trustworthy AI (memory).
-- Not now (user): Exp II "plan B"; push (waits for the user).
+- Not now (user): Exp II "plan B"; push (waits for the user). Real LunarBot demonstration (research_content §5.8)
+  dropped by the user 2026-09-30: stated as future work in the paper.
 
 ## Clean-up (user 2026-09-26: keep for now)
 
