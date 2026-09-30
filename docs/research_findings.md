@@ -6529,3 +6529,28 @@ after the start) that the method's frozen artifacts (exp1b) contain as authored 
   press, so after a swap it would plan a stow before the reset (equivalent solution, dock -> press counted admitted).
   "Admitted" is the model's semantics, not the frozen search: the stock solver could not find two chained pick/place
   legs in one solve with the frozen domain (EUROPA L3 engineer; L2-B combined plan unsolved at 5,000 steps, F151).
+
+## F157 -- Community-standard metrics computed post hoc; every measure's definition and standard name in report part 6 (2026-09-30, offline)
+
+User decision 2026-09-30: compute every widely recognised metric the recorded data supports (A: goal-condition success,
+pass^k, path-length-weighted success, safe success, FDIR detection/recovery coverage, reasoner cost, ECSS levels; B:
+standard names and sources for the existing measures, MTBI, intervention response time, run-time assurance, code churn,
+planning-model size, modelling-error kinds), record all, choose for the paper at writing time. Chosen from three
+literature surveys (Sonnet subagents: space autonomy and FDIR; LLM embodied agents; engineering effort and assurance).
+Preregistered measures unchanged; all of this is labelled post hoc. `evaluation/standard_metrics.py` ->
+`artifacts/eval/standard_metrics.md`; `evaluation/engineering_metrics.py` -> `artifacts/eval/engineering_metrics.md`;
+glossary, results, reading, caveats, references: `docs/report_parts/06_standard_metrics.md`.
+- Experiment I held-out: GC Ours 1.00, baselines 0.17 (parked and stowed only, in the two L2-A runs); pass^3 = 1.00
+  (Ours; also Exp II post-extension H1, H2); PLW Ours 0.68 held-out, 0.65 covered (10 vs 5 actions covered); safe
+  success Ours 17/18 and 6/7, baselines 0/6 and 7/7; FDIR detection 18/18, 6/6, 6/6 (0 missed), recovery on board
+  18/18, 0/6, 0/6; failed calls followed by a successful call of the same capability 9/11 (Ours) vs 0/7.
+- Efficiency: distance driven covered median 82 m (Ours) vs 79 m, mission time 538 vs 264 s; Ours' reasoner 27.4 M
+  tokens over its 25 runs, median 16-20 s per call. MTBI held-out 2170 s (Ours, 10 interventions / 18 runs) vs 527 /
+  697 s. Guard held 3/454 proposals; independent verification coverage 1.00 vs 0.19 / 0.20 (baselines: resets only).
+- Engineering: Exp II relative churn Ours 0.031, PLEXIL 0.177, EUROPA 0.142 (generated .plx and offline tests excluded;
+  the PLEXIL adapter included); re-authoring 0.05-0.27 (PLEXIL), 0.06-0.30 (EUROPA). Modelling/logic errors: PLEXIL 2
+  (adapter glue), EUROPA 13 (5 domain logic, 7 solver search control, 1 host code).
+- ECSS-E-ST-70-11C: PLEXIL E3, EUROPA -> PLEXIL E4, Ours E4 nominal; on held-out baselines F1-like (safe hold), Ours
+  F2-like. F1/F2 wording from memory: check against the standard before citing.
+- Not computed (stated why): MTTR/availability, fan-out, NASA-TLX, ASIMOV, METR, COCOMO/cyclomatic, onset-referenced
+  time to detect. The survey's critique of static replay ablations is not taken up (user).

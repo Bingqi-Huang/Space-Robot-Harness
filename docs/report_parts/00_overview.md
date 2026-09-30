@@ -17,6 +17,7 @@ carries its source in brackets (a finding `F<n>` in `docs/research_findings.md`,
 | 3 | Experiment II (cost of extending the mission envelope with a new capability): design, engineering results, hidden cases, every run |
 | 4 | Harness ablations: design, stage 1 and 2 results, live stage 3 (status) |
 | 5 | Re-authoring study (the baselines' cost of each held-out case), validity and limitations, artifact and manuscript index |
+| 6 | Community-standard metrics computed post hoc (goal-condition success, path-length-weighted success, pass^k, safe success, FDIR detection/recovery coverage, MTBI, intervention response time, run-time assurance, code churn, planning-model size, ECSS levels) and **the glossary of every measure in this report** (kind, definition, standard name and source, code) |
 
 ## The study in one paragraph
 
@@ -87,6 +88,14 @@ change, not in hours.
 - Re-authoring (what each baseline's held-out failure costs once mission control has the diagnosis): offline authoring
   PLEXIL 5 to 13 min per case, EUROPA→PLEXIL 11 to 66 min [F151]; live validation in progress (part 5). The cost the
   baselines pay is the ground loop (diagnosis, idle robot, a communication window), not engineer hours.
+
+**Community-standard metrics (post hoc, part 6; the preregistered measures above are unchanged).** Held-out
+goal-condition success Ours 1.00 vs 0.17 / 0.17; pass^3 = 1.00 for Ours (Exp I held-out, Exp II after the extension);
+path-length-weighted success Ours 0.65 covered / 0.68 held-out (the cost of online reasoning: median 10 vs 5 actions
+covered); safe success Ours 6/7 and 17/18, baselines 7/7 and 0/6; FDIR: every held-out anomaly detected by every method,
+recovered on board only by Ours (18/18 vs 0/6, ECSS F2-like vs F1-like); independent verification coverage 1.00 vs
+0.19 / 0.20; guard held 0.7 % of Ours' proposed actions; Exp II relative code churn Ours 0.031 vs PLEXIL 0.177 and
+EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 
 ## Corrections made while compiling this report (use these, not the older statements)
 

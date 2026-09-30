@@ -17,6 +17,7 @@ carries its source in brackets (a finding `F<n>` in `docs/research_findings.md`,
 | 3 | Experiment II (cost of extending the mission envelope with a new capability): design, engineering results, hidden cases, every run |
 | 4 | Harness ablations: design, stage 1 and 2 results, live stage 3 (status) |
 | 5 | Re-authoring study (the baselines' cost of each held-out case), validity and limitations, artifact and manuscript index |
+| 6 | Community-standard metrics computed post hoc (goal-condition success, path-length-weighted success, pass^k, safe success, FDIR detection/recovery coverage, MTBI, intervention response time, run-time assurance, code churn, planning-model size, ECSS levels) and **the glossary of every measure in this report** (kind, definition, standard name and source, code) |
 
 ## The study in one paragraph
 
@@ -87,6 +88,14 @@ change, not in hours.
 - Re-authoring (what each baseline's held-out failure costs once mission control has the diagnosis): offline authoring
   PLEXIL 5 to 13 min per case, EUROPA→PLEXIL 11 to 66 min [F151]; live validation in progress (part 5). The cost the
   baselines pay is the ground loop (diagnosis, idle robot, a communication window), not engineer hours.
+
+**Community-standard metrics (post hoc, part 6; the preregistered measures above are unchanged).** Held-out
+goal-condition success Ours 1.00 vs 0.17 / 0.17; pass^3 = 1.00 for Ours (Exp I held-out, Exp II after the extension);
+path-length-weighted success Ours 0.65 covered / 0.68 held-out (the cost of online reasoning: median 10 vs 5 actions
+covered); safe success Ours 6/7 and 17/18, baselines 7/7 and 0/6; FDIR: every held-out anomaly detected by every method,
+recovered on board only by Ours (18/18 vs 0/6, ECSS F2-like vs F1-like); independent verification coverage 1.00 vs
+0.19 / 0.20; guard held 0.7 % of Ours' proposed actions; Exp II relative code churn Ours 0.031 vs PLEXIL 0.177 and
+EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 
 ## Corrections made while compiling this report (use these, not the older statements)
 
@@ -2959,7 +2968,10 @@ Reading (for the paper):
    L2-B and L3 solutions (1.00), yet both escalated: it had no relation saying that a stand holds one item (so the
    occupied destination is not a blocker it can plan around) and none saying that a failed module keeps a reset from
    holding (so the solver plans the press alone). The measure cannot see relational knowledge; the re-authoring study
-   (part 5) shows what was added (occupancy/slots, module self-test, shutter, authorization).
+   (part 5) shows what was added (occupancy/slots, module self-test, shutter, authorization). "Admitted" is about the
+   model, not the frozen search: two re-authoring engineers found that the stock solver could not find two chained
+   pick-and-place legs in one solve with the frozen domain (L3: only after pick matched the item's location first; L2-B:
+   the combined plan unsolved after 5,000 steps) [F151; worklogs].
 3. **The proposed runtime pre-authored none of it (0) and solved 18/18 held-out runs** by composing the sequence
    online; its only pre-written knowledge is the shared capability contracts, which every method has.
 
@@ -5393,7 +5405,7 @@ paper/tables/exp2_engineering.tex].
 
 | preregistered | as done | status | source |
 |---|---|---|---|
-| §1 `preplanned_transition_fraction`: "Decided: per instance, from its closed-capability certificate [...]. Reported once per instance x method" | not computed. `rows.py` writes `preplanned_transition_fraction=None`; evaluation/README.md: "Does not fill in `preplanned_transition_fraction` -- still a pending user decision" | **open**. The README contradicts the preregistration, which records the definition as decided. setup.tex: "the re-authoring flag and the re-authoring study stand in for it" | docs/preregistration.md §1; evaluation/README.md; evaluation/rows.py; paper/sections/setup.tex comment |
+| §1 `preplanned_transition_fraction`: "Decided: per instance, from its closed-capability certificate [...]. Reported once per instance x method" | computed offline after the campaign (2026-09-30, user decision) per held-out instance x method as decided: PLEXIL 0.75-0.93, EUROPA→PLEXIL 0.75-1.00, Ours 0 by construction, covered 1.0 for both baselines; `rows.py`'s per-run field stays `None` | **done** (late, as decided). Note: setup.tex still says "the re-authoring flag and the re-authoring study stand in for it" | docs/preregistration.md §1; `evaluation/preplanned_fraction.py`; part 2 §5.9; F155 |
 | §4 "HIR, waiting time, neglect time: medians with bootstrap intervals; interaction level as an ordinal distribution" | `evaluation/tables.py` reported means until F152. F142's HIR 0.136 / 0.591 / 0.470, idle 0.608 / 0.483 and stretch 955 / 218 / 390 s are means. Now medians with percentile bootstrap 95% intervals (10000 resamples, seed 0). Held-out HIR: Ours 0.080 [0.000, 0.240], PLEXIL 0.617 [0.461, 0.696], EUROPA→PLEXIL 0.485 [0.313, 0.613]; idle PLEXIL 0.634, EUROPA→PLEXIL 0.499; stretch 1029 / 179 / 319 s | **fixed**; F152 supersedes the F142 means for the paper | F152; artifacts/eval/exp1b/tables.md |
 | §3 "each request's wall-clock send time is reported beside its mission time (from the model_io record) as a robustness figure; no rerun" | F152 reports a reasoning-latency analysis instead: per-call wall latency median 19.9 s (IQR 11.3-38.7); sim runs at 0.237 of real time during calls. With latency counted in full, Ours' covered median mission time 538 -> 825 s and held-out 1132 -> 2071 s (an upper bound); held-out HIR 0.080 -> 0.036. The VLM's calls are not corrected | **reported in a different form**: `reasoning_latency.md` has per-run and per-coverage tables, no per-request wall-clock send time | F152; artifacts/eval/exp1b/reasoning_latency.md |
 | §3 / execution_plan §13.1 "A post-freeze fix that changes shared code reruns the affected campaign from the start" | Exp I: after F141 the whole campaign was rerun (exp1b) [F141; F142]. Within exp1b, two runs invalidated by shared defects were fixed and rerun alone [F142]. Exp II: fixes F145/F147 reran only the runs they decided [F145; F147]. User rule 2026-09-29: fixes are "folded into that experiment's results (F141/F142, F145, F147) -- not reported as a separate round" | **deviation, by user decision** | docs/preregistration.md §3; AGENT/execution_plan.md §13.1; AGENT/todo.md Rules |
@@ -5529,6 +5541,7 @@ Rule: category 8 (simulator crash, DDS, farm, model-provider outage) is fixed, r
 | `artifacts/eval/exp1b/place_offsets.md` | every place's set-down / end offsets, drag, inside-footprint | F141; F142 |
 | `artifacts/eval/exp1b/reasoning_latency.md` | per-run and per-coverage reasoning calls, wall vs mission time, mission time with latency in full, HIR recorded vs latency in full | F152 |
 | `artifacts/eval/exp1b/trace_completeness.txt` | Ours 451/451, PLEXIL 81/81 joined | F142 |
+| `artifacts/eval/exp1b/preplanned_fraction.md` | preregistered `preplanned_transition_fraction` per held-out instance x method (`evaluation/preplanned_fraction.py`) | F155 |
 | `artifacts/eval/exp1b/rows/` | evaluator rows (input to tables and the figure) | F142 |
 | `artifacts/eval/exp1/{tables.md, failures.md, trace_completeness.txt, rows/}` | freeze-1 campaign, **superseded** (Ours 17/18 held-out; PLEXIL covered 6/7) | F140 |
 | `artifacts/eval/exp2/tables.md` | Exp II: §1 engineering, §2 held-out extension cases, §3 every run | F146; F147 |
@@ -5618,8 +5631,7 @@ park2021de440, riek2012woz, wilson1927probable [paper/sections/CITATIONS_TODO.md
    for PLEXIL and 1-4 for EUROPA→PLEXIL. A findings-level statement of error counts does not exist yet.
 5. EUROPA→PLEXIL L4's host drops "the granted donor's restore goal" (commit 547ebd2). F151 does not discuss it as a
    deviation, although it is analogous to L2-B's host-side goal.
-6. `preplanned_transition_fraction` is not computed. evaluation/README.md calls it "a pending user decision" while the
-   preregistration records it as decided.
+6. ~~`preplanned_transition_fraction` is not computed~~: computed 2026-09-30 (part 2 §5.9, F155); README updated.
 7. The preregistered per-request wall-clock send time (preregistration §3) is not tabulated. F152's latency analysis
    covers the concern in another form.
 8. The intervention response-time split (delivery / notice / planning / execution; heldout_design §8) is computed per
@@ -5635,3 +5647,329 @@ park2021de440, riek2012woz, wilson1927probable [paper/sections/CITATIONS_TODO.md
 13. No tag pins the final Experiment II system (after F145/F147); it lives on `main` (F147 rerun at e1506c6).
 14. The EUROPA planner horizon defect (F151) was fixed only on `reauth/europa-l2b`. The frozen baseline is unchanged,
     and whether any Exp I held-out EUROPA→PLEXIL run was affected is asserted only for the covered runs ("7/7").
+
+
+---
+
+# 06 -- Community-standard metrics (computed post hoc) and the glossary of every measure in this report
+
+User decision 2026-09-30: compute every widely recognised metric that the recorded data supports, record all of them
+here, and choose at writing time which enter the paper. **The preregistered measures (part 1b §6-7) are unchanged**;
+everything in §2-§4 of this part is computed after the campaigns from the raw records (evaluator rows, `check.log`
+RESULT, `capability_server.log`, `ours/model_io.jsonl`, the bags, git), with no simulation and no model call, and must
+be labelled "post hoc, not preregistered" wherever it is used. Selection came from three literature surveys (space
+autonomy and FDIR; LLM embodied agents; engineering effort and assurance), each metric with two or more checked
+sources (list in §6). Scripts: `evaluation/standard_metrics.py` -> `artifacts/eval/standard_metrics.md`;
+`evaluation/engineering_metrics.py` -> `artifacts/eval/engineering_metrics.md`; `experiments/reauthoring/cost_table.py`
+(engineering time of the re-authoring study, part 5). [F157]
+
+## 1. Glossary: every measure used in this report
+
+Kind: **P** preregistered (docs/preregistration.md), **O** defined for this study, **S** community standard (source in
+the "standard name" column; §6 has the references). Where an O measure has a standard counterpart, use the standard
+name in the paper and say how ours differs.
+
+| Measure | Kind | Definition as computed | Standard name and source | Experiments | Code |
+|---|---|---|---|---|---|
+| Task success (SR) | P, S | Evaluator's success conjunction true at the run's end (unit healthy / cargo on destination [+ occupier cleared] and parked and stowed; part 1b §6.2); Wilson 95% interval | Task success rate (ALFRED [Shridhar 2020]; SayCan [Ahn 2022]) | I, II | `evaluation/rows.py`, `tables.py` |
+| Goal-condition success (GC) | S | Fraction of the success conjunction's conditions true at the end, per run, then the mean | Goal-condition success (ALFRED); goal-conditions recall (ProgPrompt [Singh 2023]) | I, II | `standard_metrics.py` `goal_conditions` |
+| Path-length-weighted success (PLW) | S | s x L*/max(L*, L), L = actions executed (capability calls on the robot except `arm_ready`), L* = the reference solution's actions (held-out: the certificate's chain; covered: PLEXIL's covered procedure) | Path-length-weighted success (ALFRED); SPL [Anderson 2018] with actions for path | I | `standard_metrics.py` |
+| pass^k | S | Per instance with n runs and c successes, C(c,k)/C(n,k), mean over instances | pass^k [Yao 2024, tau-bench] | I, II (Ours; baselines n = 1) | `standard_metrics.py` |
+| Safe success | S | Success and zero events in every violation class | Success under safety constraints ("safe success"; earliest precedent [Yang 2023]) | I | `standard_metrics.py` |
+| Ground re-authoring required | P | A run that asked mission control for a new procedure (`new_procedure`) or needed one to continue (part 1b §4.6) | -- (ALFUS: "portion of mission pre-generated by humans" family) | I, II | `rows.py` |
+| `preplanned_transition_fraction` | P | Share of the certified solution's transitions (previous call -> call) that the frozen artifacts contain (part 2 §5.9) | ALFUS human-independence, "portion of the mission pre-generated by humans" [Huang 2004/2007] | I | `preplanned_fraction.py` |
+| Human intervention ratio (HIR) | P, S | Sum of mission control's decision time / mission window (median, bootstrap 95%) | An ALFUS human-independence-axis intervention-time ratio [Huang 2007, NIST SP 1011-II-1.0]; ALFUS lists several candidate HI metrics, this is one, not a verbatim ALFUS formula | I | `evaluation/interaction.py` |
+| Longest autonomous stretch | P, S | Longest part of the mission window with no request open | Neglect time [Olsen & Goodrich 2003; Crandall 2005] | I | `interaction.py` |
+| Idle waiting fraction, open-request fraction | P, O | Time a request is open and nothing executes / time any request is open, over the window | -- (CADRE's idle-time share is the comparison, heldout_design §8) | I | `interaction.py` |
+| Highest interaction level | P, S | Most human-directed ALFUS level of an answered request | ALFUS interaction levels [Huang 2004] | I | `interaction.py` |
+| Mean time between interventions (MTBI) | S | Pooled mission time / number of requests delivered to mission control | Mean time (distance) between interventions / disengagements (field robotics, AV reports; no single defining paper) | I | `standard_metrics.py` |
+| Intervention response time (segments) | P, S | Per request: delivery (uplink), ground decision, answer delivery (downlink), robot's next action after the answer | Intervention response time components [Steinfeld 2006, after Sheridan 1992] | I | `interaction.py`, `standard_metrics.py` |
+| Fault detection coverage | S | Held-out runs whose anomaly the method detected (it succeeded, or escalated / asked mission control) / held-out runs | Fault detection rate, coverage [Tipaldi & Bruenjes 2015; Avizienis 2004] | I; ablation | `standard_metrics.py`; F150 |
+| Missed detection (false completion) | P, S | A final report claiming the objective while the evaluator says it is not achieved | No embodied-agent standard; nearest: "no or incomplete verification / incorrect verification" failure modes [Cemri 2025, MAST FM3.2/3.3] | I, II | `rows.py`; Exp II `tables.py` `CLAIMS` |
+| Recovery coverage | S | Held-out runs completed without ground re-authoring / held-out runs; failed capability calls after which a later call of the same capability succeeded / failed calls | Recovery / fault coverage [Avizienis 2004]; FDIR recovery [Tipaldi & Bruenjes 2015] | I | `standard_metrics.py` |
+| Violation classes 1-5 | P, O | Unintended contacts, dropped items, collateral changes, execution during a latched fault, unapproved removals (part 1b §6.4) | Family "safety violation rate" [Zhang 2025, Agent-SafetyBench] (no standard formula) | I, II | `evaluation/violations.py` |
+| Guard holds; executed despite a hold | P, S | Proposals the authority guard held / proposed actions; actions executed while held | Run-time assurance intervention (switching) rate [Sha 2001, Simplex; Mehmood 2022] | I | `rows.py`, `standard_metrics.py` |
+| Independent verification coverage | O | Actions whose effect the method checks against an observation other than the skill's own success flag / actions (Ours: every call's verification; baselines: presses checked against breaker telemetry) | Analogue of verification coverage in assurance practice (NASA-STD-8739.8; DO-178C coverage); own definition | I | `standard_metrics.py` |
+| Trace completeness | P, O | Calls carrying proposal, guard, execution, verification (Ours) / boundary calls joined to a plan node (PLEXIL) | Auditability / traceability (assurance practice) | I | `evaluation/trace_completeness_check.py` |
+| Mission time; actions; distance driven | P, S | Mission window (s, simulator clock); capability calls on the robot; metres driven (bag, 2 Hz) | Efficiency columns (AgentBench [Liu 2023]; tau-bench) | I | `rows.py`, `standard_metrics.py` |
+| Reasoner calls, tokens, latency per call | S | From `ours/model_io.jsonl` | Cost / latency per task (tau-bench; SWE-agent [Yang 2024]) | I | `standard_metrics.py`; F152 |
+| Engineering time | O | Exp II: active time minus waiting on the own validation run; re-authoring: timer intervals minus overlap with the own validation runs, a stalled run counted up to 15 min after its last progress | Time to a first valid version / lead time [Weiss 2007; DORA]; no standard for planning-model authoring (none found in the EUROPA/ASPEN/CASPER literature) | II, re-authoring | `experiments/exp2/tables.py`; `experiments/reauthoring/cost_table.py` |
+| Validation runs to first pass | O, S | Live validation runs until the suite / `validate.py` first passes | Attempts to first passing validation | II, re-authoring | same |
+| Code churn, relative churn | S | Lines added + deleted in the method's source artifacts (generated .plx and offline tests excluded); / source lines before | Code churn, relative churn [Nagappan & Ball 2005; Purushothaman & Perry 2005] | II, re-authoring | `engineering_metrics.py` |
+| Planning-model size before -> after | S | PLEXIL: library nodes, nodes, if branches, command calls, lookups (.ple); NDDL: classes, timelines, predicates, actions, compatibility rules; Ours: contracts, prompt lines | Domain-model element counts (IPC / KEPS convention; [McCluskey 2017]) | II, re-authoring | `engineering_metrics.py` |
+| Modelling / logic errors | O, S | Errors the engineer found and fixed, by kind: domain logic, solver search control, host / adapter code (test-script fixes not counted) | Planning modelling-mistake categories [Vallati 2025 survey on model repair] | re-authoring | worklogs (classified in §4.2) |
+| Ablation rubric categories | O | CHECK / UNSAFE / ASK / ... per injected accident (part 4) | Component-removal ablation ("full vs w/o X", [Yao 2023 ReAct; Ahn 2022 SayCan]) | ablation | `experiments/ablation/` |
+| ECSS autonomy level | S | Qualitative classification of each method (§4.4) | ECSS-E-ST-70-11C mission-execution levels E1-E4, failure-management F1-F2 | all | -- |
+
+## 2. Experiment I and II results (verbatim from `artifacts/eval/standard_metrics.md`)
+
+### 2.1 Experiment I (exp1b, 51 scored runs)
+
+#### 2.1.1 Task success, goal-condition success, path-length-weighted success, safe success
+
+| coverage | measure | Ours | PLEXIL | EUROPA→PLEXIL |
+|---|---|---|---|---|
+| covered | runs | 7 | 7 | 7 |
+| covered | task success (SR) | 7/7 = 1.00 | 7/7 = 1.00 | 7/7 = 1.00 |
+| covered | goal-condition success (GC, mean) | 1.00 | 1.00 | 1.00 |
+| covered | goal effect achieved (unit restored / cargo delivered) | 7/7 | 7/7 | 7/7 |
+| covered | parked and stowed at the end | 7/7 | 7/7 | 7/7 |
+| covered | path-length-weighted success (PLW, mean) | 0.65 | 1.00 | 1.00 |
+| covered | actions per run, median (reference median) | 10 (5) | 5 (5) | 5 (5) |
+| covered | safe success (success and no violation of any class) | 6/7 | 7/7 | 7/7 |
+| held_out | runs | 18 | 6 | 6 |
+| held_out | task success (SR) | 18/18 = 1.00 | 0/6 = 0.00 | 0/6 = 0.00 |
+| held_out | goal-condition success (GC, mean) | 1.00 | 0.17 | 0.17 |
+| held_out | goal effect achieved (unit restored / cargo delivered) | 18/18 | 0/6 | 0/6 |
+| held_out | parked and stowed at the end | 18/18 | 2/6 | 2/6 |
+| held_out | path-length-weighted success (PLW, mean) | 0.68 | 0.00 | 0.00 |
+| held_out | actions per run, median (reference median) | 20 (16) | 5 (16) | 6 (16) |
+| held_out | safe success (success and no violation of any class) | 17/18 | 0/6 | 0/6 |
+
+Held-out goal-condition success per level (mean GC over runs):
+
+| level | Ours | PLEXIL | EUROPA→PLEXIL |
+|---|---|---|---|
+| L2-A | 1.00 (n=6) | 0.50 (n=2) | 0.50 (n=2) |
+| L2-B | 1.00 (n=3) | 0.00 (n=1) | 0.00 (n=1) |
+| L3 | 1.00 (n=6) | 0.00 (n=2) | 0.00 (n=2) |
+| L4 | 1.00 (n=3) | 0.00 (n=1) | 0.00 (n=1) |
+
+#### 2.1.2 Reliability over repeated runs: pass^k (Ours, held-out, 3 runs per instance)
+
+| k | pass^k (mean over the 6 instances of C(c,k)/C(n,k)) |
+|---|---|
+| 1 | 1.00 |
+| 2 | 1.00 |
+| 3 | 1.00 |
+
+Baselines: one run per instance (deterministic executives): pass^1 = SR above; no k > 1.
+
+#### 2.1.3 Fault detection and recovery coverage (FDIR framing)
+
+| measure | Ours | PLEXIL | EUROPA→PLEXIL |
+|---|---|---|---|
+| held-out anomaly detected (run succeeded, or escalated / asked mission control) | 18/18 | 6/6 | 6/6 |
+| held-out anomaly missed (false completion) | 0/18 | 0/6 | 0/6 |
+| held-out mission recovered autonomously (success, no ground re-authoring) | 18/18 | 0/6 | 0/6 |
+| ended in a safe hold awaiting the ground (escalated, not recovered) | 0/18 | 6/6 | 6/6 |
+| covered: failed capability calls later recovered (a later call of the same capability succeeded) | 2/3 | 0/0 | 0/0 |
+| held_out: failed capability calls later recovered (a later call of the same capability succeeded) | 7/8 | 0/6 | 0/1 |
+
+#### 2.1.4 Efficiency and model use
+
+| coverage | measure | Ours | PLEXIL | EUROPA→PLEXIL |
+|---|---|---|---|---|
+| covered | mission time, median (s) | 538 | 264 | 265 |
+| covered | distance driven, median (m) | 82 | 79 | 79 |
+| covered | capability calls on the robot (incl. arm_ready), median | 10 | 5 | 5 |
+| covered | Ours reasoner calls per run, median | 23 | -- | -- |
+| covered | Ours prompt / completion tokens per run, median (k) | 499 / 19.1 | -- | -- |
+| covered | Ours tokens per run, total over the 7 runs (M) | 4.60 | -- | -- |
+| covered | Ours latency per reasoning call, median [IQR] (s wall) | 16.3 [9.6, 27.5] | -- | -- |
+| held_out | mission time, median (s) | 1132 | 487 | 627 |
+| held_out | distance driven, median (m) | 114 | 36 | 57 |
+| held_out | capability calls on the robot (incl. arm_ready), median | 20 | 5 | 6 |
+| held_out | Ours reasoner calls per run, median | 50 | -- | -- |
+| held_out | Ours prompt / completion tokens per run, median (k) | 1156 / 60.0 | -- | -- |
+| held_out | Ours tokens per run, total over the 18 runs (M) | 22.81 | -- | -- |
+| held_out | Ours latency per reasoning call, median [IQR] (s wall) | 19.8 [11.4, 38.5] | -- | -- |
+
+The baselines use no mission-level model; every method calls the same VLM inside the shared press/pick skills.
+
+#### 2.1.5 Human-autonomy interaction (standard names)
+
+| coverage | measure | Ours | PLEXIL | EUROPA→PLEXIL |
+|---|---|---|---|---|
+| covered | mean time between interventions, pooled (s of mission time) | 3834 (1 intervention) | no intervention | no intervention |
+| covered | runs without any intervention | 6/7 | 7/7 | 7/7 |
+| held_out | mean time between interventions, pooled (s of mission time) | 2170 (10 interventions) | 527 (6 interventions) | 697 (6 interventions) |
+| held_out | runs without any intervention | 9/18 | 0/6 | 0/6 |
+
+Intervention response time, decomposed (Steinfeld et al. 2006 segments; mission time, medians over requests):
+
+| method | request kind | n | delivery (uplink) | ground decision | answer delivery (downlink) | robot resumes an action after the answer |
+|---|---|---|---|---|---|---|
+| Ours | authorization | 3 | 4.28 s | 300 s | 4.28 s | 22.4 s (3 of 3) |
+| Ours | information | 8 | 4.28 s | 300 s | 4.28 s | 24.7 s (8 of 8) |
+| PLEXIL | new_procedure | 6 | 4.28 s | 300 s | 4.28 s | never (held) |
+| EUROPA→PLEXIL | new_procedure | 6 (1 unanswered) | 4.28 s | 300 s | 4.28 s | never (held) |
+
+#### 2.1.6 Runtime assurance
+
+| measure | Ours | PLEXIL | EUROPA→PLEXIL |
+|---|---|---|---|
+| guard intervention rate (held proposals / proposed actions) | 3/454 = 0.007 | no guard | no guard |
+| actions executed despite a hold | 0 | -- | -- |
+| independent verification coverage (actions whose effect is checked against an observation other than the skill's own flag / actions) | 444/444 = 1.00 | 15/77 = 0.19 | 19/95 = 0.20 |
+
+### 2.2 Experiment II hidden cases (before / after the extension)
+
+| phase | case | method | runs | SR | GC (mean) | pass^k over the runs |
+|---|---|---|---|---|---|---|
+| pre | H1 | Ours | 1 | 0/1 | 0.50 | pass^1 = 0.00 |
+| pre | H1 | PLEXIL | 1 | 0/1 | 0.50 | pass^1 = 0.00 |
+| pre | H1 | EUROPA→PLEXIL | 1 | 0/1 | 0.50 | pass^1 = 0.00 |
+| pre | H2 | Ours | 1 | 0/1 | 0.50 | pass^1 = 0.00 |
+| pre | H2 | PLEXIL | 1 | 0/1 | 0.50 | pass^1 = 0.00 |
+| pre | H2 | EUROPA→PLEXIL | 1 | 0/1 | 0.50 | pass^1 = 0.00 |
+| post | H1 | Ours | 3 | 3/3 | 1.00 | pass^3 = 1.00 |
+| post | H1 | PLEXIL | 1 | 1/1 | 1.00 | pass^1 = 1.00 |
+| post | H1 | EUROPA→PLEXIL | 1 | 1/1 | 1.00 | pass^1 = 1.00 |
+| post | H2 | Ours | 3 | 3/3 | 1.00 | pass^3 = 1.00 |
+| post | H2 | PLEXIL | 1 | 1/1 | 1.00 | pass^1 = 1.00 |
+| post | H2 | EUROPA→PLEXIL | 1 | 1/1 | 1.00 | pass^1 = 1.00 |
+
+GC here: the named unit on the destination (the evaluator scores the serial) + parked and stowed.
+
+## 3. Engineering effort (verbatim from `artifacts/eval/engineering_metrics.md`)
+
+### 3.1 Experiment II: adding the scan capability
+
+| study / method / case | source files changed | lines | churn (added + deleted) | source size before (lines) | relative churn | offline tests / stand-ins | planning-model size before → after |
+|---|---|---|---|---|---|---|---|
+| Ours | 7 | +49/-3 | 52 | 1701 | 0.031 | 0 files +0/-0 | effect contracts 19→20, prompt lines 169→173 |
+| PLEXIL | 3 | +129/-7 | 136 | 768 | 0.177 | 1 files +43/-0 | library nodes 4→5, nodes 75→91, if branches 7→8, command calls 40→44, lookups 17→20 |
+| EUROPA→PLEXIL | 2 | +121/-20 | 141 | 996 | 0.142 | 1 files +23/-7 | classes 11→12, timelines 5→6, predicates 10→12, actions 8→9, compatibility rules 8→9 |
+
+### 3.2 Re-authoring study: each baseline x held-out case (exp1b → reauth/<baseline>-<case>)
+
+| study / method / case | source files changed | lines | churn (added + deleted) | source size before (lines) | relative churn | offline tests / stand-ins | planning-model size before → after |
+|---|---|---|---|---|---|---|---|
+| PLEXIL L2A | 1 | +39/-0 | 39 | 768 | 0.051 | 1 files +20/-0 | nodes 75→83, if branches 7→10, command calls 40→44, lookups 17→18 |
+| PLEXIL L2B | 4 | +90/-6 | 96 | 768 | 0.125 | 1 files +19/-4 | library nodes 4→5, nodes 75→90, if branches 7→8, command calls 40→44, lookups 17→21 |
+| PLEXIL L3 | 2 | +82/-0 | 82 | 768 | 0.107 | 1 files +38/-1 | library nodes 4→5, nodes 75→93, if branches 7→9, command calls 40→45, lookups 17→19 |
+| PLEXIL L4 | 3 | +207/-1 | 208 | 768 | 0.271 | 1 files +69/-4 | library nodes 4→5, nodes 75→117, if branches 7→10, command calls 40→55, lookups 17→24 |
+| EUROPA→PLEXIL L2A | 2 | +55/-9 | 64 | 996 | 0.064 | 1 files +15/-7 | classes 11→12, predicates 10→11, actions 8→9, compatibility rules 8→9 |
+| EUROPA→PLEXIL L2B | 5 | +58/-13 | 71 | 996 | 0.071 | 1 files +9/-3 | classes 11→14, timelines 5→6, predicates 10→11, compatibility rules 8→9 |
+| EUROPA→PLEXIL L3 | 5 | +155/-25 | 180 | 996 | 0.181 | 1 files +23/-9 | classes 11→14, timelines 5→7, predicates 10→14, actions 8→9, compatibility rules 8→10 |
+| EUROPA→PLEXIL L4 | 2 | +252/-43 | 295 | 996 | 0.296 | 1 files +48/-15 | classes 11→15, timelines 5→7, predicates 10→16, actions 8→13, compatibility rules 8→13 |
+
+Planning-model size at exp1b (the frozen baselines): {'plexil': {'library nodes': 4, 'nodes': 75, 'if branches': 7, 'command calls': 40, 'lookups': 17}, 'europa_plexil': {'classes': 11, 'timelines': 5, 'predicates': 10, 'actions': 8, 'compatibility rules': 8}}
+
+## 4. Measures that are classifications, not computations
+
+### 4.1 Reading of §2-§3 (for the paper)
+
+- **Held-out, partial credit.** Goal-condition success: Ours 1.00; both baselines 0.17 -- the goal effect itself 0/6,
+  the only credit is parking and stowing in the two L2-A runs, which returned to the dock before the relapse showed.
+- **Reliability.** pass^3 = 1.00 for Ours on the six held-out instances of Experiment I and on both hidden cases of
+  Experiment II after the extension (every repeated run succeeded).
+- **Efficiency cost of online reasoning.** Path-length-weighted success: Ours 0.65 covered and 0.68 held-out (median 10
+  actions against a 5-action procedure covered, 20 against a 16-action certificate held-out); baselines 1.00 covered by
+  construction, 0 held-out. The rover drove about as far as the baselines on covered missions (median 82 m vs 79 m)
+  while its mission time doubled (538 vs 264 s): the extra time is reasoning, inspection and re-checks, not driving.
+- **Model use.** Ours' reasoner: median 23 calls and ~0.5 M prompt tokens per covered run, 50 calls and ~1.2 M tokens
+  per held-out run (27.4 M tokens over the 25 runs); median 16-20 s wall per call (F152 for the clock).
+- **Safety alongside success.** Safe success: Ours 6/7 covered and 17/18 held-out (the two runs with brief contacts
+  while carrying a battery module, part 2 §7.4); baselines 7/7 covered, 0/6 held-out.
+- **FDIR.** Every method detected every held-out anomaly (no missed detection: 0 false completions); only Ours
+  recovered on board (18/18; baselines 0/6, each ending in a safe hold awaiting the ground: ECSS F1-like vs F2-like,
+  §4.4). Of the failed capability calls, a later call of the same capability succeeded for 9 of 11 in Ours' runs and
+  0 of 7 in the baselines' (their identical retries failed again, then they escalated).
+- **Interaction.** Pooled mean time between interventions on held-out missions: Ours 2170 s (10 interventions in 18
+  runs, 9 runs with none) vs 527 s and 697 s (one intervention per baseline run, then a hold). Every request's delivery
+  and answer took 4.28 s each way and the scripted ground decision 300 s; Ours resumed an action a median 22-25 s after
+  an answer arrived (it keeps working while a request is open), the baselines never did.
+- **Run-time assurance.** The guard held 3 of 454 proposed actions (0.7 %), none executed while held. Independent
+  verification coverage: Ours 1.00 of its actions, PLEXIL 0.19 and EUROPA→PLEXIL 0.20 (only the resets are checked
+  against telemetry; the rest rests on the skill's own flag, as their lock prescribes).
+- **Engineering effort (Experiment II).** Relative churn: Ours 0.031 (52 lines of 1701: one contract entry, 4 prompt
+  lines, the fact and its verification), PLEXIL 0.177 (136 of 768: a library node and 16 plan nodes), EUROPA→PLEXIL
+  0.142 (141 of 996: a class and timeline, 2 predicates, an action). Line counts across YAML/prompt text, PLEXIL and
+  NDDL/Python are only a rough common scale.
+- **Engineering effort (re-authoring).** Relative churn per held-out case: PLEXIL 0.05-0.27, EUROPA→PLEXIL 0.06-0.30,
+  largest for L4 (authorization + donor transfer: PLEXIL nodes 75 -> 117; EUROPA predicates 10 -> 16, actions 8 -> 13).
+  The proposed runtime needed none (0 of 18 held-out runs re-authored). Engineering time and validation runs: part 5.
+
+### 4.2 Modelling and logic errors found by the re-authoring engineers, by kind [worklogs; engineers' summaries]
+
+| baseline | L2-A | L2-B | L3 | L4 | total | domain logic | solver search control | host / adapter code |
+|---|---|---|---|---|---|---|---|---|
+| PLEXIL | 0 | 2 | 0 | 0 | 2 | 0 | 0 | 2 (a manifest Lookup read a dangling reference; the new Lookup never re-asked after a lost response -- the live stall of its first validation run) |
+| EUROPA→PLEXIL | 1 | 3 | 4 | 5 | 13 | 5 | 7 | 1 |
+
+EUROPA→PLEXIL's errors are mostly about steering the stock solver: a correct model that the default chronological
+search could not solve (capacity model exploding the search, threat decisions made before a variable was bound,
+conditions merging with initial facts and pinning an action to the start, action choice order by name), plus domain
+mistakes (a copied posture transition, guarded effects not registered as effects, a condition outside the horizon
+filter, holding a module after a failed install). PLEXIL's two were glue code in the adapter. PLEXIL L4 also rewrote
+its offline test script twice (not counted). Classification by one reader from the worklog notes.
+
+### 4.3 Fault handling in the ablation, in FDIR terms [F150; F153]
+
+| injected fault (offline, one decision after it) | detection with independent verification | without it |
+|---|---|---|
+| item not in the jaws after a pick (51 decisions) | 47 of 51 decisions check the item first | 0 of 51 check the item (3 look at the destination slot); 48 carry on to the place |
+| shutter press reported done but not effective (3) | 3 of 3 judge it right | 0 of 3 (nothing else observes the effect) |
+| reset press reported done, unit still tripped (21) | 20 of 21 (full) | 20 of 21 (the unit's own telemetry exposes it) |
+
+Detection depends on independent verification exactly where no other channel observes the effect.
+
+### 4.4 ECSS-E-ST-70-11C autonomy levels
+
+| method | mission-execution level (nominal) | failure management on the held-out cases (observed) |
+|---|---|---|
+| PLEXIL | E3: execution of adaptive mission operations on board (event-based on-board procedures) [authoring_spec grounding, Table 5-1] | F1-like: detected, stopped in a safe state and asked the ground for a new procedure (6/6) |
+| EUROPA→PLEXIL | E4: execution of goal-oriented mission operations on board (on-board re-planning from goals) [same] | F1-like, as PLEXIL (6/6) |
+| Ours | E4: goal-oriented; the model plans from the mission goal on board, inside the guard | F2-like: re-established nominal mission operations on board (18/18), asking the ground only for authority (3 L4) or information (7) |
+
+The point for the paper: EUROPA→PLEXIL and the proposed runtime sit at the same nominal ECSS level (E4); the difference
+the experiments show is the boundary of the pre-engineered model, not the level. The F1/F2 wording ("establish a safe
+space-segment configuration following an on-board failure" / "re-establish nominal mission operations following an
+on-board failure") is quoted from memory of the standard and must be checked against ECSS-E-ST-70-11C before use; the
+E-level mapping is the one recorded in docs/baselines/authoring_spec.md.
+
+## 5. Caveats
+
+- Post hoc: none of §2-§4 was preregistered; the preregistered measures remain the primary ones.
+- Small n: 6 held-out instances; Ours 3 runs per instance, baselines 1 (deterministic executives), so pass^k exists for
+  Ours only.
+- PLW's reference for covered instances is PLEXIL's own procedure, so the baselines score 1.00 by construction there;
+  for held-out instances it is the certificate's chain (one valid solution among several).
+- GC gives the baselines partial credit only for parking and stowing (the goal effect itself is 0/6 held-out).
+- Independent verification coverage is our own definition; the baselines' count is presses checked against breaker
+  telemetry (tier-2 goal check), everything else rests on the skill's success flag, as their lock prescribes.
+- Engineers were fresh Claude Opus 5.5 sessions, not humans: engineering times describe (model, tools) pairs and are
+  not human-equivalent effort; no human baseline exists (a controlled human study would be needed).
+- Not computed, and why (state as considered): MTTR / availability (needs repeated failure-repair cycles), fan-out and
+  attention-allocation efficiency (needs multi-robot supervision), NASA-TLX (needs human operators), ASIMOV-style
+  semantic safety (needs a labelled hazard dataset), METR time horizon and SWE-bench-comparable resolve rates (need a
+  calibrated task suite with human baselines), COCOMO / function points / cyclomatic complexity (do not fit declarative
+  plans, domains and contracts), time-to-detect in the strict onset-referenced sense (held-out faults are present from
+  the start; no onset timestamp).
+
+## 6. References for the standard names (checked by the surveys unless flagged)
+
+- Ahn et al. 2022, Do As I Can, Not As I Say (SayCan), CoRL, arXiv:2204.01691.
+- Anderson et al. 2018, On Evaluation of Embodied Navigation Agents, arXiv:1807.06757.
+- Avizienis, Laprie, Randell, Landwehr 2004, Basic Concepts and Taxonomy of Dependable and Secure Computing, IEEE TDSC 1(1):11-33, doi:10.1109/TDSC.2004.2.
+- Cemri et al. 2025, Why Do Multi-Agent LLM Systems Fail? (MAST), NeurIPS D&B, arXiv:2503.13657.
+- Crandall, Goodrich, Olsen, Nielsen 2005, Validating human-robot interaction schemes in multitasking environments, IEEE TSMC-A 35(4):438-449, doi:10.1109/TSMCA.2005.850587.
+- ECSS-E-ST-70-11C, Space engineering -- Space segment operability, ECSS, 31 July 2008.
+- Huang (ed.) 2004, ALFUS Framework Vol. I: Terminology v2.0, NIST SP 1011-I-2.0; Huang et al. 2007, ALFUS Vol. II: Framework Models, NIST SP 1011-II-1.0.
+- Liu et al. 2023, AgentBench, ICLR 2024, arXiv:2308.03688.
+- McCluskey, Vaquero, Vallati 2017, Engineering Knowledge for Automated Planning: Towards a Notion of Quality, K-CAP, doi:10.1145/3148011.3148012.
+- Mehmood, Sheikhi, Bak, Smolka, Stoller 2022, The Black-Box Simplex Architecture for Runtime Assurance of Autonomous CPS, NFM, arXiv:2102.12981.
+- Nagappan & Ball 2005, Use of Relative Code Churn Measures to Predict System Defect Density, ICSE, doi:10.1145/1062455.1062514.
+- Olsen & Goodrich 2003, Metrics for Evaluating Human-Robot Interactions, PerMIS.
+- Purushothaman & Perry 2005, Toward Understanding the Rhetoric of Small Source Code Changes, IEEE TSE 31(6), doi:10.1109/TSE.2005.72.
+- Sha 2001, Using Simplicity to Control Complexity (Simplex), IEEE Software 18(4), doi:10.1109/MS.2001.936213.
+- Shridhar et al. 2020, ALFRED, CVPR, arXiv:1912.01734.
+- Singh et al. 2023, ProgPrompt, ICRA, arXiv:2209.11302.
+- Steinfeld, Fong, Kaber, Lewis, Scholtz, Schultz, Goodrich 2006, Common Metrics for Human-Robot Interaction, HRI, doi:10.1145/1121241.1121249.
+- Tipaldi & Bruenjes 2015, Survey on Fault Detection, Isolation, and Recovery Strategies in the Space Domain, JAIS 12(2):235-256, doi:10.2514/1.I010307.
+- Vallati et al. 2025, A Survey on Model Repair in AI Planning, IJCAI, doi:10.24963/ijcai.2025/1152.
+- Weiss, Premraj, Zimmermann, Zeller 2007, How Long Will It Take to Fix This Bug?, MSR.
+- Yang, Raman, Shah, Tellex 2023, Plug in the Safety Chip, arXiv:2309.09919.
+- Yang, Jimenez et al. 2024, SWE-agent, NeurIPS, arXiv:2405.15793.
+- Yao, Shinn, Razavi, Narasimhan 2024, tau-bench, arXiv:2406.12045 (ICLR 2025).
+- Yao et al. 2023, ReAct, ICLR, arXiv:2210.03629.
+- Zhang et al. 2025, Agent-SafetyBench, ACL, arXiv:2412.14470.
+- Also recommended as framing (surveys, not metrics): Parasuraman, Sheridan, Wickens 2000, A Model for Types and Levels
+  of Human Interaction with Automation, IEEE TSMC-A 30(3):286-297; Verma et al. 2023, Autonomous robotics is driving
+  Perseverance rover's progress on Mars, Science Robotics 8(80):eadi3099 (share of traverse under AutoNav); ECSS-E-HB-40-02A
+  (2024) machine-learning qualification handbook; NASA-STD-8739.8.
+- **Flagged, verify before citing**: the 2026 "safe success" benchmarks named by the survey; Kelly & Weaver 2004 (GSN);
+  ASTM F3269-21; the exact F1/F2 wording of ECSS-E-ST-70-11C (§4.4).
+
