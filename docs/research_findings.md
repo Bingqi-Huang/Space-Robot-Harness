@@ -6637,3 +6637,21 @@ re-created checkout of `reauth/europa-l3`; cap = 3 h of engineering time without
   logic errors: 5 (3 domain, 2 solver control). Churn 193 lines (relative 0.194).
 - Study totals: all 8 cases pass live; PLEXIL 38.9 min over four cases, EUROPA -> PLEXIL 224.3 min; errors PLEXIL 2
   (adapter code), EUROPA -> PLEXIL 14 (6 domain, 7 solver control, 1 host code). The proposed runtime needed none.
+
+## F160 -- Closing audit against research_content: every planned experiment and measure is done or a recorded deviation; the last undiagnosed contact is the rover's own carried ORU (2026-09-30, offline)
+
+User request: check from AGENT/research_content.md whether every experiment and claim is closed except writing.
+Result in `docs/report_parts/00_overview.md` "Closure against AGENT/research_content.md": H1/Exp I, all six §5.5 metrics
+(metric 3 = the re-authoring study's planning time + `preplanned_transition_fraction`), H2/Exp II and the re-authoring
+study, H3 evidence, statistics (descriptive as preregistered) are done; deviations recorded: ablations offline only
+(live stopped by the user), no hardware demo (dropped), one remote reasoner and a narrow space context (contribution
+3's wording must shrink), Exp II supports H2 in the kind of change, not in hours.
+- Evidence surfaced for research_content §6.4 ("deterministic reconstruction of the mission trace"): every reasoner
+  input re-renders from the event log alone, 1099/1099 exp1b steps and 67/67 of the final Exp II run (report part 6
+  §4.5).
+- The last undiagnosed contact (Exp II `post_ours_h2_r2`, sim 537.30-537.32 s, chassis 34 N): the rover's own carried
+  spare ORU (held from the pick at 404 s to the place at 615 s, swinging ±3.5 cm fore-aft 0.78-0.85 m aft of the root)
+  just after a drive ended at 536.6 s; the nearest structure 1.28 m away (truth poses + `lunar_base_asset_bounds.json`).
+  Same carried-item-against-own-body pattern as Experiment I.
+- Report consistency: stale "pending / in progress / not computed" statements updated in parts 0, 1b, 2, 3, 4, 5 (the
+  live ablation stage, re-authoring, the intervention response split, the preplanned fraction, the videos).

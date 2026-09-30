@@ -5,7 +5,7 @@ manuscript is written by another agent from `docs/report.md` (+ research_content
 experiments and records them; it never edits `paper/` (user). Pushed 2026-09-30 (main, tags exp1b/exp2-*, reauth/* branches; SRB main + tags; openral tags).
 
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, `docs/heldout_design.md`, `docs/baselines/authoring_spec.md`,
-`docs/preregistration.md`, `AGENT/todo.md`, `docs/research_findings.md` F140-F159, then `docs/report.md` (the evidence
+`docs/preregistration.md`, `AGENT/todo.md`, `docs/research_findings.md` F140-F160, then `docs/report.md` (the evidence
 base: overview + parts 1a, 1b, 2, 3, 4, 5, 6). Goal: the Acta Astronautica paper (H1 no rewrite for unplanned situations,
 H2 less engineering to add a capability, H3 open reasoning inside hard boundaries). Framing (user): trustworthy AI --
 a foundation model embedded in a space robot's mission workflow raises autonomy while the harness keeps safety and the

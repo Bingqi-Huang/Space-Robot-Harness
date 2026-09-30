@@ -8,6 +8,7 @@ a public project website (GitHub Pages, `.worktree/site`, branch `gh-pages`); it
 
 - Experiment I = exp1b (F142, F152, F153); Experiment II (F144-F147); ablations offline (F148-F150, F153).
 - F155 preplanned_transition_fraction (report part 2 §5.9). F157 community-standard metrics + glossary (report part 6).
+- F160 closing audit against research_content (report overview "Closure"): nothing experimental open.
 - F156/F159 re-authoring study closed: all 8 cases pass live (EUROPA L3 after a second engineer iteration);
   engineering times in report part 5 §A.9.
 - F158 13 textured 1x videos with the occlusion-aware camera, checked (`artifacts/figures/exp1b/video_1x/`).

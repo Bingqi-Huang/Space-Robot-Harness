@@ -879,7 +879,7 @@ development (`resume43d`, F138/C5).
 | D4 | heldout_design §8 grant row: GRANT when donor non-critical, removal restores a crew-critical load "and the request names unit, module and consequence" | console.py grants on donor non-critical and some crew-critical unit tripped; the request text is never read (F125) |
 | D5 | execution_plan §14.2 / operator_protocol §3: HIR = active operator-system interaction time (incl. operator response latency) / mission elapsed from acceptance | interaction.py: numerator = mission control's decision time only (uplink/downlink excluded); window = first call start to max(last call end, last request exchange) |
 | D6 | preregistration §1: `preplanned_transition_fraction` decided per instance | Computed per instance offline on 2026-09-30, after the campaign (F155, part 2 §5.9); rows.py's per-run field stays `None` |
-| D7 | execution_plan §14.2 `human_mission_specific_planning_time_s`; heldout_design §8 "human-planning ratio" per run | No row field; re-authoring cost measured offline instead (F151) |
+| D7 | execution_plan §14.2 `human_mission_specific_planning_time_s`; heldout_design §8 "human-planning ratio" per run | No row field; the human mission-specific planning time is measured per held-out case by the re-authoring study instead (engineering time without the simulation wait: PLEXIL 5.5-13.6 min, EUROPA→PLEXIL 11.7-81.4 min per case; Ours 0) [F156; F159; part 5 §A.9] |
 | D8 | docs/evaluator_violations.md class 1 and "What's missing": call start = `end - evidence.sim_s` | violations.py uses the evaluator's sim->wall record (F142) |
 | D9 | docs/evaluator_violations.md class 3 equipment: per-PDU `presses`/`faults`, `faulted_pdu`/`reported_pdu` | violations.py: every unit's `reset_presses`/`cover_presses`/`tripped`, `faulted_unit`/`reported_unit`, grant exclusion |
 | D10 | evaluation/README.md: "four physical constraint-violation classes" | five classes (class 5 authority) [violations.py] |
@@ -908,6 +908,6 @@ development (`resume43d`, F138/C5).
 7. No record found of a live human-operator demonstration run (`console.py --manual`).
 8. Bag contents and per-run bag sizes were not verified (bags not opened by rule); "~0.5 GB per sim hour" is from checklist R1 only.
 9. The node counts, line counts, run-duration ranges and per-run request timings marked "counted for this report" have no upstream source document; they come from the files named.
-10. Re-authoring validation runs (F151) and ablation stage 3 (F148-F150) are pending the model gateway; any SPACE_LINK_LOS_S live use is therefore unverified.
+10. ~~Re-authoring validation and ablation stage 3 pending~~: re-authoring validated live, all 8 cases (F156, F159); live ablation runs stopped by the user, not used (F154). `SPACE_LINK_LOS_S` was never used in a reported run.
 11. `run_manifest.yaml` does not record the PLEXIL/EUROPA revisions (`null`) and its repo revisions are those at backfill, so the exact commit each exp1b run executed is recoverable only from the batch timing and git history, not from the manifest.
 12. `docs/contact_closure_audit.md` (2026-09-19, in Chinese) is an audit of grasp approach and jaw closing (collision model of the gripper, local observed free space, closing only after contact conditions hold), not of the evaluator's contact counting; it contains no evaluator definition.

@@ -985,11 +985,15 @@ change, the order and why it favours the baselines.
   record session ids, not the model; F146 says only "fresh Claude session".
 - The G3 output of each original validation was not saved; the PASS is recorded in the worklog stop reasons, and my
   re-run on 2026-09-30 used the current `contracts.yaml` (after F147), not the one at each tag.
-- `post_ours_h1_r2_f147`'s `new_procedure` escalation (rows: `ground_reauthoring_required = True`) is not discussed in
-  any finding or in the paper; whether it should qualify the "6/6 autonomous" claim is an open decision.
+- ~~`post_ours_h1_r2_f147`'s `new_procedure` escalation, an open decision~~: by the preregistered rule it counts as
+  ground re-authoring required (overview, corrections table): report Ours after the extension as 6/6 successes, one of
+  which sent an unanswered (loss of signal) new-procedure request.
 - No finding assigns a failure category to the six pre-extension failures (they are controls); tables.md reads them as
   "wrong unit delivered" (baselines) and false completions (Ours).
-- The one unintended-contact window in `post_ours_h2_r2` (sim 537.30-537.32 s) was not diagnosed here.
+- ~~The unintended-contact window in `post_ours_h2_r2` not diagnosed~~ (2026-09-30, F160): the chassis (34 N, 20 ms at
+  sim 537.3 s, just after a drive ended at 536.6 s) against the rover's own carried spare ORU, held between the pick
+  (404 s) and the place (615 s), swinging ±3.5 cm fore-aft 0.78-0.85 m aft of the root; no structure within 1.28 m
+  (truth poses + site bounds). The carried-item-against-own-body pattern of Experiment I.
 - The paper's results subsection does not report mission time, reasoner turns, the scan-at-first-read, the pre-F147
   5/6, the F147 Ours-side change size, or the Ours requests to mission control.
 - F147's rerun has no `end` line in its queue log (the operational slip); its wall time comes from the backfilled

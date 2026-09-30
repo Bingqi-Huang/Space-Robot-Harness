@@ -229,7 +229,7 @@ last progress (user rule: simulation time is not a cost of the method). `python3
 | §4 "Ours' model variance: every held-out instance three times; revisited once, after the first held-out variance is seen, and then fixed" | three runs per held-out instance (18) in both exp1 and exp1b; no revisit is recorded in F139-F152 | kept at 3 | docs/heldout_design.md §14; F140; F142 |
 | §2 failure taxonomy "by one engineer [...] checked by a second reading" | `failures.md` gives one primary category per failed run (exp1b: only the 12 baseline held-out runs, category 2) | as planned; "one engineer" to be stated in limitations | docs/preregistration.md §2; artifacts/eval/exp1b/failures.md |
 | heldout_design §14 run plan "§5.7 ablations 4 x one L3 instance x 2 (8)" | replaced by method B: injected accidents, offline counterfactual replay (684 chains, 828 model calls), live only where offline shows a difference (J1 x4, J3 x2) | user decision (F130 blocked; F144/F148 decided) | docs/heldout_design.md §14; F130; F148; F149; F150 |
-| heldout_design §8 "intervention response time split into delivery / notice / planning / execution [...] (stacked bars)" | segments are computed per request in `evaluation/interaction.py` (line 72) | no table or figure found in artifacts/eval/exp1b/ or paper/ | docs/heldout_design.md §8; evaluation/interaction.py |
+| heldout_design §8 "intervention response time split into delivery / notice / planning / execution [...] (stacked bars)" | segments are computed per request in `evaluation/interaction.py` (line 72) | **table computed 2026-09-30** (part 6 §2.1.5: delivery, ground decision, answer delivery and the robot's next action per method x request kind); no figure | docs/heldout_design.md §8; evaluation/interaction.py |
 
 ### B.2 Deviations of the build from AGENT/research_content.md (§3-§5)
 
@@ -240,10 +240,10 @@ last progress (user rule: simulation time is not a cost of the method). `python3
 | §4.8 space-operational context: communication, compute, energy, thermal, illumination, health | Ours' context holds the Direct-with-Earth link state (SPICE), mission control's decision time and the units' telemetry (load, criticality, energized, breaker, trip cause, resets, installed modules). The `space_context` query also returns body, gravity (+ range) and a **static** `light_intensity` constant from SRB's Domain. There are **no compute, energy, thermal or time-varying illumination facts**. method.tex's comment omits gravity and the static light constant | paper/sections/method.tex comment; openral_ext/capability_server/node.py `space_context()`; space_robotics_bench/srb/interfaces/interface/ros.py (space_context publisher); contracts.yaml `power_status`, `space_context` |
 | §3.4.4 / §4.7 thin guard with hard resource/health limits, FDIR prohibitions, staleness, authority | `invariants: []`; `fdir_prohibits: {estop: [all_effects]}`; one `target_authority` rule, `energized_equipment_removal` (pick; target role `equipment_bay`; when the unit is energized -> `approval_required`; 14 CFR 1214.403). Every capability contract has `authority_class: routine` (20 of 20). No event made a capability unavailable | configs/space_runtime.yaml; contracts.yaml [derived count]; paper/sections/method.tex comment |
 | §4.10 verifier evidence sources include "deterministic simulator truth" | the verifier **never reads simulator truth**, the skill's success flag, the agent's claims or the call order. Truth is the external evaluator's only | space_runtime/verification.py docstring; configs/space_runtime.yaml verification comment |
-| §5.7 ablations on natural runs of a subset of Exp I cases | injected accidents J1-J4 plus natural probes N/NF, offline stage 2, live stage 3 only where offline shows a difference. F130: natural runs "would most likely give null results" | F130; F148; paper/sections/setup.tex comment |
+| §5.7 ablations on natural runs of a subset of Exp I cases | injected accidents J1-J4 plus natural probes N/NF, offline stage 2, live stage 3 only where offline shows a difference; **the live stage 3 was stopped by the user and is not used: the ablations rest on one-decision offline evidence** (part 4 §10). F130: natural runs "would most likely give null results" | F130; F148; paper/sections/setup.tex comment |
 | §5.8 real LunarBot demonstration | **dropped by the user 2026-09-30**; "stated as future work in the paper" | AGENT/todo.md; commit 53ba795 |
 | §5.6 / execution_plan §13.4 engineers: counterbalanced multiple developers preferred, else one developer as a case study | Exp II: one fresh Claude session per method, order Ours -> PLEXIL -> EUROPA→PLEXIL, each from the previous merged state. The baselines reuse Ours' contract and PLEXIL's Lookups ("the conservative direction"); "a Claude engineer compresses coding time and the paper must say so"; a human-engineer round ("plan B") not now. Re-authoring: 8 parallel Claude sessions from exp1b | F144; F146; AGENT/handoff.md; paper/sections/setup.tex |
-| §5.5 metric 3 human planning / preplanning burden | `preplanned_transition_fraction` not computed (B.1) | evaluation/README.md |
+| §5.5 metric 3 human planning / preplanning burden | `preplanned_transition_fraction` computed offline after the campaign, per held-out instance x method (B.1; part 2 §5.9) | F155; `evaluation/preplanned_fraction.py` |
 | §3.4: five requirements | problem.tex states six (R1-R6): FDIR and trace are split out, semantic observation and distributed intelligence are dropped as requirements | paper/sections/problem.tex comment |
 | §1.4 / §2.5 coding-agent harness motivation | method.tex derives the design from space-operations disciplines and makes no coding-agent analogy (user framing: trustworthy AI) | paper/sections/method.tex comment; F148 |
 
@@ -372,7 +372,7 @@ Rule: category 8 (simulator crash, DDS, farm, model-provider outage) is fixed, r
 | `artifacts/eval/step9_10/`, `artifacts/eval/step10_qwen/rows/` | development runs (step 9 covered, step 10 held-out), R2 recompute | F132 (development, not findings) |
 | `artifacts/freeze/freeze-1.yaml`, `freeze-1.dry_run.yaml` | freeze record: three repos' HEADs, run-farm image, venv packages, model configs | F137; F139 |
 | `artifacts/reasoner_replay/{l2b_occupied, l4_transfer, model_regression, authority_wording, f124}` | offline model replays used to choose the reasoner | F119-F124; F131 |
-| `experiments/reauthoring/worklog/*.jsonl`, `artifacts/runs/reauth/<b>_<case>/v<k>/` | re-authoring timers/notes and validation runs (live, in progress) | F149; F151 |
+| `experiments/reauthoring/worklog/*.jsonl`, `artifacts/runs/reauth/<b>_<case>/v<k>/` | re-authoring timers/notes and validation runs (final: all 8 cases pass live) | F149; F151; F156; F159 |
 
 ### C.4 Existing manuscript drafts (`paper/sections/`)
 
@@ -448,8 +448,7 @@ park2021de440, riek2012woz, wilson1927probable [paper/sections/CITATIONS_TODO.md
 6. ~~`preplanned_transition_fraction` is not computed~~: computed 2026-09-30 (part 2 §5.9, F155); README updated.
 7. The preregistered per-request wall-clock send time (preregistration §3) is not tabulated. F152's latency analysis
    covers the concern in another form.
-8. The intervention response-time split (delivery / notice / planning / execution; heldout_design §8) is computed per
-   request in `evaluation/interaction.py` but has no table or figure.
+8. ~~The intervention response-time split has no table~~: part 6 §2.1.5 (2026-09-30).
 9. No record of an **ECONNRESET** incident was found anywhere in the repository sources read.
 10. The user's rejection of a dev/test split is recorded only in the session memory, not in a repository document.
 11. Manuscript: `sec:limitations` is referenced in results.tex but not defined. No main.tex, no .bib. Abstract,

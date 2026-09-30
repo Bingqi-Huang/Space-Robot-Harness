@@ -15,7 +15,7 @@ carries its source in brackets (a finding `F<n>` in `docs/research_findings.md`,
 | 1b | Baselines (PLEXIL, EUROPA→PLEXIL) and their lock, mission control (operator console), the Earth link, the external evaluator and every metric as implemented, the preregistration, the run farm |
 | 2 | Experiment I (autonomous mission generalization): design, protocol, history, every table, all 51 runs, qualitative evidence, latency, artifacts |
 | 3 | Experiment II (cost of extending the mission envelope with a new capability): design, engineering results, hidden cases, every run |
-| 4 | Harness ablations: design, stage 1 and 2 results, live stage 3 (status) |
+| 4 | Harness ablations: design, stage 1 and 2 results (offline; the live stage 3 was stopped by the user and is not used) |
 | 5 | Re-authoring study (the baselines' cost of each held-out case), validity and limitations, artifact and manuscript index |
 | 6 | Community-standard metrics computed post hoc (goal-condition success, path-length-weighted success, pass^k, safe success, FDIR detection/recovery coverage, MTBI, intervention response time, run-time assurance, code churn, planning-model size, ECSS levels) and **the glossary of every measure in this report** (kind, definition, standard name and source, code) |
 
@@ -66,7 +66,8 @@ external evaluator that reads simulator truth. Only the mission layer differs.
   executed before a grant; 0 removals without approval, 0 dropped items, 0 executions during a latched fault; 7
   unintended contacts for Ours (6 in one L3 run within 0.6 s, partner unresolved between the arm's base and the unit's
   cradle; 1 of 20 ms); baselines' failed place on the occupied stand pushed the container 5.9 cm once per L2-B run
-  (3 collateral episodes) [F142; part 2]. Trace completeness: Ours 451/451 calls, PLEXIL 81/81 [F142].
+  (3 collateral episodes) [F142; part 2]. Trace completeness: Ours 451/451 calls, PLEXIL 81/81 [F142]; every reasoner input re-renders
+  from the event log alone (1099/1099 steps of exp1b, 67/67 of the final Exp II run) [part 6 §4.5].
 - Ablations (offline counterfactual replay, 684 decisions): without independent verification the model carries on to
   place an item that is not in the jaws 48 of 51 times, where the full runtime checks first 47 of 51; at a missed
   press, the variant still judges right where the unit's own telemetry exposes it (20/21) and fails where nothing
@@ -102,6 +103,34 @@ recovered on board only by Ours (18/18 vs 0/6, ECSS F2-like vs F1-like); indepen
 0.19 / 0.20; guard held 0.7 % of Ours' proposed actions; Exp II relative code churn Ours 0.031 vs PLEXIL 0.177 and
 EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 
+## Closure against AGENT/research_content.md (checked 2026-09-30, 22:50 CST)
+
+Every experiment and measure the research plan calls for is either done or a recorded deviation; nothing experimental
+is open. What remains is writing. [F160]
+
+| research_content item | status | evidence / where |
+|---|---|---|
+| H1, Exp I (§5.5): covered vs held-out, three methods, two mission families | done | part 2; F142, F152, F153 |
+| §5.5 metric 1 autonomous success; 5 variation coverage (success vs level) | done | part 2 §5; `paper/figures/success_by_level` |
+| §5.5 metric 2 HIR (ALFUS); 4 interaction level | done (medians + bootstrap) | F152; part 1b §6.6; part 6 §1 (standard names) |
+| §5.5 metric 3 human planning time / pre-authored share | done: planning time = the re-authoring study per case; share = `preplanned_transition_fraction` | part 5 §A.9 (F156, F159); part 2 §5.9 (F155) |
+| §5.5 metric 6 violating proposals and executions | done: 3 guard holds, 0 executed; violation classes for all methods | part 2 §7.4; part 6 §2.1.6 |
+| H2, Exp II (§5.6): new shared capability, ETVS, artifact change, modelling errors, post-extension success | done; H2 holds in the kind of change, not in hours (Ours' active time was the longest) | part 3; F144-F147 |
+| H2 for a new mission situation (re-authoring the baselines per held-out case) | done: all 8 cases pass live; PLEXIL 5.5-13.6 min, EUROPA→PLEXIL 11.7-81.4 min per case; Ours 0 | part 5 §A.9; F156, F159 |
+| H3 (§1.7, §6.4): boundaries hold, verification-backed completion, reconstructable trace | done: 0 false completions, 0 executions despite a hold, trace 451/451, every reasoner input re-rendered from the log; Ours had 7 contact windows vs 0 (report it) | part 2 §7.4; part 6 §4.5 |
+| §5.7 harness ablations | done offline (stages 1-2); **live stage 3 stopped by the user, not used**: one-decision evidence only | part 4; F148-F150, F153, F154 |
+| §5.8 real LunarBot demonstration | **dropped by the user**: future work, no transfer claim | part 5 §B.2 |
+| §5.9 statistics: intervals, per-instance pairing, repeated FM runs, raw traces, failure taxonomy | done (descriptive, preregistered); failure categories by one engineer | part 1b §6.7-§7; part 2 |
+| §6.3 mission trace figure (held-out, with a baseline companion) | swimlanes for L4 and L2-B x 3 methods; 13 textured 1x videos (Ours) | `artifacts/figures/exp1b/swimlane/`, `video_1x/` (F158) |
+| §6.6 figures 1-3 and tables 1-3 (operating model, architecture, coverage design, related systems, capability stack, scenarios) | writing: content in parts 1a, 1b, 2 §2 | -- |
+| community-standard metrics (added by the user, post hoc) | done; choose at writing time | part 6 (F157) |
+
+Wording the evidence does not support (narrow it in the paper): contribution 3's "distributed-intelligence
+reconciliation" and "structured space-operational context" (one remote reasoner, no onboard/edge tier; restart
+reconstruction supported but never exercised live; context = the Earth link and unit telemetry, part 5 §B.2);
+"less engineering time" for a new capability (Exp II: similar time, different kind of change); any hardware or
+lunar-fidelity claim; any significance claim (n is small; descriptive by preregistration).
+
 ## Corrections made while compiling this report (use these, not the older statements)
 
 | Topic | Older statement | Corrected | Source |
@@ -120,7 +149,7 @@ EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 | `preplanned_transition_fraction` | not computed | computed per held-out instance x method (part 2 §5.9) | F155 |
 | L4 donors | PDU-3 in all runs | r3 used the ISRU plant's power ORU (energized, non-critical), granted | part 1a, part 2 |
 
-## Pending (as of 2026-09-30, 22:40 CST)
+## Pending (as of 2026-09-30, 22:50 CST)
 
 1. **Ablation live runs: not used (user decision 2026-09-30).** The ablations are reported from the offline
    stages only (part 4 sections before "Stage 3"; F150, F153).
@@ -144,3 +173,7 @@ EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
   search, a costly misreading, the latency upper bound, small n, one simulated site, author-designed held-out cases).
 - Existing drafts in `paper/sections/` (results.tex, problem.tex, method.tex, setup.tex, CITATIONS_TODO.md) already
   follow this report; their numbers were audited against it on 2026-09-30. `\TBD{}` marks results not collected.
+- Completed after that audit, not yet in the drafts: the re-authoring study's final table (part 5 §A.9: all 8 cases
+  pass live), the preregistered `preplanned_transition_fraction` (part 2 §5.9), the community-standard metrics and the
+  glossary of every measure (part 6; post hoc, choose at writing time), the 13 textured 1x mission videos (F158;
+  `artifacts/figures/exp1b/video_1x/`). Nothing experimental is pending.

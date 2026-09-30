@@ -268,6 +268,15 @@ space-segment configuration following an on-board failure" / "re-establish nomin
 on-board failure") is quoted from memory of the standard and must be checked against ECSS-E-ST-70-11C before use; the
 E-level mapping is the one recorded in docs/baselines/authoring_spec.md.
 
+### 4.5 Deterministic reconstruction of the mission trace (research_content §6.4)
+
+Every input the proposed runtime sent to its reasoner can be rebuilt from the recorded event log alone, by the
+runtime's own reducer and context builder: all 1099 steps of the 25 exp1b Ours runs re-render character for character
+(`experiments/ablation/render_check.py`; the one expected difference is the link line's 0.1 s rounding), and all 67
+steps of the final Experiment II run with main's final code (`experiments/ablation/render_check_exp2.py`) [F148;
+F158]. Together with trace completeness (every one of Ours' 451 capability calls carries proposal, guard decision,
+execution and verification, F142), the mission record is reconstructable, not model-asserted.
+
 ## 5. Caveats
 
 - Post hoc: none of §2-§4 was preregistered; the preregistered measures remain the primary ones.

@@ -15,7 +15,7 @@ carries its source in brackets (a finding `F<n>` in `docs/research_findings.md`,
 | 1b | Baselines (PLEXIL, EUROPA→PLEXIL) and their lock, mission control (operator console), the Earth link, the external evaluator and every metric as implemented, the preregistration, the run farm |
 | 2 | Experiment I (autonomous mission generalization): design, protocol, history, every table, all 51 runs, qualitative evidence, latency, artifacts |
 | 3 | Experiment II (cost of extending the mission envelope with a new capability): design, engineering results, hidden cases, every run |
-| 4 | Harness ablations: design, stage 1 and 2 results, live stage 3 (status) |
+| 4 | Harness ablations: design, stage 1 and 2 results (offline; the live stage 3 was stopped by the user and is not used) |
 | 5 | Re-authoring study (the baselines' cost of each held-out case), validity and limitations, artifact and manuscript index |
 | 6 | Community-standard metrics computed post hoc (goal-condition success, path-length-weighted success, pass^k, safe success, FDIR detection/recovery coverage, MTBI, intervention response time, run-time assurance, code churn, planning-model size, ECSS levels) and **the glossary of every measure in this report** (kind, definition, standard name and source, code) |
 
@@ -66,7 +66,8 @@ external evaluator that reads simulator truth. Only the mission layer differs.
   executed before a grant; 0 removals without approval, 0 dropped items, 0 executions during a latched fault; 7
   unintended contacts for Ours (6 in one L3 run within 0.6 s, partner unresolved between the arm's base and the unit's
   cradle; 1 of 20 ms); baselines' failed place on the occupied stand pushed the container 5.9 cm once per L2-B run
-  (3 collateral episodes) [F142; part 2]. Trace completeness: Ours 451/451 calls, PLEXIL 81/81 [F142].
+  (3 collateral episodes) [F142; part 2]. Trace completeness: Ours 451/451 calls, PLEXIL 81/81 [F142]; every reasoner input re-renders
+  from the event log alone (1099/1099 steps of exp1b, 67/67 of the final Exp II run) [part 6 §4.5].
 - Ablations (offline counterfactual replay, 684 decisions): without independent verification the model carries on to
   place an item that is not in the jaws 48 of 51 times, where the full runtime checks first 47 of 51; at a missed
   press, the variant still judges right where the unit's own telemetry exposes it (20/21) and fails where nothing
@@ -102,6 +103,34 @@ recovered on board only by Ours (18/18 vs 0/6, ECSS F2-like vs F1-like); indepen
 0.19 / 0.20; guard held 0.7 % of Ours' proposed actions; Exp II relative code churn Ours 0.031 vs PLEXIL 0.177 and
 EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 
+## Closure against AGENT/research_content.md (checked 2026-09-30, 22:50 CST)
+
+Every experiment and measure the research plan calls for is either done or a recorded deviation; nothing experimental
+is open. What remains is writing. [F160]
+
+| research_content item | status | evidence / where |
+|---|---|---|
+| H1, Exp I (§5.5): covered vs held-out, three methods, two mission families | done | part 2; F142, F152, F153 |
+| §5.5 metric 1 autonomous success; 5 variation coverage (success vs level) | done | part 2 §5; `paper/figures/success_by_level` |
+| §5.5 metric 2 HIR (ALFUS); 4 interaction level | done (medians + bootstrap) | F152; part 1b §6.6; part 6 §1 (standard names) |
+| §5.5 metric 3 human planning time / pre-authored share | done: planning time = the re-authoring study per case; share = `preplanned_transition_fraction` | part 5 §A.9 (F156, F159); part 2 §5.9 (F155) |
+| §5.5 metric 6 violating proposals and executions | done: 3 guard holds, 0 executed; violation classes for all methods | part 2 §7.4; part 6 §2.1.6 |
+| H2, Exp II (§5.6): new shared capability, ETVS, artifact change, modelling errors, post-extension success | done; H2 holds in the kind of change, not in hours (Ours' active time was the longest) | part 3; F144-F147 |
+| H2 for a new mission situation (re-authoring the baselines per held-out case) | done: all 8 cases pass live; PLEXIL 5.5-13.6 min, EUROPA→PLEXIL 11.7-81.4 min per case; Ours 0 | part 5 §A.9; F156, F159 |
+| H3 (§1.7, §6.4): boundaries hold, verification-backed completion, reconstructable trace | done: 0 false completions, 0 executions despite a hold, trace 451/451, every reasoner input re-rendered from the log; Ours had 7 contact windows vs 0 (report it) | part 2 §7.4; part 6 §4.5 |
+| §5.7 harness ablations | done offline (stages 1-2); **live stage 3 stopped by the user, not used**: one-decision evidence only | part 4; F148-F150, F153, F154 |
+| §5.8 real LunarBot demonstration | **dropped by the user**: future work, no transfer claim | part 5 §B.2 |
+| §5.9 statistics: intervals, per-instance pairing, repeated FM runs, raw traces, failure taxonomy | done (descriptive, preregistered); failure categories by one engineer | part 1b §6.7-§7; part 2 |
+| §6.3 mission trace figure (held-out, with a baseline companion) | swimlanes for L4 and L2-B x 3 methods; 13 textured 1x videos (Ours) | `artifacts/figures/exp1b/swimlane/`, `video_1x/` (F158) |
+| §6.6 figures 1-3 and tables 1-3 (operating model, architecture, coverage design, related systems, capability stack, scenarios) | writing: content in parts 1a, 1b, 2 §2 | -- |
+| community-standard metrics (added by the user, post hoc) | done; choose at writing time | part 6 (F157) |
+
+Wording the evidence does not support (narrow it in the paper): contribution 3's "distributed-intelligence
+reconciliation" and "structured space-operational context" (one remote reasoner, no onboard/edge tier; restart
+reconstruction supported but never exercised live; context = the Earth link and unit telemetry, part 5 §B.2);
+"less engineering time" for a new capability (Exp II: similar time, different kind of change); any hardware or
+lunar-fidelity claim; any significance claim (n is small; descriptive by preregistration).
+
 ## Corrections made while compiling this report (use these, not the older statements)
 
 | Topic | Older statement | Corrected | Source |
@@ -120,7 +149,7 @@ EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 | `preplanned_transition_fraction` | not computed | computed per held-out instance x method (part 2 §5.9) | F155 |
 | L4 donors | PDU-3 in all runs | r3 used the ISRU plant's power ORU (energized, non-critical), granted | part 1a, part 2 |
 
-## Pending (as of 2026-09-30, 22:40 CST)
+## Pending (as of 2026-09-30, 22:50 CST)
 
 1. **Ablation live runs: not used (user decision 2026-09-30).** The ablations are reported from the offline
    stages only (part 4 sections before "Stage 3"; F150, F153).
@@ -144,6 +173,10 @@ EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
   search, a costly misreading, the latency upper bound, small n, one simulated site, author-designed held-out cases).
 - Existing drafts in `paper/sections/` (results.tex, problem.tex, method.tex, setup.tex, CITATIONS_TODO.md) already
   follow this report; their numbers were audited against it on 2026-09-30. `\TBD{}` marks results not collected.
+- Completed after that audit, not yet in the drafts: the re-authoring study's final table (part 5 §A.9: all 8 cases
+  pass live), the preregistered `preplanned_transition_fraction` (part 2 §5.9), the community-standard metrics and the
+  glossary of every measure (part 6; post hoc, choose at writing time), the 13 textured 1x mission videos (F158;
+  `artifacts/figures/exp1b/video_1x/`). Nothing experimental is pending.
 
 
 ---
@@ -2173,7 +2206,7 @@ development (`resume43d`, F138/C5).
 | D4 | heldout_design §8 grant row: GRANT when donor non-critical, removal restores a crew-critical load "and the request names unit, module and consequence" | console.py grants on donor non-critical and some crew-critical unit tripped; the request text is never read (F125) |
 | D5 | execution_plan §14.2 / operator_protocol §3: HIR = active operator-system interaction time (incl. operator response latency) / mission elapsed from acceptance | interaction.py: numerator = mission control's decision time only (uplink/downlink excluded); window = first call start to max(last call end, last request exchange) |
 | D6 | preregistration §1: `preplanned_transition_fraction` decided per instance | Computed per instance offline on 2026-09-30, after the campaign (F155, part 2 §5.9); rows.py's per-run field stays `None` |
-| D7 | execution_plan §14.2 `human_mission_specific_planning_time_s`; heldout_design §8 "human-planning ratio" per run | No row field; re-authoring cost measured offline instead (F151) |
+| D7 | execution_plan §14.2 `human_mission_specific_planning_time_s`; heldout_design §8 "human-planning ratio" per run | No row field; the human mission-specific planning time is measured per held-out case by the re-authoring study instead (engineering time without the simulation wait: PLEXIL 5.5-13.6 min, EUROPA→PLEXIL 11.7-81.4 min per case; Ours 0) [F156; F159; part 5 §A.9] |
 | D8 | docs/evaluator_violations.md class 1 and "What's missing": call start = `end - evidence.sim_s` | violations.py uses the evaluator's sim->wall record (F142) |
 | D9 | docs/evaluator_violations.md class 3 equipment: per-PDU `presses`/`faults`, `faulted_pdu`/`reported_pdu` | violations.py: every unit's `reset_presses`/`cover_presses`/`tripped`, `faulted_unit`/`reported_unit`, grant exclusion |
 | D10 | evaluation/README.md: "four physical constraint-violation classes" | five classes (class 5 authority) [violations.py] |
@@ -2202,7 +2235,7 @@ development (`resume43d`, F138/C5).
 7. No record found of a live human-operator demonstration run (`console.py --manual`).
 8. Bag contents and per-run bag sizes were not verified (bags not opened by rule); "~0.5 GB per sim hour" is from checklist R1 only.
 9. The node counts, line counts, run-duration ranges and per-run request timings marked "counted for this report" have no upstream source document; they come from the files named.
-10. Re-authoring validation runs (F151) and ablation stage 3 (F148-F150) are pending the model gateway; any SPACE_LINK_LOS_S live use is therefore unverified.
+10. ~~Re-authoring validation and ablation stage 3 pending~~: re-authoring validated live, all 8 cases (F156, F159); live ablation runs stopped by the user, not used (F154). `SPACE_LINK_LOS_S` was never used in a reported run.
 11. `run_manifest.yaml` does not record the PLEXIL/EUROPA revisions (`null`) and its repo revisions are those at backfill, so the exact commit each exp1b run executed is recoverable only from the batch timing and git history, not from the manifest.
 12. `docs/contact_closure_audit.md` (2026-09-19, in Chinese) is an audit of grasp approach and jaw closing (collision model of the gripper, local observed free space, closing only after contact conditions hold), not of the evaluator's contact counting; it contains no evaluator definition.
 
@@ -3467,13 +3500,12 @@ the evaluator's `reset_presses + cover_presses` summed over all units in `run_ma
 
 ## Gaps
 
-1. `preplanned_transition_fraction` ([PR §1], ALFUS "portion of the mission pre-generated by humans") was never
-   computed: rows carry `null`; all six held-out closed-capability certificates are `status: OPEN` with
-   `solution_sequence: null`.
+1. ~~`preplanned_transition_fraction` never computed~~: computed offline 2026-09-30 (§5.9, F155).
 2. plexil_l3_bess was re-categorized 2 -> 4 on 2026-09-30 (F153) from the logs; the "second reading of the trace"
    that [PR §2] asks for is by the same single engineer/agent pipeline, and exp1's categories were not re-audited the
    same way. The physical cause (the BESS panel press unreachable from the accepted dock pose, "0.78 m up, 1.03 m
-   out", 3 PLEXIL + 2 Ours occurrences in exp1b) is recorded, not fixed.
+   out", 3 PLEXIL + 2 Ours occurrences in exp1b) is recorded, not fixed; across all runs the first press at that panel
+   fails 4/4 when the arm arrives unstowed and 7/43 when stowed (F156, F159).
 3. EUROPA→PLEXIL is not covered by the trace-completeness checker (no EUROPA entry in [TC]).
 4. The trace checker's secondary flags (mission-state version field absent in every Ours run; 4 calls without a ledger
    change within 20 events after verification) are unexplained in the findings.
@@ -3482,7 +3514,7 @@ the evaluator's `reset_presses + cover_presses` summed over all units in `run_ma
 6. No exp1b per-level or per-instance time/step/call table is produced by `evaluation/tables.py`; the ones here come
    from ad hoc scripts ([S1]).
 7. The ours_l3_bess_r2 contact partner (own arm base vs bess_cradle) is unresolved from truth [FM].
-8. Swimlane figures and videos exist only for L4 and L2-B (6 runs); none for L2-A or L3, the sharpest level.
+8. Swimlane figures exist only for L4 and L2-B (6 runs); textured 1x videos now exist for all 13 instances (Ours, F158).
 9. exp1b run manifests do not record the launch commits (revision_caveat); versions must be taken from the jobs file
    header and `exp1b_fix` commit messages. No `freeze-2` manifest/image record exists for exp1b (no freeze ceremony by
    user decision); the freeze-1 image digest is the last recorded one.
@@ -3491,8 +3523,8 @@ the evaluator's `reset_presses + cover_presses` summed over all units in `run_ma
 11. HIR depends linearly on the fixed 300 s decision time (no sensitivity runs by design, [HD §8]); only the request
     counts and the re-authoring flag are independent of it.
 12. Single engineer assigned failure categories and designed the baselines (limitation to state, [PR §2], [HD §13]).
-13. Re-authoring cost per held-out case (the H2 bridge, F151) and the ablations are outside this part; the results
-    section still has \TBD for both.
+13. Re-authoring cost per held-out case (the H2 bridge; final in part 5 §A.9, F156, F159) and the ablations (part 4)
+    are outside this part; the manuscript's results section still has \TBD for both (writing, not data).
 
 
 ---
@@ -4484,11 +4516,15 @@ change, the order and why it favours the baselines.
   record session ids, not the model; F146 says only "fresh Claude session".
 - The G3 output of each original validation was not saved; the PASS is recorded in the worklog stop reasons, and my
   re-run on 2026-09-30 used the current `contracts.yaml` (after F147), not the one at each tag.
-- `post_ours_h1_r2_f147`'s `new_procedure` escalation (rows: `ground_reauthoring_required = True`) is not discussed in
-  any finding or in the paper; whether it should qualify the "6/6 autonomous" claim is an open decision.
+- ~~`post_ours_h1_r2_f147`'s `new_procedure` escalation, an open decision~~: by the preregistered rule it counts as
+  ground re-authoring required (overview, corrections table): report Ours after the extension as 6/6 successes, one of
+  which sent an unanswered (loss of signal) new-procedure request.
 - No finding assigns a failure category to the six pre-extension failures (they are controls); tables.md reads them as
   "wrong unit delivered" (baselines) and false completions (Ours).
-- The one unintended-contact window in `post_ours_h2_r2` (sim 537.30-537.32 s) was not diagnosed here.
+- ~~The unintended-contact window in `post_ours_h2_r2` not diagnosed~~ (2026-09-30, F160): the chassis (34 N, 20 ms at
+  sim 537.3 s, just after a drive ended at 536.6 s) against the rover's own carried spare ORU, held between the pick
+  (404 s) and the place (615 s), swinging ±3.5 cm fore-aft 0.78-0.85 m aft of the root; no structure within 1.28 m
+  (truth poses + site bounds). The carried-item-against-own-body pattern of Experiment I.
 - The paper's results subsection does not report mission time, reasoner turns, the scan-at-first-read, the pre-F147
   5/6, the F147 Ours-side change size, or the Ours requests to mission control.
 - F147's rerun has no `end` line in its queue log (the operational slip); its wall time comes from the backfilled
@@ -4507,9 +4543,8 @@ change, the order and why it favours the baselines.
 # Part 04 -- Harness ablations of the proposed runtime (research_content §5.7; findings F148-F150)
 
 Status on 2026-09-30: stage 1 (deterministic, no model) and stage 2 (offline counterfactual decisions, 684 chains,
-scored) are complete. Stage 3 (six live runs resumed from Experiment I snapshots) is running
-(`artifacts/runs/ablation/j1c`, `artifacts/runs/ablation/j3c`); its results are **not in this report** (section 10 is a
-placeholder to fill). Nothing here was read from the running j1c/j3c directories.
+scored) are complete. Stage 3 (six live runs resumed from Experiment I snapshots) was stopped by the user on
+2026-09-30 and is **not used** (section 10): the ablations are reported from stages 1 and 2 only.
 
 Source key. `[F148]`, `[F149]`, `[F150]`: `docs/research_findings.md`. `[stage1.md]`:
 `artifacts/eval/ablation/stage1.md`. `[stage2.md]`: `artifacts/eval/ablation/score/stage2.md`. `[rows]`:
@@ -5122,25 +5157,13 @@ No data were kept from the affected runs [F149].
 - j1, j1b, j3, j3b are **not scored**. A later key replacement was first rejected (HTTP 401 "Invalid proxy server
   token") and then worked; both models were tested before the relaunch as j1c/j3c [session].
 
-## 10. Stage 3 live results: PENDING
+## 10. Stage 3 live runs: stopped by the user, not used
 
-To be filled from `artifacts/runs/ablation/j1c/<name>/` and `artifacts/runs/ablation/j3c/<name>/` when the runs end
-(milestones in `check.log`: RESTORED / RESULT / CHECK_EXIT). Outcome measures per research_content §5.7: mission
-success (external evaluator), hard-boundary violations, unsupported authoritative-state advancement, stale/duplicate
-execution, false effect/success declarations, recovered failures; plus steps used of the 80-step budget and requests
-to mission control.
-
-| Cell | Source run (exp1b) | Resume | Variant | Physical situation at resume | What the outcome would show |
-|---|---|---|---|---|---|
-| j1_ours_b_oru_pdu3_full | ours_b_oru_pdu3 (covered B: spare ORU from depot_stand/slot_0 to pdu_3_shelf/shelf) | before step 14 (the carrying drive; J1 point = step 15) | full (control) | Restore drops the carried spare ORU (F60) | Control for the pair: whether the transit look (item_still_held) records the loss, the model searches / re-picks / asks, and the mission still succeeds without a false completion. Needed because the recorded run had no drop |
-| j1_ours_b_oru_pdu3_no_verification | same | before step 14 | no_verification | same | Whether the stage-2 UNSAFE decision (dock/place with nothing held; 48/51 offline) becomes a live consequence: a place on empty jaws, an `item_placed` recorded from the flag (unsupported state advancement), a delivery report (false completion), or whether the shared skill layer's own hold check (F130: skills' flags "as strict as the verifier") refuses the place and exposes the loss. A difference from the paired full run in evaluator success / false completion attributes the containment to verification |
-| j1_ours_l3_bess_r1_full | ours_l3_bess_r1 (held-out L3: failed BESS battery module out of bess_cradle/tray to bess_stand/slot_0) | before step 15 (J1 point = step 16) | full (control) | Restore drops the carried battery module | As above, on a held-out case |
-| j1_ours_l3_bess_r1_no_verification | same | before step 15 | no_verification | same | As above; also whether the variant goes on to install the spare while the failed module lies elsewhere, and how the unit's telemetry (reset/healthy) reads afterwards |
-| j3_ours_l2a_pdu1_r1_no_context | ours_l2a_pdu1_r1 (held-out L2-A: PDU-1 tripped OVERTEMP, radiator cover) | before step 16 (right after the verified press of pdu_1_radiator/cover_button at step 15, sim_t 184.98) | no_context | Nothing held; resume = a new reasoner session that starts from the mission + robot state only | The duplicate test stage 2 could not make: whether the session presses the cover button again (DUPLICATE), starts over, or continues to the reset. The cover press is the kind of effect "no telemetry shows before the next reset" (F150), so this is where lost context can matter. Control: the recorded exp1b run (full method; after a restart its rebuilt context differs only by the STEP line's `continued_by_another_reasoner`, inferred from context.py) |
-| j3_ours_l4_pdu1_r2_no_context | ours_l4_pdu1_r2 (held-out L4: PDU-1 ORU_SELFTEST_FAIL, donor module + authorization) | before step 13 (right after the verified press of pdu_1_panel/press at step 12, sim_t 162.18) | no_context | Nothing held; new session | Whether it repeats the reset press, re-diagnoses, and still reaches the donor transfer with an authorization request (the guard is on); duplicates, extra requests and budget use vs the recorded run. Note: resumed runs start a new sim clock, so the link timing differs from the recorded run [AGENT/handoff.md] |
-
-Fill-in slots per cell: evaluator verdict; delivered / unit restored; violations; false completions; duplicate effect
-calls; first step at which the loss/state was re-established; steps used; requests; notable decisions (with seq).
+The user stopped the live ablation runs on 2026-09-30 (j1c x4, j3c x2 were running or queued); **they are not used and
+not reported**: the ablations are reported from stage 1 and stage 2 only (sections above; F150, F153, F154). The run
+directories stay as records (`artifacts/runs/ablation/{j1,j1b,j3,j3b,j1c,j3c,j1d}`). Two infrastructure facts found on
+the way, for any future resume: with the current top-handle grasp a snapshot restore keeps a held item in the jaws; a
+restore puts back only physical state, so a unit's task state (shutter, reset count) restarts from the scenario [F154].
 
 ## 11. Limitations to state
 
@@ -5172,8 +5195,7 @@ All read-only, run from `/mnt/SharedData/Research/Space_Robot_Harness`:
 
 ## Gaps
 
-1. **Stage 3 live results are pending** (6 runs: j1c x4, j3c x2); section 10 must be filled, including the scoring of
-   live outcomes (no live-outcome rubric is written in the repo yet; AGENT/todo.md only says "score live outcomes").
+1. ~~Stage 3 live results pending~~: the live runs were stopped by the user and are not used (section 10).
 2. Q1-Q4 are recorded in the repo only as "all four as recommended" plus "user Q1"; their content here comes from the
    session record. Q3's "tightenings" are not itemised anywhere.
 3. Why these two instances were chosen for each live accident (b_oru_pdu3 + l3_bess_r1; l2a_pdu1_r1 + l4_pdu1_r2) is
@@ -5187,7 +5209,7 @@ All read-only, run from `/mnt/SharedData/Research/Space_Robot_Harness`:
    not mention it (section 7.6 item 6).
 8. True API call count and total prompt tokens of stage 2 are lower bounds (re-asked replies without a call are not
    stored).
-9. `feat/ablation` is not merged into main; merge (switches default off, render_check 1099/1099) is still a todo.
+9. ~~`feat/ablation` not merged~~: merged into main 2026-09-30; the merged main re-renders the final Experiment II run 67/67 identical (`experiments/ablation/render_check_exp2.py`).
 10. no_facts has no live cell; the stage-1 exposure (259 of 1099 steps) is shown offline only.
 
 
@@ -5424,7 +5446,7 @@ last progress (user rule: simulation time is not a cost of the method). `python3
 | §4 "Ours' model variance: every held-out instance three times; revisited once, after the first held-out variance is seen, and then fixed" | three runs per held-out instance (18) in both exp1 and exp1b; no revisit is recorded in F139-F152 | kept at 3 | docs/heldout_design.md §14; F140; F142 |
 | §2 failure taxonomy "by one engineer [...] checked by a second reading" | `failures.md` gives one primary category per failed run (exp1b: only the 12 baseline held-out runs, category 2) | as planned; "one engineer" to be stated in limitations | docs/preregistration.md §2; artifacts/eval/exp1b/failures.md |
 | heldout_design §14 run plan "§5.7 ablations 4 x one L3 instance x 2 (8)" | replaced by method B: injected accidents, offline counterfactual replay (684 chains, 828 model calls), live only where offline shows a difference (J1 x4, J3 x2) | user decision (F130 blocked; F144/F148 decided) | docs/heldout_design.md §14; F130; F148; F149; F150 |
-| heldout_design §8 "intervention response time split into delivery / notice / planning / execution [...] (stacked bars)" | segments are computed per request in `evaluation/interaction.py` (line 72) | no table or figure found in artifacts/eval/exp1b/ or paper/ | docs/heldout_design.md §8; evaluation/interaction.py |
+| heldout_design §8 "intervention response time split into delivery / notice / planning / execution [...] (stacked bars)" | segments are computed per request in `evaluation/interaction.py` (line 72) | **table computed 2026-09-30** (part 6 §2.1.5: delivery, ground decision, answer delivery and the robot's next action per method x request kind); no figure | docs/heldout_design.md §8; evaluation/interaction.py |
 
 ### B.2 Deviations of the build from AGENT/research_content.md (§3-§5)
 
@@ -5435,10 +5457,10 @@ last progress (user rule: simulation time is not a cost of the method). `python3
 | §4.8 space-operational context: communication, compute, energy, thermal, illumination, health | Ours' context holds the Direct-with-Earth link state (SPICE), mission control's decision time and the units' telemetry (load, criticality, energized, breaker, trip cause, resets, installed modules). The `space_context` query also returns body, gravity (+ range) and a **static** `light_intensity` constant from SRB's Domain. There are **no compute, energy, thermal or time-varying illumination facts**. method.tex's comment omits gravity and the static light constant | paper/sections/method.tex comment; openral_ext/capability_server/node.py `space_context()`; space_robotics_bench/srb/interfaces/interface/ros.py (space_context publisher); contracts.yaml `power_status`, `space_context` |
 | §3.4.4 / §4.7 thin guard with hard resource/health limits, FDIR prohibitions, staleness, authority | `invariants: []`; `fdir_prohibits: {estop: [all_effects]}`; one `target_authority` rule, `energized_equipment_removal` (pick; target role `equipment_bay`; when the unit is energized -> `approval_required`; 14 CFR 1214.403). Every capability contract has `authority_class: routine` (20 of 20). No event made a capability unavailable | configs/space_runtime.yaml; contracts.yaml [derived count]; paper/sections/method.tex comment |
 | §4.10 verifier evidence sources include "deterministic simulator truth" | the verifier **never reads simulator truth**, the skill's success flag, the agent's claims or the call order. Truth is the external evaluator's only | space_runtime/verification.py docstring; configs/space_runtime.yaml verification comment |
-| §5.7 ablations on natural runs of a subset of Exp I cases | injected accidents J1-J4 plus natural probes N/NF, offline stage 2, live stage 3 only where offline shows a difference. F130: natural runs "would most likely give null results" | F130; F148; paper/sections/setup.tex comment |
+| §5.7 ablations on natural runs of a subset of Exp I cases | injected accidents J1-J4 plus natural probes N/NF, offline stage 2, live stage 3 only where offline shows a difference; **the live stage 3 was stopped by the user and is not used: the ablations rest on one-decision offline evidence** (part 4 §10). F130: natural runs "would most likely give null results" | F130; F148; paper/sections/setup.tex comment |
 | §5.8 real LunarBot demonstration | **dropped by the user 2026-09-30**; "stated as future work in the paper" | AGENT/todo.md; commit 53ba795 |
 | §5.6 / execution_plan §13.4 engineers: counterbalanced multiple developers preferred, else one developer as a case study | Exp II: one fresh Claude session per method, order Ours -> PLEXIL -> EUROPA→PLEXIL, each from the previous merged state. The baselines reuse Ours' contract and PLEXIL's Lookups ("the conservative direction"); "a Claude engineer compresses coding time and the paper must say so"; a human-engineer round ("plan B") not now. Re-authoring: 8 parallel Claude sessions from exp1b | F144; F146; AGENT/handoff.md; paper/sections/setup.tex |
-| §5.5 metric 3 human planning / preplanning burden | `preplanned_transition_fraction` not computed (B.1) | evaluation/README.md |
+| §5.5 metric 3 human planning / preplanning burden | `preplanned_transition_fraction` computed offline after the campaign, per held-out instance x method (B.1; part 2 §5.9) | F155; `evaluation/preplanned_fraction.py` |
 | §3.4: five requirements | problem.tex states six (R1-R6): FDIR and trace are split out, semantic observation and distributed intelligence are dropped as requirements | paper/sections/problem.tex comment |
 | §1.4 / §2.5 coding-agent harness motivation | method.tex derives the design from space-operations disciplines and makes no coding-agent analogy (user framing: trustworthy AI) | paper/sections/method.tex comment; F148 |
 
@@ -5567,7 +5589,7 @@ Rule: category 8 (simulator crash, DDS, farm, model-provider outage) is fixed, r
 | `artifacts/eval/step9_10/`, `artifacts/eval/step10_qwen/rows/` | development runs (step 9 covered, step 10 held-out), R2 recompute | F132 (development, not findings) |
 | `artifacts/freeze/freeze-1.yaml`, `freeze-1.dry_run.yaml` | freeze record: three repos' HEADs, run-farm image, venv packages, model configs | F137; F139 |
 | `artifacts/reasoner_replay/{l2b_occupied, l4_transfer, model_regression, authority_wording, f124}` | offline model replays used to choose the reasoner | F119-F124; F131 |
-| `experiments/reauthoring/worklog/*.jsonl`, `artifacts/runs/reauth/<b>_<case>/v<k>/` | re-authoring timers/notes and validation runs (live, in progress) | F149; F151 |
+| `experiments/reauthoring/worklog/*.jsonl`, `artifacts/runs/reauth/<b>_<case>/v<k>/` | re-authoring timers/notes and validation runs (final: all 8 cases pass live) | F149; F151; F156; F159 |
 
 ### C.4 Existing manuscript drafts (`paper/sections/`)
 
@@ -5643,8 +5665,7 @@ park2021de440, riek2012woz, wilson1927probable [paper/sections/CITATIONS_TODO.md
 6. ~~`preplanned_transition_fraction` is not computed~~: computed 2026-09-30 (part 2 §5.9, F155); README updated.
 7. The preregistered per-request wall-clock send time (preregistration §3) is not tabulated. F152's latency analysis
    covers the concern in another form.
-8. The intervention response-time split (delivery / notice / planning / execution; heldout_design §8) is computed per
-   request in `evaluation/interaction.py` but has no table or figure.
+8. ~~The intervention response-time split has no table~~: part 6 §2.1.5 (2026-09-30).
 9. No record of an **ECONNRESET** incident was found anywhere in the repository sources read.
 10. The user's rejection of a dev/test split is recorded only in the session memory, not in a repository document.
 11. Manuscript: `sec:limitations` is referenced in results.tex but not defined. No main.tex, no .bib. Abstract,
@@ -5929,6 +5950,15 @@ the experiments show is the boundary of the pre-engineered model, not the level.
 space-segment configuration following an on-board failure" / "re-establish nominal mission operations following an
 on-board failure") is quoted from memory of the standard and must be checked against ECSS-E-ST-70-11C before use; the
 E-level mapping is the one recorded in docs/baselines/authoring_spec.md.
+
+### 4.5 Deterministic reconstruction of the mission trace (research_content §6.4)
+
+Every input the proposed runtime sent to its reasoner can be rebuilt from the recorded event log alone, by the
+runtime's own reducer and context builder: all 1099 steps of the 25 exp1b Ours runs re-render character for character
+(`experiments/ablation/render_check.py`; the one expected difference is the link line's 0.1 s rounding), and all 67
+steps of the final Experiment II run with main's final code (`experiments/ablation/render_check_exp2.py`) [F148;
+F158]. Together with trace completeness (every one of Ours' 451 capability calls carries proposal, guard decision,
+execution and verification, F142), the mission record is reconstructable, not model-asserted.
 
 ## 5. Caveats
 

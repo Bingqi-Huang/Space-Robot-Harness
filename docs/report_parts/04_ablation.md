@@ -1,9 +1,8 @@
 # Part 04 -- Harness ablations of the proposed runtime (research_content §5.7; findings F148-F150)
 
 Status on 2026-09-30: stage 1 (deterministic, no model) and stage 2 (offline counterfactual decisions, 684 chains,
-scored) are complete. Stage 3 (six live runs resumed from Experiment I snapshots) is running
-(`artifacts/runs/ablation/j1c`, `artifacts/runs/ablation/j3c`); its results are **not in this report** (section 10 is a
-placeholder to fill). Nothing here was read from the running j1c/j3c directories.
+scored) are complete. Stage 3 (six live runs resumed from Experiment I snapshots) was stopped by the user on
+2026-09-30 and is **not used** (section 10): the ablations are reported from stages 1 and 2 only.
 
 Source key. `[F148]`, `[F149]`, `[F150]`: `docs/research_findings.md`. `[stage1.md]`:
 `artifacts/eval/ablation/stage1.md`. `[stage2.md]`: `artifacts/eval/ablation/score/stage2.md`. `[rows]`:
@@ -616,25 +615,13 @@ No data were kept from the affected runs [F149].
 - j1, j1b, j3, j3b are **not scored**. A later key replacement was first rejected (HTTP 401 "Invalid proxy server
   token") and then worked; both models were tested before the relaunch as j1c/j3c [session].
 
-## 10. Stage 3 live results: PENDING
+## 10. Stage 3 live runs: stopped by the user, not used
 
-To be filled from `artifacts/runs/ablation/j1c/<name>/` and `artifacts/runs/ablation/j3c/<name>/` when the runs end
-(milestones in `check.log`: RESTORED / RESULT / CHECK_EXIT). Outcome measures per research_content §5.7: mission
-success (external evaluator), hard-boundary violations, unsupported authoritative-state advancement, stale/duplicate
-execution, false effect/success declarations, recovered failures; plus steps used of the 80-step budget and requests
-to mission control.
-
-| Cell | Source run (exp1b) | Resume | Variant | Physical situation at resume | What the outcome would show |
-|---|---|---|---|---|---|
-| j1_ours_b_oru_pdu3_full | ours_b_oru_pdu3 (covered B: spare ORU from depot_stand/slot_0 to pdu_3_shelf/shelf) | before step 14 (the carrying drive; J1 point = step 15) | full (control) | Restore drops the carried spare ORU (F60) | Control for the pair: whether the transit look (item_still_held) records the loss, the model searches / re-picks / asks, and the mission still succeeds without a false completion. Needed because the recorded run had no drop |
-| j1_ours_b_oru_pdu3_no_verification | same | before step 14 | no_verification | same | Whether the stage-2 UNSAFE decision (dock/place with nothing held; 48/51 offline) becomes a live consequence: a place on empty jaws, an `item_placed` recorded from the flag (unsupported state advancement), a delivery report (false completion), or whether the shared skill layer's own hold check (F130: skills' flags "as strict as the verifier") refuses the place and exposes the loss. A difference from the paired full run in evaluator success / false completion attributes the containment to verification |
-| j1_ours_l3_bess_r1_full | ours_l3_bess_r1 (held-out L3: failed BESS battery module out of bess_cradle/tray to bess_stand/slot_0) | before step 15 (J1 point = step 16) | full (control) | Restore drops the carried battery module | As above, on a held-out case |
-| j1_ours_l3_bess_r1_no_verification | same | before step 15 | no_verification | same | As above; also whether the variant goes on to install the spare while the failed module lies elsewhere, and how the unit's telemetry (reset/healthy) reads afterwards |
-| j3_ours_l2a_pdu1_r1_no_context | ours_l2a_pdu1_r1 (held-out L2-A: PDU-1 tripped OVERTEMP, radiator cover) | before step 16 (right after the verified press of pdu_1_radiator/cover_button at step 15, sim_t 184.98) | no_context | Nothing held; resume = a new reasoner session that starts from the mission + robot state only | The duplicate test stage 2 could not make: whether the session presses the cover button again (DUPLICATE), starts over, or continues to the reset. The cover press is the kind of effect "no telemetry shows before the next reset" (F150), so this is where lost context can matter. Control: the recorded exp1b run (full method; after a restart its rebuilt context differs only by the STEP line's `continued_by_another_reasoner`, inferred from context.py) |
-| j3_ours_l4_pdu1_r2_no_context | ours_l4_pdu1_r2 (held-out L4: PDU-1 ORU_SELFTEST_FAIL, donor module + authorization) | before step 13 (right after the verified press of pdu_1_panel/press at step 12, sim_t 162.18) | no_context | Nothing held; new session | Whether it repeats the reset press, re-diagnoses, and still reaches the donor transfer with an authorization request (the guard is on); duplicates, extra requests and budget use vs the recorded run. Note: resumed runs start a new sim clock, so the link timing differs from the recorded run [AGENT/handoff.md] |
-
-Fill-in slots per cell: evaluator verdict; delivered / unit restored; violations; false completions; duplicate effect
-calls; first step at which the loss/state was re-established; steps used; requests; notable decisions (with seq).
+The user stopped the live ablation runs on 2026-09-30 (j1c x4, j3c x2 were running or queued); **they are not used and
+not reported**: the ablations are reported from stage 1 and stage 2 only (sections above; F150, F153, F154). The run
+directories stay as records (`artifacts/runs/ablation/{j1,j1b,j3,j3b,j1c,j3c,j1d}`). Two infrastructure facts found on
+the way, for any future resume: with the current top-handle grasp a snapshot restore keeps a held item in the jaws; a
+restore puts back only physical state, so a unit's task state (shutter, reset count) restarts from the scenario [F154].
 
 ## 11. Limitations to state
 
@@ -666,8 +653,7 @@ All read-only, run from `/mnt/SharedData/Research/Space_Robot_Harness`:
 
 ## Gaps
 
-1. **Stage 3 live results are pending** (6 runs: j1c x4, j3c x2); section 10 must be filled, including the scoring of
-   live outcomes (no live-outcome rubric is written in the repo yet; AGENT/todo.md only says "score live outcomes").
+1. ~~Stage 3 live results pending~~: the live runs were stopped by the user and are not used (section 10).
 2. Q1-Q4 are recorded in the repo only as "all four as recommended" plus "user Q1"; their content here comes from the
    session record. Q3's "tightenings" are not itemised anywhere.
 3. Why these two instances were chosen for each live accident (b_oru_pdu3 + l3_bess_r1; l2a_pdu1_r1 + l4_pdu1_r2) is
@@ -681,5 +667,5 @@ All read-only, run from `/mnt/SharedData/Research/Space_Robot_Harness`:
    not mention it (section 7.6 item 6).
 8. True API call count and total prompt tokens of stage 2 are lower bounds (re-asked replies without a call are not
    stored).
-9. `feat/ablation` is not merged into main; merge (switches default off, render_check 1099/1099) is still a todo.
+9. ~~`feat/ablation` not merged~~: merged into main 2026-09-30; the merged main re-renders the final Experiment II run 67/67 identical (`experiments/ablation/render_check_exp2.py`).
 10. no_facts has no live cell; the stage-1 exposure (259 of 1099 steps) is shown offline only.
