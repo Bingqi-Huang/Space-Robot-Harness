@@ -17,16 +17,17 @@ drop is a step at L2, the first level at which the frozen model lacks a relation
 runtime stays flat through L4.
 % Wilson intervals: evaluation.tables.wilson_ci(18, 18) = (0.82, 1.00); wilson_ci(0, 6) = (0, 0.39).
 
-The baselines did not fail by acting wrongly. Eleven of the twelve held-out baseline runs detected the anomaly through
-the goal checks their covered briefs ask for, repeated the failing call up to the retry budget, asked mission control
-for a new procedure and held in a safe state. In the twelfth, PLEXIL at the L3 battery unit, the shared press skill
-failed three times from the docked pose before the goal check ran, and PLEXIL escalated in the same way. The outcome
-does not depend on that failure, because EUROPA\,$\rightarrow$\,PLEXIL pressed the same button in the same instance
-and the reset did not hold. The boundary they met is the coverage of their frozen models, which is the
+The baselines did not fail by acting wrongly. Every held-out baseline run detected the anomaly, asked mission control
+for a new procedure and held in a safe state. Nine detected it through the goal checks their covered briefs ask for.
+Both L2-B runs detected it by a failing place on the occupied stand, the symptom that case is built to show. In
+PLEXIL's L3 battery run the shared press skill failed three times from the docked pose before the goal check ran, a
+physical-layer failure. The outcome does not depend on that failure, because EUROPA\,$\rightarrow$\,PLEXIL pressed
+the same button in the same instance and the reset did not hold. The boundary they met is the coverage of their frozen models, which is the
 boundary H1 predicts. A larger retry budget would not have moved it: offline reruns of both baselines on every
 held-out state with one, two, three and five attempts per call always ended in the same escalation, and only the
 number of repeats before it changed (Section~\ref{sec:setup-baselines}).
-% F136, F143: 48 offline runs, outcome "detected -> escalated" at every N.
+% F136, F143: 48 offline runs, outcome "detected -> escalated" at every N. Detection per run: docs/report_parts/
+% 02_experiment1.md section 7.1 (plexil_l2b and europa_l2b by a failing place, tier 1; the other nine by goal checks).
 % F153: exp1b plexil_l3_bess is category 4 (press failed at approach, then locate x2, "0.78 m up, 1.03 m out"),
 % check.log lines 10-12; europa_l3_bess pressed three times with success, the reset did not hold (events.jsonl).
 
@@ -80,13 +81,17 @@ it.
 
 Autonomy costs mission time. On covered instances the proposed runtime took a median 538\,s against 264\,s for PLEXIL
 and 265\,s for EUROPA\,$\rightarrow$\,PLEXIL. Every capability call waits for a reasoning step, and the model also
-chose extra work, such as inspecting the site again after the objective was verified. Mission time understates the
+chose extra work, such as inspecting the site again after the objective was verified. One held-out L2-A run misread
+the drawn shutter as open, swapped a module the unit did not need, used up the depot spare and 79 of its 80 steps, and
+only then found the shutter from a closer view. Mission time understates the
 cost of that reasoning, and so overstates the human intervention ratio of the proposed runtime, which divides by
 mission time. A reasoning call took a median 19.9\,s of wall clock (interquartile range from 11.3 to 38.7\,s), and the
 simulation advanced 0.237\,s of mission time per wall-clock second during the calls. Counted in full, the latency
 raises the covered median mission time of the proposed runtime from 538\,s to 825\,s, an upper bound on the cost of
 reasoning for a model served at this latency.
 % medians of mission_elapsed_s over artifacts/eval/exp1b/rows, covered: 538.0, 263.7, 265.2.
+% ours_l2a_pdu1_r2: module swap before the shutter, depot spare ORU-0417 consumed, 79 of 80 steps, 1884.9 s
+% (operator_report; rows; docs/report_parts/02_experiment1.md section 7.2).
 % artifacts/eval/exp1b/reasoning_latency.md (experiments/analysis/reasoning_latency.py), all 25 Ours runs: per-call
 % wall latency 19.9 [IQR 11.3, 38.7] s; 0.237 mission s per wall s in calls (pooled); covered medians: recorded 538,
 % latency in full 825 (= mission_elapsed_s - mission time in calls + wall time in calls, per run). Upper bound: the
@@ -114,9 +119,12 @@ evaluator did not confirm, in 51 scored runs. The guard of the proposed runtime 
 removals from an energized unit in L4, and none executed before mission control granted it. The evaluator, which reads
 simulator truth for every method alike, counted no removal without approval, no dropped item and no execution during a
 latched fault (Table~\ref{tab:violations}). It counted seven unintended contacts for the proposed runtime. Six fell in
-one L3 run, in 0.6\,s of docking beside the unit's cradle while the rover carried the removed battery module. The
-baselines' failed place attempts on the occupied stand pushed the occupying container by 5.9\,cm three times.
+one L3 run, in 0.6\,s of docking at the stand while the rover carried the removed battery module. Simulator truth
+leaves the other body unresolved between the arm's own base and the unit's cradle. In each baseline's L2-B run the
+failed place pushed the occupying container by 5.9\,cm, which the evaluator counted as three collateral episodes.
 % F142: 6 windows in ours_l3_bess_r2 (0.6 s), 1 in covered B battery delivery (20 ms); collateral PLEXIL 1, EUROPA 2.
+% Partner: battery origin 0.31 m from the arm base link, 0.28 m from bess_cradle's box; 0.059 m push once per L2-B run
+% (docs/report_parts/02_experiment1.md sections 7.4 and 9).
 
 Every capability call of the proposed runtime carries its proposal, guard outcome, execution result and verification
 in the trace (451 of 451). Every PLEXIL call at the capability boundary joins to the plan node that issued it (81 of
@@ -124,8 +132,11 @@ in the trace (451 of 451). Every PLEXIL call at the capability boundary joins to
 Section~\ref{sec:requirements} derives from lunar operations.
 
 These counts show that the boundaries held in the runs that happened. They do not show which component held them,
-because the components rarely acted in these runs. The guard fired only in L4, and the verifier never had to catch a
-physical failure, since none occurred. Section~\ref{sec:results-ablation} removes each component in turn against
+because the components rarely acted in these runs. The guard fired only in L4. No skill reported a press the unit did not register, so the
+verifier had no silent failure to catch. Its one wrong reading was the reverse, a carried item it judged dropped
+while the item was still in the jaws, and the model's own look resolved it.
+% 505 effect_verified in 25 Ours runs: 476 true, 12 false, 17 null; the false item_still_held in ours_l2b_habitat_r3,
+% resolved by a held_item query (docs/report_parts/02_experiment1.md section 7.3). Section~\ref{sec:results-ablation} removes each component in turn against
 injected faults.
 
 \begin{table}[t]
@@ -139,10 +150,10 @@ injected faults.
 \subsection{Cost of extending the mission envelope}
 \label{sec:results-exp2}
 
-Adding a capability after the freeze took the three methods similar time and very different kinds of change
+Adding a capability after the freeze took the three methods comparable time and very different kinds of change
 (Table~\ref{tab:extension}). Each extension engineer, a fresh Claude session given only the extension specification
-and the validation suite, passed the suite on its first validation run. Active time was 54.5, 46.3 and 53.4 minutes.
-Waiting on the simulation dominated all three, and the work outside that wait took 4.7 minutes for the proposed
+and the validation suite, passed the suite on its first validation run. Active time was 54.5, 46.3 and 53.4 minutes, the
+longest for the proposed runtime, whose validation run was the slowest. Waiting on the simulation dominated all three, and the work outside that wait took 4.7 minutes for the proposed
 runtime, 10.8 for PLEXIL and 20.8 for EUROPA\,$\rightarrow$\,PLEXIL.
 
 The kind of change is the sharper result. The proposed runtime registered the capability contract and made a scan
@@ -157,19 +168,27 @@ On the hidden cases each method went from failing both before its extension to f
 the proposed runtime and 2 of 2 for each baseline. Before the extension, all three methods delivered the unit that the
 inventory record pointed to, which was the wrong unit. The baselines ended their plans normally. The proposed runtime
 reported both deliveries as complete, two false completions, because its verifier could confirm a placement but not an
-identity. Once the scanner made identity observable, the same verifier turned each reading into a fact, and no false
-completion recurred.
+identity. Once the scanner made identity observable, the verifier, extended by the engineer with the scan reading,
+turned each reading into a fact, and no false completion recurred. One of the six runs, a rerun after the fixes of
+Section~\ref{sec:setup-exp2}, asked mission control for a new procedure during its search. Earth had set, no answer
+arrived, and the runtime went on to find and deliver the unit. By the preregistered rule that run counts as needing
+ground re-authoring.
+% post_ours_h1_r2_f147: new_procedure request, HOLD answer held back by loss of signal; evaluator success
+% (docs/report_parts/03_experiment2.md sections 4.4 and 5.5).
 
-The proposed runtime searched less systematically than PLEXIL's fixed sweep. It needed from 12 to 17 scans to find the
-mislocated unit, where PLEXIL needed 6 and EUROPA\,$\rightarrow$\,PLEXIL 3. One engineer per method, and a coding
+The proposed runtime searched less systematically than PLEXIL's fixed sweep. It made from 12 to 17 scan calls per run
+and first read the named unit at its 8th to 15th, where PLEXIL found it at its 6th scan and EUROPA\,$\rightarrow$\,PLEXIL
+at its 3rd. One engineer per method, and a coding
 assistant in that role, limit what these times can claim (Section~\ref{sec:limitations}).
 % exp2 tables.md section 3: post_ours_h1 scans 17, 12 (after F147), 15; post_plexil_h1 6; post_europa_h1_f145 3.
+% First read of the named unit: scan 15 (r1), 8 (r2_f147), 14 (r3) (docs/report_parts/03_experiment2.md section 4.4).
 
 \begin{table*}[t]
   \centering
   \caption{Experiment II: engineering effort to reach the validation suite, and success on the hidden cases before and
-  after the extension. Mission artifacts: prompts, contracts and runtime (Ours), plans (PLEXIL), domain and host
-  (EUROPA\,$\rightarrow$\,PLEXIL). Supporting files: adapter, offline tests and documentation.}
+  after the extension. Mission artifacts are the files of each method's own artifact set, namely prompts, contracts and
+  runtime (Ours), plans (PLEXIL), and domain, host and offline test boundary (EUROPA\,$\rightarrow$\,PLEXIL).
+  Supporting files: adapter, offline tests and documentation.}
   \label{tab:extension}
   \small
   \input{tables/exp2_engineering.tex}

@@ -211,7 +211,7 @@ instance and three times per held-out instance, to expose the variance of its re
 The three methods of an instance ran on the same hardware, one simulation per GPU on a six-GPU machine. Every run
 recorded its full raw data, so a later change of a metric's definition is recomputed, never re-simulated. Defects of the
 shared layer found during the campaign were fixed for every method, and Experiment I was then repeated in full. Two runs
-of the repeat, invalidated by a further shared defect, were rerun. The results report the repeat.
+of the repeat, each invalidated by a further shared defect of its own, were rerun. The results report the repeat.
 % Runs: docs/heldout_design.md §14 (26 baseline + 7 + 18 Ours = 51); F142 (51 scored runs, 6 GPUs; two runs
 % invalidated by shared-layer defects, fixed and rerun). Raw data: docs/preregistration.md preamble. First full campaign:
 % F140 (exp1), shared-layer fixes F141, repeat F142 (exp1b). Open question: whether to report exp1 in an appendix.
