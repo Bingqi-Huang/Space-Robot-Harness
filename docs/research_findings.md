@@ -6554,3 +6554,32 @@ glossary, results, reading, caveats, references: `docs/report_parts/06_standard_
   F2-like. F1/F2 wording from memory: check against the standard before citing.
 - Not computed (stated why): MTTR/availability, fan-out, NASA-TLX, ASIMOV, METR, COCOMO/cyclomatic, onset-referenced
   time to detect. The survey's critique of static replay ablations is not taken up (user).
+
+## F158 -- Experiment I mission videos at 1x: 13 textured third-person videos; the texture mount lost a second time; the ISRU tank skid hid the camera (2026-09-30)
+
+User-approved: one Ours exp1b run per instance (13), all panels, 1x simulated time (10 frames per simulated second),
+label "THIRD-PERSON VIEW". `artifacts/figures/exp1b/video_1x/<run>.mp4` (1600x900; 279-1600 s), frames in `replay/<run>/`,
+log `render.log`. Final 2026-09-30 18:46.
+- **Rendering in parallel** (user: use the idle GPUs): a replay uses ~1.6 cores and a quarter of a GPU and no ROS, so
+  several share one GPU. `experiments/video/plan_chunks.py` splits each run's missing frames into chunks of <= 1000
+  frames; `experiments/video/render_1x.sh <gpu> <slot>` workers render them (`replay_render.py --only a,b`: the camera
+  path is still the whole run's, so chunks join without a jump; at a seam only the renderer's noise differs for one
+  frame) and compose a run when its frames are complete. 30 workers on 5 GPUs, 0.65 s/frame each as with one per GPU.
+- **Texture incident (second time; first 2026-09-27).** LunarBot's USD names its body textures by an absolute path on
+  the development machine; on pro6000 they are mounted from `/mnt/SharedData/Research/lunarbot_textures/textures`. The
+  mount had lived only in an overwritten handoff, so the 14:40-16:29 render showed a plain white/red rover (Kit logged
+  "References an asset that can not be found"; the check looked at duration, panels and black frames only). The user
+  caught it. Fix: `render_1x.sh` sets `RUNFARM_ARGS` (new optional docker arguments of `docker/runfarm/runfarm.sh`) with
+  the mount; a 20-frame test showed the decals back; all 13 re-rendered; every chunk log checked for the error;
+  acceptance now includes a side-by-side rover check (memory).
+- **Camera occlusion.** In four videos the follow camera stood behind or inside the ISRU tank skid (5.7 m) or the radome
+  and the main view went black for 2-22 s. `site_structures.json` (lidar-slice boxes) caps those at 4 m; true bounds from
+  the scene USD (`experiments/video/asset_bounds.py`, Isaac's pxr on the CPU -> `lunar_base_asset_bounds.json`). Camera
+  (`replay_render.py camera_path`): where either occluder cuts the sight line, the least-occluded of eight positions
+  over the stretch, blended in with the path's smoothing; a swing that would enter an occluder rises over it. Offline
+  over all 13 paths: 5 videos change (5338 frames: ISRU reset, consumables delivery, BESS shutter, destination
+  occupied, ISRU filter), eye never inside an occluder, residual partial occlusion <= 5.5 s; the other 8 unchanged
+  frame for frame. Only the changed frames were re-rendered.
+- **Checks (all 13)**: video seconds = simulated seconds; 0 chunk logs with a missing texture; 0 dark frames at one
+  sample per second; a mid-video contact sheet looked at (decals, rover in view, all panels); the formerly black times
+  of the ISRU reset run show the rover beside the tanks.
