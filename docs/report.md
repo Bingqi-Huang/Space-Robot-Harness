@@ -87,11 +87,12 @@ change, not in hours.
   new-procedure request that loss of signal left unanswered before it succeeded [F147; part 3].
 - Re-authoring (what each baseline's held-out failure costs once mission control has the diagnosis; fresh Claude
   engineers, time without the simulation wait): PLEXIL 5.5 / 11.0 / 8.8 / 13.6 min (L2-A / L2-B / L3 / L4), EUROPA→PLEXIL
-  11.7 / 81.4 / 63.3 / 59.7 min, with 0 vs 13 modelling/logic errors fixed on the way (EUROPA's mostly steering the stock
-  solver); 7 of 8 cases passed live; EUROPA→PLEXIL L3's BESS instance ran its full module swap but its reset was
-  blocked by a shared press-skill limitation (the arm arriving unstowed at that panel), which the proposed runtime met
-  twice in exp1 and recovered from on its own [F156; part 5 §A.9]. The cost the baselines pay is the ground loop
-  (diagnosis, idle robot, a communication window), not engineer hours; the proposed runtime needed none.
+  11.7 / 81.4 / 71.5 / 59.7 min, with 2 vs 14 modelling/logic errors fixed on the way (PLEXIL's in adapter code,
+  EUROPA's mostly steering the stock solver); all 8 cases pass live. EUROPA→PLEXIL L3 needed a second iteration: its
+  model pressed the reset with the arm unstowed, which a shared press-skill limitation at the BESS panel defeats (the
+  proposed runtime met it twice in exp1 and recovered on its own) [F156; F159; part 5 §A.9]. The cost the baselines pay
+  is the ground loop (diagnosis, idle robot, a communication window), not engineer hours; the proposed runtime needed
+  none.
 
 **Community-standard metrics (post hoc, part 6; the preregistered measures above are unchanged).** Held-out
 goal-condition success Ours 1.00 vs 0.17 / 0.17; pass^3 = 1.00 for Ours (Exp I held-out, Exp II after the extension);
@@ -119,12 +120,11 @@ EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 | `preplanned_transition_fraction` | not computed | computed per held-out instance x method (part 2 §5.9) | F155 |
 | L4 donors | PDU-3 in all runs | r3 used the ISRU plant's power ORU (energized, non-critical), granted | part 1a, part 2 |
 
-## Pending (as of 2026-09-30, 19:10 CST)
+## Pending (as of 2026-09-30, 22:40 CST)
 
 1. **Ablation live runs: not used (user decision 2026-09-30).** The ablations are reported from the offline
    stages only (part 4 sections before "Stage 3"; F150, F153).
-2. ~~Re-authoring live validation~~: closed 2026-09-30 (F156, part 5 §A.9): 7 of 8 PASS; EUROPA→PLEXIL L3 BESS blocked
-   by the shared press skill -- the user decides whether to fix the skill, let an engineer add a stow, or report as is.
+2. ~~Re-authoring live validation~~: closed 2026-09-30, all 8 cases pass live (F156, F159, part 5 §A.9).
 3. ~~Preregistered `preplanned_transition_fraction`~~: computed offline 2026-09-30 (user decision), part 2 §5.9, F155.
 4. Real LunarBot hardware demonstration (research_content §5.8): **dropped by the user on 2026-09-30**; future work.
 
@@ -5374,11 +5374,11 @@ first incidents, "the remaining engineers were told to keep searches inside thei
 setup.tex leaves as an open question whether the manuscript states this exposure [paper/sections/setup.tex comment in
 §setup-reauthoring].
 
-### A.9 Live validation and engineering cost (final, 2026-09-30) [F156; F157]
+### A.9 Live validation and engineering cost (final, 2026-09-30) [F156; F157; F159]
 
 Engineering time = the worklog's timer intervals minus their overlap with the case's own live validation runs
-(`queue.log` start -> end); a stalled run counts up to 15 min after its last progress (user rule: simulation time is not
-a cost of the method). `python3 experiments/reauthoring/cost_table.py`; churn and model size
+(`queue.log` start -> end; runs of one case that overlap are counted once); a stalled run counts up to 15 min after its
+last progress (user rule: simulation time is not a cost of the method). `python3 experiments/reauthoring/cost_table.py`; churn and model size
 `python3 evaluation/engineering_metrics.py` (source artifacts; generated .plx and offline tests excluded).
 
 | baseline | case | live validation | engineering time (min) | active / of it waiting on own runs (min) | modelling / logic errors | churn (relative) | planning-model size before -> after |
@@ -5389,10 +5389,10 @@ a cost of the method). `python3 experiments/reauthoring/cost_table.py`; churn an
 | PLEXIL | L4 | PASS, first run | 13.6 | 83.9 / 70.4 | 0 (2 test-script fixes) | 208 (0.271) | library nodes 4->5, nodes 75->117, if 7->10, command calls 40->55, lookups 17->24 |
 | EUROPA→PLEXIL | L2-A | PASS, first run (PDU-1, BESS) | 11.7 | 64.4 / 52.7 | 1 (domain) | 64 (0.064) | classes 11->12, predicates 10->11, actions 8->9, rules 8->9 |
 | EUROPA→PLEXIL | L2-B | PASS, first run | 81.4 | 150.4 / 69.0 | 3 (1 domain, 2 solver control) | 71 (0.071) | classes 11->14, timelines 5->6, predicates 10->11, rules 8->9 |
-| EUROPA→PLEXIL | L3 | ISRU PASS (v1). BESS **not passed**: v1 lost to an executive SIGSEGV at start (infrastructure, repeated); two reruns ran the full swap, then the reset press was blocked by the shared press skill (below) | 63.3 | 289.4 / 226.1 | 4 (2 domain, 2 solver control) + a data gap (item table) | 180 (0.181) | classes 11->14, timelines 5->7, predicates 10->14, actions 8->9, rules 8->10 |
+| EUROPA→PLEXIL | L3 | ISRU PASS (v1). BESS: v1 lost to an executive SIGSEGV at start (infrastructure); two reruns ran the full swap, then the reset press was blocked by the shared press skill (below); a second engineer made the press wait for a stowed arm; **v2 PASS on both instances** (run in parallel) [F159] | 71.5 | 388.8 / 317.3 | 5 (3 domain, 2 solver control) + a data gap (item table) | 193 (0.194) | classes 11->14, timelines 5->7, predicates 10->14, actions 8->9, rules 8->10 |
 | EUROPA→PLEXIL | L4 | PASS, first run | 59.7 | 136.4 / 76.8 | 5 (1 domain, 3 solver control, 1 host code) | 295 (0.296) | classes 11->15, timelines 5->7, predicates 10->16, actions 8->13, rules 8->13 |
 
-- Totals: PLEXIL 38.9 min over the four cases, EUROPA→PLEXIL 216.1 min; the proposed runtime needed no re-authoring
+- **All 8 cases pass live.** Totals: PLEXIL 38.9 min over the four cases, EUROPA→PLEXIL 224.3 min; the proposed runtime needed no re-authoring
   (0 of 18 held-out runs) [F142]. EUROPA→PLEXIL's errors are mostly about steering the stock solver (part 6 §4.2).
 - **The shared press skill at the BESS panel.** Across every recorded run, the first press after a dock at the BESS
   panel failed 4 of 4 times when the arm arrived in its ready posture (after a pick or place) and 7 of 43 when stowed
@@ -5400,12 +5400,13 @@ a cost of the method). `python3 experiments/reauthoring/cost_table.py`; churn an
   installing the module without stowing (its engineer removed press's Stowed condition, which trapped the search); the
   frozen EUROPA and the re-authored PLEXIL plans stow first. The proposed runtime met the limitation twice in exp1 and
   recovered on its own (pressed again; stowed and re-docked); the baselines' identical retries cannot. Cause inside the
-  skill not isolated (the viewing-pose IK is seeded from READY; the collision scene is the likely difference). Left for
-  the user: fix the shared skill after the campaigns, or let an engineer add a stow, or report as is (current record).
+  skill not isolated (the viewing-pose IK is seeded from READY; the collision scene is the likely difference). The user chose a
+  second engineer iteration: press's Stowed condition restored with a planner rule deciding it last (8.4 min of
+  engineering; the case total 71.5 min), v2 PASS on both instances [F159].
 - Deviations kept as costs: EUROPA L2-B's host turns the record's "awaiting stowage" into a goal (the solver could not
   find the combined plan in one solve); EUROPA L4's host drops the granted donor's restore goal; PLEXIL L4 hard-codes
   "the only spare is recorded failed" from the brief.
-- Validation runs are live runs on the run farm; their waiting time (226 min for EUROPA L3 alone, with three BESS
+- Validation runs are live runs on the run farm; their waiting time (317 min for EUROPA L3 alone, with four BESS
   attempts) carries no information about the method and is excluded from the engineering time.
 
 ---
@@ -5629,8 +5630,7 @@ park2021de440, riek2012woz, wilson1927probable [paper/sections/CITATIONS_TODO.md
 
 ## Gaps
 
-1. ~~Live validation incomplete~~: closed (A.9, F156). EUROPA→PLEXIL L3's BESS instance did not pass (shared press
-   skill); the decision on it is the user's.
+1. ~~Live validation incomplete~~: closed (A.9, F156, F159): all 8 cases pass live.
 2. The engineers' returned summaries are not in the repository; they are in the coordinating session's transcripts
    (classification of their errors: part 6 §4.2).
 3. **Disagreement**: F149/F151 attribute a held-out grep exposure (`chains/l2a_*.json`) to PLEXIL L2-A, but
@@ -5851,7 +5851,7 @@ GC here: the named unit on the destination (the evaluator scores the serial) + p
 | PLEXIL L4 | 3 | +207/-1 | 208 | 768 | 0.271 | 1 files +69/-4 | library nodes 4→5, nodes 75→117, if branches 7→10, command calls 40→55, lookups 17→24 |
 | EUROPA→PLEXIL L2A | 2 | +55/-9 | 64 | 996 | 0.064 | 1 files +15/-7 | classes 11→12, predicates 10→11, actions 8→9, compatibility rules 8→9 |
 | EUROPA→PLEXIL L2B | 5 | +58/-13 | 71 | 996 | 0.071 | 1 files +9/-3 | classes 11→14, timelines 5→6, predicates 10→11, compatibility rules 8→9 |
-| EUROPA→PLEXIL L3 | 5 | +155/-25 | 180 | 996 | 0.181 | 1 files +23/-9 | classes 11→14, timelines 5→7, predicates 10→14, actions 8→9, compatibility rules 8→10 |
+| EUROPA→PLEXIL L3 | 5 | +166/-27 | 193 | 996 | 0.194 | 1 files +23/-9 | classes 11→14, timelines 5→7, predicates 10→14, actions 8→9, compatibility rules 8→10 |
 | EUROPA→PLEXIL L4 | 2 | +252/-43 | 295 | 996 | 0.296 | 1 files +48/-15 | classes 11→15, timelines 5→7, predicates 10→16, actions 8→13, compatibility rules 8→13 |
 
 Planning-model size at exp1b (the frozen baselines): {'plexil': {'library nodes': 4, 'nodes': 75, 'if branches': 7, 'command calls': 40, 'lookups': 17}, 'europa_plexil': {'classes': 11, 'timelines': 5, 'predicates': 10, 'actions': 8, 'compatibility rules': 8}}
@@ -5896,13 +5896,14 @@ Planning-model size at exp1b (the frozen baselines): {'plexil': {'library nodes'
 | baseline | L2-A | L2-B | L3 | L4 | total | domain logic | solver search control | host / adapter code |
 |---|---|---|---|---|---|---|---|---|
 | PLEXIL | 0 | 2 | 0 | 0 | 2 | 0 | 0 | 2 (a manifest Lookup read a dangling reference; the new Lookup never re-asked after a lost response -- the live stall of its first validation run) |
-| EUROPA→PLEXIL | 1 | 3 | 4 | 5 | 13 | 5 | 7 | 1 |
+| EUROPA→PLEXIL | 1 | 3 | 5 | 5 | 14 | 6 | 7 | 1 |
 
 EUROPA→PLEXIL's errors are mostly about steering the stock solver: a correct model that the default chronological
 search could not solve (capacity model exploding the search, threat decisions made before a variable was bound,
 conditions merging with initial facts and pinning an action to the start, action choice order by name), plus domain
 mistakes (a copied posture transition, guarded effects not registered as effects, a condition outside the horizon
-filter, holding a module after a failed install). PLEXIL's two were glue code in the adapter. PLEXIL L4 also rewrote
+filter, holding a module after a failed install, and -- found live, fixed in a second iteration (F159) -- pressing
+the reset with the arm unstowed, which the shared press skill cannot do at the BESS panel). PLEXIL's two were glue code in the adapter. PLEXIL L4 also rewrote
 its offline test script twice (not counted). Classification by one reader from the worklog notes.
 
 ### 4.3 Fault handling in the ablation, in FDIR terms [F150; F153]

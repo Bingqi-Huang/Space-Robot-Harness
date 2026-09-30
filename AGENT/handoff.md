@@ -1,11 +1,11 @@
 # Handoff
 
-Updated 2026-09-30 19:15 CST. All experiments and records are closed (AGENT/todo.md); nothing runs. The
+Updated 2026-09-30 22:45 CST. All experiments and records are closed (AGENT/todo.md); nothing runs. The
 manuscript is written by another agent from `docs/report.md` (+ research_content, execution_plan); this agent runs
-experiments and records them; it never edits `paper/` (user). Nothing pushed: research main is ahead of origin (50+).
+experiments and records them; it never edits `paper/` (user). Pushed 2026-09-30 (main, tags exp1b/exp2-*, reauth/* branches; SRB main + tags; openral tags).
 
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, `docs/heldout_design.md`, `docs/baselines/authoring_spec.md`,
-`docs/preregistration.md`, `AGENT/todo.md`, `docs/research_findings.md` F140-F158, then `docs/report.md` (the evidence
+`docs/preregistration.md`, `AGENT/todo.md`, `docs/research_findings.md` F140-F159, then `docs/report.md` (the evidence
 base: overview + parts 1a, 1b, 2, 3, 4, 5, 6). Goal: the Acta Astronautica paper (H1 no rewrite for unplanned situations,
 H2 less engineering to add a capability, H3 open reasoning inside hard boundaries). Framing (user): trustworthy AI --
 a foundation model embedded in a space robot's mission workflow raises autonomy while the harness keeps safety and the
@@ -24,12 +24,11 @@ established engineering disciplines; never "an LLM calling tools" or "Claude Cod
   success, FDIR coverage, MTBI, intervention response time, run-time assurance, code churn, planning-model size, ECSS
   levels, references). Which enter the paper is decided at writing time (user). Scripts `evaluation/standard_metrics.py`,
   `evaluation/engineering_metrics.py`.
-- Re-authoring study (F149, F151, F154, F156; report part 5 §A.9): engineering time = timer minus overlap with own validation runs
-  (`experiments/reauthoring/cost_table.py`). PLEXIL 5.5 / 11.0 / 8.8 / 13.6 min (L2-A/L2-B/L3/L4), EUROPA 11.7 / 81.4 /
-  63.3 / 59.7 min; 7 of 8 PASS live. EUROPA L3's BESS instance: executive SIGSEGV (infrastructure), then twice the full
-  swap and a reset press blocked by the shared press skill (4/4 first presses at the BESS panel fail when the arm
-  arrives unstowed; the model removed press's Stowed condition). **Open for the user**: fix the shared skill, let an
-  engineer add a stow, or report as is (current record).
+- Re-authoring study (F149, F151, F154, F156, F159; report part 5 §A.9): engineering time = timer minus the overlap
+  with the union of the case's own validation runs (`experiments/reauthoring/cost_table.py`). PLEXIL 5.5 / 11.0 / 8.8 /
+  13.6 min (L2-A/L2-B/L3/L4), EUROPA 11.7 / 81.4 / 71.5 / 59.7 min; all 8 cases pass live. EUROPA L3 needed a second
+  engineer iteration (user's option b): the press waits for a stowed arm (a shared press-skill limitation at the BESS
+  panel: 4/4 first presses fail when the arm arrives unstowed; the proposed runtime recovered from it twice in exp1).
 - F158: the 13 1x videos are final (textured, occlusion-aware camera, checked). `artifacts/figures/exp1b/video_1x/`.
 
 ## Videos, general

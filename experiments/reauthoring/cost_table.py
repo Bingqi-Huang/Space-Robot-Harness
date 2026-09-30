@@ -65,7 +65,14 @@ for b, c in CASES:
     spans = timer(case)
     active = sum((e - s).total_seconds() for s, e in spans)
     rs = runs(case)
-    wait = sum(overlap(spans, a, e) for _, _, a, e in rs)
+    union = []  # runs of one case may overlap (two instances on two GPUs): waiting is the union of their intervals
+    for _, _, a, e in sorted(rs, key=lambda r: r[2]):
+        e = e or datetime.now(timezone.utc)
+        if union and a <= union[-1][1]:
+            union[-1][1] = max(union[-1][1], e)
+        else:
+            union.append([a, e])
+    wait = sum(overlap(spans, a, e) for a, e in union)
     n, add, rm = diff(case)
     vr = ", ".join(f"{v}/{name}" + ("" if e else " (running)") for v, name, _, e in rs)
     print(f"| {'PLEXIL' if b == 'plexil' else 'EUROPA->PLEXIL'} | {c.upper()} | {active / 60:.1f} | {wait / 60:.1f} | "

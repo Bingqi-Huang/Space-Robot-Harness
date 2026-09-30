@@ -8,20 +8,16 @@ a public project website (GitHub Pages, `.worktree/site`, branch `gh-pages`); it
 
 - Experiment I = exp1b (F142, F152, F153); Experiment II (F144-F147); ablations offline (F148-F150, F153).
 - F155 preplanned_transition_fraction (report part 2 §5.9). F157 community-standard metrics + glossary (report part 6).
-- F156 re-authoring study closed: 7 of 8 live PASS; engineering times in report part 5 §A.9.
+- F156/F159 re-authoring study closed: all 8 cases pass live (EUROPA L3 after a second engineer iteration);
+  engineering times in report part 5 §A.9.
 - F158 13 textured 1x videos with the occlusion-aware camera, checked (`artifacts/figures/exp1b/video_1x/`).
 - feat/ablation merged into main (full method re-renders the final Exp II run 67/67 identical); worktrees of the
   ablation and the 8 re-authoring engineers removed (branches kept).
 
 ## Open
 
-1. **EUROPA->PLEXIL L3, BESS (user chose option b, 2026-09-30 19:30)**: a fresh engineer session (Opus, spec +
-   brief + worklog + its own runs; diagnosis given: the shared press skill fails at the BESS panel when the arm arrives
-   unstowed) continues the case in the re-created `.worktree/reauth-europa-l3` (branch `reauth/europa-l3`); cap = 3 h
-   of engineering time without the simulation wait (116 min left); validation of both instances with the new code:
-   `artifacts/runs/reauth/europa_plexil_l3/v2_bess` (GPU 1) and `v2_isru` (GPU 2). Then: cost_table, F156 update,
-   report part 5 §A.9 + overview, rebuild report, remove the worktree, push main and the branch.
-2. Optional clean-up: `artifacts/figures/exp1b/video_1x/replay/` (259 GB; user: keep for now).
+- Nothing for this agent. Optional clean-up (user: keep for now): `artifacts/figures/exp1b/video_1x/replay/` (259 GB).
+- The manuscript agent writes from `docs/report.md`; the website session works in `.worktree/site` (branch gh-pages).
 
 ## Not now (user)
 

@@ -87,11 +87,12 @@ change, not in hours.
   new-procedure request that loss of signal left unanswered before it succeeded [F147; part 3].
 - Re-authoring (what each baseline's held-out failure costs once mission control has the diagnosis; fresh Claude
   engineers, time without the simulation wait): PLEXIL 5.5 / 11.0 / 8.8 / 13.6 min (L2-A / L2-B / L3 / L4), EUROPA→PLEXIL
-  11.7 / 81.4 / 63.3 / 59.7 min, with 0 vs 13 modelling/logic errors fixed on the way (EUROPA's mostly steering the stock
-  solver); 7 of 8 cases passed live; EUROPA→PLEXIL L3's BESS instance ran its full module swap but its reset was
-  blocked by a shared press-skill limitation (the arm arriving unstowed at that panel), which the proposed runtime met
-  twice in exp1 and recovered from on its own [F156; part 5 §A.9]. The cost the baselines pay is the ground loop
-  (diagnosis, idle robot, a communication window), not engineer hours; the proposed runtime needed none.
+  11.7 / 81.4 / 71.5 / 59.7 min, with 2 vs 14 modelling/logic errors fixed on the way (PLEXIL's in adapter code,
+  EUROPA's mostly steering the stock solver); all 8 cases pass live. EUROPA→PLEXIL L3 needed a second iteration: its
+  model pressed the reset with the arm unstowed, which a shared press-skill limitation at the BESS panel defeats (the
+  proposed runtime met it twice in exp1 and recovered on its own) [F156; F159; part 5 §A.9]. The cost the baselines pay
+  is the ground loop (diagnosis, idle robot, a communication window), not engineer hours; the proposed runtime needed
+  none.
 
 **Community-standard metrics (post hoc, part 6; the preregistered measures above are unchanged).** Held-out
 goal-condition success Ours 1.00 vs 0.17 / 0.17; pass^3 = 1.00 for Ours (Exp I held-out, Exp II after the extension);
@@ -119,12 +120,11 @@ EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 | `preplanned_transition_fraction` | not computed | computed per held-out instance x method (part 2 §5.9) | F155 |
 | L4 donors | PDU-3 in all runs | r3 used the ISRU plant's power ORU (energized, non-critical), granted | part 1a, part 2 |
 
-## Pending (as of 2026-09-30, 19:10 CST)
+## Pending (as of 2026-09-30, 22:40 CST)
 
 1. **Ablation live runs: not used (user decision 2026-09-30).** The ablations are reported from the offline
    stages only (part 4 sections before "Stage 3"; F150, F153).
-2. ~~Re-authoring live validation~~: closed 2026-09-30 (F156, part 5 §A.9): 7 of 8 PASS; EUROPA→PLEXIL L3 BESS blocked
-   by the shared press skill -- the user decides whether to fix the skill, let an engineer add a stow, or report as is.
+2. ~~Re-authoring live validation~~: closed 2026-09-30, all 8 cases pass live (F156, F159, part 5 §A.9).
 3. ~~Preregistered `preplanned_transition_fraction`~~: computed offline 2026-09-30 (user decision), part 2 §5.9, F155.
 4. Real LunarBot hardware demonstration (research_content §5.8): **dropped by the user on 2026-09-30**; future work.
 

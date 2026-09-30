@@ -189,7 +189,7 @@ GC here: the named unit on the destination (the evaluator scores the serial) + p
 | PLEXIL L4 | 3 | +207/-1 | 208 | 768 | 0.271 | 1 files +69/-4 | library nodes 4→5, nodes 75→117, if branches 7→10, command calls 40→55, lookups 17→24 |
 | EUROPA→PLEXIL L2A | 2 | +55/-9 | 64 | 996 | 0.064 | 1 files +15/-7 | classes 11→12, predicates 10→11, actions 8→9, compatibility rules 8→9 |
 | EUROPA→PLEXIL L2B | 5 | +58/-13 | 71 | 996 | 0.071 | 1 files +9/-3 | classes 11→14, timelines 5→6, predicates 10→11, compatibility rules 8→9 |
-| EUROPA→PLEXIL L3 | 5 | +155/-25 | 180 | 996 | 0.181 | 1 files +23/-9 | classes 11→14, timelines 5→7, predicates 10→14, actions 8→9, compatibility rules 8→10 |
+| EUROPA→PLEXIL L3 | 5 | +166/-27 | 193 | 996 | 0.194 | 1 files +23/-9 | classes 11→14, timelines 5→7, predicates 10→14, actions 8→9, compatibility rules 8→10 |
 | EUROPA→PLEXIL L4 | 2 | +252/-43 | 295 | 996 | 0.296 | 1 files +48/-15 | classes 11→15, timelines 5→7, predicates 10→16, actions 8→13, compatibility rules 8→13 |
 
 Planning-model size at exp1b (the frozen baselines): {'plexil': {'library nodes': 4, 'nodes': 75, 'if branches': 7, 'command calls': 40, 'lookups': 17}, 'europa_plexil': {'classes': 11, 'timelines': 5, 'predicates': 10, 'actions': 8, 'compatibility rules': 8}}
@@ -234,13 +234,14 @@ Planning-model size at exp1b (the frozen baselines): {'plexil': {'library nodes'
 | baseline | L2-A | L2-B | L3 | L4 | total | domain logic | solver search control | host / adapter code |
 |---|---|---|---|---|---|---|---|---|
 | PLEXIL | 0 | 2 | 0 | 0 | 2 | 0 | 0 | 2 (a manifest Lookup read a dangling reference; the new Lookup never re-asked after a lost response -- the live stall of its first validation run) |
-| EUROPA→PLEXIL | 1 | 3 | 4 | 5 | 13 | 5 | 7 | 1 |
+| EUROPA→PLEXIL | 1 | 3 | 5 | 5 | 14 | 6 | 7 | 1 |
 
 EUROPA→PLEXIL's errors are mostly about steering the stock solver: a correct model that the default chronological
 search could not solve (capacity model exploding the search, threat decisions made before a variable was bound,
 conditions merging with initial facts and pinning an action to the start, action choice order by name), plus domain
 mistakes (a copied posture transition, guarded effects not registered as effects, a condition outside the horizon
-filter, holding a module after a failed install). PLEXIL's two were glue code in the adapter. PLEXIL L4 also rewrote
+filter, holding a module after a failed install, and -- found live, fixed in a second iteration (F159) -- pressing
+the reset with the arm unstowed, which the shared press skill cannot do at the BESS panel). PLEXIL's two were glue code in the adapter. PLEXIL L4 also rewrote
 its offline test script twice (not counted). Classification by one reader from the worklog notes.
 
 ### 4.3 Fault handling in the ablation, in FDIR terms [F150; F153]

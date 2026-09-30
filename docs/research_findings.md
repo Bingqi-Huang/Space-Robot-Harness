@@ -6530,7 +6530,7 @@ after the start) that the method's frozen artifacts (exp1b) contain as authored 
   "Admitted" is the model's semantics, not the frozen search: the stock solver could not find two chained pick/place
   legs in one solve with the frozen domain (EUROPA L3 engineer; L2-B combined plan unsolved at 5,000 steps, F151).
 
-## F156 -- Re-authoring study closed: 7 of 8 cases pass live; engineering time without the simulation wait PLEXIL 5.5-13.6 min, EUROPA -> PLEXIL 11.7-81.4 min; EUROPA's BESS reset blocked by a shared press-skill limitation (2026-09-30)
+## F156 -- (EUROPA L3 superseded by F159) Re-authoring study closed: 7 of 8 cases pass live; engineering time without the simulation wait PLEXIL 5.5-13.6 min, EUROPA -> PLEXIL 11.7-81.4 min; EUROPA's BESS reset blocked by a shared press-skill limitation (2026-09-30)
 
 `experiments/reauthoring/cost_table.py` (timer intervals minus their overlap with the case's own validation runs; a
 stalled run counts up to 15 min after its last progress), `evaluation/engineering_metrics.py`, worklogs, `validate.py`.
@@ -6617,3 +6617,23 @@ log `render.log`. Final 2026-09-30 18:46.
 - **Checks (all 13)**: video seconds = simulated seconds; 0 chunk logs with a missing texture; 0 dark frames at one
   sample per second; a mid-video contact sheet looked at (decals, rover in view, all panels); the formerly black times
   of the ISRU reset run show the rover beside the tanks.
+
+## F159 -- EUROPA -> PLEXIL L3 passes after a second engineer iteration: the press waits for a stowed arm; all 8 re-authoring cases pass live (2026-09-30)
+
+User decision (option b, after F156): a fresh engineer session (Opus, same spec, brief, worklog and its own runs;
+diagnosis given: the shared press skill fails at the BESS panel when the arm arrives unstowed) continued the case in a
+re-created checkout of `reauth/europa-l3`; cap = 3 h of engineering time without the simulation wait.
+- Change (commit 5741ed0, +14/-5 in `baselines/europa/`): press's frozen `met_by` Stowed condition restored, plus one
+  PlannerConfig rule deciding that condition after everything else (decided first, it latched onto the initial stowed
+  state and pinned the press before the swap -- why the first engineer had removed it). Offline: the swap, then drive,
+  stow, dock, press; without the new rule no plan in 5000 steps; covered plans unchanged. Recorded, not fixed (not
+  blocking): a condition of an activity that can start at time 0 is skipped by the planner's horizon filter; the host
+  reads the arm's reported posture "other" as stowed.
+- Validation v2, both instances with the new code, in parallel (BESS GPU 1, ISRU GPU 2, 20:55-22:27): PASS. BESS: swap
+  complete (the spare pick missed once at the VLM's select stage, tier-1 retry succeeded), arm stowed at the panel's
+  approach point, reset press succeeded first time, parked and stowed; ISRU: same order, first press held.
+- Engineering time: this session 8.4 min (99.3 active, 91.0 waiting on its runs); the case 71.5 min
+  (`cost_table.py`, now counting overlapping runs of a case once: waiting = the union of their intervals). Modelling /
+  logic errors: 5 (3 domain, 2 solver control). Churn 193 lines (relative 0.194).
+- Study totals: all 8 cases pass live; PLEXIL 38.9 min over four cases, EUROPA -> PLEXIL 224.3 min; errors PLEXIL 2
+  (adapter code), EUROPA -> PLEXIL 14 (6 domain, 7 solver control, 1 host code). The proposed runtime needed none.
