@@ -1,0 +1,2 @@
+plexil_l2a_pdu1 D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_a_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_radiator_cover D0_ENV='env.faulted_unit=pdu_1'
+plexil_l2a_bess D0_CAPABILITY_SERVER=1 D0_CHECK=d0_plexil_mission_a_check.py D0_SCENE=scenes/deploy/srb_lunar_base_mission_a.yaml D0_SCENARIO=heldout_radiator_cover D0_ENV='env.faulted_unit=bess'
