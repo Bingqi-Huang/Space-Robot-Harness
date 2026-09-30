@@ -135,6 +135,8 @@ def main() -> None:
     ap.add_argument("--fps", type=float, default=1.0, help="rendered frames per simulated second")
     ap.add_argument("--from-sim", type=float, default=0.0)
     ap.add_argument("--to-sim", type=float, default=1e9)
+    ap.add_argument("--only", default=None, help="a,b: render only the frames with a <= sim time < b (a chunk of a longer "
+                    "render run in parallel; the camera path is still the whole range's, so chunks join without a jump)")
     ap.add_argument("--res", default="1600,900")
     ap.add_argument("--eye", default="2.5,-4.5,2.8", help="camera offset from the look-at point, rover frame")
     ap.add_argument("--smooth-s", type=float, default=4.0)
@@ -222,7 +224,11 @@ def main() -> None:
 
     shown = {}
     start = time.time()
+    only = [float(v) for v in a.only.split(",")] if a.only else [-1e9, 1e9]
+    rendered = 0
     for i, (t, f) in enumerate(zip(times, frames)):
+        if not only[0] <= t < only[1]:
+            continue
         root = mat(*f["srb/env0/robot"])
         for name, (op, scale, parent_inv) in bodies.items():
             op.Set(scale * mat(*f[name]) * root * parent_inv)  # row vectors: body-in-root, then root-in-world
@@ -240,12 +246,13 @@ def main() -> None:
                     (UsdGeom.Imageable(c).MakeVisible if s["cover_closed"] else UsdGeom.Imageable(c).MakeInvisible)()
         eye, look = Gf.Vec3d(*eyes[i]), Gf.Vec3d(*looks[i])
         cam_op.Set(Gf.Matrix4d().SetLookAt(eye, look, Gf.Vec3d(0, 0, 1)).GetInverse())
-        for _ in range(60 if i == 0 else 1):  # the first frame streams the scene's textures in
+        for _ in range(60 if rendered == 0 else 1):  # the first frame streams the scene's textures in
             rep.orchestrator.step(rt_subframes=4)
         Image.fromarray(np.asarray(rgb.get_data())[..., :3]).save(a.out / f"{t:010.2f}.png")
-        if i % 50 == 0:
-            print(f"frame {i + 1}/{len(times)} sim {t:.1f} s, {(time.time() - start) / (i + 1):.2f} s/frame", flush=True)
-    print(f"RENDERED {len(times)} frames in {time.time() - start:.0f} s -> {a.out}", flush=True)
+        rendered += 1
+        if rendered % 50 == 1:
+            print(f"frame {i + 1}/{len(times)} sim {t:.1f} s, {(time.time() - start) / rendered:.2f} s/frame", flush=True)
+    print(f"RENDERED {rendered} frames in {time.time() - start:.0f} s -> {a.out}", flush=True)
     app.close()
 
 
