@@ -183,3 +183,24 @@ def verify(capability: str, args: dict, evidence: dict, cfg: dict, held: list[st
             m["holds"] = False
         out.append(m)
     return out
+
+
+#: ablation no_verification: the effect each capability is for, by name
+REPORTED = {**{c: "base_at_commanded_pose" for c in BASE_NAV | BASE_DOCK}, **{c: "tool_at_commanded_position" for c in TCP},
+            "approach_target": "tool_at_standoff_from_seen_target", "grasp": "jaws_closed", "release": "jaws_open",
+            "arm_ready": "arm_ready", "stow": "arm_stowed", "pick": "item_held", "place": "item_placed", "press": "pressed"}
+
+
+def reported(capability: str, args: dict, success: bool) -> list[dict]:
+    """Ablation no_verification (space_runtime/ablation.py): the effect a call is for, holding exactly when the skill
+    reports success -- nothing measured, nothing looked at again. The fields the reducer reads come from the call."""
+    if capability not in REPORTED:
+        return []
+    m = {"effect": REPORTED[capability], "holds": success, "basis": "skill success flag"}
+    if capability in ("pick", "press"):
+        m["target"] = args.get("target")
+    if capability == "pick":
+        m["jaw"] = None
+    if capability == "place":
+        m["support"] = args["support"]
+    return [m]

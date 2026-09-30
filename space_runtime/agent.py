@@ -42,13 +42,14 @@ from rclpy.qos import QoSDurabilityPolicy, QoSProfile
 from space_harness_msgs.action import ExecuteCapability
 from space_harness_msgs.srv import QueryCapability
 
-from openral_ext.capability_server.contracts import CONTRACTS
+from openral_ext.capability_server.contracts import CONTRACTS, IX
+from space_runtime import ablation
 from space_runtime.context import HarnessRenderer, system_text
 from space_runtime.facts import FactStore
 from space_runtime.guard import Guard
 from space_runtime.report import write_report
 from space_runtime.tools import DECOMPOSE, REPLY_TOPIC, REPORT_TOPIC, REQUEST_TOPIC, SET_TASK_STATUS, TEXTS, WAIT, HarnessToolClient
-from space_runtime.verification import verify
+from space_runtime.verification import reported, verify
 
 REPO = Path(__file__).resolve().parents[1]
 #: the working plan's own tools as `tool_proposed` records them (dispatch: a plan is logged as "decompose_mission")
@@ -197,6 +198,11 @@ class Agent:
             # not) exactly those (capability, target) pairs
             pending = [{"capability": p["capability"], "target": p["target"], "reason": p["reason"]}
                        for p in self.store.facts["pending_approvals"]]
+            meta = json.loads(call.metadata_json)
+            if ablation.VARIANT == "no_guard" and meta.get("authorize_target") in IX["points"]:
+                # nothing holds a call: the request carries the one it names (mission control decides a site point)
+                pending = [{"capability": meta.get("authorize_capability"), "target": meta["authorize_target"],
+                            "reason": "named in the request"}]
             self.request_pub.publish(PromptStamped(text=call.text, metadata_json=json.dumps(
                 {"request_id": request_id, "kind": request_kind, "pending_approvals": pending})))
             self.event("operator_request_sent", request_id=request_id, request_kind=request_kind, text=call.text,
@@ -246,18 +252,19 @@ class Agent:
         if name in CONTRACTS["queries"]:
             self.event("query_answered", query=name, args=args, **self.query(name, args))
             return
-        if self.guard.target_authority:
-            # a rule that classes a call by the state of the unit it acts on reads that state fresh, from the units'
-            # own telemetry, before deciding
-            t = self.query("power_status", {})
-            self.event("equipment_telemetry", value=t["value"] if t["success"] else None)
-        outcome, reason = self.guard.check(name, args, self.store.facts)
-        self.event("guard_decision", tool=name, outcome=outcome, reason=reason)
-        if outcome == "approval_required":
-            rule = self.guard.target_rule(name, args, self.store.facts)
-            self.event("approval_pending", capability=name, target=args[rule["target_arg"]] if rule else None, reason=reason)
-        if outcome != "allow":
-            return
+        if ablation.VARIANT != "no_guard":  # the ablation removes the check and its telemetry read, nothing else
+            if self.guard.target_authority:
+                # a rule that classes a call by the state of the unit it acts on reads that state fresh, from the units'
+                # own telemetry, before deciding
+                t = self.query("power_status", {})
+                self.event("equipment_telemetry", value=t["value"] if t["success"] else None)
+            outcome, reason = self.guard.check(name, args, self.store.facts)
+            self.event("guard_decision", tool=name, outcome=outcome, reason=reason)
+            if outcome == "approval_required":
+                rule = self.guard.target_rule(name, args, self.store.facts)
+                self.event("approval_pending", capability=name, target=args[rule["target_arg"]] if rule else None, reason=reason)
+            if outcome != "allow":
+                return
         ledger = self.ledger()
         if ledger is not None and ledger.active() is not None:
             ledger.record_attempt(rskill_id=name)
@@ -266,11 +273,14 @@ class Agent:
         r = self.execute(name, args)
         self.event("execution_finished", capability=name, args=args, **r)
         held = [n for n, o in self.store.facts["objects"].items() if o["state"] == "in_gripper"]
-        # what the record says is carried is looked at again, through the boundary's own read-only query. A query that
-        # does not answer leaves the fact as it was: a service outage is not evidence that the payload is gone (F58).
-        look = self.query("held_item", {}) if held and name not in ("place", "release") else None
-        for effect in verify(name, args, r["evidence"], self.cfg["verification"], held,
-                             look["value"] if look and look["success"] else None):
+        if ablation.VARIANT == "no_verification":
+            effects = reported(name, args, r["success"])
+        else:
+            # what the record says is carried is looked at again, through the boundary's own read-only query. A query
+            # that does not answer leaves the fact as it was: a service outage is not evidence that the payload is gone (F58).
+            look = self.query("held_item", {}) if held and name not in ("place", "release") else None
+            effects = verify(name, args, r["evidence"], self.cfg["verification"], held, look["value"] if look and look["success"] else None)
+        for effect in effects:
             self.event("effect_verified", capability=name, **effect)
         self.event("verification_finished", capability=name)
 

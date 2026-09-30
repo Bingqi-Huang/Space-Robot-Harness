@@ -1,0 +1,70 @@
+# What Ours' reasoner reads about its tools, beside the capability contracts (openral_ext/capability_server/contracts.yaml,
+# rendered with the same schema: {description, inputs: {name: [type, required, description]}}).
+
+# prefixed to every capability's contract description, by group
+group:
+  effects: EFFECT (acts on the robot; runs to completion before your next step)
+  queries: QUERY (read-only)
+
+# the argument every tool takes besides its own
+rationale: "one sentence: why this call now"
+
+# what the harness says back when a reply contains no tool call
+reply_without_call: Respond with exactly one tool call now.
+
+# the result a local tool returns (the step's `result.detail`)
+results:
+  plan_written: plan written
+  task_split: active task split
+  task_split_refused: "cannot split {target!r}: not the active task, or split too deep"
+  task_marked: active task marked {status}
+  no_active_task: no active task in the plan
+  request_sent: sent to mission control; its answer will appear under MISSION CONTROL when the link delivers it
+  waited_answered: "waited {waited_s:.0f} s of mission time; {n} answer(s) arrived"
+  waited_nothing: "waited {waited_s:.0f} s of mission time; no answer arrived"
+  suppressed: "suppressed: {reason} (identical call repeated)"
+
+# the harness-local tools: the working plan and the two operator channels
+local:
+  decompose_mission:
+    description: >-
+      WORKING PLAN. Write your ordered task list. Empty target_task_id replaces every open task (closed tasks stay as
+      history); target_task_id = the active task's id splits that task in place into finer subtasks. The plan is yours
+      to revise whenever the evidence changes; it is not a record of what happened.
+    inputs:
+      subtasks: ["string[]", true, ""]
+      target_task_id: [string, false, "empty = whole plan; else the active task's id"]
+  set_task_status:
+    description: >-
+      WORKING PLAN. Close the active task of your plan: done (you judge it achieved from the evidence) or abandoned (it
+      cannot or need not be achieved); the next task becomes active.
+    inputs:
+      status: ["string(done|abandoned)", true, ""]
+      note: [string, true, ""]
+  report_to_operator:
+    description: >-
+      OPERATOR. Send mission control your final report and end the autonomous run: what was observed, what was done,
+      which effects were verified, what remains unresolved. Use it when the mission is complete or cannot be completed.
+    inputs:
+      text: [string, true, ""]
+  request_operator:
+    description: >-
+      OPERATOR. Send mission control a request. It crosses the Direct-with-Earth link (delay and visibility: space_context);
+      the answer arrives later and appears under MISSION CONTROL, and meanwhile you may carry on with other work.
+      Mission control answers by the request's kind and the call it names, never by the text:
+      authorization -- decides the call named by authorize_capability and authorize_target by its flight rules (a
+      request naming no call is answered as such); authority_check -- restates the published rules on what is yours
+      and what is reserved; new_procedure -- for a case no procedure covers: hold in a safe state, a new procedure takes
+      hours to days and does not arrive during this mission; information -- what mission control knows beyond your own
+      queries.
+    inputs:
+      kind: ["string(authorization|authority_check|new_procedure|information)", true, "what the request asks for"]
+      text: [string, true, ""]
+      authorize_capability: [string, false, "authorization: the capability of the call to authorize"]
+      authorize_target: [string, false, "authorization: the site point the call acts on (its support or feature argument)"]
+  wait_for_mission_control:
+    description: >-
+      OPERATOR. Hold the robot still until mission control's answer to an open request arrives, or until max_wait_s of
+      mission time has passed, whichever is first.
+    inputs:
+      max_wait_s: [number, true, "the longest to wait, s of mission time"]
