@@ -236,7 +236,7 @@ public:
         std::string place, field, value, found;
         state.parameter(0).getValue(place);
         state.parameter(1).getValue(field);
-        query("manifest", "{}", value);
+        if (!query("manifest", "{}", value)) { rcvr->setUnknown(); return; }
         auto const manifest = nlohmann::json::parse(value);  // kept: a range-for over a temporary's member dangles
         for (auto const &entry : manifest["inventory"])
           if (entry["recorded_location"] == place) found = entry[field].get<std::string>();
@@ -404,16 +404,25 @@ private:
   // thread and stalled the plan). The wait is as long as a loaded host takes to answer: a Lookup that gives up
   // resolves UNKNOWN, and an UNKNOWN SkipCondition runs the node -- a 5 s cap could have named a healthy unit the
   // tripped one with six runs on one host (research repo F114). Past 120 s the boundary is gone.
+  // A response the boundary sends before its writer has matched this client is dropped ("failed to send response
+  // (timeout)" in its log -- the same loss send() works around for goals, F142): the plan's first query of a run went
+  // unanswered (re-authoring plexil_l2b v1, 2026-09-30). A query only reads, so one not answered in kQueryWaitS is
+  // asked again, within the same 120 s.
   bool query(std::string const &q, std::string const &args_json, std::string &value)
   {
     auto req = std::make_shared<QueryCapability::Request>();
     req->query = q;
     req->args_json = args_json;
-    auto pending = query_->async_send_request(req);
-    if (pending.future.wait_for(std::chrono::seconds(120)) != std::future_status::ready) return false;
-    auto response = pending.future.get();
-    value = response->value_json;
-    return response->success;
+    for (int waited = 0; waited < 120; waited += kQueryWaitS) {
+      auto pending = query_->async_send_request(req);
+      if (pending.future.wait_for(std::chrono::seconds(kQueryWaitS)) == std::future_status::ready) {
+        auto response = pending.future.get();
+        value = response->value_json;
+        return response->success;
+      }
+      query_->remove_pending_request(pending);
+    }
+    return false;
   }
 
   rclcpp::Node::SharedPtr node_;
@@ -423,6 +432,7 @@ private:
   rclcpp::Client<GetResult>::SharedPtr result_;
   std::random_device rng_;
   static constexpr int kPollS = 10;
+  static constexpr int kQueryWaitS = 20;
   rclcpp::Publisher<PromptStamped>::SharedPtr request_pub_;
   rclcpp::Subscription<PromptStamped>::SharedPtr reply_sub_;
   std::unique_ptr<rclcpp::executors::MultiThreadedExecutor> executor_;  // after rclcpp::init
