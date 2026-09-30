@@ -4,3 +4,9 @@
 {"kind": "note", "session_id": "00f24cdd80fc", "t": "2026-09-29T09:47:54.959216+00:00", "text": "offline: plexilc + offline_check.py 95/95 PASS first time (51 covered cases unchanged, 2 module-failure nominal, 42 fail-2x/3x at every call site of the module-failure path); no modelling error found offline"}
 {"kind": "note", "session_id": "00f24cdd80fc", "t": "2026-09-29T09:47:54.995581+00:00", "text": "live validation not launched: shared model gateway outage (HTTP 403), coordinator instruction"}
 {"kind": "session_stop", "session_id": "00f24cdd80fc", "t": "2026-09-29T09:47:55.032062+00:00", "reason": "waiting for model provider (shared outage)"}
+{"kind": "session_start", "session_id": "4ca17e548b77", "t": "2026-09-30T01:13:34.045192+00:00", "extension_id": "reauth_l3", "method": "plexil", "engineer": "reauth-plexil-l3"}
+{"kind": "session_stop", "session_id": "4ca17e548b77", "t": "2026-09-30T03:28:35+00:00", "reason": "shared outage: Claude session limit"}
+{"kind": "session_start", "session_id": "7f12353359ca", "t": "2026-09-30T05:49:21.770534+00:00", "extension_id": "reauth_l3", "method": "plexil", "engineer": "reauth-plexil-l3"}
+{"kind": "note", "session_id": "7f12353359ca", "t": "2026-09-30T05:49:21.810332+00:00", "text": "session 4ca17e548b77 closed at the queue's end (11:28:35 CST) after the fact: the engineer session was cut by the shared Claude session limit (ended 13:40 CST); stop line appended with that time, per coordinator"}
+{"kind": "note", "session_id": "7f12353359ca", "t": "2026-09-30T05:49:30.880088+00:00", "text": "validation v1 (artifacts/runs/reauth/plexil_l3/v1): validate.py PASS on the first run, both instances (bess, isru) success, nothing dropped, no unauthorized removal"}
+{"kind": "session_stop", "session_id": "7f12353359ca", "t": "2026-09-30T05:49:30.917669+00:00", "reason": "validate.py PASS"}

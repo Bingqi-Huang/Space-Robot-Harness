@@ -1,56 +1,57 @@
 # TODO
 
-Goal: the Acta Astronautica paper. `docs/heldout_design.md` is the plan (§10 work order, §14 instances).
-`docs/preregistration.md` fixes metrics, failure taxonomy, exclusion and statistics.
+Goal: the Acta Astronautica paper. Another agent writes the manuscript from `docs/report.md` +
+`AGENT/research_content.md` + `AGENT/execution_plan.md`. **This agent only runs experiments and records them
+faithfully** (findings, report); it does not write or edit the paper (user 2026-09-30).
 
 ## Done (see docs/research_findings.md)
 
-- F108-F139: site, scenarios, protocol, evaluator, baseline lock, run farm, steps 7-10, Qwen3.8-Max, prompts/ours,
-  request kinds, scan_label built (F131), rows->tables, video/swimlane, retry budget, freeze-1.
-- **Experiment I** (F140; rerun on the fixed shared layer = exp1b, F141/F142; tag `exp1b`): Ours covered 7/7,
-  held-out 18/18, 0 re-authoring; PLEXIL / EUROPA covered 7/7, held-out 0/6 each. `artifacts/eval/exp1b/`,
-  `artifacts/figures/exp1b/`. F143: PLEXIL retry budget N = 1/2/3/5 never changes the outcome; drop = a fall.
-- **Experiment II** (F144-F147; tags `exp2-*`): all three extensions passed G3 on the first validation run (active
-  54.5 / 46.3 / 53.4 min; 4.7 / 10.8 / 20.8 not waiting on the simulation); held-out before 0/6, after Ours 6/6,
-  PLEXIL 2/2, EUROPA 2/2; fixes F145 (scan view), F147 (on-support fact, Ours' step budget), only decided runs rerun.
-  `experiments/exp2/`, `artifacts/runs/exp2/`, `artifacts/eval/exp2/tables.md` (`python3 experiments/exp2/tables.py`).
+- Experiment I = exp1b (F142, F152 statistics, F153 corrections); Experiment II (F144-F147); ablations stage 1-2
+  offline (F148-F150, F153); re-authoring authoring (F149, F151); 6 of 8 re-authoring cases live PASS (F154).
+- `docs/report.md` (overview + six parts in `docs/report_parts/`, every number sourced) for the manuscript agent.
+- Real LunarBot demonstration: dropped by the user (future work). Live ablation runs: stopped by the user, not used,
+  not written into the report.
 
-## Next work (blocked on the model gateway: account refused, HTTP 403 -- user recharging)
+## Open (in order)
 
-- [ ] §5.7 ablations (F148-F150): stage 1, 2 done. Stage 3 live = J1 x4 (`artifacts/eval/ablation/live/job_j1_*.txt`)
-      + J3 no_context x2 (`job_j3_*.txt`), all from `.worktree/ablation` (SRB pinned, F149), launch each with
-      `experiments/reauthoring/gpu_run.sh <gpu> abl-<name> <job file> artifacts/runs/ablation/<j1c|j3c>/<name>
-      .worktree/ablation`; Monitor check.log (RESTORED / RESULT / CHECK_EXIT). Then score live outcomes, write the
-      ablation subsection, merge `feat/ablation` (switches default off; render_check 1099/1099).
-- [ ] Re-authoring cost (docs/reauthoring/, F149): 8 engineer sessions; PLEXIL L2-A/L2-B/L3/L4 and EUROPA L2-A are
-      offline-ready (timers stopped "waiting for model provider"), EUROPA L2-B/L3/L4 still authoring. When the gateway is
-      back: resume each session (same agent) for its live validation on its GPU (0-5 via gpu_run.sh; EUROPA L3 on 1, L4
-      on 3), then collect worklogs + diffs into a table (like experiments/exp2/tables.py).
-- [ ] Paper: `paper/sections/results.tex` drafted (Exp I, ALFUS, trust, Exp II); fill re-authoring and ablation
-      subsections; then the rest of the manuscript. Framing: trustworthy AI (memory).
-- Not now (user): Exp II "plan B"; push (waits for the user). Real LunarBot demonstration (research_content §5.8)
-  dropped by the user 2026-09-30: stated as future work in the paper.
+1. **Re-authoring study, last two cases** (F154). Engineer sessions of the previous session may still be running; if
+   they are gone, finish by hand from the worktrees, following docs/reauthoring/spec.md:
+   - EUROPA->PLEXIL L3: queue `reauth-europa-l3-v1` on GPU 1 (BESS done, ISRU running) -> `validate.py` on
+     `artifacts/runs/reauth/europa_plexil_l3/v1/*`, stop the worklog timer at PASS, commit on `reauth/europa-l3`.
+   - PLEXIL L2-B: v1 stalled after PLAN (no capability call for 4.5 h; cause not yet reported); v2 queued on GPU 1
+     (`reauth-plexil-l2b-v2`) -> validate, diagnose v1's stall (plan defect or platform), commit on `reauth/plexil-l2b`.
+   Then one table baseline x case: engineering time = active time minus waiting on the simulation (user rule),
+   validation runs, modelling errors, files and +/- lines, constructs added. Record in findings, fill the re-authoring
+   table in `docs/report_parts/05_*`, rebuild `docs/report.md` (cat 00, 01a, 01b, 02, 03, 04, 05 joined by `---`).
+2. **Videos (user-approved):** 13 Ours runs of Experiment I, one per instance, all panels, 1x simulated time, 10
+   frames per simulated second, label "THIRD-PERSON VIEW". Running since 14:40 CST: `experiments/video/render_1x.sh
+   <gpu>` in tmux `vid-gpu{0,2,3,4,5}`, shared list `artifacts/figures/exp1b/video_1x/runs.txt`, log
+   `.../video_1x/render.log`, output `.../video_1x/<run>.mp4`, frames `.../video_1x/replay/<run>/`; ~3-4 h. Add a
+   worker on GPU 1 (`tmux new-session -d -s vid-gpu1 "experiments/video/render_1x.sh 1"`) when the re-authoring runs
+   end. Replay uses `.worktree/ablation` (SRB pinned to exp1b): keep that worktree until the videos are done. Check
+   each finished video (video seconds = simulated seconds; panels present).
+3. Merge `feat/ablation` into main after the videos (needs the user's go; switches default off, render_check
+   1099/1099). Then remove `.worktree/ablation` and the 8 `.worktree/reauth-*` once their branches are committed.
+4. Preregistered `preplanned_transition_fraction` never computed: ask the user (compute offline, or state deviation).
+- Not now (user): Exp II "plan B"; push (waits for the user); the wrist-camera render artefact (user: forget it).
 
-## Clean-up (user 2026-09-26: keep for now)
+## Clean-up (keep for now)
 
-- `artifacts/runs/step10_final`, `.worktree/prefreeze` + branch `feat/prefreeze-infra`.
-
-## Known limits
-
-- Localization ~5 cm at bess_stand (map precision), 0.3-1.3 m transients round the habitat row's east end (F141).
-- A carried item swings +-7 cm while lowered; the touchdown phase decides the set-down point (F141).
-- The scan's plates are read only from a view the arm can take at a docked stand; the battery module's plates never
-  read (domed lid) -- the scan then says something stands there (F147).
+- `artifacts/runs/step10_final`, `.worktree/prefreeze` + branch `feat/prefreeze-infra` (user 2026-09-26).
+- Unused live ablation dirs `artifacts/runs/ablation/{j1,j1b,j3,j3b,j1c,j3c,j1d}` (records only).
 
 ## Rules (user)
 
-- Simplified Chinese replies, plain words, conclusion first. Decide defaults yourself; ask only design questions; when
-  the user only asks, only answer. Plan changes, merges, pushes and experiments need the user's explicit go.
+- **Simplified Chinese replies, plain words, conclusion first. Never report with internal codes** (J1, F153, stage 2,
+  ...): say what the experiment is and what it means for the paper, from the paper's purpose and first principles.
+- Decide defaults yourself; ask only design questions; when the user only asks, only answer. Plan changes,
+  experiments, merges and pushes need the user's explicit go. When the user says stop or do not record, obey exactly.
+- This agent runs experiments and records them; it does not edit the manuscript (`paper/`).
+- Simulation time means nothing for the research: engineering cost = active time minus waiting on the simulation.
 - Only fix the current blocker; offline check first, one decisive live test; rerun only the affected run, from a
-  snapshot where possible; never rerun what already passed.
-- Fixes found during a campaign are applied for all methods, recorded in findings and folded into that experiment's
-  results (F141/F142, F145, F147) -- not reported as a separate round (user 2026-09-29).
-- Ours: generic changes only, three tests (names no situation/place/serial; holds for every task; traceable), recorded
-  in findings. Baselines locked: not strengthened, not patched beyond the lock's change control.
+  snapshot where possible; never rerun what already passed. Campaign fixes: all methods, findings, folded in.
+- Ours: generic changes only (names no situation/place/serial; holds for every task; traceable). Baselines locked.
 - No defensive code, no hash checks, minimal pytest. Contacts from truth + layout; never decide or navigate on truth.
-- One simulation per GPU; kill only own containers; long runs watched by a Monitor, no polling. No freeze ceremony.
+- One Isaac instance per GPU (lock: `experiments/reauthoring/gpu_run.sh`); kill only own containers; long runs
+  watched by a Monitor, no polling; no freeze ceremony. State the model-token budget before any large offline batch.
+- Key: first `sk-` in `AGENT/VLM_provider.md`, never printed or written anywhere.

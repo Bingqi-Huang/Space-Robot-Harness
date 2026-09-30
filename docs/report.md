@@ -99,15 +99,12 @@ change, not in hours.
 | Ablation reader | "blind reader" | a Claude Sonnet subagent, one reader, no agreement statistic | F153 |
 | L4 donors | PDU-3 in all runs | r3 used the ISRU plant's power ORU (energized, non-critical), granted | part 1a, part 2 |
 
-## Pending (as of 2026-09-30, 11:00 CST)
+## Pending (as of 2026-09-30, 15:00 CST)
 
-1. **Ablation stage 3 (live).** The J1 live cells assumed that restoring a snapshot drops a held item (F60, measured
-   2026-09-18 with a bail grasp). Checked from simulator truth in the three J1 runs made: with the current top-handle
-   grasp the item stays in the jaws after the restore, so the accident did not occur and J1 live shows nothing yet.
-   Proposed to the user: inject the drop by editing the carried item's pose in the saved state; decision pending. J3
-   live (no_context restart, 2 runs) is queued. Until filled, the paper reports the ablations from stage 2.
-2. **Re-authoring live validation** (12 runs, 8 engineers): PASS so far for PLEXIL L2-A (both instances, active 3247 s)
-   and EUROPA→PLEXIL L2-B (active 9025 s); the rest are running (part 5 table).
+1. **Ablation live runs: not used (user decision 2026-09-30).** The ablations are reported from the offline
+   stages only (part 4 sections before "Stage 3"; F150, F153).
+2. **Re-authoring live validation**: 6 of 8 cases PASS on their first live validation, 2 open (PLEXIL L2-B,
+   EUROPA→PLEXIL L3); results in F154. Report engineering time without the simulation wait (user decision).
 3. **Preregistered `preplanned_transition_fraction`** was never computed (certificates' solution sequences are open).
    State it as a deviation, or compute it before submission.
 4. Real LunarBot hardware demonstration (research_content §5.8): **dropped by the user on 2026-09-30**; future work.

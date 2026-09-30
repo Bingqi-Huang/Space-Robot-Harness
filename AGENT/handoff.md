@@ -1,12 +1,12 @@
 # Handoff
 
-Updated 2026-09-29 evening. Exp I, Exp II done. Ablations (F148-F150): stages 1-2 done; stage 3 (6 live runs) and the
-re-authoring study's live validation (F149) wait for the model gateway (account refused, user recharging). Swimlane fix
-done; paper results draft in `paper/`. See AGENT/todo.md. Nothing pushed (research main ahead of origin; SRB 1).
+Updated 2026-09-30 15:00 CST. All experiments done except the last two re-authoring validations (F154); the 1x
+videos are rendering. The manuscript is written by another agent from `docs/report.md`; this agent runs experiments and
+records them (user). See AGENT/todo.md. Nothing pushed (research main ahead of origin).
 
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, **`docs/heldout_design.md`** (§6 Exp II, §8 protocol, §14
 instances), **`docs/baselines/authoring_spec.md`** (locked baselines), **`docs/preregistration.md`** (metrics,
-taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md` F130, F131, F136, F140-F150. Goal: the Acta
+taxonomy, exclusion), `AGENT/todo.md`, then `docs/research_findings.md` F130, F131, F136, F140-F154, and `docs/report.md` (the evidence base). Goal: the Acta
 Astronautica paper (H1 no rewrite for unplanned situations, H2 less engineering to add a capability, H3 open reasoning
 inside hard boundaries). The model owns mission strategy; a thin harness owns facts, evidence, verification and hard
 boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a decision.
@@ -34,17 +34,31 @@ boundaries. Simulator truth is for evaluation / post-hoc diagnosis only, never a
   rows.py's ledger rule cannot see a false completion when the report is the plan's still-active last task; the Exp II
   table reads the reports (`CLAIMS` in tables.py).
 
-## Ablations (F148)
+## Ablations (F148-F150, F153)
 
-- Paper framing (user 2026-09-29): trustworthy AI -- the harness is what makes the model's autonomy safe; an FM embedded
-  in the space-robot workflow that keeps the established engineering disciplines. Not "an LLM calling tools".
-- Variants (`OURS_ABLATION`: no_facts / no_verification / no_guard / no_context; texts in `prompts/ours_ablation/`);
-  unset = full, byte-identical (`experiments/ablation/render_check.py`). Accidents J1-J4 + natural N/NF
-  (`accidents.py`); `stage1.py`; `stage2.py` (plan calls and static queries carried forward offline); `stage2_score.py`.
-- Containers for the offline scripts: `runfarm:22.04`, `--dns 223.5.5.5 --dns 119.29.29.29` (the host DNS is fake-IP;
-  without it the gateway times out), openral venv python, ROS + openral/install + worktree ros/install sourced.
-- Live (stage 3): a restore puts a held item out of the jaws (F60) -- that is J1's drop; J3 live only at points with
-  nothing held; J4 live with `SPACE_LINK_LOS_S=0` (link.py, env-gated), from r1/r2. Resumed runs start a new sim clock.
+- Reported offline only: stage 1 (deterministic) and stage 2 (684 counterfactual decisions of Qwen3.8-Max on recorded
+  exp1b states, 4 variants `OURS_ABLATION` = no_facts / no_verification / no_guard / no_context, texts in
+  `prompts/ours_ablation/`, code on branch `feat/ablation` in `.worktree/ablation`, not merged yet). Live runs were
+  stopped by the user on 2026-09-30 and are not used or reported.
+- Resume facts (F154): a snapshot restore keeps a top-handle grasp; it restores physics only, not a unit's task state
+  (shutter, reset count), so a run resumed after a press sees the press undone.
+- Offline containers: `runfarm:22.04`, `--dns 223.5.5.5 --dns 119.29.29.29`, openral venv python, ROS + openral/install
+  + worktree ros/install sourced (`experiments/ablation/*` import the runtime).
+
+## Re-authoring study (F149, F151, F154)
+
+- 8 engineer sessions (baseline x held-out case), spec `docs/reauthoring/spec.md`, cases `docs/reauthoring/cases/`,
+  checkouts `.worktree/reauth-<b>-<case>` (SRB pinned by `experiments/reauthoring/pin_srb.sh`), branches
+  `reauth/<b>-<case>`, worklogs `experiments/reauthoring/worklog/`, runs `artifacts/runs/reauth/`, validation
+  `experiments/reauthoring/validate.py`, GPU lock `experiments/reauthoring/gpu_run.sh` (`gpu_free.sh`).
+- Engineering time = active time minus waiting on the simulation (user). Shared outages (model gateway, Claude session
+  limit) are excluded; waiting on a stalled run counts up to 15 min after its last progress.
+
+## Videos
+
+- `experiments/video/render_1x.sh <gpu>`: replay (`replay_render.py --fps 10`, from `.worktree/ablation` because main's
+  scene has Exp II items the exp1b bags lack) -> track (`track_from_bag.py`) -> compose (`mission_video.py --fps 10`,
+  all panels, 1x). Output `artifacts/figures/exp1b/video_1x/`. Earlier 6x videos: `artifacts/figures/exp1b/video/`.
 
 ## Heads
 
@@ -115,4 +129,5 @@ structural footprint changes. Judge a run by `CHECK_EXIT` / `RESULT` / `CHAIN_DO
 - Development runs are not campaign results. Fixes found in a campaign: fix for all methods, record in findings,
   rerun only the runs they decided (user rule); no freeze ceremony.
 - Ask before pushing; ask before deleting a run directory that might still be evidence.
-- Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies in concise Simplified Chinese.
+- Keep this file and todo.md <= 150 lines, overwrite at milestones. Replies in concise Simplified Chinese, plain words,
+  no internal codes (J1, F153, ...) when talking to the user.

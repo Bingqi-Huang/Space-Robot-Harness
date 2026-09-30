@@ -6472,3 +6472,34 @@ table then adds validation runs and time waiting on them.
   blind reader was a Claude Sonnet subagent, one reader, no agreement statistic. J3 live has no full-method arm: the
   full method rebuilds every step's context from the record, so a restart does not change its next step; the recorded
   run is the control.
+
+## F154 -- Re-authoring live validation (6 of 8 PASS, 2 open); live ablation runs stopped (user); resume restores physics only (2026-09-30)
+
+- **Re-authoring live validation** (docs/reauthoring/spec.md; engineers = fresh Claude Opus 5.5 sessions; each case's
+  every instance run live; stop at the first PASS of `experiments/reauthoring/validate.py`). All six finished cases
+  passed on their first live validation. Active time from the worklogs (includes waiting on the engineer's own
+  validation runs; the engineers' own split in brackets):
+
+  | case | PLEXIL | EUROPA -> PLEXIL |
+  |---|---|---|
+  | L2-A shutter | PASS, 3247 s [run wait ~2916 s] | PASS, 3864.6 s [authoring + offline ~11.4 min, run wait ~52.9 min] |
+  | L2-B occupied stand | open: v1 stalled after PLAN (no call for 4.5 h, stopped); v2 queued on GPU 1 | PASS, 9025 s [run wait ~69 min] |
+  | L3 module failure | PASS, 143.3 min [run wait 134.5 min] | open: running on GPU 1 (BESS done, ISRU running) |
+  | L4 donor + authorization | PASS, 5035 s [run wait 70.4 min] | PASS, 8187 s [run wait ~77 min] |
+
+  User decision (2026-09-30): simulation time carries no information about the methods; the engineering time reported
+  is active time minus waiting on the simulation (compute it per case from the worklog and the case's queue.log).
+  Branches `reauth/<baseline>-<case>`, runs `artifacts/runs/reauth/<baseline>_<case>/v*/`, worklogs
+  `experiments/reauthoring/worklog/`. Notes kept by the engineers: EUROPA L2-B's host turns the record's "awaiting
+  stowage" into a goal (the solver could not find the combined plan); PLEXIL L4 hard-codes "the only spare is recorded
+  failed" from the brief; the L3 brief named an occupied stand for the failed battery module (our brief error; the
+  engineer used bess_stand/slot_0); held-out material printed by repo-wide greps (PLEXIL L3: lines of the l3_isru chain
+  and scenario files; EUROPA L2-B, EUROPA L4: see their worklogs); EUROPA L4 ran an offline chain on the default docker
+  bridge (possible DDS cross-talk ~10:50-11:00 UTC, no effect seen). Timer handling of the shared outages: the model
+  gateway (2026-09-29) and a Claude API session limit (2026-09-30 ~12:00-13:40 CST) are excluded; waiting on a stalled
+  run counts up to 15 min after its last progress.
+- **Live ablation runs: stopped by the user on 2026-09-30 and not used.** The ablations are reported from stage 1
+  and 2 (offline, F150, F153). Two infrastructure facts found on the way, for any future resume: (1) with the current
+  top-handle grasp a snapshot restore keeps a held item in the jaws (F60's drop was the old bail grasp); (2) a restore
+  puts back only physical state (articulations, rigid objects): a unit's task state (shutter open, reset count, trip)
+  restarts from the scenario, so a run resumed after a press sees the press undone.

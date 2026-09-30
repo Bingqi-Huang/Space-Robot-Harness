@@ -456,7 +456,7 @@ def compose(a: argparse.Namespace, panel_at, places: dict) -> None:
         fps, pace = a.fps, (times[-1] - times[0]) / max(len(times) - 1, 1) * a.fps
         w, h = Image.open(a.video / names[0]).size
         out_w, out_h = a.width, int(round(h * a.width / w / 2) * 2)
-        label = "THIRD-PERSON VIEW  ·  replayed from the run's own record"
+        label = "THIRD-PERSON VIEW"
 
         def frames():
             for n, t in zip(names, times):
