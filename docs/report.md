@@ -85,9 +85,13 @@ change, not in hours.
   completions: it could verify a placement but not an identity); after it Ours 6/6, PLEXIL 2/2, EUROPA 2/2. Ours searched
   less systematically (first read the named unit at scan 8 to 15; PLEXIL at 6, EUROPA at 3), and one Ours run sent a
   new-procedure request that loss of signal left unanswered before it succeeded [F147; part 3].
-- Re-authoring (what each baseline's held-out failure costs once mission control has the diagnosis): offline authoring
-  PLEXIL 5 to 13 min per case, EUROPA→PLEXIL 11 to 66 min [F151]; live validation in progress (part 5). The cost the
-  baselines pay is the ground loop (diagnosis, idle robot, a communication window), not engineer hours.
+- Re-authoring (what each baseline's held-out failure costs once mission control has the diagnosis; fresh Claude
+  engineers, time without the simulation wait): PLEXIL 5.5 / 11.0 / 8.8 / 13.6 min (L2-A / L2-B / L3 / L4), EUROPA→PLEXIL
+  11.7 / 81.4 / 63.3 / 59.7 min, with 0 vs 13 modelling/logic errors fixed on the way (EUROPA's mostly steering the stock
+  solver); 7 of 8 cases passed live; EUROPA→PLEXIL L3's BESS instance ran its full module swap but its reset was
+  blocked by a shared press-skill limitation (the arm arriving unstowed at that panel), which the proposed runtime met
+  twice in exp1 and recovered from on its own [F156; part 5 §A.9]. The cost the baselines pay is the ground loop
+  (diagnosis, idle robot, a communication window), not engineer hours; the proposed runtime needed none.
 
 **Community-standard metrics (post hoc, part 6; the preregistered measures above are unchanged).** Held-out
 goal-condition success Ours 1.00 vs 0.17 / 0.17; pass^3 = 1.00 for Ours (Exp I held-out, Exp II after the extension);
@@ -115,12 +119,12 @@ EUROPA→PLEXIL 0.142. Glossary of every measure: part 6 §1. [F157]
 | `preplanned_transition_fraction` | not computed | computed per held-out instance x method (part 2 §5.9) | F155 |
 | L4 donors | PDU-3 in all runs | r3 used the ISRU plant's power ORU (energized, non-critical), granted | part 1a, part 2 |
 
-## Pending (as of 2026-09-30, 15:00 CST)
+## Pending (as of 2026-09-30, 19:10 CST)
 
 1. **Ablation live runs: not used (user decision 2026-09-30).** The ablations are reported from the offline
    stages only (part 4 sections before "Stage 3"; F150, F153).
-2. **Re-authoring live validation**: 6 of 8 cases PASS on their first live validation, 2 open (PLEXIL L2-B,
-   EUROPA→PLEXIL L3); results in F154. Report engineering time without the simulation wait (user decision).
+2. ~~Re-authoring live validation~~: closed 2026-09-30 (F156, part 5 §A.9): 7 of 8 PASS; EUROPA→PLEXIL L3 BESS blocked
+   by the shared press skill -- the user decides whether to fix the skill, let an engineer add a stow, or report as is.
 3. ~~Preregistered `preplanned_transition_fraction`~~: computed offline 2026-09-30 (user decision), part 2 §5.9, F155.
 4. Real LunarBot hardware demonstration (research_content §5.8): **dropped by the user on 2026-09-30**; future work.
 
@@ -5191,8 +5195,8 @@ All read-only, run from `/mnt/SharedData/Research/Space_Robot_Harness`:
 
 # Part 05 -- Re-authoring study, validity and limitations, artifact and manuscript index
 
-Snapshot: written 2026-09-30, sources read up to 10:28 CST (02:28 UTC), research `main` at 53ba795. The re-authoring
-live validation is running while this is written; section A.9 is the only table expected to change.
+Snapshot: written 2026-09-30 from sources up to 10:28 CST; section A.9 (live validation and engineering cost), C.2
+(videos) and C.3 were completed at 19:10 CST the same day (F156, F158).
 
 Conventions in this part:
 - Methods: "the proposed runtime (Ours)", "PLEXIL", "EUROPA→PLEXIL". Source files that write `europa_plexil`,
@@ -5370,32 +5374,39 @@ first incidents, "the remaining engineers were told to keep searches inside thei
 setup.tex leaves as an open question whether the manuscript states this exposure [paper/sections/setup.tex comment in
 §setup-reauthoring].
 
-### A.9 Live validation: PENDING (running 2026-09-30)
+### A.9 Live validation and engineering cost (final, 2026-09-30) [F156; F157]
 
-Only PLEXIL L2-A has a final worklog stop at a PASS. The other rows show the state at 10:28 CST. Their "provisional"
-cells are the `check.log` RESULT success flag of runs whose queue has finished. **That flag is not the validate.py
-verdict; fill each row only from the engineer's worklog stop entry, `validate.py` output and branch diff.**
+Engineering time = the worklog's timer intervals minus their overlap with the case's own live validation runs
+(`queue.log` start -> end); a stalled run counts up to 15 min after its last progress (user rule: simulation time is not
+a cost of the method). `python3 experiments/reauthoring/cost_table.py`; churn and model size
+`python3 evaluation/engineering_metrics.py` (source artifacts; generated .plx and offline tests excluded).
 
-| baseline | case | instances | validation runs | PASS/FAIL | final active time (s) | of it waiting on own runs | diff, baseline's own files (whole branch) | state at snapshot / source |
-|---|---|---|---|---|---|---|---|---|
-| PLEXIL | L2-A | 2 (`plexil_l2a_pdu1`, `plexil_l2a_bess`) | 1 (v1) | **PASS on the first live validation**: "both instances success, 1 cover press + 1 reset each, no escalation; no GPU wait (queue started at once)" [worklog plexil_l2a]. Evaluator RESULT success true, parked_and_stowed true; mission time 1161.9 s (pdu1), 1615.9 s (bess) [check.log] | **3247** [commit 3dea952 "Active time 3247 s"; worklog: 312.2 s authoring + 2934.9 s live session] | ~2916 s [derived: v1 queue started 09:13:48 CST = 01:13:48 UTC; timer stopped 02:02:24.5 UTC]. The engineer's own work was therefore ~331 s [derived] | 3 files +60/-1 (5 files +68/-1 incl. `experiments/reauthoring/jobs/plexil_l2a_v1.txt` +2 and the worklog +6) [`git diff --stat exp1b..reauth/plexil-l2a`] | done. Runs `artifacts/runs/reauth/plexil_l2a/v1/`: pdu1 09:13:48-09:34:45, bess 09:34:45-10:03:17 CST [queue.log] |
-| PLEXIL | L2-B | 1 (`plexil_l2b_habitat`) | v1 running | PENDING | PENDING (527 offline) | PENDING | PENDING (7 files +96/-6 offline) | v1 started 09:13:53 CST on gpu1, not finished [queue.log] |
-| PLEXIL | L3 | 2 (`plexil_l3_bess`, `plexil_l3_isru`) | v1 running | PENDING | PENDING (488 offline) | PENDING | PENDING (5 files +122/-2 offline) | `plexil_l3_bess` started 09:14:07 CST on gpu2, not finished [queue.log] |
-| PLEXIL | L4 | 1 (`plexil_l4_pdu1`) | v1 finished | PENDING. Provisional: RESULT success true, parked_and_stowed true, mission time 4126.9 s [check.log] | PENDING (785 offline) | PENDING | PENDING (6 files +278/-6 offline) | v1 09:13:58-10:24:20 CST, CHECK_EXIT 0, queue done [queue.log]; worklog session still open |
-| EUROPA→PLEXIL | L2-A | 2 (`europa_l2a_pdu1`, `europa_l2a_bess`) | v1 finished | PENDING. Provisional: both RESULT success true, parked_and_stowed true; mission time 1233.3 s (pdu1), 1738.7 s (bess) [check.log] | PENDING (685 offline) | PENDING | PENDING (3 files +70/-16 offline) | pdu1 09:13:48-09:35:58, bess 09:35:58-10:06:32 CST, both CHECK_EXIT 0, queue done [queue.log]; worklog session still open |
-| EUROPA→PLEXIL | L2-B | 1 (`europa_l2b_habitat`) | v1 finished | PENDING. Provisional: RESULT success true, parked_and_stowed true, mission time 4048.0 s [check.log] | PENDING (3977 offline) | PENDING | PENDING (6 files +67/-16 offline) | v1 09:14:18-10:23:21 CST, CHECK_EXIT 0, queue done [queue.log]; "queued on GPU 5 ... started at once, no GPU wait" [worklog] |
-| EUROPA→PLEXIL | L3 | 2 (`europa_l3_bess`, `europa_l3_isru`) | none yet | PENDING | PENDING (3786 offline + 14.5 closed) | PENDING | PENDING (6 files +178/-34 offline) | timer stopped "waiting for GPU" at 01:14:01 UTC; no run dir yet [worklog; artifacts/runs/reauth/] |
-| EUROPA→PLEXIL | L4 | 1 (`europa_l4_pdu1`) | v1 running | PENDING | PENDING (3524 offline + 43.3 closed) | PENDING | PENDING (3 files +300/-58 offline) | resumed 02:24:32 UTC; v1 started 10:24:20 CST on gpu3 [worklog; queue.log] |
+| baseline | case | live validation | engineering time (min) | active / of it waiting on own runs (min) | modelling / logic errors | churn (relative) | planning-model size before -> after |
+|---|---|---|---|---|---|---|---|
+| PLEXIL | L2-A | PASS, first run (PDU-1, BESS) | 5.5 | 54.1 / 48.6 | 0 | 39 (0.051) | nodes 75->83, if 7->10, command calls 40->44, lookups 17->18 |
+| PLEXIL | L2-B | v1 stalled after PLAN (the engineer's new manifest Lookup never re-asked after a lost response; fixed in the adapter); v2 PASS | 11.0 | 108.1 / 97.2 | 2 (adapter code) | 96 (0.125) | library nodes 4->5, nodes 75->90, if 7->8, command calls 40->44, lookups 17->21 |
+| PLEXIL | L3 | PASS, first run (BESS, ISRU) | 8.8 | 143.3 / 134.5 | 0 | 82 (0.107) | library nodes 4->5, nodes 75->93, if 7->9, command calls 40->45, lookups 17->19 |
+| PLEXIL | L4 | PASS, first run | 13.6 | 83.9 / 70.4 | 0 (2 test-script fixes) | 208 (0.271) | library nodes 4->5, nodes 75->117, if 7->10, command calls 40->55, lookups 17->24 |
+| EUROPA→PLEXIL | L2-A | PASS, first run (PDU-1, BESS) | 11.7 | 64.4 / 52.7 | 1 (domain) | 64 (0.064) | classes 11->12, predicates 10->11, actions 8->9, rules 8->9 |
+| EUROPA→PLEXIL | L2-B | PASS, first run | 81.4 | 150.4 / 69.0 | 3 (1 domain, 2 solver control) | 71 (0.071) | classes 11->14, timelines 5->6, predicates 10->11, rules 8->9 |
+| EUROPA→PLEXIL | L3 | ISRU PASS (v1). BESS **not passed**: v1 lost to an executive SIGSEGV at start (infrastructure, repeated); two reruns ran the full swap, then the reset press was blocked by the shared press skill (below) | 63.3 | 289.4 / 226.1 | 4 (2 domain, 2 solver control) + a data gap (item table) | 180 (0.181) | classes 11->14, timelines 5->7, predicates 10->14, actions 8->9, rules 8->10 |
+| EUROPA→PLEXIL | L4 | PASS, first run | 59.7 | 136.4 / 76.8 | 5 (1 domain, 3 solver control, 1 host code) | 295 (0.296) | classes 11->15, timelines 5->7, predicates 10->16, actions 8->13, rules 8->13 |
 
-Cap check: EUROPA→PLEXIL L2-B has 3977 s offline, and its v1 queue ran 09:14:18-10:23:21 CST [F151; queue.log]. So its
-final active time will be well above an hour. The 3 h cap is 10800 s [docs/reauthoring/spec.md].
-
-What the results section needs once the table is complete (results.tex `\TBD` at `sec:results-reauthoring`): "per
-baseline and held-out case: active engineering time, plan nodes or domain elements added, validation runs; the proposed
-runtime needed none (0 of 18 held-out runs re-authored)" [paper/sections/results.tex]. The node and declaration counts
-of A.6 and the notes of A.5.2 are ready for that. The spec also asks each engineer for "the time waiting on your own
-runs", which is the same split as Experiment II's "waiting on own validation run" and "other work" [F146;
-paper/tables/exp2_engineering.tex].
+- Totals: PLEXIL 38.9 min over the four cases, EUROPA→PLEXIL 216.1 min; the proposed runtime needed no re-authoring
+  (0 of 18 held-out runs) [F142]. EUROPA→PLEXIL's errors are mostly about steering the stock solver (part 6 §4.2).
+- **The shared press skill at the BESS panel.** Across every recorded run, the first press after a dock at the BESS
+  panel failed 4 of 4 times when the arm arrived in its ready posture (after a pick or place) and 7 of 43 when stowed
+  ("none of the 12 viewing poses is in reach", target 1.02-1.05 m out). EUROPA→PLEXIL's L3 model presses right after
+  installing the module without stowing (its engineer removed press's Stowed condition, which trapped the search); the
+  frozen EUROPA and the re-authored PLEXIL plans stow first. The proposed runtime met the limitation twice in exp1 and
+  recovered on its own (pressed again; stowed and re-docked); the baselines' identical retries cannot. Cause inside the
+  skill not isolated (the viewing-pose IK is seeded from READY; the collision scene is the likely difference). Left for
+  the user: fix the shared skill after the campaigns, or let an engineer add a stow, or report as is (current record).
+- Deviations kept as costs: EUROPA L2-B's host turns the record's "awaiting stowage" into a goal (the solver could not
+  find the combined plan in one solve); EUROPA L4's host drops the granted donor's restore goal; PLEXIL L4 hard-codes
+  "the only spare is recorded failed" from the brief.
+- Validation runs are live runs on the run farm; their waiting time (226 min for EUROPA L3 alone, with three BESS
+  attempts) carries no information about the method and is excluded from the engineering time.
 
 ---
 
@@ -5528,6 +5539,7 @@ Rule: category 8 (simulator crash, DDS, farm, model-provider outage) is fixed, r
 |---|---|---|---|
 | `artifacts/figures/exp1b/swimlane/{ours_l4_pdu1_r1, plexil_l4_pdu1, europa_l4_pdu1, ours_l2b_habitat_r1, plexil_l2b_habitat, europa_l2b_habitat}.{pdf,png}` | one swimlane per run, x = mission time; lanes deliberation / navigation / manipulation / observation queries / operator exchanges / guard holds; the Earth window shaded from the run's own profile. Labels merge neighbours of the same kind and move colliding ones below the bar (fix F149) | **campaign (exp1b), paper-usable**; re-rendered after the label fix and looked at | F135; F142; F149 |
 | `artifacts/figures/exp1b/video/{same six}.mp4` (+ `.track.json`; baselines also `.timeline.json`; `replay/`) | textured third-person follow video posed from the run's bag (no physics step), mission card left, mini-map bottom-right, front + wrist insets. 1600x900, 6 fps. Durations: ours_l4_pdu1_r1 198.7 s, ours_l2b_habitat_r1 266.5 s, plexil_l4_pdu1 79.2 s, plexil_l2b_habitat 125.8 s, europa_l4_pdu1 79.0 s, europa_l2b_habitat 144.2 s | campaign (exp1b); supplementary video material | F141 item 6; F142; ffprobe [derived] |
+| `artifacts/figures/exp1b/video_1x/<run>.mp4` (13: one Ours exp1b run per instance) | textured third-person follow video at 1x simulated time (10 fps, 1600x900, 279-1600 s), mission card, mini-map, front + wrist insets; camera kept clear of the ISRU tank skid and the radome | **campaign (exp1b), paper supplementary**; checked 2026-09-30 (durations, textures, no black frames) | F158 |
 | `artifacts/figures/exp1/swimlane/*`, `artifacts/figures/exp1/video/*` (same six runs) | as above, for the freeze-1 campaign (exp1) | **superseded by exp1b** | F140; F141 |
 | `artifacts/figures/swimlane/{ours_qwen_l4_pdu1, plexil_a_bess, europa_a_bess}.{pdf,png}` | first swimlanes: Ours L4 (Qwen3.8-Max development run) and baselines covered A-BESS (step 9) | development runs, not campaign. Caveat: the step-9 runs used the pre-F116 profile (Earth-set 2700 s) | F135 |
 | `artifacts/figures/video/ours_qwen_l4_pdu1.mp4` | first mission video (1113 frames at 6 fps, 186 s for 1157 s of mission time) | development run (step10_models) | F135 |
@@ -5617,13 +5629,10 @@ park2021de440, riek2012woz, wilson1927probable [paper/sections/CITATIONS_TODO.md
 
 ## Gaps
 
-1. **Live validation incomplete** (A.9). Only PLEXIL L2-A has a final PASS in its worklog (3247 s). PLEXIL L4,
-   EUROPA→PLEXIL L2-A and L2-B have finished v1 queues with provisional RESULT success but no validate.py verdict or
-   final active time. PLEXIL L2-B and L3 are still running; EUROPA→PLEXIL L4 started 10:24 CST; EUROPA→PLEXIL L3 waits
-   for a GPU. Final active times, validation-run counts, waiting times and post-validation diffs must be filled from the
-   worklogs, validate.py and `git diff --stat exp1b..reauth/<b>-<case>` when each stops.
-2. The engineers' returned summaries (spec "Your summary") are not in the repository. The waiting-time split is only
-   derivable (A.9, PLEXIL L2-A ~2916 s [derived]).
+1. ~~Live validation incomplete~~: closed (A.9, F156). EUROPA→PLEXIL L3's BESS instance did not pass (shared press
+   skill); the decision on it is the user's.
+2. The engineers' returned summaries are not in the repository; they are in the coordinating session's transcripts
+   (classification of their errors: part 6 §4.2).
 3. **Disagreement**: F149/F151 attribute a held-out grep exposure (`chains/l2a_*.json`) to PLEXIL L2-A, but
    `plexil_l2a.jsonl` has no such note. F151 also omits EUROPA→PLEXIL L3's 2 printed lines of the forbidden
    `docs/research_findings.md`.

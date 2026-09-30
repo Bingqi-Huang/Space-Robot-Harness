@@ -6530,6 +6530,40 @@ after the start) that the method's frozen artifacts (exp1b) contain as authored 
   "Admitted" is the model's semantics, not the frozen search: the stock solver could not find two chained pick/place
   legs in one solve with the frozen domain (EUROPA L3 engineer; L2-B combined plan unsolved at 5,000 steps, F151).
 
+## F156 -- Re-authoring study closed: 7 of 8 cases pass live; engineering time without the simulation wait PLEXIL 5.5-13.6 min, EUROPA -> PLEXIL 11.7-81.4 min; EUROPA's BESS reset blocked by a shared press-skill limitation (2026-09-30)
+
+`experiments/reauthoring/cost_table.py` (timer intervals minus their overlap with the case's own validation runs; a
+stalled run counts up to 15 min after its last progress), `evaluation/engineering_metrics.py`, worklogs, `validate.py`.
+
+| baseline | case | live validation | engineering time (min) | active / of it waiting on own runs (min) | modelling / logic errors |
+|---|---|---|---|---|---|
+| PLEXIL | L2-A | PASS, first run | 5.5 | 54.1 / 48.6 | 0 |
+| PLEXIL | L2-B | v1 stalled (its new manifest Lookup never re-asked after a lost response); v2 PASS | 11.0 | 108.1 / 97.2 | 2 (adapter code) |
+| PLEXIL | L3 | PASS, first run | 8.8 | 143.3 / 134.5 | 0 |
+| PLEXIL | L4 | PASS, first run | 13.6 | 83.9 / 70.4 | 0 (2 test-script fixes) |
+| EUROPA -> PLEXIL | L2-A | PASS, first run | 11.7 | 64.4 / 52.7 | 1 (domain) |
+| EUROPA -> PLEXIL | L2-B | PASS, first run | 81.4 | 150.4 / 69.0 | 3 (1 domain, 2 solver control) |
+| EUROPA -> PLEXIL | L3 | ISRU PASS; BESS not passed (below) | 63.3 | 289.4 / 226.1 | 4 (2 domain, 2 solver control) |
+| EUROPA -> PLEXIL | L4 | PASS, first run | 59.7 | 136.4 / 76.8 | 5 (1 domain, 3 solver control, 1 host code) |
+
+- Totals: PLEXIL 38.9 min over four cases, EUROPA -> PLEXIL 216.1 min; the proposed runtime needed none (0 of 18
+  held-out runs re-authored, F142). Churn and model growth per case: F157 / report part 6 §3.2.
+- **EUROPA -> PLEXIL L3, BESS.** v1: the PLEXIL executive died with SIGSEGV 10 s after start, before its first command
+  (1 of 46 executive starts in all runs; the engineer changed no executive or adapter file): infrastructure, repeated.
+  Rerun and rerun 2 (same code): the swap ran completely both times (failed module to isru_return_stand, spare into the
+  cradle; the evaluator's bay holds the spare), then the reset press failed three times at the shared skill's locate
+  stage ("none of the 12 viewing poses is in reach", target 1.02-1.04 m out) and the host held. Across every recorded
+  run, the first press at the BESS panel after a dock failed 4 of 4 times when the arm arrived in its ready posture
+  (after a pick or place) and 7 of 43 when stowed. This model presses without stowing (the engineer removed press's
+  Stowed condition as a search trap); the frozen EUROPA and the re-authored PLEXIL plans stow first. The proposed
+  runtime met the same limitation twice in exp1 and recovered on its own (pressed again; stowed and re-docked); the
+  baselines' identical retries cannot. Shared-skill cause not isolated (the viewing-pose IK is seeded from READY, not
+  from the current posture; likely the collision scene). Not fixed: a post-campaign shared-layer change or a further
+  engineer iteration is the user's decision; recorded as not passed, engineering time as measured.
+- Deviations kept as costs: EUROPA L2-B's host turns the record's "awaiting stowage" into a goal (the solver could not
+  find the combined plan); EUROPA L4's host drops the granted donor's restore goal; PLEXIL L4 hard-codes "the only
+  spare is recorded failed" from the brief.
+
 ## F157 -- Community-standard metrics computed post hoc; every measure's definition and standard name in report part 6 (2026-09-30, offline)
 
 User decision 2026-09-30: compute every widely recognised metric the recorded data supports (A: goal-condition success,
