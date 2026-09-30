@@ -1,11 +1,11 @@
 # Handoff
 
-Updated 2026-09-30 17:30 CST. Experiments are done; this session is closing the last items (AGENT/todo.md). The
+Updated 2026-09-30 19:15 CST. All experiments and records are closed (AGENT/todo.md); nothing runs. The
 manuscript is written by another agent from `docs/report.md` (+ research_content, execution_plan); this agent runs
-experiments and records them; it never edits `paper/` (user). Nothing pushed: research main is ahead of origin (42+).
+experiments and records them; it never edits `paper/` (user). Nothing pushed: research main is ahead of origin (50+).
 
 Read `AGENT/research_content.md`, `AGENT/execution_plan.md`, `docs/heldout_design.md`, `docs/baselines/authoring_spec.md`,
-`docs/preregistration.md`, `AGENT/todo.md`, `docs/research_findings.md` F140-F157, then `docs/report.md` (the evidence
+`docs/preregistration.md`, `AGENT/todo.md`, `docs/research_findings.md` F140-F158, then `docs/report.md` (the evidence
 base: overview + parts 1a, 1b, 2, 3, 4, 5, 6). Goal: the Acta Astronautica paper (H1 no rewrite for unplanned situations,
 H2 less engineering to add a capability, H3 open reasoning inside hard boundaries). Framing (user): trustworthy AI --
 a foundation model embedded in a space robot's mission workflow raises autonomy while the harness keeps safety and the
@@ -24,29 +24,13 @@ established engineering disciplines; never "an LLM calling tools" or "Claude Cod
   success, FDIR coverage, MTBI, intervention response time, run-time assurance, code churn, planning-model size, ECSS
   levels, references). Which enter the paper is decided at writing time (user). Scripts `evaluation/standard_metrics.py`,
   `evaluation/engineering_metrics.py`.
-- Re-authoring study (F149, F151, F154; F156 to write): engineering time = timer minus overlap with own validation runs
+- Re-authoring study (F149, F151, F154, F156; report part 5 §A.9): engineering time = timer minus overlap with own validation runs
   (`experiments/reauthoring/cost_table.py`). PLEXIL 5.5 / 11.0 / 8.8 / 13.6 min (L2-A/L2-B/L3/L4), EUROPA 11.7 / 81.4 /
-  63.3+ / 59.7 min. 7 of 8 PASS. PLEXIL L2-B: v1 stalled (the engineer's new Lookup never re-asked after a lost
-  response), v2 PASS 16:12. EUROPA L3: v1 ISRU PASS; v1 BESS = PLEXIL executive SIGSEGV 10 s after start (infrastructure,
-  1 in 46 exec starts), rerun `artifacts/runs/reauth/europa_plexil_l3/v1_rerun` running on GPU 1 (tmux
-  `reauth-europa-l3-rerun`), then `validate.py v1_rerun/europa_l3_bess v1/europa_l3_isru`.
-
-## In progress right now (do not disturb)
-
-- **1x videos of the 13 Ours exp1b runs** re-rendering WITH body textures (the 16:xx render lacked the texture mount:
-  second time this happened). Workers: tmux `vid-gpu{0,2,3,4,5}-{1..6}` running `experiments/video/render_1x.sh <gpu>
-  <slot>`; they claim chunks from `artifacts/figures/exp1b/video_1x/chunks.txt` (made by `experiments/video/plan_chunks.py`),
-  render with `.worktree/ablation/experiments/video/replay_render.py --only a,b` and compose when a run's frames are
-  complete. The texture mount comes from `RUNFARM_ARGS` (render_1x.sh -> docker/runfarm/runfarm.sh). ETA ~18:15.
-  Never delete `.worktree/ablation` or edit its `replay_render.py` while a worker runs (each chunk reloads it).
-- **Next for the videos (camera occlusion fix, developed and checked offline)**: in 5 videos the ISRU tank skid (5.7 m)
-  or the radome hid the rover (some frames black). `.worktree/ablation/experiments/video/replay_render_next.py` picks,
-  per occluded stretch, the least-occluded of 8 camera positions, blends it in, lifts the camera over an occluder it
-  would enter; bounds in `lunar_base_asset_bounds.json` (made by `asset_bounds.py` with Isaac's pxr on CPU). Offline:
-  only ours_a_isru, ours_b_cons_habitat, ours_l2a_bess_r1, ours_l2b_habitat_r1, ours_l3_isru_r1 change (~5300 frames),
-  eye never inside an occluder, residual partial occlusion 3-6 s. After the render: move _next over replay_render.py,
-  delete exactly the changed frames (compare old vs new `camera_path`), remove those runs' `replay/<run>.composing` and
-  mp4, re-plan chunks, re-render, check (textures: 0 "can not be found" + a side-by-side frame; black frames; duration).
+  63.3 / 59.7 min; 7 of 8 PASS live. EUROPA L3's BESS instance: executive SIGSEGV (infrastructure), then twice the full
+  swap and a reset press blocked by the shared press skill (4/4 first presses at the BESS panel fail when the arm
+  arrives unstowed; the model removed press's Stowed condition). **Open for the user**: fix the shared skill, let an
+  engineer add a stow, or report as is (current record).
+- F158: the 13 1x videos are final (textured, occlusion-aware camera, checked). `artifacts/figures/exp1b/video_1x/`.
 
 ## Videos, general
 
@@ -58,9 +42,13 @@ established engineering disciplines; never "an LLM calling tools" or "Claude Cod
 
 ## Heads
 
-- Tags: `freeze-1`, `exp1b` (Exp I), `exp2-*` (Exp II bases/results). Branches: research `main`, `feat/ablation`
-  (`.worktree/ablation`; merge approved by the user after the videos), `reauth/<baseline>-<case>` (8, committed;
-  worktrees `.worktree/reauth-*` to remove after the merge), `feat/prefreeze-infra` + `.worktree/prefreeze` (keep, user).
+- Tags: `freeze-1`, `exp1b` (Exp I), `exp2-*` (Exp II bases/results). Branches: research `main` (feat/ablation merged
+  2026-09-30; merged main re-renders the final Exp II run 67/67 identical), `feat/ablation` and
+  `reauth/<baseline>-<case>` (8) kept as branches, their worktrees removed; `feat/prefreeze-infra` + `.worktree/prefreeze`
+  (keep, user). `.worktree/site` (branch `gh-pages`) belongs to the website session: do not touch.
+- Re-rendering an exp1b video: `experiments/video/render_1x.sh <gpu> <slot>` with `VIDEO_CHECKOUT` = a checkout of tag
+  exp1b (pin_srb.sh) carrying main's `experiments/video/`; chunks from `plan_chunks.py`; frames of the final videos in
+  `artifacts/figures/exp1b/video_1x/replay/` (259 GB; can be deleted, re-rendering takes ~1 h on 5 GPUs).
 - Reasoner Qwen3.8-Max, VLM DeepSeek-V4.1-Flash, paratera gateway; key = first `sk-` in `AGENT/VLM_provider.md`
   (gitignored; never print it or write it anywhere).
 - Report build: `docs/report.md` = parts 00, 01a, 01b, 02, 03, 04, 05, 06 of `docs/report_parts/` joined by
