@@ -17,13 +17,18 @@ drop is a step at L2, the first level at which the frozen model lacks a relation
 runtime stays flat through L4.
 % Wilson intervals: evaluation.tables.wilson_ci(18, 18) = (0.82, 1.00); wilson_ci(0, 6) = (0, 0.39).
 
-The baselines did not fail by acting wrongly. Every held-out baseline run detected the anomaly through the goal
-checks its covered brief asks for, repeated the failing call up to its retry budget, asked mission control for a new
-procedure and held in a safe state. The boundary they met is the coverage of their frozen models, which is the
+The baselines did not fail by acting wrongly. Eleven of the twelve held-out baseline runs detected the anomaly through
+the goal checks their covered briefs ask for, repeated the failing call up to the retry budget, asked mission control
+for a new procedure and held in a safe state. In the twelfth, PLEXIL at the L3 battery unit, the shared press skill
+failed three times from the docked pose before the goal check ran, and PLEXIL escalated in the same way. The outcome
+does not depend on that failure, because EUROPA\,$\rightarrow$\,PLEXIL pressed the same button in the same instance
+and the reset did not hold. The boundary they met is the coverage of their frozen models, which is the
 boundary H1 predicts. A larger retry budget would not have moved it: offline reruns of both baselines on every
 held-out state with one, two, three and five attempts per call always ended in the same escalation, and only the
 number of repeats before it changed (Section~\ref{sec:setup-baselines}).
 % F136, F143: 48 offline runs, outcome "detected -> escalated" at every N.
+% F153: exp1b plexil_l3_bess is category 4 (press failed at approach, then locate x2, "0.78 m up, 1.03 m out"),
+% check.log lines 10-12; europa_l3_bess pressed three times with success, the reset did not hold (events.jsonl).
 
 The sharpest case is L3. Every piece of its solution exists in both baselines' libraries: Mission A's reset and
 Mission B's pick, carry and place. Only the composition is missing, and neither baseline could form it. The proposed

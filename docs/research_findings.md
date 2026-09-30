@@ -6454,3 +6454,21 @@ table then adds validation runs and time waiting on them.
   Ours' covered median mission time goes 538 -> 825 s, held-out 1132 -> 2071 s (an upper bound: some calls overlap the
   ground's decision time); held-out HIR would fall 0.080 -> 0.036. The shared VLM's calls run on the same clock for all
   methods (not corrected). Stated in results and setup.
+
+## F153 -- Report audit: exp1b plexil_l3_bess is a physical-layer failure (category 4), not coverage; ablation scoring caveats (2026-09-30)
+
+- Found while compiling docs/report.md. exp1b `plexil_l3_bess`: after `dock_at_feature` succeeded, the reset `press`
+  failed three times in the shared skill (approach: "the arm cannot stand in front of that target from where the rover
+  is parked"; locate x2: "the arm cannot put its camera on the target (0.78 m up, 1.03 m out)"), and PLEXIL escalated
+  before its goal check ran (check.log lines 10-12). By preregistration §2 ("first failure on the causal path") that is
+  category 4; failures.md and F142 ("no category-4 failure in any method") had it as category 2. Corrected in
+  `artifacts/eval/exp1b/failures.md` and results.tex. Outcome unchanged, no rerun: `europa_l3_bess` pressed the same
+  button three times with success and the reset did not hold (the module has failed); offline PLEXIL escalates on this
+  state at every N (F143). PLEXIL held-out success conditioned on no physical-layer failure: 0/5.
+- Ablation stage 2 (F150), re-read for the report: the 3 no_verification J1 "CHECK"s look at the destination slot, not
+  at the item; 3 of the 48 UNSAFE are borderline. In N, 18 "different" decisions per arm cannot be "same" by the rule's
+  construction; on the 57 comparable points full differs from the recorded choice 3 times, no_context 10 times (report
+  this, not 21 vs 28 of 75). The scorer counts `locate_feature` as a J2i check, the rubric does not (2 decisions). The
+  blind reader was a Claude Sonnet subagent, one reader, no agreement statistic. J3 live has no full-method arm: the
+  full method rebuilds every step's context from the record, so a restart does not change its next step; the recorded
+  run is the control.
