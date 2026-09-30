@@ -6527,3 +6527,5 @@ after the start) that the method's frozen artifacts (exp1b) contain as authored 
   cannot see -- the re-authoring diffs add exactly those relations (F151).
 - Caveats: one solution per instance; the abstraction above; the frozen EUROPA domain needs a stowed arm before a
   press, so after a swap it would plan a stow before the reset (equivalent solution, dock -> press counted admitted).
+  "Admitted" is the model's semantics, not the frozen search: the stock solver could not find two chained pick/place
+  legs in one solve with the frozen domain (EUROPA L3 engineer; L2-B combined plan unsolved at 5,000 steps, F151).

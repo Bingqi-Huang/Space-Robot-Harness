@@ -10,6 +10,10 @@ G=${1:?gpu}
 S=${2:?slot}
 R=/mnt/SharedData/Research/Space_Robot_Harness; V=$R/artifacts/figures/exp1b/video_1x; E=$R/artifacts/runs/exp1b
 LIST=$V/chunks.txt
+# LunarBot's USD names its body textures by an absolute path on the development machine; on pro6000 they live in
+# /mnt/SharedData/Research/lunarbot_textures and are mounted at that path in the render container only (the scored runs
+# never had them). Without the mount the robot renders untextured (happened twice: 2026-09-27, 2026-09-30).
+export RUNFARM_ARGS="-v /mnt/SharedData/Research/lunarbot_textures/textures:/home/bingqi/SharedData/Research/LunarSim/assets/USD_Assets/robots/lunarbot/configuration/materials/textures:ro"
 BASE=$((32 * (G / 3) + 10 * (G % 3))); CPUS=$BASE-$((BASE + 9)),$((BASE + 64))-$((BASE + 73))
 title() {
   case $1 in

@@ -18,6 +18,8 @@
 # Network: the host reaches the internet through a proxy on its own 127.0.0.1 with fake-IP DNS, neither usable from a
 # container; the run needs only the DeepSeek API (LLM + VLM), reachable directly, so the container uses public DNS.
 #
+# RUNFARM_ARGS: extra docker arguments, e.g. the video render's texture mount (experiments/video/render_1x.sh).
+#
 # CPU: an Isaac process starts a thread per visible core, and two unpinned graphs on one host ran at 0.05x each
 # (F54 §4). Each container therefore gets its own 10 physical cores + their hyperthreads on its GPU's socket
 # (pro6000: GPUs 0-2 on socket 0 = cores 0-31, GPUs 3-5 on socket 1 = cores 32-63, siblings at +64); cores 30-31 and
@@ -44,5 +46,5 @@ docker run -d --rm --name "$NAME" --device "nvidia.com/gpu=$GPU" --cpuset-cpus "
   --dns 223.5.5.5 --dns 119.29.29.29 \
   -v "$H/Programs:$H/Programs" -v "$H/isaaclab:$H/isaaclab" -v "$H/.cache:$H/.cache" \
   -v "$H/.local/share/ov:$H/.local/share/ov" -v "$H/.nvidia-omniverse:$H/.nvidia-omniverse" -v "$H/.nv:$H/.nv" \
-  -v /mnt/SharedData:/mnt/SharedData \
+  -v /mnt/SharedData:/mnt/SharedData $RUNFARM_ARGS \
   runfarm:22.04 bash -lc "$*"

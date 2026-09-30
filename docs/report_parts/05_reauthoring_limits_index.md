@@ -214,7 +214,7 @@ paper/tables/exp2_engineering.tex].
 
 | preregistered | as done | status | source |
 |---|---|---|---|
-| §1 `preplanned_transition_fraction`: "Decided: per instance, from its closed-capability certificate [...]. Reported once per instance x method" | not computed. `rows.py` writes `preplanned_transition_fraction=None`; evaluation/README.md: "Does not fill in `preplanned_transition_fraction` -- still a pending user decision" | **open**. The README contradicts the preregistration, which records the definition as decided. setup.tex: "the re-authoring flag and the re-authoring study stand in for it" | docs/preregistration.md §1; evaluation/README.md; evaluation/rows.py; paper/sections/setup.tex comment |
+| §1 `preplanned_transition_fraction`: "Decided: per instance, from its closed-capability certificate [...]. Reported once per instance x method" | computed offline after the campaign (2026-09-30, user decision) per held-out instance x method as decided: PLEXIL 0.75-0.93, EUROPA→PLEXIL 0.75-1.00, Ours 0 by construction, covered 1.0 for both baselines; `rows.py`'s per-run field stays `None` | **done** (late, as decided). Note: setup.tex still says "the re-authoring flag and the re-authoring study stand in for it" | docs/preregistration.md §1; `evaluation/preplanned_fraction.py`; part 2 §5.9; F155 |
 | §4 "HIR, waiting time, neglect time: medians with bootstrap intervals; interaction level as an ordinal distribution" | `evaluation/tables.py` reported means until F152. F142's HIR 0.136 / 0.591 / 0.470, idle 0.608 / 0.483 and stretch 955 / 218 / 390 s are means. Now medians with percentile bootstrap 95% intervals (10000 resamples, seed 0). Held-out HIR: Ours 0.080 [0.000, 0.240], PLEXIL 0.617 [0.461, 0.696], EUROPA→PLEXIL 0.485 [0.313, 0.613]; idle PLEXIL 0.634, EUROPA→PLEXIL 0.499; stretch 1029 / 179 / 319 s | **fixed**; F152 supersedes the F142 means for the paper | F152; artifacts/eval/exp1b/tables.md |
 | §3 "each request's wall-clock send time is reported beside its mission time (from the model_io record) as a robustness figure; no rerun" | F152 reports a reasoning-latency analysis instead: per-call wall latency median 19.9 s (IQR 11.3-38.7); sim runs at 0.237 of real time during calls. With latency counted in full, Ours' covered median mission time 538 -> 825 s and held-out 1132 -> 2071 s (an upper bound); held-out HIR 0.080 -> 0.036. The VLM's calls are not corrected | **reported in a different form**: `reasoning_latency.md` has per-run and per-coverage tables, no per-request wall-clock send time | F152; artifacts/eval/exp1b/reasoning_latency.md |
 | §3 / execution_plan §13.1 "A post-freeze fix that changes shared code reruns the affected campaign from the start" | Exp I: after F141 the whole campaign was rerun (exp1b) [F141; F142]. Within exp1b, two runs invalidated by shared defects were fixed and rerun alone [F142]. Exp II: fixes F145/F147 reran only the runs they decided [F145; F147]. User rule 2026-09-29: fixes are "folded into that experiment's results (F141/F142, F145, F147) -- not reported as a separate round" | **deviation, by user decision** | docs/preregistration.md §3; AGENT/execution_plan.md §13.1; AGENT/todo.md Rules |
@@ -350,6 +350,7 @@ Rule: category 8 (simulator crash, DDS, farm, model-provider outage) is fixed, r
 | `artifacts/eval/exp1b/place_offsets.md` | every place's set-down / end offsets, drag, inside-footprint | F141; F142 |
 | `artifacts/eval/exp1b/reasoning_latency.md` | per-run and per-coverage reasoning calls, wall vs mission time, mission time with latency in full, HIR recorded vs latency in full | F152 |
 | `artifacts/eval/exp1b/trace_completeness.txt` | Ours 451/451, PLEXIL 81/81 joined | F142 |
+| `artifacts/eval/exp1b/preplanned_fraction.md` | preregistered `preplanned_transition_fraction` per held-out instance x method (`evaluation/preplanned_fraction.py`) | F155 |
 | `artifacts/eval/exp1b/rows/` | evaluator rows (input to tables and the figure) | F142 |
 | `artifacts/eval/exp1/{tables.md, failures.md, trace_completeness.txt, rows/}` | freeze-1 campaign, **superseded** (Ours 17/18 held-out; PLEXIL covered 6/7) | F140 |
 | `artifacts/eval/exp2/tables.md` | Exp II: §1 engineering, §2 held-out extension cases, §3 every run | F146; F147 |
@@ -439,8 +440,7 @@ park2021de440, riek2012woz, wilson1927probable [paper/sections/CITATIONS_TODO.md
    for PLEXIL and 1-4 for EUROPA→PLEXIL. A findings-level statement of error counts does not exist yet.
 5. EUROPA→PLEXIL L4's host drops "the granted donor's restore goal" (commit 547ebd2). F151 does not discuss it as a
    deviation, although it is analogous to L2-B's host-side goal.
-6. `preplanned_transition_fraction` is not computed. evaluation/README.md calls it "a pending user decision" while the
-   preregistration records it as decided.
+6. ~~`preplanned_transition_fraction` is not computed~~: computed 2026-09-30 (part 2 §5.9, F155); README updated.
 7. The preregistered per-request wall-clock send time (preregistration §3) is not tabulated. F152's latency analysis
    covers the concern in another form.
 8. The intervention response-time split (delivery / notice / planning / execution; heldout_design §8) is computed per

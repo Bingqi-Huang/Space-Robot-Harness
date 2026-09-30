@@ -761,7 +761,10 @@ Reading (for the paper):
    L2-B and L3 solutions (1.00), yet both escalated: it had no relation saying that a stand holds one item (so the
    occupied destination is not a blocker it can plan around) and none saying that a failed module keeps a reset from
    holding (so the solver plans the press alone). The measure cannot see relational knowledge; the re-authoring study
-   (part 5) shows what was added (occupancy/slots, module self-test, shutter, authorization).
+   (part 5) shows what was added (occupancy/slots, module self-test, shutter, authorization). "Admitted" is about the
+   model, not the frozen search: two re-authoring engineers found that the stock solver could not find two chained
+   pick-and-place legs in one solve with the frozen domain (L3: only after pick matched the item's location first; L2-B:
+   the combined plan unsolved after 5,000 steps) [F151; worklogs].
 3. **The proposed runtime pre-authored none of it (0) and solved 18/18 held-out runs** by composing the sequence
    online; its only pre-written knowledge is the shared capability contracts, which every method has.
 
