@@ -5,11 +5,14 @@
 # several workers share one GPU (user 2026-09-30): experiments/video/render_1x.sh <gpu> <slot>, one tmux session each,
 # only on GPUs with no simulation run. The worker whose chunk completes a run's frames (no other chunk of it still
 # rendering) tracks and composes that run's video on its own GPU's cores.
-# The replay runs from .worktree/ablation, whose SRB is pinned to exp1b (main's scene has items added later, F144).
+# The replay must see exp1b's scene (main's has items added later, F144): it runs from a checkout of tag exp1b with
+# main's experiments/video copied in, SRB pinned (experiments/reauthoring/pin_srb.sh), given as VIDEO_CHECKOUT
+# (default .worktree/exp1b-video). The 2026-09-30 videos were rendered from .worktree/ablation (feat/ablation at exp1b).
 G=${1:?gpu}
 S=${2:?slot}
 R=/mnt/SharedData/Research/Space_Robot_Harness; V=$R/artifacts/figures/exp1b/video_1x; E=$R/artifacts/runs/exp1b
 LIST=$V/chunks.txt
+W=${VIDEO_CHECKOUT:-$R/.worktree/exp1b-video}
 # LunarBot's USD names its body textures by an absolute path on the development machine; on pro6000 they live in
 # /mnt/SharedData/Research/lunarbot_textures and are mounted at that path in the render container only (the scored runs
 # never had them). Without the mount the robot renders untextured (happened twice: 2026-09-27, 2026-09-30).
@@ -37,7 +40,7 @@ while true; do
   [ -z "$run" ] && break
   c=vid-$run-${lo/./_}
   echo "$(date '+%F %T') gpu$G.$S start $run $lo-$hi" >> $V/render.log
-  $R/docker/runfarm/runfarm.sh $G $c "/home/bingqi/Programs/isaac-sim/python.sh $R/.worktree/ablation/experiments/video/replay_render.py $E/$run $V/replay/$run --fps 10 --only $lo,$hi > $V/replay/$run.$lo.log 2>&1" > /dev/null
+  $R/docker/runfarm/runfarm.sh $G $c "/home/bingqi/Programs/isaac-sim/python.sh $W/experiments/video/replay_render.py $E/$run $V/replay/$run --fps 10 --only $lo,$hi > $V/replay/$run.$lo.log 2>&1" > /dev/null
   docker wait $c > /dev/null
   echo "$(date '+%F %T') gpu$G.$S end $run $lo-$hi $(tail -1 $V/replay/$run.$lo.log)" >> $V/render.log
   expected=$(grep -m1 -o '^[0-9]* frames' $V/replay/$run.$lo.log | cut -d' ' -f1)
