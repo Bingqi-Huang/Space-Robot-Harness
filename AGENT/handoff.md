@@ -1,6 +1,6 @@
 # Handoff
 
-Updated 2026-09-30 22:45 CST. All experiments and records are closed (AGENT/todo.md); nothing runs. The
+Updated 2026-10-02 (work moved to z890). All experiments and records are closed (AGENT/todo.md); nothing runs. The
 manuscript is written by another agent from `docs/report.md` (+ research_content, execution_plan); this agent runs
 experiments and records them; it never edits `paper/` (user). Pushed 2026-09-30 (main, tags exp1b/exp2-*, reauth/* branches; SRB main + tags; openral tags).
 
@@ -52,6 +52,17 @@ established engineering disciplines; never "an LLM calling tools" or "Claude Cod
   (gitignored; never print it or write it anywhere).
 - Report build: `docs/report.md` = parts 00, 01a, 01b, 02, 03, 04, 05, 06 of `docs/report_parts/` joined by
   "\n\n---\n\n" (a loop over the eight files; the result must equal the join exactly).
+
+## Machines (2026-10-02)
+
+- **All further work happens on z890** (`ssh -p 2222 bingqi@101.6.33.98`; 24 cores, 2x RTX 5090, Ubuntu 22.04, ROS
+  Humble, Isaac Sim 5.1, PLEXIL/EUROPA in ~/Programs). Same repo path `/mnt/SharedData/Research/Space_Robot_Harness`.
+  Synced from pro6000 on 2026-10-02: git (fast-forward to origin/main, submodules, tags), `artifacts/`, the key file,
+  SPICE kernels, SRB's ignored assets (raw, previews, generated, review), `/mnt/SharedData/Research/lunarbot_textures`,
+  and all Claude history (projects, memory, prompt history; z890's old copies in ~/.claude/backups/pre-pro6000-sync-20261002).
+- On z890, before any simulation: rebuild `openral/install` and `ros/install` from the current code, add `zxing-cpp` to
+  the openral venv (both predate Experiment II there); farm scripts there need `RUNFARM_CPUS=0-23`.
+- z890 keeps its own older artifacts and the worktrees `.worktree/baseline-lock`, `.worktree/run-farm` (old branches).
 
 ## Run farm (pro6000, host astroeng, uid 1007)
 
